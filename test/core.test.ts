@@ -177,7 +177,7 @@ describe("summary", () => {
   it("describes clips with timeline times", () => {
     const s = summarizeProject(base());
     expect(s).toContain("1080x1920");
-    expect(s).toContain("c2 00:03.0–00:06.0 b");
+    expect(s).toContain("c2 00:03.0-00:06.0 b");
     expect(s).toContain("⟵fade(1s)");
   });
 });

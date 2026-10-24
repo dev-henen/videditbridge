@@ -77,7 +77,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Instagram", "Facebook", "YouTube", "MLS"],
     aspectRatio: "16:9",
     idealDuration: [30, 90],
-    aiGuidance: "Open with the best exterior or hero room. Flow through the house logically (entry → living → kitchen → bedrooms → outdoor). 3–4s per photo.",
+    aiGuidance: "Open with the best exterior or hero room. Flow through the house logically (entry → living → kitchen → bedrooms → outdoor). 3-4s per photo.",
     slots: [
       { id: "address", kind: "text", description: "Property address", required: true },
       { id: "price", kind: "text", description: "Price" },
@@ -105,7 +105,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Instagram", "LinkedIn", "YouTube"],
     aspectRatio: "16:9",
     idealDuration: [30, 120],
-    aiGuidance: "Cut on the beat (1–2s per shot). Mix wide crowd shots with close-ups of reactions. Peak energy in the last third.",
+    aiGuidance: "Cut on the beat (1-2s per shot). Mix wide crowd shots with close-ups of reactions. Peak energy in the last third.",
     slots: [
       { id: "event", kind: "text", description: "Event name", required: true },
       { id: "date", kind: "text", description: "Date / location" },

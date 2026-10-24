@@ -12,7 +12,7 @@ export const PERSONAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Instagram", "Facebook", "YouTube", "Private"],
     aspectRatio: "16:9",
     idealDuration: [60, 240],
-    aiGuidance: "Slow pacing (4–6s shots), emotional arc: preparation → ceremony → celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available.",
+    aiGuidance: "Slow pacing (4-6s shots), emotional arc: preparation → ceremony → celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available.",
     slots: [
       { id: "names", kind: "text", description: "e.g. 'Anna & Ben'", required: true },
       { id: "date", kind: "text", description: "Date / place" },
@@ -37,7 +37,7 @@ export const PERSONAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["YouTube", "Instagram", "TikTok"],
     aspectRatio: "16:9",
     idealDuration: [20, 90],
-    aiGuidance: "Establishing wide shot first, then details, then people. Speed ramps (speed 1.5–2) on movement shots. Title on the most iconic shot.",
+    aiGuidance: "Establishing wide shot first, then details, then people. Speed ramps (speed 1.5-2) on movement shots. Title on the most iconic shot.",
     slots: [
       { id: "place", kind: "text", description: "Destination name", required: true },
       { id: "kicker", kind: "text", description: "e.g. coordinates or 'Day 1'" },

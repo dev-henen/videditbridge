@@ -12,39 +12,39 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 | id | Name | Format | Length | Category |
 |---|---|---|---|---|
-| [`viral-talking-head`](#viral-talking-head) | Viral Talking Head | 9:16 | 20–60s | social |
-| [`podcast-clip`](#podcast-clip) | Podcast Clip | 9:16 | 30–90s | social |
-| [`listicle-countdown`](#listicle-countdown) | Listicle Countdown | 9:16 | 15–45s | social |
-| [`photo-story`](#photo-story) | Photo Story | 9:16 | 10–60s | personal |
-| [`quote-card`](#quote-card) | Quote Card | 9:16 | 5–10s | social |
-| [`product-showcase`](#product-showcase) | Product Showcase | 9:16 | 15–30s | promo |
-| [`day-in-the-life`](#day-in-the-life) | Day in the Life | 9:16 | 15–60s | personal |
-| [`before-after`](#before-after) | Before / After | 9:16 | 6–15s | social |
-| [`reaction-split`](#reaction-split) | Reaction Split-Screen | 9:16 | 15–60s | entertainment |
-| [`motivational-montage`](#motivational-montage) | Motivational Montage | 9:16 | 10–30s | social |
-| [`meme`](#meme) | Meme | 1:1 | 3–15s | entertainment |
-| [`workout-routine`](#workout-routine) | Workout Routine | 9:16 | 20–60s | education |
-| [`recipe-steps`](#recipe-steps) | Recipe Steps | 9:16 | 20–60s | education |
-| [`gaming-highlights`](#gaming-highlights) | Gaming Highlights | 9:16 | 15–60s | entertainment |
-| [`news-flash`](#news-flash) | News Flash | 9:16 | 20–60s | social |
-| [`kinetic-typography`](#kinetic-typography) | Kinetic Typography | 9:16 | 8–30s | promo |
-| [`youtube-intro`](#youtube-intro) | YouTube Intro | 16:9 | 3–7s | youtube |
-| [`youtube-tutorial`](#youtube-tutorial) | YouTube Tutorial | 16:9 | 120–900s | education |
-| [`video-essay`](#video-essay) | Video Essay / Explainer | 16:9 | 180–1200s | youtube |
-| [`documentary`](#documentary) | Documentary | 16:9 | 120–1800s | youtube |
-| [`interview`](#interview) | Interview | 16:9 | 60–1800s | youtube |
-| [`movie-trailer`](#movie-trailer) | Movie Trailer | 16:9 | 30–120s | promo |
-| [`podcast-audiogram`](#podcast-audiogram) | Podcast Audiogram | 1:1 | 30–90s | social |
-| [`slides-voiceover`](#slides-voiceover) | Slides + Voice-over | 16:9 | 60–900s | education |
-| [`testimonial`](#testimonial) | Customer Testimonial | 4:5 | 20–60s | business |
-| [`product-demo`](#product-demo) | Product Demo | 16:9 | 30–180s | business |
-| [`real-estate-tour`](#real-estate-tour) | Real Estate Tour | 16:9 | 30–90s | business |
-| [`event-recap`](#event-recap) | Event Recap | 16:9 | 30–120s | business |
-| [`announcement`](#announcement) | Announcement | 1:1 | 6–15s | promo |
-| [`linkedin-thought-leader`](#linkedin-thought-leader) | LinkedIn Thought Leader | 1:1 | 30–90s | business |
-| [`wedding-memories`](#wedding-memories) | Wedding / Memories Film | 16:9 | 60–240s | personal |
-| [`travel-vlog`](#travel-vlog) | Travel Vlog Opener | 16:9 | 20–90s | personal |
-| [`birthday-greeting`](#birthday-greeting) | Birthday Greeting | 9:16 | 10–40s | personal |
+| [`viral-talking-head`](#viral-talking-head) | Viral Talking Head | 9:16 | 20-60s | social |
+| [`podcast-clip`](#podcast-clip) | Podcast Clip | 9:16 | 30-90s | social |
+| [`listicle-countdown`](#listicle-countdown) | Listicle Countdown | 9:16 | 15-45s | social |
+| [`photo-story`](#photo-story) | Photo Story | 9:16 | 10-60s | personal |
+| [`quote-card`](#quote-card) | Quote Card | 9:16 | 5-10s | social |
+| [`product-showcase`](#product-showcase) | Product Showcase | 9:16 | 15-30s | promo |
+| [`day-in-the-life`](#day-in-the-life) | Day in the Life | 9:16 | 15-60s | personal |
+| [`before-after`](#before-after) | Before / After | 9:16 | 6-15s | social |
+| [`reaction-split`](#reaction-split) | Reaction Split-Screen | 9:16 | 15-60s | entertainment |
+| [`motivational-montage`](#motivational-montage) | Motivational Montage | 9:16 | 10-30s | social |
+| [`meme`](#meme) | Meme | 1:1 | 3-15s | entertainment |
+| [`workout-routine`](#workout-routine) | Workout Routine | 9:16 | 20-60s | education |
+| [`recipe-steps`](#recipe-steps) | Recipe Steps | 9:16 | 20-60s | education |
+| [`gaming-highlights`](#gaming-highlights) | Gaming Highlights | 9:16 | 15-60s | entertainment |
+| [`news-flash`](#news-flash) | News Flash | 9:16 | 20-60s | social |
+| [`kinetic-typography`](#kinetic-typography) | Kinetic Typography | 9:16 | 8-30s | promo |
+| [`youtube-intro`](#youtube-intro) | YouTube Intro | 16:9 | 3-7s | youtube |
+| [`youtube-tutorial`](#youtube-tutorial) | YouTube Tutorial | 16:9 | 120-900s | education |
+| [`video-essay`](#video-essay) | Video Essay / Explainer | 16:9 | 180-1200s | youtube |
+| [`documentary`](#documentary) | Documentary | 16:9 | 120-1800s | youtube |
+| [`interview`](#interview) | Interview | 16:9 | 60-1800s | youtube |
+| [`movie-trailer`](#movie-trailer) | Movie Trailer | 16:9 | 30-120s | promo |
+| [`podcast-audiogram`](#podcast-audiogram) | Podcast Audiogram | 1:1 | 30-90s | social |
+| [`slides-voiceover`](#slides-voiceover) | Slides + Voice-over | 16:9 | 60-900s | education |
+| [`testimonial`](#testimonial) | Customer Testimonial | 4:5 | 20-60s | business |
+| [`product-demo`](#product-demo) | Product Demo | 16:9 | 30-180s | business |
+| [`real-estate-tour`](#real-estate-tour) | Real Estate Tour | 16:9 | 30-90s | business |
+| [`event-recap`](#event-recap) | Event Recap | 16:9 | 30-120s | business |
+| [`announcement`](#announcement) | Announcement | 1:1 | 6-15s | promo |
+| [`linkedin-thought-leader`](#linkedin-thought-leader) | LinkedIn Thought Leader | 1:1 | 30-90s | business |
+| [`wedding-memories`](#wedding-memories) | Wedding / Memories Film | 16:9 | 60-240s | personal |
+| [`travel-vlog`](#travel-vlog) | Travel Vlog Opener | 16:9 | 20-90s | personal |
+| [`birthday-greeting`](#birthday-greeting) | Birthday Greeting | 9:16 | 10-40s | personal |
 
 ## Social
 
@@ -52,12 +52,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Viral Talking Head**: Single-camera talking head turned into a high-retention short: hook text, jump-zooms, bold word-highlight captions, CTA end card.
 
-- **Format:** 9:16 at 30fps, ideally 20–60s
+- **Format:** 9:16 at 30fps, ideally 20-60s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions `bold-pop`, transition hard cut, grade `vibrant`, fonts Arial Black / Arial
 - **Tags:** talking head, tiktok, reels, shorts, hormozi, captions
 
-**Editing guidance:** Open on the strongest claim in the first 3 seconds — use the transcript to find it and move it first if needed. Remove every filler word and pause longer than ~0.4s (cleanup_speech with maxPause 0.4). Keep sentences punchy; cut tangents. Hook text should be ≤7 words and create curiosity. Keep the music low (ducked). End with a clear CTA.
+**Editing guidance:** Open on the strongest claim in the first 3 seconds, use the transcript to find it and move it first if needed. Remove every filler word and pause longer than ~0.4s (cleanup_speech with maxPause 0.4). Keep sentences punchy; cut tangents. Hook text should be ≤7 words and create curiosity. Keep the music low (ducked). End with a clear CTA.
 
 **Inputs**
 
@@ -79,12 +79,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Podcast Clip**: Landscape podcast footage reframed for vertical with a blurred fill, title banner and karaoke-style captions.
 
-- **Format:** 9:16 at 30fps, ideally 30–90s
+- **Format:** 9:16 at 30fps, ideally 30-90s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts, LinkedIn
 - **Look:** captions `karaoke`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** podcast, interview, clip, repurpose
 
-**Editing guidance:** Pick a self-contained 30–90s moment with a clear point or a strong opinion (search the transcript for emotional or contrarian statements). Start mid-energy, not at a greeting. Trim dead air but keep natural conversational rhythm. The title should frame the takeaway as a question or bold claim.
+**Editing guidance:** Pick a self-contained 30-90s moment with a clear point or a strong opinion (search the transcript for emotional or contrarian statements). Start mid-energy, not at a greeting. Trim dead air but keep natural conversational rhythm. The title should frame the takeaway as a question or bold claim.
 
 **Inputs**
 
@@ -104,12 +104,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Listicle Countdown**: "Top N" list: title card, one scene per item with a big number badge and label, then a CTA.
 
-- **Format:** 9:16 at 30fps, ideally 15–45s
+- **Format:** 9:16 at 30fps, ideally 15-45s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions none, transition `slideup`, grade `vibrant`, fonts Arial Black / Arial
 - **Tags:** list, top 5, ranking, countdown, tips
 
-**Editing guidance:** Order items so the best one is last (or first for impatient audiences). Each item 2.5–4s. Labels ≤4 words. Use energetic music; keep transitions consistent (slideup). If items have voice-over, fit scene length to the narration.
+**Editing guidance:** Order items so the best one is last (or first for impatient audiences). Each item 2.5-4s. Labels ≤4 words. Use energetic music; keep transitions consistent (slideup). If items have voice-over, fit scene length to the narration.
 
 **Inputs**
 
@@ -130,12 +130,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Quote Card**: Animated quote on a gradient (or footage) background. No filming required.
 
-- **Format:** 9:16 at 30fps, ideally 5–10s
+- **Format:** 9:16 at 30fps, ideally 5-10s
 - **Platforms:** Instagram, TikTok, LinkedIn, X
 - **Look:** captions none, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** quote, motivation, text only, testimonial
 
-**Editing guidance:** Keep the quote under ~25 words; split long quotes into two cards. Pair calm music. 6–8s gives time to read.
+**Editing guidance:** Keep the quote under ~25 words; split long quotes into two cards. Pair calm music. 6-8s gives time to read.
 
 **Inputs**
 
@@ -154,12 +154,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Before / After**: Transformation reveal with BEFORE and AFTER labels and a wipe.
 
-- **Format:** 9:16 at 30fps, ideally 6–15s
+- **Format:** 9:16 at 30fps, ideally 6-15s
 - **Platforms:** TikTok, Instagram Reels
 - **Look:** captions none, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** transformation, makeover, renovation, fitness, editing
 
-**Editing guidance:** Hold the BEFORE long enough to register (2–3s), then reveal. Match framing between before and after shots if possible.
+**Editing guidance:** Hold the BEFORE long enough to register (2-3s), then reveal. Match framing between before and after shots if possible.
 
 **Inputs**
 
@@ -179,7 +179,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Motivational Montage**: Moody high-contrast b-roll with one bold line per shot and an epic music bed.
 
-- **Format:** 9:16 at 30fps, ideally 10–30s
+- **Format:** 9:16 at 30fps, ideally 10-30s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions none, transition `fadeblack`, grade `moody` + `grain` + `vignette`, fonts Impact / Arial
 - **Tags:** motivation, quotes, mindset, fitness, b-roll
@@ -202,12 +202,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **News Flash**: Breaking-news style short: red BREAKING bar, headline, boxed captions and source footer.
 
-- **Format:** 9:16 at 30fps, ideally 20–60s
+- **Format:** 9:16 at 30fps, ideally 20-60s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts, X
 - **Look:** captions `boxed`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** news, update, explainer, current events
 
-**Editing guidance:** Lead with the headline fact. Neutral tone, no clickbait. Cite the source in the footer. Cut b-roll every 3–4s to illustrate.
+**Editing guidance:** Lead with the headline fact. Neutral tone, no clickbait. Cite the source in the footer. Cut b-roll every 3-4s to illustrate.
 
 **Inputs**
 
@@ -225,12 +225,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Podcast Audiogram**: Audio-only podcast turned into video: cover art with slow zoom, show title and karaoke captions.
 
-- **Format:** 1:1 at 30fps, ideally 30–90s
+- **Format:** 1:1 at 30fps, ideally 30-90s
 - **Platforms:** Instagram, LinkedIn, X, YouTube
 - **Look:** captions `karaoke`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** podcast, audiogram, audio, repurpose
 
-**Editing guidance:** Pick a 30–90s quotable segment of the audio (use the transcript). Trim the audio input with in/duration.
+**Editing guidance:** Pick a 30-90s quotable segment of the audio (use the transcript). Trim the audio input with in/duration.
 
 **Inputs**
 
@@ -250,12 +250,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Photo Story**: Photos (or clips) with gentle Ken Burns motion, crossfades, warm grade and music. Optional caption per photo.
 
-- **Format:** 9:16 at 30fps, ideally 10–60s
+- **Format:** 9:16 at 30fps, ideally 10-60s
 - **Platforms:** Instagram Reels, TikTok, Facebook
 - **Look:** captions none, transition `fade`, grade `warm` + `vignette`, fonts Georgia / Georgia
 - **Tags:** slideshow, photos, memories, travel, story
 
-**Editing guidance:** 2.5–4s per photo; vary Ken Burns direction for rhythm. Order photos chronologically or by emotional arc. Captions short and lowercase-friendly. Match cuts to the music beat if a BPM is known.
+**Editing guidance:** 2.5-4s per photo; vary Ken Burns direction for rhythm. Order photos chronologically or by emotional arc. Captions short and lowercase-friendly. Match cuts to the music beat if a BPM is known.
 
 **Inputs**
 
@@ -274,12 +274,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Day in the Life**: Fast-paced vlog montage: short clips with time-stamp labels, bright grade and music.
 
-- **Format:** 9:16 at 30fps, ideally 15–60s
+- **Format:** 9:16 at 30fps, ideally 15-60s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions none, transition hard cut, grade `bright`, fonts Arial Black / Arial
 - **Tags:** vlog, montage, routine, lifestyle
 
-**Editing guidance:** 1–2.5s per moment; cut on action. Labels like '6:00 AM' or 'coffee first'. Use the clip's natural audio sparingly (mute by default). Keep chronological order.
+**Editing guidance:** 1-2.5s per moment; cut on action. Labels like '6:00 AM' or 'coffee first'. Use the clip's natural audio sparingly (mute by default). Keep chronological order.
 
 **Inputs**
 
@@ -297,12 +297,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Wedding / Memories Film**: Soft, romantic montage: faded warm grade, slow white dips, elegant serif names and date.
 
-- **Format:** 16:9 at 30fps, ideally 60–240s
+- **Format:** 16:9 at 30fps, ideally 60-240s
 - **Platforms:** Instagram, Facebook, YouTube, Private
 - **Look:** captions none, transition `fadewhite`, grade `faded` + `warm`, fonts Georgia / Georgia
 - **Tags:** wedding, anniversary, memories, family, romantic
 
-**Editing guidance:** Slow pacing (4–6s shots), emotional arc: preparation → ceremony → celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available.
+**Editing guidance:** Slow pacing (4-6s shots), emotional arc: preparation → ceremony → celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available.
 
 **Inputs**
 
@@ -322,12 +322,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Travel Vlog Opener**: Cinematic travel montage with location title, coordinates-style kicker and teal/orange grade.
 
-- **Format:** 16:9 at 30fps, ideally 20–90s
+- **Format:** 16:9 at 30fps, ideally 20-90s
 - **Platforms:** YouTube, Instagram, TikTok
 - **Look:** captions none, transition `smoothleft`, grade `tealOrange`, fonts Arial Black / Arial
 - **Tags:** travel, vlog, cinematic, destination, adventure
 
-**Editing guidance:** Establishing wide shot first, then details, then people. Speed ramps (speed 1.5–2) on movement shots. Title on the most iconic shot.
+**Editing guidance:** Establishing wide shot first, then details, then people. Speed ramps (speed 1.5-2) on movement shots. Title on the most iconic shot.
 
 **Inputs**
 
@@ -347,7 +347,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Birthday Greeting**: Colorful celebration card with photos, a countdown and a big happy-birthday title.
 
-- **Format:** 9:16 at 30fps, ideally 10–40s
+- **Format:** 9:16 at 30fps, ideally 10-40s
 - **Platforms:** WhatsApp, Instagram, Private
 - **Look:** captions none, transition `circleopen`, grade none, fonts Arial Black / Arial
 - **Tags:** birthday, celebration, greeting, party, family
@@ -373,14 +373,14 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 ### product-showcase
 
-**Product Showcase**: Short-form product ad: hook, 3–5 feature beats with labels, price reveal and a shop-now CTA.
+**Product Showcase**: Short-form product ad: hook, 3-5 feature beats with labels, price reveal and a shop-now CTA.
 
-- **Format:** 9:16 at 30fps, ideally 15–30s
+- **Format:** 9:16 at 30fps, ideally 15-30s
 - **Platforms:** TikTok, Instagram Reels, Facebook Ads
 - **Look:** captions none, transition `whip`, grade `vibrant`, fonts Arial Black / Arial
 - **Tags:** ecommerce, product, ad, ugc, shop
 
-**Editing guidance:** Problem → product → proof → offer. First shot must show the product in use within 1s. Feature labels are benefits, not specs ("Charges in 10 min" not "65W"). Keep each feature 2–3s. End with price + urgency.
+**Editing guidance:** Problem → product → proof → offer. First shot must show the product in use within 1s. Feature labels are benefits, not specs ("Charges in 10 min" not "65W"). Keep each feature 2-3s. End with price + urgency.
 
 **Inputs**
 
@@ -389,7 +389,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 | `hook` | text | yes | Opening hook / problem statement |
 | `hero` | media | yes | Hero shot of the product |
 | `features` | list |  | Feature beats Fields: `media` (Clip/image showing the feature), `label` (Benefit text). |
-| `price` | text |  | Price or offer, e.g. '$49 — 30% off' |
+| `price` | text |  | Price or offer, e.g. '$49, 30% off' |
 | `cta` | text |  | CTA text, default 'Shop now' |
 | `music` | audio |  | Background music track (optional) |
 
@@ -403,7 +403,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Kinetic Typography**: Text-only animated video: one phrase at a time with varied animations over a gradient. No footage needed.
 
-- **Format:** 9:16 at 30fps, ideally 8–30s
+- **Format:** 9:16 at 30fps, ideally 8-30s
 - **Platforms:** Everywhere
 - **Look:** captions none, transition `slideup`, grade none, fonts Arial Black / Arial
 - **Tags:** text, typography, lyric, announcement, no footage
@@ -426,12 +426,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Movie Trailer**: Dramatic trailer: fast cuts, dip-to-black between beats, big spaced title cards, teal/orange grade.
 
-- **Format:** 16:9 at 30fps, ideally 30–120s
+- **Format:** 16:9 at 30fps, ideally 30-120s
 - **Platforms:** YouTube, Social
 - **Look:** captions none, transition `fadeblack`, grade `tealOrange` + `letterbox`, fonts Georgia / Arial
 - **Tags:** trailer, teaser, cinematic, dramatic, launch
 
-**Editing guidance:** Three acts: setup (slow) → conflict (faster) → climax (rapid cuts, 0.5–1s) → title → date. Text cards between shots carry the story. Sync cuts to music hits.
+**Editing guidance:** Three acts: setup (slow) → conflict (faster) → climax (rapid cuts, 0.5-1s) → title → date. Text cards between shots carry the story. Sync cuts to music hits.
 
 **Inputs**
 
@@ -451,7 +451,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Announcement**: Square text-driven announcement (launch, hiring, sale, milestone) with animated headline, details and CTA.
 
-- **Format:** 1:1 at 30fps, ideally 6–15s
+- **Format:** 1:1 at 30fps, ideally 6-15s
 - **Platforms:** LinkedIn, Instagram, X
 - **Look:** captions none, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** announcement, launch, hiring, sale, milestone, no footage
@@ -480,7 +480,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Reaction Split-Screen**: Content on top, your reaction on the bottom half. Duets, reactions, commentary.
 
-- **Format:** 9:16 at 30fps, ideally 15–60s
+- **Format:** 9:16 at 30fps, ideally 15-60s
 - **Platforms:** TikTok, YouTube Shorts
 - **Look:** captions `green-highlight`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** reaction, duet, split screen, commentary
@@ -502,7 +502,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Meme**: Classic Impact top/bottom text over a clip or image.
 
-- **Format:** 1:1 at 30fps, ideally 3–15s
+- **Format:** 1:1 at 30fps, ideally 3-15s
 - **Platforms:** Everywhere
 - **Look:** captions none, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** meme, funny, impact
@@ -525,12 +525,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Gaming Highlights**: Clip compilation with glitch transitions, RGB split, shake on impact and word-by-word captions.
 
-- **Format:** 9:16 at 30fps, ideally 15–60s
+- **Format:** 9:16 at 30fps, ideally 15-60s
 - **Platforms:** TikTok, YouTube Shorts, Twitch
 - **Look:** captions `word-by-word`, transition `glitch`, grade `vibrant`, fonts Impact / Arial
 - **Tags:** gaming, highlights, montage, clips, esports
 
-**Editing guidance:** Only the best moments, 2–6s each, cut right before the action. Put the best play last. Label each clip with a short hype caption.
+**Editing guidance:** Only the best moments, 2-6s each, cut right before the action. Put the best play last. Label each clip with a short hype caption.
 
 **Inputs**
 
@@ -551,12 +551,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Workout Routine**: Exercise-by-exercise routine with countdown intro, exercise names and rep counts.
 
-- **Format:** 9:16 at 30fps, ideally 20–60s
+- **Format:** 9:16 at 30fps, ideally 20-60s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions none, transition `slideleft`, grade `adjust`, fonts Arial Black / Arial
 - **Tags:** fitness, workout, gym, routine, exercise
 
-**Editing guidance:** Each exercise 3–5s showing the full movement. Name + reps clearly visible. High-energy music.
+**Editing guidance:** Each exercise 3-5s showing the full movement. Name + reps clearly visible. High-energy music.
 
 **Inputs**
 
@@ -575,12 +575,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Recipe Steps**: Overhead cooking video: dish reveal, numbered steps with captions, final plate.
 
-- **Format:** 9:16 at 30fps, ideally 20–60s
+- **Format:** 9:16 at 30fps, ideally 20-60s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions none, transition `fade`, grade `warm`, fonts Arial Black / Arial
 - **Tags:** recipe, cooking, food, how-to, steps
 
-**Editing guidance:** Show the finished dish first (hook), then steps. Speed up long actions (stirring) with speed 1.5–3x. Step text = verb first ('Whisk eggs and sugar').
+**Editing guidance:** Show the finished dish first (hook), then steps. Speed up long actions (stirring) with speed 1.5-3x. Step text = verb first ('Whisk eggs and sugar').
 
 **Inputs**
 
@@ -601,7 +601,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **YouTube Tutorial**: Screen recording or talking-head tutorial: title card, the lesson with a subscribe reminder, subtle captions, end screen.
 
-- **Format:** 16:9 at 30fps, ideally 120–900s
+- **Format:** 16:9 at 30fps, ideally 120-900s
 - **Platforms:** YouTube
 - **Look:** captions `subtle-highlight`, transition `fade`, grade none, fonts Arial Black / Arial
 - **Tags:** tutorial, how-to, screen recording, course, explainer
@@ -628,12 +628,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Slides + Voice-over**: Course-style lesson: slide images with narration and captions; each slide lasts as long as its narration.
 
-- **Format:** 16:9 at 30fps, ideally 60–900s
+- **Format:** 16:9 at 30fps, ideally 60-900s
 - **Platforms:** YouTube, LMS, LinkedIn Learning
 - **Look:** captions `boxed`, transition `fade`, grade none, fonts Arial Black / Arial
 - **Tags:** course, lesson, slides, presentation, e-learning
 
-**Editing guidance:** Set each slide's seconds from the narration timing (search the voice-over transcript for the first words of each slide's script). Avoid more than 30s on one slide—split or zoom into details.
+**Editing guidance:** Set each slide's seconds from the narration timing (search the voice-over transcript for the first words of each slide's script). Avoid more than 30s on one slide-split or zoom into details.
 
 **Inputs**
 
@@ -655,7 +655,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **YouTube Intro**: 5-second channel intro: logo/title reveal over footage or gradient with a whoosh-friendly zoom transition.
 
-- **Format:** 16:9 at 30fps, ideally 3–7s
+- **Format:** 16:9 at 30fps, ideally 3-7s
 - **Platforms:** YouTube
 - **Look:** captions none, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** intro, channel, branding, opener
@@ -679,12 +679,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Video Essay / Explainer**: Narrated sections, each opening with a chapter title over b-roll. Cinematic subtitles.
 
-- **Format:** 16:9 at 30fps, ideally 180–1200s
+- **Format:** 16:9 at 30fps, ideally 180-1200s
 - **Platforms:** YouTube
 - **Look:** captions `cinematic`, transition `fadeblack`, grade `cinematic`, fonts Georgia / Georgia
 - **Tags:** essay, explainer, documentary, narration, chapters
 
-**Editing guidance:** Structure: hook question → context → 3–5 sections → conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4–8s. Fit section lengths to the voice-over sentences.
+**Editing guidance:** Structure: hook question → context → 3-5 sections → conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4-8s. Fit section lengths to the voice-over sentences.
 
 **Inputs**
 
@@ -704,12 +704,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Documentary**: Cinematic letterboxed look, teal/orange grade, slow dissolves, serif subtitles and lower-thirds for interviewees.
 
-- **Format:** 16:9 at 30fps, ideally 120–1800s
+- **Format:** 16:9 at 30fps, ideally 120-1800s
 - **Platforms:** YouTube, Vimeo, Film festivals
 - **Look:** captions `cinematic`, transition `fade`, grade `tealOrange` + `grain` + `letterbox`, fonts Georgia / Georgia
 - **Tags:** documentary, cinematic, film, interview, story
 
-**Editing guidance:** Let shots breathe (5–10s). Alternate interview and b-roll. Introduce each interviewee once with a lower third. Use silence and music for emotional beats.
+**Editing guidance:** Let shots breathe (5-10s). Alternate interview and b-roll. Introduce each interviewee once with a lower third. Use silence and music for emotional beats.
 
 **Inputs**
 
@@ -728,7 +728,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Interview**: Sit-down interview with name lower-third, topic label and clean subtitles.
 
-- **Format:** 16:9 at 30fps, ideally 60–1800s
+- **Format:** 16:9 at 30fps, ideally 60-1800s
 - **Platforms:** YouTube, LinkedIn
 - **Look:** captions `classic`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** interview, q&a, conversation
@@ -754,7 +754,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Customer Testimonial**: Customer speaking to camera with name/company lower-third, highlighted key quote, logo and boxed captions.
 
-- **Format:** 4:5 at 30fps, ideally 20–60s
+- **Format:** 4:5 at 30fps, ideally 20-60s
 - **Platforms:** LinkedIn, Website, Instagram
 - **Look:** captions `boxed-highlight`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** testimonial, review, case study, social proof
@@ -780,7 +780,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Product Demo**: SaaS/app walkthrough: title card, screen recording with feature callouts, CTA end card.
 
-- **Format:** 16:9 at 30fps, ideally 30–180s
+- **Format:** 16:9 at 30fps, ideally 30-180s
 - **Platforms:** Website, YouTube, Product Hunt, LinkedIn
 - **Look:** captions `subtle-highlight`, transition `fade`, grade none, fonts Arial Black / Arial
 - **Tags:** saas, demo, walkthrough, screen recording, launch
@@ -808,12 +808,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Real Estate Tour**: Property tour from photos/clips with slow pans, room labels, address/price card and agent end card.
 
-- **Format:** 16:9 at 30fps, ideally 30–90s
+- **Format:** 16:9 at 30fps, ideally 30-90s
 - **Platforms:** Instagram, Facebook, YouTube, MLS
 - **Look:** captions none, transition `fade`, grade `bright`, fonts Georgia / Arial
 - **Tags:** real estate, property, listing, tour, home
 
-**Editing guidance:** Open with the best exterior or hero room. Flow through the house logically (entry → living → kitchen → bedrooms → outdoor). 3–4s per photo.
+**Editing guidance:** Open with the best exterior or hero room. Flow through the house logically (entry → living → kitchen → bedrooms → outdoor). 3-4s per photo.
 
 **Inputs**
 
@@ -836,12 +836,12 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **Event Recap**: Energetic highlight reel of an event: title with date, beat-pulsed fast cuts, closing thank-you.
 
-- **Format:** 16:9 at 30fps, ideally 30–120s
+- **Format:** 16:9 at 30fps, ideally 30-120s
 - **Platforms:** Instagram, LinkedIn, YouTube
 - **Look:** captions none, transition `zoomin`, grade `vibrant`, fonts Arial Black / Arial
 - **Tags:** event, conference, recap, highlights, aftermovie
 
-**Editing guidance:** Cut on the beat (1–2s per shot). Mix wide crowd shots with close-ups of reactions. Peak energy in the last third.
+**Editing guidance:** Cut on the beat (1-2s per shot). Mix wide crowd shots with close-ups of reactions. Peak energy in the last third.
 
 **Inputs**
 
@@ -862,7 +862,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 **LinkedIn Thought Leader**: Square talking head with a topic banner, clean boxed captions and name lower-third. Professional tone.
 
-- **Format:** 1:1 at 30fps, ideally 30–90s
+- **Format:** 1:1 at 30fps, ideally 30-90s
 - **Platforms:** LinkedIn
 - **Look:** captions `boxed-highlight`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** linkedin, talking head, b2b, founder, professional

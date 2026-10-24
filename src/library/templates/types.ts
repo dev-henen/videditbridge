@@ -78,7 +78,7 @@ export const SceneBackgroundSchema = z.union([
 export const SceneSpecSchema = z.object({
   id: z.string(),
   name: z.string(),
-  purpose: z.string().describe("What this scene must achieve — guidance for the AI"),
+  purpose: z.string().describe("What this scene must achieve, guidance for the AI"),
   repeat: z.string().optional().describe("Repeat this scene once per item of the given list/media slot"),
   optional: z.boolean().default(false).describe("Skip when the slots it references are empty"),
   duration: z.number().positive().default(3),

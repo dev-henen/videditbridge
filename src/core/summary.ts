@@ -5,7 +5,7 @@ import { formatTime } from "./util.js";
 const fx = (effects: Effect[]) =>
   effects.length ? ` fx:[${effects.map((e) => (e.params && Object.keys(e.params).length ? `${e.type}(${JSON.stringify(e.params)})` : e.type)).join(", ")}]` : "";
 
-const span = (start: number, end: number) => `${formatTime(start)}–${formatTime(end)}`;
+const span = (start: number, end: number) => `${formatTime(start)}-${formatTime(end)}`;
 
 /**
  * Compact, human/AI-readable description of the edit: what plays when.
@@ -22,7 +22,7 @@ export function summarizeProject(project: Project): string {
     lines.push(`⚠ Timeline cannot be computed: ${(e as Error).message}`);
   }
   lines.push(
-    `Project "${project.name}" (${project.id}) — ${s.width}x${s.height} @ ${s.fps}fps` +
+    `Project "${project.name}" (${project.id}): ${s.width}x${s.height} @ ${s.fps}fps` +
       (timeline ? `, duration ${formatTime(timeline.duration)} (${timeline.duration}s)` : ""),
   );
   if (typeof project.metadata.template === "string") lines.push(`Template: ${project.metadata.template}`);
@@ -49,7 +49,7 @@ export function summarizeProject(project: Project): string {
     for (const tc of timeline.clips) {
       const c = tc.clip;
       const tr = c.transition && tc.index > 0 ? ` ⟵${c.transition.type}(${tc.transitionDuration}s)` : "";
-      const src = tc.asset.type === "video" ? ` src ${c.in}–${+(c.in + tc.sourceDuration).toFixed(3)}s` : "";
+      const src = tc.asset.type === "video" ? ` src ${c.in}-${+(c.in + tc.sourceDuration).toFixed(3)}s` : "";
       const extra = [c.speed !== 1 && `speed ${c.speed}x`, c.muted && "muted", c.volume !== 1 && `vol ${c.volume}`, c.fit !== "cover" && `fit ${c.fit}`]
         .filter(Boolean)
         .join(", ");

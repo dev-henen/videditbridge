@@ -52,7 +52,7 @@ export function registerTemplate(spec: TemplateSpecInput, opts: { replace?: bool
 /** Plain-text brief of a template: what it needs and how to edit toward it. */
 export function describeTemplate(t: TemplateSpec): string {
   const lines = [
-    `${t.name} (${t.id}) — ${t.aspectRatio}, ${t.idealDuration[0]}–${t.idealDuration[1]}s, ${t.category}`,
+    `${t.name} (${t.id}): ${t.aspectRatio}, ${t.idealDuration[0]}-${t.idealDuration[1]}s, ${t.category}`,
     t.description,
     `Platforms: ${t.platforms.join(", ") || "any"}`,
     `How to edit: ${t.aiGuidance}`,
@@ -66,7 +66,7 @@ export function describeTemplate(t: TemplateSpec): string {
     ...t.scenes.map(
       (s) =>
         `  - ${s.name}${s.repeat ? ` (×each ${s.repeat})` : ""}${s.optional ? " [optional]" : ""}: ${s.purpose}` +
-        `${s.fitMedia ? " — length follows media" : ` — ${s.duration}s`}`,
+        `${s.fitMedia ? ", length follows media" : `, ${s.duration}s`}`,
     ),
     `Look: captions ${t.captions?.style ?? "none"}; transition ${t.transition?.type ?? "cut"}; grade ${t.grade.map((g) => g.type).join("+") || "none"}; fonts ${t.theme.headingFont}/${t.theme.fontFamily}`,
   ];

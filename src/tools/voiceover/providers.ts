@@ -8,7 +8,7 @@ export interface VoiceoverResult {
   /** Path of the written audio file. */
   path: string;
   duration: number;
-  /** Word timings — exact when the provider returns alignment, otherwise estimated. */
+  /** Word timings, exact when the provider returns alignment, otherwise estimated. */
   transcript: Transcript;
 }
 

@@ -29,7 +29,8 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "ave": "./dist/cli.js"
+    "ave": "./dist/cli.js",
+    "ave-host": "./dist/host/main.js"
   },
   "files": [
     "dist"
@@ -41,17 +42,18 @@
     "test:watch": "vitest",
     "cli": "tsx src/cli.ts",
     "docs": "tsx scripts/gen-docs.ts",
-    "docs:check": "tsx scripts/gen-docs.ts --check"
+    "docs:check": "tsx scripts/gen-docs.ts --check",
+    "host": "tsx src/host/main.ts"
   },
   "engines": {
     "node": ">=20"
   },
   "license": "MIT",
   "dependencies": {
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@anthropic-ai/sdk": "^1.3.0"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^1.3.0",
     "@types/node": "^22.20.5",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

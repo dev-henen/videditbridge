@@ -1,4 +1,4 @@
-# ai-video-editor — notes for Claude
+# ai-video-editor, notes for Claude
 
 TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Rendering is FFmpeg via `ffmpeg-static`.
 
@@ -15,6 +15,17 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 - Captions are derived at render time from `project.transcripts` through clip mapping (`tools/captions/build.ts#timelineWords`). Don't store timeline-time captions when transcripts exist.
 - Catalog items (effects, transitions, animations, caption styles, components, templates) are self-describing. Descriptions are read by Claude, so keep them clear and specific.
 - Templates are pure JSON specs (`library/templates/catalog/*`) interpreted by `builder.ts`. Add new looks as data, not code.
+
+## Desktop app (app/VideoEditor, C# WPF)
+- It talks to `src/host/main.ts` over stdio JSON-RPC. stdout carries protocol messages only; the host routes `console.log` to stderr. To add a host method, define it in `main.ts` and call it from `MainViewModel`.
+- Projects live in `projects/<slug>/` (gitignored app storage), and the host autosaves them.
+- UI rules from the user:
+  - compact default window (960x460)
+  - monochrome palette, no purple or other color accents
+  - icon glyphs from Segoe Fluent Icons
+  - no emoji, no em or en dashes in any text
+  - the timeline is a compact preview strip by default
+- Build with `dotnet build app/VideoEditor`. Test the host with `test/host.integration.test.ts`.
 
 ## Renderer gotchas (compile.ts)
 - Every primary segment ends with `fps`, `format=yuv420p`, `setsar=1` and `settb=AVTB`. `concat` outputs AV_TIME_BASE, and `xfade` fails if the timebases differ.

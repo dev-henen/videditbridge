@@ -20,14 +20,16 @@ export interface PreviewSource {
   readonly history: { action: string; at: string }[];
   readonly renders: { kind: string; path: string; at: string; revision: number; time?: number }[];
   readonly log: { level: string; message: string; at: string }[];
+  /** Live activities (tool calls, renders), oldest first. */
+  readonly activities?: { id: string; kind: string; label: string; status: string; progress?: number; detail?: string; startedAt: string; endedAt?: string }[];
   readonly options: { baseDir: string; outputDir: string; ffmpegPath?: string; fontsDir?: string };
   readonly canUndo?: boolean;
   readonly canRedo?: boolean;
   undo?(): unknown;
   redo?(): unknown;
   recordRender?(a: { kind: "frame" | "contact-sheet" | "preview" | "video"; path: string; time?: number }): unknown;
-  on(event: "change" | "render" | "log", listener: Listener): unknown;
-  off(event: "change" | "render" | "log", listener: Listener): unknown;
+  on(event: "change" | "render" | "log" | "activity", listener: Listener): unknown;
+  off(event: "change" | "render" | "log" | "activity", listener: Listener): unknown;
   outputPath(name: string): Promise<string>;
 }
 
@@ -73,7 +75,7 @@ function appBrowserCandidates(): string[] {
 
 /**
  * Pop up the preview as its own app-style window (no tabs or address bar) using an installed
- * Chromium browser in `--app` mode — Edge ships with Windows. Falls back to the default browser.
+ * Chromium browser in `--app` mode, Edge ships with Windows. Falls back to the default browser.
  * Returns how it was opened.
  */
 export function openPreviewWindow(url: string, size = { width: 1440, height: 900 }): "app-window" | "browser" {
@@ -99,7 +101,13 @@ export interface PreviewServer {
 }
 
 /** Serializable snapshot the preview page renders. */
-export function previewState(source: PreviewSource) {
+export interface PreviewStateOptions {
+  /** Map a rendered file to the URL clients load it from. Default: /media/<path in outputDir> (other files are omitted). */
+  mediaUrl?: (absolutePath: string) => string | undefined;
+}
+
+/** Serializable snapshot of a session for viewers (the web preview, the native app). */
+export function previewState(source: PreviewSource, opts: PreviewStateOptions = {}) {
   const project = source.project;
   let timeline: ReturnType<typeof computeTimeline> | undefined;
   let timelineError: string | undefined;
@@ -114,7 +122,9 @@ export function previewState(source: PreviewSource) {
   } catch {
     captions = [];
   }
-  const media = (p: string) => `/media/${encodeURIComponent(path.relative(source.options.outputDir, p).split(path.sep).join("/"))}`;
+  const defaultMedia = (p: string) =>
+    p.startsWith(source.options.outputDir) ? `/media/${encodeURIComponent(path.relative(source.options.outputDir, p).split(path.sep).join("/"))}` : undefined;
+  const media = opts.mediaUrl ?? defaultMedia;
   return {
     revision: source.revision,
     name: project.name,
@@ -145,10 +155,11 @@ export function previewState(source: PreviewSource) {
     issues: validateProject(project).issues,
     history: source.history.slice(-50).reverse(),
     renders: source.renders
-      .filter((r) => r.path.startsWith(source.options.outputDir))
+      .map((r) => ({ ...r, url: media(r.path), stale: r.revision !== source.revision }))
+      .filter((r) => r.url !== undefined)
       .slice(-20)
-      .reverse()
-      .map((r) => ({ ...r, url: media(r.path), stale: r.revision !== source.revision })),
+      .reverse(),
+    activities: (source.activities ?? []).slice(-60).reverse(),
     log: source.log.slice(-30).reverse(),
     canUndo: !!source.canUndo,
     canRedo: !!source.canRedo,
@@ -213,6 +224,7 @@ export async function startPreviewServer(source: PreviewSource, opts: PreviewSer
   source.on("change", onChange);
   source.on("render", onOther);
   source.on("log", onOther);
+  source.on("activity", onOther);
 
   const json = (res: ServerResponse, status: number, body: unknown) => {
     res.writeHead(status, { "Content-Type": "application/json" });
@@ -316,6 +328,7 @@ export async function startPreviewServer(source: PreviewSource, opts: PreviewSer
         source.off("change", onChange);
         source.off("render", onOther);
         source.off("log", onOther);
+        source.off("activity", onOther);
         for (const c of clients) c.end();
         server.close(() => resolve());
       }),

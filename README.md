@@ -12,6 +12,22 @@ An AI-native video editing library. The edit is a plain JSON document that Claud
 
 **Documentation:** [docs/](docs/README.md) has guides plus a reference for every Claude tool, template, effect, transition, animation, caption style and component.
 
+## Desktop app
+
+`app/VideoEditor` is a native Windows app (C# / WPF, .NET 10). It opens projects stored in `projects/` and shows a live session view:
+
+- what is running now, with progress
+- an activity feed
+- a viewer that follows the latest render
+- a compact timeline strip
+- an "Ask Claude" box (requires `ANTHROPIC_API_KEY` to be set)
+
+```bash
+dotnet run --project app/VideoEditor          # pass a project folder to open it directly
+```
+
+The app starts the engine host itself (`src/host`, JSON-RPC over stdio). It needs Node 20+ on PATH and this repository's `node_modules`.
+
 ## Layout
 
 ```
@@ -19,13 +35,15 @@ src/
   core/        Project schema (zod), timeline math, pure edit operations, validation, summaries
   library/     Catalogs: effects, transitions, animations, caption-styles, components, templates
   tools/       transcript, captions, voiceover, render (FFmpeg), preview (live web UI)
-  claude/      EditorSession (state, undo/redo, events) + tool definitions for Claude
+  claude/      EditorSession (state, undo/redo, events, live activities) + tool definitions for Claude
+  host/        Engine host for the desktop app: JSON-RPC over stdio, project storage, Claude agent loop
   cli.ts       `ave` command line
+app/           Native desktop app (C# WPF)
 examples/      claude-agent.ts: Claude editing a video while you watch the preview
 test/          unit tests + real FFmpeg integration renders
 ```
 
-Dependencies only point downward: `claude → tools → library → core`. `core` and `library` never import `tools` or `claude`.
+Dependencies only point downward: `host → claude → tools → library → core`. `core` and `library` never import `tools` or `claude`.
 
 Every area can be imported on its own: `ai-video-editor/core`, `/library`, `/tools`, `/claude`.
 
@@ -108,7 +126,7 @@ The tool layer has no dependency on the Anthropic SDK. The future connector (an 
 
 - `clips` form the primary track and play back-to-back. A clip's `transition` blends it in from the previous clip.
 - `layers` draw on top in array order: `media` for PiP and b-roll, `text`, and `shape`. Text and shapes are rendered with libass, so they always sit above media layers.
-- Positions and sizes are fractions of the frame (0–1). Times are in seconds.
+- Positions and sizes are fractions of the frame (0-1). Times are in seconds.
 - Captions are rebuilt from source transcripts at render time, so they survive trims, cuts, reordering and speed changes.
 - Music is ducked under speech by default (sidechain compression).
 

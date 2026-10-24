@@ -242,7 +242,7 @@ export const COMPONENTS: ComponentDefinition[] = [
         { type: "text", id: "quote", start: 0.2, duration: ctx.duration - 0.2, text: p.quote, position: { x: 0.5, y: 0.47 }, style: { fontFamily: p.fontFamily, fontSize: px(ctx, 62), color: p.color, bold: false, italic: true, outlineWidth: 0, shadow: 2 }, animationIn: anim("blur", 0.8), animationOut: anim("fade") },
       ];
       if (p.author)
-        layers.push({ type: "text", id: "author", start: 0.8, duration: ctx.duration - 0.8, text: `— ${p.author}`, position: { x: 0.5, y: 0.66 }, style: { fontFamily: "Arial", fontSize: px(ctx, 40), color: p.accentColor, outlineWidth: 0 }, animationIn: anim("fade", 0.5), animationOut: anim("fade") });
+        layers.push({ type: "text", id: "author", start: 0.8, duration: ctx.duration - 0.8, text: p.author, position: { x: 0.5, y: 0.66 }, style: { fontFamily: "Arial", fontSize: px(ctx, 40), color: p.accentColor, outlineWidth: 0 }, animationIn: anim("fade", 0.5), animationOut: anim("fade") });
       return layers;
     },
   }),
@@ -250,7 +250,7 @@ export const COMPONENTS: ComponentDefinition[] = [
     id: "number-badge",
     name: "Number Badge",
     category: "list",
-    description: "Big rank/step number with a label, for listicles (\"#3 — Best value\") and step-by-step guides.",
+    description: "Big rank/step number with a label, for listicles (\"#3, Best value\") and step-by-step guides.",
     defaultDuration: 3,
     params: z.object({
       number: z.union([z.string(), z.number()]).transform(String),

@@ -159,7 +159,7 @@ export const TOOLS: ToolDefinition[] = [
     mutates: false,
     run: async (_s, i) => {
       const list = listTemplates(i);
-      return ok(list.map((t) => `${t.id} — ${t.name} [${t.aspectRatio}, ${t.idealDuration[0]}–${t.idealDuration[1]}s] ${t.description}`).join("\n") || "No templates match.");
+      return ok(list.map((t) => `${t.id}: ${t.name} [${t.aspectRatio}, ${t.idealDuration[0]}-${t.idealDuration[1]}s] ${t.description}`).join("\n") || "No templates match.");
     },
   }),
   tool({
@@ -215,7 +215,7 @@ export const TOOLS: ToolDefinition[] = [
           .map((e) => {
             const shape = (e.params as unknown as { shape?: Record<string, z.ZodType> }).shape ?? {};
             const params = Object.entries(shape).map(([k, v]) => `${k}${v.description ? `: ${v.description}` : ""}`);
-            return `${e.id} (${e.category}) — ${e.description}${params.length ? ` Params: ${params.join("; ")}` : ""}`;
+            return `${e.id} (${e.category}): ${e.description}${params.length ? ` Params: ${params.join("; ")}` : ""}`;
           })
           .join("\n"),
       ),
@@ -225,21 +225,21 @@ export const TOOLS: ToolDefinition[] = [
     description: "List transitions usable between primary-track clips.",
     input: empty,
     mutates: false,
-    run: async () => ok(listTransitions().map((t) => `${t.id} (${t.category}, ~${t.defaultDuration}s) — ${t.description}`).join("\n")),
+    run: async () => ok(listTransitions().map((t) => `${t.id} (${t.category}, ~${t.defaultDuration}s): ${t.description}`).join("\n")),
   }),
   tool({
     name: "list_animations",
     description: "List entrance/exit animations for text, shape and media layers.",
     input: empty,
     mutates: false,
-    run: async () => ok(listAnimations().map((a) => `${a.id}${a.media ? "" : " (text/shapes only)"} — ${a.description}`).join("\n")),
+    run: async () => ok(listAnimations().map((a) => `${a.id}${a.media ? "" : " (text/shapes only)"}: ${a.description}`).join("\n")),
   }),
   tool({
     name: "list_caption_styles",
     description: "List caption style presets (bold-pop, karaoke, word-by-word, boxed, cinematic…).",
     input: empty,
     mutates: false,
-    run: async () => ok(listCaptionStyles().map((c) => `${c.id} — ${c.name}: ${c.description} [mode ${c.mode}]`).join("\n")),
+    run: async () => ok(listCaptionStyles().map((c) => `${c.id}: ${c.name}. ${c.description} [mode ${c.mode}]`).join("\n")),
   }),
   tool({
     name: "list_components",
@@ -251,7 +251,7 @@ export const TOOLS: ToolDefinition[] = [
         listComponents()
           .map((c) => {
             const shape = (c.params as unknown as { shape?: Record<string, z.ZodType> }).shape ?? {};
-            return `${c.id} (${c.category}, ${c.defaultDuration}s) — ${c.description} Params: ${Object.keys(shape).join(", ")}`;
+            return `${c.id} (${c.category}, ${c.defaultDuration}s): ${c.description} Params: ${Object.keys(shape).join(", ")}`;
           })
           .join("\n"),
       ),
@@ -335,7 +335,7 @@ export const TOOLS: ToolDefinition[] = [
     description: "Set a clip's source in/out points (seconds in the original media).",
     input: z.object({ clipId: z.string(), sourceIn: z.number().min(0), sourceOut: z.number().positive() }),
     mutates: true,
-    run: async (s, i) => commit(s, ops.trimClip(s.project, i.clipId, i.sourceIn, i.sourceOut), "trim_clip", i, `Trimmed ${i.clipId} to ${i.sourceIn}–${i.sourceOut}s of source.`),
+    run: async (s, i) => commit(s, ops.trimClip(s.project, i.clipId, i.sourceIn, i.sourceOut), "trim_clip", i, `Trimmed ${i.clipId} to ${i.sourceIn}-${i.sourceOut}s of source.`),
   }),
   tool({
     name: "set_transition",
@@ -369,7 +369,7 @@ export const TOOLS: ToolDefinition[] = [
   // -------------------------------------------------------------------------
   tool({
     name: "add_text",
-    description: "Add a text layer (titles, labels, callouts). Position is the text center in 0–1 frame coordinates. Font size is in output pixels.",
+    description: "Add a text layer (titles, labels, callouts). Position is the text center in 0-1 frame coordinates. Font size is in output pixels.",
     input: z.object({
       text: z.string(),
       start: z.number().min(0),
@@ -550,7 +550,7 @@ export const TOOLS: ToolDefinition[] = [
         for (const m of searchTranscript(t, i.query)) {
           const tc = timeline?.clips.find((c) => c.clip.assetId === id && m.start >= c.clip.in && m.end <= c.clip.in + c.sourceDuration);
           const tl = tc ? ` → timeline ${formatTime(sourceToTimeline(tc, m.start))} (clip ${tc.clip.id})` : " (not in the edit)";
-          lines.push(`${id} source ${m.start}–${m.end}s${tl}: "…${m.context}…"`);
+          lines.push(`${id} source ${m.start}-${m.end}s${tl}: "…${m.context}…"`);
         }
       }
       return ok(lines.join("\n") || `"${i.query}" not found.`);
@@ -571,7 +571,7 @@ export const TOOLS: ToolDefinition[] = [
       const { assetId, ...opts } = i;
       const r = cleanupSpeech(s.project, assetId, opts);
       const out = commit(s, r.project, "cleanup_speech", i, `Removed ${r.removed.length} segments (${r.removedDuration}s).`);
-      const detail = r.removed.slice(0, 40).map((x) => `${x.start}–${x.end}s ${x.reason}${x.text ? ` "${x.text}"` : ""}`).join("\n");
+      const detail = r.removed.slice(0, 40).map((x) => `${x.start}-${x.end}s ${x.reason}${x.text ? ` "${x.text}"` : ""}`).join("\n");
       return { ...out, text: `${out.text}\n${detail}${r.removed.length > 40 ? `\n…and ${r.removed.length - 40} more` : ""}` };
     },
   }),
@@ -597,7 +597,7 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "set_captions",
-    description: "Turn captions on/off and pick a style (see list_caption_styles). Captions come from transcripts and stay synced through edits. Override style fields like position (0–1), fontSize, highlightColor, uppercase, maxWordsPerLine.",
+    description: "Turn captions on/off and pick a style (see list_caption_styles). Captions come from transcripts and stay synced through edits. Override style fields like position (0-1), fontSize, highlightColor, uppercase, maxWordsPerLine.",
     input: z.object({
       enabled: z.boolean().default(true),
       style: z.string().optional(),
@@ -663,7 +663,7 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "render_contact_sheet",
-    description: "Render a grid of frames sampled across the whole video — a one-image overview of the edit's pacing and look.",
+    description: "Render a grid of frames sampled across the whole video, a one-image overview of the edit's pacing and look.",
     input: z.object({ columns: z.number().int().min(1).max(8).default(4), rows: z.number().int().min(1).max(8).default(3), thumbWidth: z.number().int().default(320) }),
     mutates: false,
     run: async (s, i) => {

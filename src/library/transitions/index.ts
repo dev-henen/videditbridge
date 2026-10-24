@@ -66,7 +66,7 @@ export const TRANSITIONS: TransitionDefinition[] = [
   t("hrwind", "Wind Right", "stylized", "Wind-swept streaks to the right.", 0.6),
   t("squeeze", "Squeeze", "stylized", "Alias of squeezev.", 0.5, "squeezev"),
   t("whip", "Whip Pan", "stylized", "Fast blurred whip pan. Alias of hblur with a short duration.", 0.25, "hblur"),
-  t("glitch", "Glitch Cut", "stylized", "Short pixelize burst — reads as a digital glitch.", 0.25, "pixelize"),
+  t("glitch", "Glitch Cut", "stylized", "Short pixelize burst, reads as a digital glitch.", 0.25, "pixelize"),
 ];
 
 const byId = new Map(TRANSITIONS.map((tr) => [tr.id, tr]));

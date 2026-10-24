@@ -41,7 +41,7 @@ To use another service, implement `TranscriptionProvider` (`transcribe(audioPath
 | Function | Returns |
 |---|---|
 | `sentences(t)` | Sentences split on punctuation, speaker changes or long pauses |
-| `formatTranscript(t)` | `[00:03.1–00:05.0] text` lines, compact for an AI to read |
+| `formatTranscript(t)` | `[00:03.1-00:05.0] text` lines, compact for an AI to read |
 | `searchTranscript(t, "phrase")` | Matches with times and surrounding context (case- and punctuation-insensitive) |
 | `findFillers(t, list?)` | "um", "uh"… by default. `EXTENDED_FILLERS` adds "like", "you know", "basically"… |
 | `findRepetitions(t)` | Stutters such as "I I think" or "we went we went" |

@@ -88,7 +88,7 @@ describe("analysis", () => {
   it("splits sentences", () => {
     const s = sentences(talk);
     expect(s.map((x) => x.text)).toEqual(["So um today I I want to talk.", "Uh video editing is fun!"]);
-    expect(formatTranscript(talk)).toContain("[00:00.5–00:02.6] So um today");
+    expect(formatTranscript(talk)).toContain("[00:00.5-00:02.6] So um today");
   });
 
   it("searches phrases ignoring case and punctuation", () => {

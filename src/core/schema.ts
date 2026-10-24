@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * The Project document is the single source of truth for an edit.
  * It is plain JSON so an AI model can read it, reason about it and modify it.
- * All times are in seconds. Positions and sizes are normalized to the frame (0–1).
+ * All times are in seconds. Positions and sizes are normalized to the frame (0-1).
  */
 
 export const SCHEMA_VERSION = 1;

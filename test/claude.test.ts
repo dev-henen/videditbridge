@@ -71,7 +71,7 @@ describe("session + tools", () => {
     const s = session();
     await executeTool(s, "add_clip", { assetId: "talk" });
     const search = await executeTool(s, "search_transcript", { query: "today we" });
-    expect(search.text).toContain("source 4–4.5s → timeline 00:04.0");
+    expect(search.text).toContain("source 4-4.5s → timeline 00:04.0");
     const r = await executeTool(s, "cleanup_speech", { assetId: "talk", maxPause: 1 });
     expect(r.isError).toBeFalsy();
     expect(r.text).toMatch(/Removed \d+ segments/);

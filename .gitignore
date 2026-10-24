@@ -5,3 +5,5 @@ coverage/
 *.log
 test/.output/
 projects/
+app/**/bin/
+app/**/obj/

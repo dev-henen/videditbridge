@@ -14,7 +14,7 @@ import { startPreviewServer } from "./tools/preview/server.js";
 import { EditorSession } from "./claude/session.js";
 import { toAnthropicTools } from "./claude/tools.js";
 
-const HELP = `ave — AI video editor CLI
+const HELP = `ave: AI video editor CLI
 
 Usage:
   ave templates [query]                    List templates (optionally filtered)
@@ -137,7 +137,7 @@ async function main(argv: string[]): Promise<number> {
       const { project, baseDir } = await loadProject(file);
       const session = new EditorSession(project, { baseDir, fontsDir: values.fonts });
       const server = await startPreviewServer(session, { port: num(values.port) ?? 4321, open: !values["no-open"] });
-      console.log(`Live preview: ${server.url}\nWatching ${file} — save the file to update. Ctrl+C to stop.`);
+      console.log(`Live preview: ${server.url}\nWatching ${file}, save the file to update. Ctrl+C to stop.`);
       let timer: NodeJS.Timeout | undefined;
       watch(file, () => {
         clearTimeout(timer);

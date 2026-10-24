@@ -71,7 +71,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "16:9",
     idealDuration: [180, 1200],
     aiGuidance:
-      "Structure: hook question → context → 3–5 sections → conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4–8s. Fit section lengths to the voice-over sentences.",
+      "Structure: hook question → context → 3-5 sections → conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4-8s. Fit section lengths to the voice-over sentences.",
     slots: [
       { id: "title", kind: "text", description: "Essay title", required: true },
       { id: "sections", kind: "list", description: "Sections", required: true, fields: { heading: "Chapter heading", media: "B-roll", seconds: "Section length" } },
@@ -98,7 +98,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["YouTube", "Vimeo", "Film festivals"],
     aspectRatio: "16:9",
     idealDuration: [120, 1800],
-    aiGuidance: "Let shots breathe (5–10s). Alternate interview and b-roll. Introduce each interviewee once with a lower third. Use silence and music for emotional beats.",
+    aiGuidance: "Let shots breathe (5-10s). Alternate interview and b-roll. Introduce each interviewee once with a lower third. Use silence and music for emotional beats.",
     slots: [
       { id: "title", kind: "text", description: "Film title", required: true },
       { id: "shots", kind: "list", description: "Shots in order", required: true, fields: { media: "Interview or b-roll clip", name: "Interviewee name (optional)", role: "Interviewee role (optional)" } },
@@ -155,7 +155,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["YouTube", "Social"],
     aspectRatio: "16:9",
     idealDuration: [30, 120],
-    aiGuidance: "Three acts: setup (slow) → conflict (faster) → climax (rapid cuts, 0.5–1s) → title → date. Text cards between shots carry the story. Sync cuts to music hits.",
+    aiGuidance: "Three acts: setup (slow) → conflict (faster) → climax (rapid cuts, 0.5-1s) → title → date. Text cards between shots carry the story. Sync cuts to music hits.",
     slots: [
       { id: "beats", kind: "list", description: "Shots and text beats", required: true, fields: { media: "Shot", text: "Optional card text shown over the shot" } },
       { id: "title", kind: "text", description: "Title", required: true },
@@ -180,7 +180,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Instagram", "LinkedIn", "X", "YouTube"],
     aspectRatio: "1:1",
     idealDuration: [30, 90],
-    aiGuidance: "Pick a 30–90s quotable segment of the audio (use the transcript). Trim the audio input with in/duration.",
+    aiGuidance: "Pick a 30-90s quotable segment of the audio (use the transcript). Trim the audio input with in/duration.",
     slots: [
       { id: "audio", kind: "audio", description: "Podcast audio segment with transcript (as {src, in, duration, transcript})", required: true },
       { id: "cover", kind: "image", description: "Cover art", required: true },
@@ -211,7 +211,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["YouTube", "LMS", "LinkedIn Learning"],
     aspectRatio: "16:9",
     idealDuration: [60, 900],
-    aiGuidance: "Set each slide's seconds from the narration timing (search the voice-over transcript for the first words of each slide's script). Avoid more than 30s on one slide—split or zoom into details.",
+    aiGuidance: "Set each slide's seconds from the narration timing (search the voice-over transcript for the first words of each slide's script). Avoid more than 30s on one slide-split or zoom into details.",
     slots: [
       { id: "title", kind: "text", description: "Lesson title", required: true },
       { id: "slides", kind: "list", description: "Slides", required: true, fields: { media: "Slide image", seconds: "How long to show it" } },

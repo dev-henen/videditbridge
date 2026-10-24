@@ -122,14 +122,14 @@ export const PREVIEW_PAGE = /* html */ `<!doctype html>
   function showStage() {
     var stage = $("stage");
     var html = "";
-    if (!state || state.duration <= 0) html = '<div class="empty">' + (state && state.timelineError ? esc(state.timelineError) : "Nothing to show yet — add clips, layers or apply a template.") + "</div>";
+    if (!state || state.duration <= 0) html = '<div class="empty">' + (state && state.timelineError ? esc(state.timelineError) : "Nothing to show yet, add clips, layers or apply a template.") + "</div>";
     else if (view === "frame") html = '<img id="frameImg" alt="Frame preview">';
     else if (view === "sheet") {
       var s = latest("contact-sheet");
       html = s ? '<img alt="Contact sheet" src="' + s.url + '">' : '<div class="empty">No contact sheet yet.</div>';
     } else {
       var v = latest("preview") || latest("video");
-      html = v ? '<video controls autoplay src="' + v.url + '"></video>' : '<div class="empty">No preview video yet — click “Render preview video”.</div>';
+      html = v ? '<video controls autoplay src="' + v.url + '"></video>' : '<div class="empty">No preview video yet, click “Render preview video”.</div>';
     }
     stage.innerHTML = html + '<span class="loading">rendering…</span>';
     if (view === "frame" && state && state.duration > 0) loadFrame();
@@ -207,7 +207,7 @@ export const PREVIEW_PAGE = /* html */ `<!doctype html>
     $("summary").textContent = state.summary;
     $("issues").innerHTML = state.issues.length ? state.issues.map(function (i) { return '<li class="issue ' + i.level + '">' + (i.level === "error" ? "✗ " : "⚠ ") + esc(i.path) + ": " + esc(i.message) + "</li>"; }).join("") : '<li style="color:var(--ok)">✓ No issues</li>';
     $("history").innerHTML = state.history.map(function (h) { return "<li><time>" + clock(h.at) + "</time><span>" + esc(h.action) + "</span></li>"; }).join("") || '<li style="color:var(--muted)">No edits yet</li>';
-    $("log").innerHTML = state.log.map(function (l) { return '<li class="issue ' + (l.level === "error" ? "error" : "") + '"><time>' + clock(l.at) + "</time><span>" + esc(l.message) + "</span></li>"; }).join("") || '<li style="color:var(--muted)">—</li>';
+    $("log").innerHTML = state.log.map(function (l) { return '<li class="issue ' + (l.level === "error" ? "error" : "") + '"><time>' + clock(l.at) + "</time><span>" + esc(l.message) + "</span></li>"; }).join("") || '<li style="color:var(--muted)">-</li>';
     $("renders").innerHTML = state.renders.map(function (r) {
       var thumb = r.kind === "preview" || r.kind === "video" ? "" : '<img src="' + r.url + '" alt="">';
       return '<a target="_blank" class="' + (r.stale ? "stale" : "") + '" href="' + r.url + '" title="' + (r.stale ? "From an older revision" : "Current") + '">' + thumb + esc(r.kind) + (r.time != null ? " @" + r.time + "s" : "") + "<br>" + clock(r.at) + "</a>";

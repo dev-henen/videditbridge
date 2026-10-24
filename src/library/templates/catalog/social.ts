@@ -14,7 +14,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "9:16",
     idealDuration: [20, 60],
     aiGuidance:
-      "Open on the strongest claim in the first 3 seconds — use the transcript to find it and move it first if needed. Remove every filler word and pause longer than ~0.4s (cleanup_speech with maxPause 0.4). Keep sentences punchy; cut tangents. Hook text should be ≤7 words and create curiosity. Keep the music low (ducked). End with a clear CTA.",
+      "Open on the strongest claim in the first 3 seconds, use the transcript to find it and move it first if needed. Remove every filler word and pause longer than ~0.4s (cleanup_speech with maxPause 0.4). Keep sentences punchy; cut tangents. Hook text should be ≤7 words and create curiosity. Keep the music low (ducked). End with a clear CTA.",
     slots: [
       { id: "main", kind: "video", description: "The talking-head recording (provide a transcript for captions)", required: true },
       { id: "hook", kind: "text", description: "Scroll-stopping hook shown for the first 3s, ≤7 words" },
@@ -68,7 +68,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "9:16",
     idealDuration: [30, 90],
     aiGuidance:
-      "Pick a self-contained 30–90s moment with a clear point or a strong opinion (search the transcript for emotional or contrarian statements). Start mid-energy, not at a greeting. Trim dead air but keep natural conversational rhythm. The title should frame the takeaway as a question or bold claim.",
+      "Pick a self-contained 30-90s moment with a clear point or a strong opinion (search the transcript for emotional or contrarian statements). Start mid-energy, not at a greeting. Trim dead air but keep natural conversational rhythm. The title should frame the takeaway as a question or bold claim.",
     slots: [
       { id: "main", kind: "video", description: "Podcast recording (landscape is fine)", required: true },
       { id: "title", kind: "text", description: "Headline banner for the clip" },
@@ -104,7 +104,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "9:16",
     idealDuration: [15, 45],
     aiGuidance:
-      "Order items so the best one is last (or first for impatient audiences). Each item 2.5–4s. Labels ≤4 words. Use energetic music; keep transitions consistent (slideup). If items have voice-over, fit scene length to the narration.",
+      "Order items so the best one is last (or first for impatient audiences). Each item 2.5-4s. Labels ≤4 words. Use energetic music; keep transitions consistent (slideup). If items have voice-over, fit scene length to the narration.",
     slots: [
       { id: "title", kind: "text", description: "List title, e.g. '5 apps you need'", required: true },
       { id: "items", kind: "list", description: "List items", required: true, fields: { media: "Video or image for the item", label: "Short label", seconds: "Optional scene length" } },
@@ -156,7 +156,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "9:16",
     idealDuration: [10, 60],
     aiGuidance:
-      "2.5–4s per photo; vary Ken Burns direction for rhythm. Order photos chronologically or by emotional arc. Captions short and lowercase-friendly. Match cuts to the music beat if a BPM is known.",
+      "2.5-4s per photo; vary Ken Burns direction for rhythm. Order photos chronologically or by emotional arc. Captions short and lowercase-friendly. Match cuts to the music beat if a BPM is known.",
     slots: [
       { id: "title", kind: "text", description: "Opening title (optional)" },
       { id: "photos", kind: "list", description: "Photos or clips", required: true, fields: { media: "Image or video", caption: "Optional caption" } },
@@ -197,7 +197,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Instagram", "TikTok", "LinkedIn", "X"],
     aspectRatio: "9:16",
     idealDuration: [5, 10],
-    aiGuidance: "Keep the quote under ~25 words; split long quotes into two cards. Pair calm music. 6–8s gives time to read.",
+    aiGuidance: "Keep the quote under ~25 words; split long quotes into two cards. Pair calm music. 6-8s gives time to read.",
     slots: [
       { id: "quote", kind: "text", description: "The quote", required: true },
       { id: "author", kind: "text", description: "Who said it" },
@@ -221,19 +221,19 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
   {
     id: "product-showcase",
     name: "Product Showcase",
-    description: "Short-form product ad: hook, 3–5 feature beats with labels, price reveal and a shop-now CTA.",
+    description: "Short-form product ad: hook, 3-5 feature beats with labels, price reveal and a shop-now CTA.",
     category: "promo",
     tags: ["ecommerce", "product", "ad", "ugc", "shop"],
     platforms: ["TikTok", "Instagram Reels", "Facebook Ads"],
     aspectRatio: "9:16",
     idealDuration: [15, 30],
     aiGuidance:
-      "Problem → product → proof → offer. First shot must show the product in use within 1s. Feature labels are benefits, not specs (\"Charges in 10 min\" not \"65W\"). Keep each feature 2–3s. End with price + urgency.",
+      "Problem → product → proof → offer. First shot must show the product in use within 1s. Feature labels are benefits, not specs (\"Charges in 10 min\" not \"65W\"). Keep each feature 2-3s. End with price + urgency.",
     slots: [
       { id: "hook", kind: "text", description: "Opening hook / problem statement", required: true },
       { id: "hero", kind: "media", description: "Hero shot of the product", required: true },
       { id: "features", kind: "list", description: "Feature beats", fields: { media: "Clip/image showing the feature", label: "Benefit text" } },
-      { id: "price", kind: "text", description: "Price or offer, e.g. '$49 — 30% off'" },
+      { id: "price", kind: "text", description: "Price or offer, e.g. '$49, 30% off'" },
       { id: "cta", kind: "text", description: "CTA text, default 'Shop now'" },
       music,
     ],
@@ -256,7 +256,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "Instagram Reels", "YouTube Shorts"],
     aspectRatio: "9:16",
     idealDuration: [15, 60],
-    aiGuidance: "1–2.5s per moment; cut on action. Labels like '6:00 AM' or 'coffee first'. Use the clip's natural audio sparingly (mute by default). Keep chronological order.",
+    aiGuidance: "1-2.5s per moment; cut on action. Labels like '6:00 AM' or 'coffee first'. Use the clip's natural audio sparingly (mute by default). Keep chronological order.",
     slots: [
       { id: "moments", kind: "list", description: "Clips in order", required: true, fields: { media: "Clip", label: "Time or caption" } },
       { id: "title", kind: "text", description: "Opening title, e.g. 'a day in my life as a nurse'" },
@@ -287,7 +287,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "Instagram Reels"],
     aspectRatio: "9:16",
     idealDuration: [6, 15],
-    aiGuidance: "Hold the BEFORE long enough to register (2–3s), then reveal. Match framing between before and after shots if possible.",
+    aiGuidance: "Hold the BEFORE long enough to register (2-3s), then reveal. Match framing between before and after shots if possible.",
     slots: [
       { id: "before", kind: "media", description: "Before shot", required: true },
       { id: "after", kind: "media", description: "After shot", required: true },
@@ -386,7 +386,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "Instagram Reels", "YouTube Shorts"],
     aspectRatio: "9:16",
     idealDuration: [20, 60],
-    aiGuidance: "Each exercise 3–5s showing the full movement. Name + reps clearly visible. High-energy music.",
+    aiGuidance: "Each exercise 3-5s showing the full movement. Name + reps clearly visible. High-energy music.",
     slots: [
       { id: "title", kind: "text", description: "Routine title, e.g. '10-min ab burner'", required: true },
       { id: "exercises", kind: "list", description: "Exercises", required: true, fields: { media: "Demo clip", name: "Exercise name", reps: "e.g. '3 x 12'" } },
@@ -410,7 +410,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "Instagram Reels", "YouTube Shorts"],
     aspectRatio: "9:16",
     idealDuration: [20, 60],
-    aiGuidance: "Show the finished dish first (hook), then steps. Speed up long actions (stirring) with speed 1.5–3x. Step text = verb first ('Whisk eggs and sugar').",
+    aiGuidance: "Show the finished dish first (hook), then steps. Speed up long actions (stirring) with speed 1.5-3x. Step text = verb first ('Whisk eggs and sugar').",
     slots: [
       { id: "title", kind: "text", description: "Dish name", required: true },
       { id: "final", kind: "media", description: "Finished dish shot", required: true },
@@ -436,7 +436,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "YouTube Shorts", "Twitch"],
     aspectRatio: "9:16",
     idealDuration: [15, 60],
-    aiGuidance: "Only the best moments, 2–6s each, cut right before the action. Put the best play last. Label each clip with a short hype caption.",
+    aiGuidance: "Only the best moments, 2-6s each, cut right before the action. Put the best play last. Label each clip with a short hype caption.",
     slots: [
       { id: "clips", kind: "list", description: "Gameplay clips (landscape is fine)", required: true, fields: { media: "Clip", label: "Hype caption, e.g. '1v4 CLUTCH'" } },
       { id: "title", kind: "text", description: "Montage title" },
@@ -461,7 +461,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "Instagram Reels", "YouTube Shorts", "X"],
     aspectRatio: "9:16",
     idealDuration: [20, 60],
-    aiGuidance: "Lead with the headline fact. Neutral tone, no clickbait. Cite the source in the footer. Cut b-roll every 3–4s to illustrate.",
+    aiGuidance: "Lead with the headline fact. Neutral tone, no clickbait. Cite the source in the footer. Cut b-roll every 3-4s to illustrate.",
     slots: [
       { id: "headline", kind: "text", description: "Headline", required: true },
       { id: "main", kind: "video", description: "Presenter or footage (transcript enables captions)", required: true },

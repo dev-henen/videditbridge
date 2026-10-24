@@ -80,7 +80,7 @@ export async function render(project: Project, opts: RenderOptions): Promise<Ren
   return { output: path.resolve(opts.output), duration: compiled.duration, workDir, args: compiled.args };
 }
 
-/** Render a single frame (PNG/JPG) at a timeline time — lets an AI "look" at its edit. */
+/** Render a single frame (PNG/JPG) at a timeline time, lets an AI "look" at its edit. */
 export async function renderFrame(
   project: Project,
   time: number,

@@ -46,7 +46,7 @@ export const ASS_FILE = "overlay.ass";
 
 const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
 
-/** atempo accepts 0.5–2 per instance; chain for larger factors. */
+/** atempo accepts 0.5-2 per instance; chain for larger factors. */
 function atempoChain(speed: number): string[] {
   const out: string[] = [];
   let s = speed;

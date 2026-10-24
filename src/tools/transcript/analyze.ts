@@ -57,7 +57,7 @@ export function sentences(t: Transcript, opts: { maxGap?: number } = {}): Senten
 /** Transcript as readable lines with timestamps, for an AI to read. */
 export function formatTranscript(t: Transcript, opts: { maxGap?: number } = {}): string {
   return sentences(t, opts)
-    .map((s) => `[${formatTime(s.start)}–${formatTime(s.end)}]${s.speaker ? ` ${s.speaker}:` : ""} ${s.text}`)
+    .map((s) => `[${formatTime(s.start)}-${formatTime(s.end)}]${s.speaker ? ` ${s.speaker}:` : ""} ${s.text}`)
     .join("\n");
 }
 
@@ -99,7 +99,7 @@ export function wordsInRange(t: Transcript, start: number, end: number): Word[] 
 }
 
 export const DEFAULT_FILLERS = ["um", "uh", "uhm", "umm", "uhh", "er", "erm", "ah", "hmm", "mm", "mhm"];
-/** Phrases that are usually filler but can be meaningful — opt in explicitly. */
+/** Phrases that are usually filler but can be meaningful, opt in explicitly. */
 export const EXTENDED_FILLERS = ["like", "you know", "i mean", "basically", "actually", "literally", "sort of", "kind of", "right", "so"];
 
 export interface FillerMatch extends TimeRange {

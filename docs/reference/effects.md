@@ -266,7 +266,7 @@ _No parameters._
 
 ### punchIn
 
-**Punch-In Zooms**. Alternate between normal and zoomed framing every few seconds — the classic talking-head jump-zoom that keeps viewers engaged.
+**Punch-In Zooms**. Alternate between normal and zoomed framing every few seconds, the classic talking-head jump-zoom that keeps viewers engaged.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|

@@ -158,12 +158,12 @@ function components(): string {
 function templates(): string {
   const cats = [...new Set(TEMPLATES.map((t) => t.category))];
   let out = `${HEADER}# Templates\n\n${TEMPLATES.length} built-in templates. Each one is a JSON spec with inputs (slots), a look (theme, captions, grade, transitions) and an ordered list of scenes, plus guidance on how to edit footage to match it. See the [templates guide](../guides/templates.md) to write your own.\n\n\`\`\`ts\nconst { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.mp4", title: "Why most startups fail" }, { probe });\n\`\`\`\n\n## Contents\n\n| id | Name | Format | Length | Category |\n|---|---|---|---|---|\n`;
-  for (const t of TEMPLATES) out += `| [\`${t.id}\`](#${slug(t.id)}) | ${t.name} | ${t.aspectRatio} | ${t.idealDuration[0]}–${t.idealDuration[1]}s | ${t.category} |\n`;
+  for (const t of TEMPLATES) out += `| [\`${t.id}\`](#${slug(t.id)}) | ${t.name} | ${t.aspectRatio} | ${t.idealDuration[0]}-${t.idealDuration[1]}s | ${t.category} |\n`;
   for (const c of cats) {
     out += `\n## ${c[0]!.toUpperCase()}${c.slice(1)}\n`;
     for (const t of TEMPLATES.filter((x) => x.category === c)) {
       out += `\n### ${t.id}\n\n**${t.name}**: ${t.description}\n\n`;
-      out += `- **Format:** ${t.aspectRatio} at ${t.fps}fps, ideally ${t.idealDuration[0]}–${t.idealDuration[1]}s\n`;
+      out += `- **Format:** ${t.aspectRatio} at ${t.fps}fps, ideally ${t.idealDuration[0]}-${t.idealDuration[1]}s\n`;
       if (t.platforms.length) out += `- **Platforms:** ${t.platforms.join(", ")}\n`;
       out += `- **Look:** captions ${t.captions ? `\`${t.captions.style}\`` : "none"}, transition ${t.transition ? `\`${t.transition.type}\`` : "hard cut"}, grade ${t.grade.length ? t.grade.map((g) => `\`${g.type}\``).join(" + ") : "none"}, fonts ${t.theme.headingFont} / ${t.theme.fontFamily}\n`;
       if (t.tags.length) out += `- **Tags:** ${t.tags.join(", ")}\n`;

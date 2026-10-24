@@ -348,7 +348,7 @@ export function buildFromTemplate(specInput: TemplateSpec, inputs: TemplateInput
   if (spec.captions && Object.keys(project.transcripts).length) {
     project.captions = { enabled: true, style: spec.captions.style, ...(spec.captions.overrides ? { overrides: spec.captions.overrides } : {}) };
   } else if (spec.captions) {
-    warnings.push("Template uses captions but no transcript was provided — transcribe the main media to enable them");
+    warnings.push("Template uses captions but no transcript was provided, transcribe the main media to enable them");
   }
 
   project = ProjectSchema.parse(project);

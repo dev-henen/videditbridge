@@ -82,5 +82,5 @@ try {
     messages.push({ role: "user", content: results });
   }
 } finally {
-  console.log(`\n\nPreview still running at ${preview.url} — Ctrl+C to exit.`);
+  console.log(`\n\nPreview still running at ${preview.url}, Ctrl+C to exit.`);
 }

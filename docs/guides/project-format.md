@@ -36,7 +36,7 @@ The media an edit uses. Clips, layers and audio refer to assets by `id`.
 | `audio` | `src`, `duration?` | |
 | `image` | `src`, `width?`, `height?` | Needs a `duration` wherever it is used |
 | `color` | `color` | Solid background |
-| `gradient` | `colors` (2–8), `direction` (`vertical`/`horizontal`/`diagonal`) | |
+| `gradient` | `colors` (2-8), `direction` (`vertical`/`horizontal`/`diagonal`) | |
 
 ## Clips: the primary track
 
@@ -47,14 +47,14 @@ The media an edit uses. Clips, layers and audio refer to assets by `id`.
 | `assetId` | | Source asset |
 | `in` | `0` | Start offset into the source |
 | `duration` | rest of source | Source seconds used. Required for images, colors and gradients |
-| `speed` | `1` | 0.25–4. The timeline length is `duration / speed`. Audio is pitch-preserved |
+| `speed` | `1` | 0.25-4. The timeline length is `duration / speed`. Audio is pitch-preserved |
 | `volume`, `muted` | `1`, `false` | |
 | `fit` | `cover` | `cover` crops, `contain` letterboxes, `stretch` distorts, `blur` letterboxes over a blurred copy (good for landscape footage in vertical video) |
 | `effects` | `[]` | See [effects](../reference/effects.md) |
 | `transition` | | Blend in from the previous clip. See [transitions](../reference/transitions.md) |
 | `fadeIn`, `fadeOut` | | Fade from or to black, with audio |
 
-**Timing with transitions.** A transition of length *d* overlaps a clip with the one before it by *d*, so the video gets *d* seconds shorter. If clip A is 4s and clip B is 3s with a 1s fade, A runs 0–4, B runs 3–6, and the total is 6s. Transitions are clamped so they never exceed the shorter neighbor. `computeTimeline(project)` returns the exact timeline position of every clip.
+**Timing with transitions.** A transition of length *d* overlaps a clip with the one before it by *d*, so the video gets *d* seconds shorter. If clip A is 4s and clip B is 3s with a 1s fade, A runs 0-4, B runs 3-6, and the total is 6s. Transitions are clamped so they never exceed the shorter neighbor. `computeTimeline(project)` returns the exact timeline position of every clip.
 
 ## Layers
 

@@ -146,7 +146,7 @@ export function splitClip(p: Project, clipId: string, timelineTime: number): { p
   const tc = timeline.clips.find((c) => c.clip.id === clipId);
   if (!tc) throw new EditError(`No clip with id "${clipId}"`);
   if (timelineTime <= tc.start + 0.02 || timelineTime >= tc.end - 0.02) {
-    throw new EditError(`Split time ${timelineTime}s is outside clip "${clipId}" (${tc.start}–${tc.end}s)`);
+    throw new EditError(`Split time ${timelineTime}s is outside clip "${clipId}" (${tc.start}-${tc.end}s)`);
   }
   const srcSplit = timelineToSource(tc, timelineTime);
   const firstDur = round3(srcSplit - tc.clip.in);

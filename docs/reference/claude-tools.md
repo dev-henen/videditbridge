@@ -236,7 +236,7 @@ _No parameters._
 
 ### add_text
 
-**edits**. Add a text layer (titles, labels, callouts). Position is the text center in 0–1 frame coordinates. Font size is in output pixels.
+**edits**. Add a text layer (titles, labels, callouts). Position is the text center in 0-1 frame coordinates. Font size is in output pixels.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -460,7 +460,7 @@ _No parameters._
 
 ### set_captions
 
-**edits**. Turn captions on/off and pick a style (see list_caption_styles). Captions come from transcripts and stay synced through edits. Override style fields like position (0–1), fontSize, highlightColor, uppercase, maxWordsPerLine.
+**edits**. Turn captions on/off and pick a style (see list_caption_styles). Captions come from transcripts and stay synced through edits. Override style fields like position (0-1), fontSize, highlightColor, uppercase, maxWordsPerLine.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -506,7 +506,7 @@ _No parameters._
 
 ### render_contact_sheet
 
-**read-only**. Render a grid of frames sampled across the whole video — a one-image overview of the edit's pacing and look.
+**read-only**. Render a grid of frames sampled across the whole video, a one-image overview of the edit's pacing and look.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|

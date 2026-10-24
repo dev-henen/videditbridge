@@ -122,7 +122,7 @@ With Claude, use the `add_component` tool. Templates use components in their sce
 
 ## number-badge
 
-**Number Badge** (list, default 3s). Big rank/step number with a label, for listicles ("#3 — Best value") and step-by-step guides.
+**Number Badge** (list, default 3s). Big rank/step number with a label, for listicles ("#3, Best value") and step-by-step guides.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|

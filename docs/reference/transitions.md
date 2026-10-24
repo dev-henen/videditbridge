@@ -57,4 +57,4 @@ The transition overlaps the two clips by its duration, which shortens the timeli
 | `hrwind` | Wind Right | stylized | 0.6s | Wind-swept streaks to the right. |
 | `squeeze` | Squeeze | stylized | 0.5s | Alias of squeezev. (xfade `squeezev`) |
 | `whip` | Whip Pan | stylized | 0.25s | Fast blurred whip pan. Alias of hblur with a short duration. (xfade `hblur`) |
-| `glitch` | Glitch Cut | stylized | 0.25s | Short pixelize burst — reads as a digital glitch. (xfade `pixelize`) |
+| `glitch` | Glitch Cut | stylized | 0.25s | Short pixelize burst, reads as a digital glitch. (xfade `pixelize`) |

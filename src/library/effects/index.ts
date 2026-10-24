@@ -299,7 +299,7 @@ export const EFFECTS: EffectDefinition[] = [
     name: "Punch-In Zooms",
     category: "motion",
     description:
-      "Alternate between normal and zoomed framing every few seconds — the classic talking-head jump-zoom that keeps viewers engaged.",
+      "Alternate between normal and zoomed framing every few seconds, the classic talking-head jump-zoom that keeps viewers engaged.",
     params: z.object({
       interval: num(3, 0.5, 30, "Seconds between zoom changes"),
       scale: num(1.15, 1.01, 2, "Zoom factor when punched in"),
