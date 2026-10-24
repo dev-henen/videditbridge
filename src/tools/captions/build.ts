@@ -1,0 +1,99 @@
+import type { Project, Word } from "../../core/schema.js";
+import { computeTimeline, sourceToTimeline, type Timeline } from "../../core/timeline.js";
+import { round3 } from "../../core/util.js";
+import { chunkWords, segmentsToChunks, type CaptionChunk } from "./chunk.js";
+import { AssDocument, addCaptionEvents } from "./ass.js";
+import { resolveCaptionStyle, type CaptionStyle } from "../../library/caption-styles/index.js";
+
+/**
+ * Words on the output timeline, derived from asset transcripts through the edit.
+ * Because captions are recomputed from source transcripts at render time, they stay in sync
+ * after any trim, cut, reorder or speed change.
+ */
+export function timelineWords(project: Project, timeline: Timeline = computeTimeline(project)): Word[] {
+  const words: Word[] = [];
+  for (const tc of timeline.clips) {
+    const transcript = project.transcripts[tc.clip.assetId];
+    if (!transcript || tc.clip.muted || tc.clip.volume === 0) continue;
+    const next = timeline.clips[tc.index + 1];
+    // During a transition, words belong to whichever clip is more visible.
+    const visStart = tc.start + tc.transitionDuration / 2;
+    const visEnd = tc.end - (next ? next.transitionDuration / 2 : 0);
+    const srcStart = tc.clip.in;
+    const srcEnd = tc.clip.in + tc.sourceDuration;
+    for (const w of transcript.words) {
+      if (w.end <= srcStart || w.start >= srcEnd) continue;
+      const start = sourceToTimeline(tc, Math.max(w.start, srcStart));
+      const end = sourceToTimeline(tc, Math.min(w.end, srcEnd));
+      const mid = (start + end) / 2;
+      if (mid < visStart || mid >= visEnd) continue;
+      words.push({ ...w, start: round3(start), end: round3(end) });
+    }
+  }
+  for (const ta of timeline.audio) {
+    const transcript = project.transcripts[ta.clip.assetId];
+    if (!transcript || ta.clip.role !== "voiceover") continue;
+    for (const w of transcript.words) {
+      if (w.end <= ta.clip.in || w.start >= ta.clip.in + ta.duration) continue;
+      const start = ta.start + Math.max(0, w.start - ta.clip.in);
+      const end = ta.start + Math.min(ta.duration, w.end - ta.clip.in);
+      words.push({ ...w, start: round3(start), end: round3(end) });
+    }
+  }
+  return words.sort((a, b) => a.start - b.start);
+}
+
+export interface ProjectCaptions {
+  style: CaptionStyle;
+  chunks: CaptionChunk[];
+}
+
+/** Resolve the project's caption configuration into styled, timed chunks (or null if disabled). */
+export function buildCaptions(project: Project, timeline: Timeline = computeTimeline(project)): ProjectCaptions | null {
+  const cfg = project.captions;
+  if (!cfg || !cfg.enabled) return null;
+  const style = resolveCaptionStyle(cfg.style, cfg.overrides);
+  const opts = {
+    maxWordsPerLine: style.maxWordsPerLine,
+    maxCharsPerLine: style.maxCharsPerLine,
+    maxLines: style.maxLines,
+    maxDuration: style.maxDuration,
+  };
+  const chunks = cfg.segments?.length ? segmentsToChunks(cfg.segments, opts) : chunkWords(timelineWords(project, timeline), opts);
+  return chunks.length ? { style, chunks } : null;
+}
+
+const chunkText = (c: CaptionChunk, upper: boolean) =>
+  c.lines.map((l) => l.map((w) => (upper ? w.text.toUpperCase() : w.text)).join(" ")).join("\n");
+
+function srtTime(s: number, sep: "," | "."): string {
+  const ms = Math.round(s * 1000);
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const sec = Math.floor((ms % 60000) / 1000);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}${sep}${String(ms % 1000).padStart(3, "0")}`;
+}
+
+export function chunksToSRT(chunks: CaptionChunk[], uppercase = false): string {
+  return chunks
+    .map((c, i) => `${i + 1}\n${srtTime(c.start, ",")} --> ${srtTime(c.end, ",")}\n${chunkText(c, uppercase)}\n`)
+    .join("\n");
+}
+
+export function chunksToVTT(chunks: CaptionChunk[], uppercase = false): string {
+  return `WEBVTT\n\n${chunks.map((c) => `${srtTime(c.start, ".")} --> ${srtTime(c.end, ".")}\n${chunkText(c, uppercase)}\n`).join("\n")}`;
+}
+
+export type CaptionExportFormat = "srt" | "vtt" | "ass";
+
+/** Export the project's captions as a sidecar subtitle file (for YouTube uploads, players, etc.). */
+export function exportCaptions(project: Project, format: CaptionExportFormat): string {
+  const caps = buildCaptions(project);
+  if (!caps) return format === "vtt" ? "WEBVTT\n" : "";
+  if (format === "srt") return chunksToSRT(caps.chunks, caps.style.uppercase);
+  if (format === "vtt") return chunksToVTT(caps.chunks, caps.style.uppercase);
+  const doc = new AssDocument(project.settings.width, project.settings.height, 2);
+  addCaptionEvents(doc, caps.chunks, caps.style, { width: project.settings.width, height: project.settings.height });
+  return doc.toString();
+}
+

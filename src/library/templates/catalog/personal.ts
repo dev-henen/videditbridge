@@ -1,0 +1,81 @@
+import type { TemplateSpecInput } from "../types.js";
+
+const music = { id: "music", kind: "audio", description: "Background music track (optional)" } as const;
+
+export const PERSONAL_TEMPLATES: TemplateSpecInput[] = [
+  {
+    id: "wedding-memories",
+    name: "Wedding / Memories Film",
+    description: "Soft, romantic montage: faded warm grade, slow white dips, elegant serif names and date.",
+    category: "personal",
+    tags: ["wedding", "anniversary", "memories", "family", "romantic"],
+    platforms: ["Instagram", "Facebook", "YouTube", "Private"],
+    aspectRatio: "16:9",
+    idealDuration: [60, 240],
+    aiGuidance: "Slow pacing (4–6s shots), emotional arc: preparation → ceremony → celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available.",
+    slots: [
+      { id: "names", kind: "text", description: "e.g. 'Anna & Ben'", required: true },
+      { id: "date", kind: "text", description: "Date / place" },
+      { id: "moments", kind: "list", description: "Photos and clips", required: true, fields: { media: "Photo or clip", caption: "Optional caption" } },
+      music,
+    ],
+    theme: { headingFont: "Georgia", fontFamily: "Georgia", accentColor: "#F4D6CC" },
+    transition: { type: "fadewhite", duration: 0.8 },
+    grade: [{ type: "faded" }, { type: "warm" }],
+    music: { slot: "music", volume: 0.9, duck: true, fadeOut: 3 },
+    scenes: [
+      { id: "title", name: "Title", purpose: "Names and date", duration: 5, background: { media: "{{moments.0.media}}", muted: true }, effects: [{ type: "blur", params: { amount: 6 } }, { type: "adjust", params: { brightness: -0.1 } }], texts: [{ text: "{{names}}", preset: "title", style: { italic: true, bold: false, fontSize: 110 }, animationIn: { type: "blur", duration: 1.5 } }, { text: "{{date}}", preset: "subtitle", start: 1.2, style: { letterSpacing: 4 } }] },
+      { id: "moment", name: "Moment", purpose: "A memory", repeat: "moments", duration: 4.5, fitMedia: true, maxDuration: 8, background: { media: "{{item.media}}" }, effects: [{ type: "kenBurns", params: { zoomTo: 1.08 } }], texts: [{ text: "{{item.caption}}", preset: "caption", style: { italic: true, bold: false } }] },
+    ],
+  },
+  {
+    id: "travel-vlog",
+    name: "Travel Vlog Opener",
+    description: "Cinematic travel montage with location title, coordinates-style kicker and teal/orange grade.",
+    category: "personal",
+    tags: ["travel", "vlog", "cinematic", "destination", "adventure"],
+    platforms: ["YouTube", "Instagram", "TikTok"],
+    aspectRatio: "16:9",
+    idealDuration: [20, 90],
+    aiGuidance: "Establishing wide shot first, then details, then people. Speed ramps (speed 1.5–2) on movement shots. Title on the most iconic shot.",
+    slots: [
+      { id: "place", kind: "text", description: "Destination name", required: true },
+      { id: "kicker", kind: "text", description: "e.g. coordinates or 'Day 1'" },
+      { id: "shots", kind: "list", description: "Clips", required: true, fields: { media: "Clip", speed: "Optional speed multiplier" } },
+      music,
+    ],
+    theme: { headingFont: "Arial Black", accentColor: "#FFD166" },
+    transition: { type: "smoothleft", duration: 0.5 },
+    grade: [{ type: "tealOrange" }],
+    music: { slot: "music", volume: 0.9, duck: false },
+    scenes: [
+      { id: "title", name: "Title", purpose: "Where are we", duration: 3.5, background: { media: "{{shots.0.media}}", muted: true }, texts: [{ text: "{{kicker}}", preset: "kicker", position: { x: 0.5, y: 0.4 } }, { text: "{{place}}", preset: "title", style: { uppercase: true, letterSpacing: 12, fontSize: 130 }, position: { x: 0.5, y: 0.5 }, animationIn: { type: "stretch", duration: 0.8 } }] },
+      { id: "shot", name: "Shot", purpose: "Show the place", repeat: "shots", duration: 2.5, background: { media: "{{item.media}}", muted: true } },
+    ],
+  },
+  {
+    id: "birthday-greeting",
+    name: "Birthday Greeting",
+    description: "Colorful celebration card with photos, a countdown and a big happy-birthday title.",
+    category: "personal",
+    tags: ["birthday", "celebration", "greeting", "party", "family"],
+    platforms: ["WhatsApp", "Instagram", "Private"],
+    aspectRatio: "9:16",
+    idealDuration: [10, 40],
+    aiGuidance: "Fun, upbeat. Photos 2s each, oldest to newest. Personal message at the end.",
+    slots: [
+      { id: "name", kind: "text", description: "Birthday person's name", required: true },
+      { id: "photos", kind: "list", description: "Photos", fields: { media: "Photo" } },
+      { id: "message", kind: "text", description: "Closing message" },
+      music,
+    ],
+    theme: { headingFont: "Arial Black", accentColor: "#FFBE0B" },
+    transition: { type: "circleopen", duration: 0.5 },
+    music: { slot: "music", volume: 0.8, duck: false },
+    scenes: [
+      { id: "countdown", name: "Countdown", purpose: "Build-up", duration: 3, background: { gradient: ["#FF006E", "#8338EC"], direction: "diagonal" }, components: [{ component: "countdown", params: { from: 3 } }] },
+      { id: "photo", name: "Photo", purpose: "Memories", repeat: "photos", optional: true, duration: 2, background: { media: "{{item.media}}" }, effects: [{ type: "kenBurns", params: { zoomTo: 1.15 } }] },
+      { id: "title", name: "Happy birthday", purpose: "The greeting", duration: 4, background: { gradient: ["#FFBE0B", "#FB5607"], direction: "diagonal" }, texts: [{ text: "Happy Birthday", preset: "heading", position: { x: 0.5, y: 0.38 } }, { text: "{{name}}!", preset: "title", position: { x: 0.5, y: 0.5 }, start: 0.4, style: { fontSize: 140 } }, { text: "{{message}}", preset: "subtitle", position: { x: 0.5, y: 0.64 }, start: 1 }] },
+    ],
+  },
+];

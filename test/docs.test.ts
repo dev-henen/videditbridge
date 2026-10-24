@@ -1,0 +1,19 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { REFERENCE_DIR, generateDocs } from "../scripts/gen-docs.js";
+
+describe("generated reference docs", () => {
+  it("match the code (run `npm run docs` if this fails)", async () => {
+    for (const [name, content] of Object.entries(await generateDocs())) {
+      const onDisk = await readFile(path.join(REFERENCE_DIR, name), "utf8").catch(() => "");
+      expect(onDisk, `docs/reference/${name} is out of date`).toBe(content);
+    }
+  });
+
+  it("document every Claude tool", async () => {
+    const { TOOLS } = await import("../src/claude/index.js");
+    const doc = (await generateDocs())["claude-tools.md"]!;
+    for (const t of TOOLS) expect(doc).toContain(`### ${t.name}`);
+  });
+});
