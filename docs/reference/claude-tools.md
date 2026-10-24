@@ -2,7 +2,7 @@
 
 # Claude tools
 
-46 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+50 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -15,6 +15,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Audio**: [add_audio](#add_audio), [update_audio](#update_audio), [remove_audio](#remove_audio)
 - **Transcript & captions**: [transcribe](#transcribe), [set_transcript](#set_transcript), [get_transcript](#get_transcript), [search_transcript](#search_transcript), [cleanup_speech](#cleanup_speech), [cut_ranges](#cut_ranges), [assemble_from_source](#assemble_from_source), [set_captions](#set_captions), [export_captions](#export_captions)
 - **Voice-over**: [generate_voiceover](#generate_voiceover)
+- **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
 
 ## Inspect & project
@@ -492,6 +493,111 @@ _No parameters._
 | `speed` | number |  |  |  |
 | `instructions` | string |  |  | Delivery style, e.g. 'warm and upbeat' |
 | `volume` | number |  | `1` |  |
+
+## Color
+
+### color_adjust
+
+**edits**. Color correct and grade a clip, a media layer, every clip, or the whole video. Settings merge into the target's existing color settings, so you can tweak one control at a time. Light: exposure (stops), brightness, contrast, highlights, shadows, whites, blacks, brilliance. Color: temperature, tint, hue (degrees), saturation, vibrance, hsl per color (red, orange, yellow, green, aqua, blue, purple, magenta). Grading: curves (master/red/green/blue point graphs or a preset), wheels (shadows/midtones/highlights tint). Finish: fade, clarity, sharpen, vignette, grain, autoCorrect. Most sliders are -100..100 with 0 = unchanged. Correct first (exposure, white balance, contrast), then grade. Use analyze_color and render_scopes to check the result.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string |  | `"global"` | "global" (whole video), "all-clips", a clip id, or a media layer id |
+| `settings` | { exposure, brightness, contrast, highlights, shadows, whites, blacks, brilliance, temperature, tint, hue, saturation, vibrance, hsl, curves, wheels, fade, clarity, sharpen, vignette, grain, autoCorrect } |  | `{}` |  |
+| `settings.exposure` | number |  |  | Exposure in stops (-3..3) (≥ -3, ≤ 3) |
+| `settings.brightness` | number |  |  | Overall brightness (≥ -100, ≤ 100) |
+| `settings.contrast` | number |  |  | Contrast (≥ -100, ≤ 100) |
+| `settings.highlights` | number |  |  | Recover (−) or boost (+) bright areas (≥ -100, ≤ 100) |
+| `settings.shadows` | number |  |  | Lift (+) or deepen (−) dark areas (≥ -100, ≤ 100) |
+| `settings.whites` | number |  |  | Set the white point: + brighter whites, − pull whites down (≥ -100, ≤ 100) |
+| `settings.blacks` | number |  |  | Set the black point: + lifted blacks, − crushed blacks (≥ -100, ≤ 100) |
+| `settings.brilliance` | number |  |  | Balance the image: + brightens shadows and tames highlights, − adds punch (≥ -100, ≤ 100) |
+| `settings.temperature` | number |  |  | White balance: − cooler/blue, + warmer/yellow (≥ -100, ≤ 100) |
+| `settings.tint` | number |  |  | White balance: − greener, + more magenta (≥ -100, ≤ 100) |
+| `settings.hue` | number |  |  | Rotate all hues in degrees (≥ -180, ≤ 180) |
+| `settings.saturation` | number |  |  | Saturation of all colors (−100 = black & white) (≥ -100, ≤ 100) |
+| `settings.vibrance` | number |  |  | Smart saturation: boosts muted colors more than already-saturated ones and protects skin (≥ -100, ≤ 100) |
+| `settings.hsl` | { red, orange, yellow, green, aqua, blue, purple, magenta } |  |  | Per-color hue/saturation/luminance, e.g. {blue: {saturation: 30}, orange: {luminance: 10}} |
+| `settings.hsl.red` | { hue, saturation, luminance } |  |  |  |
+| `settings.hsl.red.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `settings.hsl.red.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `settings.hsl.red.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `settings.hsl.orange` | { hue, saturation, luminance } |  |  |  |
+| `settings.hsl.orange.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `settings.hsl.orange.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `settings.hsl.orange.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `settings.hsl.yellow` | { hue, saturation, luminance } |  |  |  |
+| `settings.hsl.yellow.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `settings.hsl.yellow.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `settings.hsl.yellow.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `settings.hsl.green` | { hue, saturation, luminance } |  |  |  |
+| `settings.hsl.green.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `settings.hsl.green.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `settings.hsl.green.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `settings.hsl.aqua` | { hue, saturation, luminance } |  |  |  |
+| `settings.hsl.aqua.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `settings.hsl.aqua.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `settings.hsl.aqua.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `settings.hsl.blue` | { hue, saturation, luminance } |  |  |  |
+| `settings.hsl.blue.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `settings.hsl.blue.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `settings.hsl.blue.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `settings.hsl.purple` | { hue, saturation, luminance } |  |  |  |
+| `settings.hsl.purple.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `settings.hsl.purple.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `settings.hsl.purple.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `settings.hsl.magenta` | { hue, saturation, luminance } |  |  |  |
+| `settings.hsl.magenta.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `settings.hsl.magenta.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `settings.hsl.magenta.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `settings.curves` | { master, red, green, blue, preset } |  |  | Tone curves (the graph): a master curve plus per-channel R/G/B curves |
+| `settings.curves.master` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `settings.curves.red` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `settings.curves.green` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `settings.curves.blue` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `settings.curves.preset` | "increase_contrast" \| "medium_contrast" \| "strong_contrast" \| "linear_contrast" \| "lighter" \| "darker" \| "vintage" \| "cross_process" \| "color_negative" \| "negative" |  |  | Built-in curve shape (applied before custom points) |
+| `settings.wheels` | { shadows, midtones, highlights } |  |  | Color wheels for grading: tint shadows, midtones and highlights separately (e.g. teal shadows + orange highlights) |
+| `settings.wheels.shadows` | { hue, amount } |  |  |  |
+| `settings.wheels.shadows.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `settings.wheels.shadows.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `settings.wheels.midtones` | { hue, amount } |  |  |  |
+| `settings.wheels.midtones.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `settings.wheels.midtones.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `settings.wheels.highlights` | { hue, amount } |  |  |  |
+| `settings.wheels.highlights.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `settings.wheels.highlights.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `settings.fade` | number |  |  | Matte/faded film look: lifts blacks and softens contrast (≥ 0, ≤ 100) |
+| `settings.clarity` | number |  |  | Local contrast: + crisp and textured, − soft and dreamy (≥ -100, ≤ 100) |
+| `settings.sharpen` | number |  |  | Edge sharpening (≥ 0, ≤ 100) |
+| `settings.vignette` | number |  |  | Edge darkening (+) or lightening (−) (≥ -100, ≤ 100) |
+| `settings.grain` | number |  |  | Film grain amount (≥ 0, ≤ 100) |
+| `settings.autoCorrect` | boolean |  |  | Automatic levels and white balance before other adjustments |
+| `reset` | string[] |  |  | Setting names to clear back to neutral, e.g. ["hsl", "vignette"], or ["all"] |
+
+### get_color
+
+**read-only**. Read the current color settings of a target ("global", a clip id, or a media layer id).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string |  | `"global"` |  |
+
+### analyze_color
+
+**read-only**. Measure the edited video's color at a time: average brightness, shadow/highlight levels, contrast range, saturation and color cast, with plain-language suggestions. Use before and after color_adjust.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `time` | number |  |  | Timeline time; defaults to the middle of the video (≥ 0) |
+
+### render_scopes
+
+**read-only**. Render video scopes (histogram, luma waveform, RGB parade, vectorscope) for the frame at a time and look at them, like a colorist would.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `time` | number |  |  | (≥ 0) |
+| `scopes` | "histogram" \| "waveform" \| "parade" \| "vectorscope"[] |  |  |  |
 
 ## Preview & render
 

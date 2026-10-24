@@ -192,6 +192,25 @@ export function addEffect(p: Project, target: string, effect: Effect): Project {
   return edit(p, (d) => effectList(d, target).push(e));
 }
 
+/** The params of the first effect of a type on a target, if any. */
+export function getEffectParams(p: Project, target: string, effectType: string): Record<string, unknown> | undefined {
+  return effectList(p, target).find((e) => e.type === effectType)?.params;
+}
+
+/**
+ * Set the params of the first effect of a type on a target, adding the effect if it isn't there.
+ * `prepend` adds a new effect first in the chain (color correction belongs before stylizing).
+ */
+export function setEffectParams(p: Project, target: string, effectType: string, params: Record<string, unknown>, opts: { prepend?: boolean } = {}): Project {
+  return edit(p, (d) => {
+    const list = effectList(d, target);
+    const existing = list.find((e) => e.type === effectType);
+    if (existing) existing.params = params;
+    else if (opts.prepend) list.unshift(EffectSchema.parse({ type: effectType, params }));
+    else list.push(EffectSchema.parse({ type: effectType, params }));
+  });
+}
+
 export function removeEffect(p: Project, target: string, effectType: string): Project {
   return edit(p, (d) => {
     const list = effectList(d, target);

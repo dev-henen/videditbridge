@@ -2,7 +2,7 @@
 
 # Effects
 
-38 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+57 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -12,10 +12,11 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 
 ## Contents
 
-- **color**: [adjust](#adjust), [temperature](#temperature), [grayscale](#grayscale), [sepia](#sepia), [invert](#invert), [hueShift](#hueshift), [tint](#tint)
-- **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess)
+- **color**: [adjust](#adjust), [temperature](#temperature), [grayscale](#grayscale), [sepia](#sepia), [invert](#invert), [hueShift](#hueshift), [tint](#tint), [color](#color), [saturation](#saturation), [vibrance](#vibrance), [hue](#hue), [whiteBalance](#whitebalance), [hsl](#hsl), [autoCorrect](#autocorrect)
+- **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
+- **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance)
+- **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox)
 - **blur**: [blur](#blur), [sharpen](#sharpen)
-- **stylize**: [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox)
 - **distort**: [mirror](#mirror)
 - **motion**: [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [shake](#shake), [pulse](#pulse)
 - **time**: [fadeIn](#fadein), [fadeOut](#fadeout), [flash](#flash)
@@ -75,6 +76,159 @@ _No parameters._
 |---|---|---|---|---|
 | `color` | string |  | `"#FF8800"` | Tint color #RRGGBB |
 | `strength` | number |  | `0.3` | 0..1 (≥ 0, ≤ 1) |
+
+### color
+
+**Color (all controls)**. Full color panel in one effect: exposure, contrast, highlights/shadows/whites/blacks, brilliance, temperature/tint, saturation, vibrance, per-color HSL, tone curves, color wheels, fade, clarity, sharpen, vignette, grain, auto-correct. Use one per clip and tweak values together.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `exposure` | number |  |  | Exposure in stops (-3..3) (≥ -3, ≤ 3) |
+| `brightness` | number |  |  | Overall brightness (≥ -100, ≤ 100) |
+| `contrast` | number |  |  | Contrast (≥ -100, ≤ 100) |
+| `highlights` | number |  |  | Recover (−) or boost (+) bright areas (≥ -100, ≤ 100) |
+| `shadows` | number |  |  | Lift (+) or deepen (−) dark areas (≥ -100, ≤ 100) |
+| `whites` | number |  |  | Set the white point: + brighter whites, − pull whites down (≥ -100, ≤ 100) |
+| `blacks` | number |  |  | Set the black point: + lifted blacks, − crushed blacks (≥ -100, ≤ 100) |
+| `brilliance` | number |  |  | Balance the image: + brightens shadows and tames highlights, − adds punch (≥ -100, ≤ 100) |
+| `temperature` | number |  |  | White balance: − cooler/blue, + warmer/yellow (≥ -100, ≤ 100) |
+| `tint` | number |  |  | White balance: − greener, + more magenta (≥ -100, ≤ 100) |
+| `hue` | number |  |  | Rotate all hues in degrees (≥ -180, ≤ 180) |
+| `saturation` | number |  |  | Saturation of all colors (−100 = black & white) (≥ -100, ≤ 100) |
+| `vibrance` | number |  |  | Smart saturation: boosts muted colors more than already-saturated ones and protects skin (≥ -100, ≤ 100) |
+| `hsl` | { red, orange, yellow, green, aqua, blue, purple, magenta } |  |  | Per-color hue/saturation/luminance, e.g. {blue: {saturation: 30}, orange: {luminance: 10}} |
+| `hsl.red` | { hue, saturation, luminance } |  |  |  |
+| `hsl.red.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `hsl.red.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `hsl.red.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `hsl.orange` | { hue, saturation, luminance } |  |  |  |
+| `hsl.orange.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `hsl.orange.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `hsl.orange.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `hsl.yellow` | { hue, saturation, luminance } |  |  |  |
+| `hsl.yellow.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `hsl.yellow.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `hsl.yellow.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `hsl.green` | { hue, saturation, luminance } |  |  |  |
+| `hsl.green.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `hsl.green.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `hsl.green.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `hsl.aqua` | { hue, saturation, luminance } |  |  |  |
+| `hsl.aqua.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `hsl.aqua.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `hsl.aqua.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `hsl.blue` | { hue, saturation, luminance } |  |  |  |
+| `hsl.blue.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `hsl.blue.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `hsl.blue.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `hsl.purple` | { hue, saturation, luminance } |  |  |  |
+| `hsl.purple.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `hsl.purple.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `hsl.purple.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `hsl.magenta` | { hue, saturation, luminance } |  |  |  |
+| `hsl.magenta.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `hsl.magenta.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `hsl.magenta.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `curves` | { master, red, green, blue, preset } |  |  | Tone curves (the graph): a master curve plus per-channel R/G/B curves |
+| `curves.master` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `curves.red` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `curves.green` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `curves.blue` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `curves.preset` | "increase_contrast" \| "medium_contrast" \| "strong_contrast" \| "linear_contrast" \| "lighter" \| "darker" \| "vintage" \| "cross_process" \| "color_negative" \| "negative" |  |  | Built-in curve shape (applied before custom points) |
+| `wheels` | { shadows, midtones, highlights } |  |  | Color wheels for grading: tint shadows, midtones and highlights separately (e.g. teal shadows + orange highlights) |
+| `wheels.shadows` | { hue, amount } |  |  |  |
+| `wheels.shadows.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `wheels.shadows.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `wheels.midtones` | { hue, amount } |  |  |  |
+| `wheels.midtones.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `wheels.midtones.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `wheels.highlights` | { hue, amount } |  |  |  |
+| `wheels.highlights.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `wheels.highlights.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `fade` | number |  |  | Matte/faded film look: lifts blacks and softens contrast (≥ 0, ≤ 100) |
+| `clarity` | number |  |  | Local contrast: + crisp and textured, − soft and dreamy (≥ -100, ≤ 100) |
+| `sharpen` | number |  |  | Edge sharpening (≥ 0, ≤ 100) |
+| `vignette` | number |  |  | Edge darkening (+) or lightening (−) (≥ -100, ≤ 100) |
+| `grain` | number |  |  | Film grain amount (≥ 0, ≤ 100) |
+| `autoCorrect` | boolean |  |  | Automatic levels and white balance before other adjustments |
+
+### saturation
+
+**Saturation**. Saturation of all colors (-100..100, -100 = black and white).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -100, ≤ 100) |
+
+### vibrance
+
+**Vibrance**. Smart saturation that boosts muted colors and protects skin tones (-100..100).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -100, ≤ 100) |
+
+### hue
+
+**Hue**. Rotate all hues (-180..180 degrees).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -180, ≤ 180) |
+
+### whiteBalance
+
+**White Balance**. Relative white balance: temperature (- cooler, + warmer) and tint (- green, + magenta), each -100..100.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `temperature` | number |  | `0` | (≥ -100, ≤ 100) |
+| `tint` | number |  | `0` | (≥ -100, ≤ 100) |
+
+### hsl
+
+**HSL / Color Mixer**. Adjust hue, saturation and luminance per color range: red, orange, yellow, green, aqua, blue, purple, magenta.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `red` | { hue, saturation, luminance } |  |  |  |
+| `red.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `red.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `red.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `orange` | { hue, saturation, luminance } |  |  |  |
+| `orange.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `orange.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `orange.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `yellow` | { hue, saturation, luminance } |  |  |  |
+| `yellow.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `yellow.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `yellow.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `green` | { hue, saturation, luminance } |  |  |  |
+| `green.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `green.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `green.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `aqua` | { hue, saturation, luminance } |  |  |  |
+| `aqua.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `aqua.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `aqua.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `blue` | { hue, saturation, luminance } |  |  |  |
+| `blue.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `blue.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `blue.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `purple` | { hue, saturation, luminance } |  |  |  |
+| `purple.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `purple.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `purple.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `magenta` | { hue, saturation, luminance } |  |  |  |
+| `magenta.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `magenta.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `magenta.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+
+### autoCorrect
+
+**Auto Correct**. Automatic levels and white balance: stretches contrast and neutralizes color casts.
+
+_No parameters._
 
 ## Grade
 
@@ -164,25 +318,117 @@ _No parameters._
 
 _No parameters._
 
-## Blur
+### curves
 
-### blur
-
-**Blur**. Gaussian blur.
+**Tone Curves**. Tone curve graphs: master and per-channel red/green/blue curves as [input, output] points in 0..1, or a preset shape.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `amount` | number |  | `10` | Blur radius (≥ 0, ≤ 100) |
+| `master` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `red` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `green` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `blue` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `preset` | "increase_contrast" \| "medium_contrast" \| "strong_contrast" \| "linear_contrast" \| "lighter" \| "darker" \| "vintage" \| "cross_process" \| "color_negative" \| "negative" |  |  | Built-in curve shape (applied before custom points) |
 
-### sharpen
+### colorWheels
 
-**Sharpen**. Increase detail.
+**Color Wheels**. Color grading wheels: tint shadows, midtones and highlights separately, each with a hue (0..360) and amount (0..100). Teal shadows + orange highlights is the classic film look.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `amount` | number |  | `1` | Sharpen strength (≥ 0, ≤ 3) |
+| `shadows` | { hue, amount } |  |  |  |
+| `shadows.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `shadows.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `midtones` | { hue, amount } |  |  |  |
+| `midtones.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `midtones.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `highlights` | { hue, amount } |  |  |  |
+| `highlights.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `highlights.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+
+### fade
+
+**Fade**. Matte film look: lifted blacks and softer contrast (0..100).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ 0, ≤ 100) |
+
+## Light
+
+### exposure
+
+**Exposure**. Brighten or darken like a camera exposure change (value in stops, -3..3).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -3, ≤ 3) |
+
+### brightness
+
+**Brightness**. Overall brightness (-100..100).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -100, ≤ 100) |
+
+### contrast
+
+**Contrast**. Contrast (-100..100).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -100, ≤ 100) |
+
+### highlights
+
+**Highlights**. Recover (-) or boost (+) the brightest areas (-100..100).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -100, ≤ 100) |
+
+### shadows
+
+**Shadows**. Lift (+) or deepen (-) dark areas (-100..100).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -100, ≤ 100) |
+
+### whites
+
+**Whites**. White point: + brighter whites, - pull whites down (-100..100).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -100, ≤ 100) |
+
+### blacks
+
+**Blacks**. Black point: + lifted blacks, - crushed blacks (-100..100).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -100, ≤ 100) |
+
+### brilliance
+
+**Brilliance**. Balances the image: + brightens shadows and tames highlights for a natural, even look (-100..100).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -100, ≤ 100) |
 
 ## Stylize
+
+### clarity
+
+**Clarity**. Local contrast: + crisp texture and detail, - soft and dreamy (-100..100).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `value` | number |  | `0` | (≥ -100, ≤ 100) |
 
 ### vignette
 
@@ -231,6 +477,24 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `ratio` | number |  | `2.39` | Target aspect ratio of the visible area, e.g. 2.39 (≥ 1, ≤ 4) |
+
+## Blur
+
+### blur
+
+**Blur**. Gaussian blur.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `amount` | number |  | `10` | Blur radius (≥ 0, ≤ 100) |
+
+### sharpen
+
+**Sharpen**. Increase detail.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `amount` | number |  | `1` | Sharpen strength (≥ 0, ≤ 3) |
 
 ## Distort
 

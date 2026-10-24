@@ -1,9 +1,20 @@
 import type { Effect, Project } from "./schema.js";
 import { computeTimeline } from "./timeline.js";
 import { formatTime } from "./util.js";
+import { describeColorSettings, type ColorSettings } from "../library/effects/color.js";
 
 const fx = (effects: Effect[]) =>
-  effects.length ? ` fx:[${effects.map((e) => (e.params && Object.keys(e.params).length ? `${e.type}(${JSON.stringify(e.params)})` : e.type)).join(", ")}]` : "";
+  effects.length
+    ? ` fx:[${effects
+        .map((e) =>
+          e.type === "color"
+            ? `color(${describeColorSettings((e.params ?? {}) as ColorSettings)})`
+            : e.params && Object.keys(e.params).length
+              ? `${e.type}(${JSON.stringify(e.params)})`
+              : e.type,
+        )
+        .join(", ")}]`
+    : "";
 
 const span = (start: number, end: number) => `${formatTime(start)}-${formatTime(end)}`;
 

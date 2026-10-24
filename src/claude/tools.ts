@@ -16,7 +16,7 @@ import { computeTimeline, sourceToTimeline } from "../core/timeline.js";
 import { validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, newId, type AspectRatio } from "../core/util.js";
-import { listEffects } from "../library/effects/index.js";
+import { ColorSettingsSchema, describeColorSettings, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
 import { listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
 import { listCaptionStyles } from "../library/caption-styles/index.js";
@@ -29,6 +29,7 @@ import { transcribeMedia } from "../tools/transcript/providers.js";
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
+import { analyzeColor, renderScopes } from "../tools/render/color-analysis.js";
 import type { ActivityHandle, EditorSession } from "./session.js";
 
 export interface ToolResult {
@@ -647,6 +648,84 @@ export const TOOLS: ToolDefinition[] = [
   }),
 
   // -------------------------------------------------------------------------
+  // Color
+  // -------------------------------------------------------------------------
+  tool({
+    name: "color_adjust",
+    description:
+      "Color correct and grade a clip, a media layer, every clip, or the whole video. Settings merge into the target's existing color settings, so you can tweak one control at a time. " +
+      "Light: exposure (stops), brightness, contrast, highlights, shadows, whites, blacks, brilliance. Color: temperature, tint, hue (degrees), saturation, vibrance, hsl per color (red, orange, yellow, green, aqua, blue, purple, magenta). " +
+      "Grading: curves (master/red/green/blue point graphs or a preset), wheels (shadows/midtones/highlights tint). Finish: fade, clarity, sharpen, vignette, grain, autoCorrect. Most sliders are -100..100 with 0 = unchanged. " +
+      "Correct first (exposure, white balance, contrast), then grade. Use analyze_color and render_scopes to check the result.",
+    input: z.object({
+      target: z.string().default("global").describe('"global" (whole video), "all-clips", a clip id, or a media layer id'),
+      settings: ColorSettingsSchema.default({}),
+      reset: z.array(z.string()).optional().describe('Setting names to clear back to neutral, e.g. ["hsl", "vignette"], or ["all"]'),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const targets = i.target === "all-clips" ? s.project.clips.map((c) => c.id) : [i.target];
+      if (!targets.length) return { text: "There are no clips to adjust.", isError: true };
+      let p = s.project;
+      let result = {} as ColorSettings;
+      for (const target of targets) {
+        const current = i.reset?.includes("all") ? {} : ((ops.getEffectParams(p, target, "color") ?? {}) as ColorSettings);
+        const cleared = Object.fromEntries((i.reset ?? []).filter((k) => k !== "all").map((k) => [k, null]));
+        result = mergeColorSettings(current, { ...cleared, ...i.settings });
+        p = ops.setEffectParams(p, target, "color", result as Record<string, unknown>, { prepend: true });
+      }
+      return commit(s, p, "color_adjust", i, `Color on ${i.target}: ${describeColorSettings(result)}.`);
+    },
+  }),
+  tool({
+    name: "get_color",
+    description: "Read the current color settings of a target (\"global\", a clip id, or a media layer id).",
+    input: z.object({ target: z.string().default("global") }),
+    mutates: false,
+    run: async (s, i) => {
+      const params = (ops.getEffectParams(s.project, i.target, "color") ?? {}) as ColorSettings;
+      return ok(`${i.target}: ${describeColorSettings(params)}\n${JSON.stringify(params)}`, params);
+    },
+  }),
+  tool({
+    name: "analyze_color",
+    description:
+      "Measure the edited video's color at a time: average brightness, shadow/highlight levels, contrast range, saturation and color cast, with plain-language suggestions. Use before and after color_adjust.",
+    input: z.object({ time: z.number().min(0).optional().describe("Timeline time; defaults to the middle of the video") }),
+    mutates: false,
+    run: async (s, i) => {
+      const time = i.time ?? computeTimeline(s.project).duration / 2;
+      const frame = await s.outputPath(`analyze-${time.toFixed(2)}.png`);
+      await renderFrame(s.project, time, { output: frame, scale: 0.5, baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir });
+      const st = await analyzeColor(frame, { ffmpegPath: s.options.ffmpegPath });
+      const pct = (v: number) => `${Math.round(v * 100)}%`;
+      return ok(
+        `At ${time.toFixed(1)}s: brightness ${pct(st.luma)}, shadows ${pct(st.lumaLow)}, highlights ${pct(st.lumaHigh)} (range ${pct(st.lumaHigh - st.lumaLow)}), saturation ${pct(st.saturation)}, cast ${st.cast}.\n- ${st.notes.join("\n- ")}`,
+        st,
+      );
+    },
+  }),
+  tool({
+    name: "render_scopes",
+    description: "Render video scopes (histogram, luma waveform, RGB parade, vectorscope) for the frame at a time and look at them, like a colorist would.",
+    input: z.object({
+      time: z.number().min(0).optional(),
+      scopes: z.array(z.enum(["histogram", "waveform", "parade", "vectorscope"])).optional(),
+    }),
+    mutates: false,
+    run: async (s, i, activity) => {
+      const time = i.time ?? computeTimeline(s.project).duration / 2;
+      const frame = await s.outputPath(`scopes-frame-${time.toFixed(2)}.png`);
+      await renderFrame(s.project, time, { output: frame, scale: 0.5, baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir });
+      activity?.progress(0.6);
+      const out = await s.outputPath(`scopes-${time.toFixed(2)}.png`);
+      await renderScopes(frame, out, i.scopes, { ffmpegPath: s.options.ffmpegPath });
+      s.recordRender({ kind: "frame", path: frame, time });
+      return { text: `Scopes at ${time.toFixed(1)}s (${(i.scopes ?? ["histogram", "waveform", "parade", "vectorscope"]).join(", ")}): ${out}`, images: [{ path: out, mediaType: "image/png" }] };
+    },
+  }),
+
+  // -------------------------------------------------------------------------
   // Preview & render
   // -------------------------------------------------------------------------
   tool({
@@ -776,6 +855,14 @@ export function describeToolCall(name: string, input: unknown): string {
       return `Recording voice-over ${quote(i.text, 30)}`;
     case "render_frame":
       return `Rendering frame at ${i.time}s`;
+    case "color_adjust": {
+      const keys = Object.keys((i.settings as object) ?? {});
+      return keys.length ? `Adjusting color: ${keys.slice(0, 4).join(", ")}${keys.length > 4 ? "…" : ""}` : "Adjusting color";
+    }
+    case "analyze_color":
+      return "Measuring color and exposure";
+    case "render_scopes":
+      return "Rendering color scopes";
     case "render_contact_sheet":
       return "Rendering overview of the whole video";
     case "render_preview":

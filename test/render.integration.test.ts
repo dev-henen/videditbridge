@@ -67,6 +67,28 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     expect((await probe(session.renders[2]!.path)).duration).toBeCloseTo(4.5, 0);
   });
 
+  it("measures color, ignores letterbox bars, and renders scopes", async () => {
+    const session = new EditorSession(undefined, { outputDir: out("color") });
+    await executeTool(session, "new_project", { aspectRatio: "16:9" });
+    await executeTool(session, "import_media", { src: fx.talk, id: "talk" });
+    await executeTool(session, "add_clip", { assetId: "talk" });
+    const before = await executeTool(session, "analyze_color", { time: 1 });
+    expect(before.isError, before.text).toBeFalsy();
+    const plain = before.data as { luma: number; saturation: number };
+
+    await executeTool(session, "add_effect", { target: "global", type: "letterbox", params: { ratio: 2.39 } });
+    const boxed = (await executeTool(session, "analyze_color", { time: 1 })).data as { luma: number };
+    expect(Math.abs(boxed.luma - plain.luma)).toBeLessThan(0.08); // bars excluded from the measurement
+
+    await executeTool(session, "color_adjust", { settings: { saturation: -100 } });
+    const grey = (await executeTool(session, "analyze_color", { time: 1 })).data as { saturation: number };
+    expect(grey.saturation).toBeLessThan(plain.saturation / 3);
+
+    const scopes = await executeTool(session, "render_scopes", { time: 1 });
+    expect(scopes.isError, scopes.text).toBeFalsy();
+    expect((await probe(scopes.images![0]!.path)).width).toBeGreaterThan(1000);
+  });
+
   it("renders a still frame and a range directly", async () => {
     const session = new EditorSession();
     await executeTool(session, "import_media", { src: fx.talk, id: "talk" });

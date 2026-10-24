@@ -26,6 +26,8 @@ export interface RunResult {
   code: number;
   stdout: string;
   stderr: string;
+  /** Raw stdout bytes, when `binaryStdout` was requested. */
+  stdoutBuffer?: Buffer;
 }
 
 export interface RunOptions extends FfmpegOptions {
@@ -33,6 +35,8 @@ export interface RunOptions extends FfmpegOptions {
   /** Called with progress in seconds of output rendered. */
   onProgress?: (seconds: number) => void;
   signal?: AbortSignal;
+  /** Collect stdout as raw bytes (e.g. rawvideo pixels) in `stdoutBuffer`. */
+  binaryStdout?: boolean;
 }
 
 export class FfmpegError extends Error {
@@ -52,7 +56,8 @@ export function runFfmpeg(args: string[], opts: RunOptions = {}): Promise<RunRes
     const proc = spawn(bin, args, { cwd: opts.cwd, signal: opts.signal, windowsHide: true });
     let stdout = "";
     let stderr = "";
-    proc.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
+    const chunks: Buffer[] = [];
+    proc.stdout.on("data", (d: Buffer) => (opts.binaryStdout ? chunks.push(d) : (stdout += d.toString())));
     proc.stderr.on("data", (d: Buffer) => {
       const s = d.toString();
       stderr += s;
@@ -70,7 +75,7 @@ export function runFfmpeg(args: string[], opts: RunOptions = {}): Promise<RunRes
           : err,
       ),
     );
-    proc.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr }));
+    proc.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr, ...(opts.binaryStdout ? { stdoutBuffer: Buffer.concat(chunks) } : {}) }));
   });
 }
 

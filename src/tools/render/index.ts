@@ -2,3 +2,4 @@
 export * from "./ffmpeg.js";
 export * from "./compile.js";
 export * from "./render.js";
+export * from "./color-analysis.js";

@@ -10,15 +10,16 @@
 | [Transcripts & captions](guides/transcripts-and-captions.md) | Importing and producing transcripts, speech search, filler/pause removal, caption styling and export |
 | [Templates](guides/templates.md) | How templates work and how to write your own (slots, scenes, placeholders) |
 | [Rendering & live preview](guides/rendering-and-preview.md) | FFmpeg setup, renders, frames, contact sheets, the preview server |
+| [Color correction & grading](guides/color.md) | Exposure, white balance, tone, HSL, curves, color wheels, finishing, analysis and scopes |
 | [Voice-over](guides/voiceover.md) | Text-to-speech providers and narrated edits |
 
 ## Reference
 
 | Reference | |
 |---|---|
-| [Claude tools](reference/claude-tools.md) | All 46 tools with their parameters |
+| [Claude tools](reference/claude-tools.md) | All Claude tools with their parameters |
 | [Templates](reference/templates.md) | All 33 templates: inputs, scenes, look and editing guidance |
-| [Effects](reference/effects.md) | Color grades, motion, blur and stylize effects with parameters |
+| [Effects](reference/effects.md) | Color controls, grades, motion, blur and stylize effects with parameters |
 | [Transitions](reference/transitions.md) | Transitions between clips |
 | [Animations](reference/animations.md) | Entrance and exit animations for layers |
 | [Caption styles](reference/caption-styles.md) | Caption presets and the fields you can override |

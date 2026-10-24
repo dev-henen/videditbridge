@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type { Effect } from "../../core/schema.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
+import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
+
+export * from "./color.js";
 
 export interface EffectContext {
   width: number;
@@ -10,7 +13,7 @@ export interface EffectContext {
   duration: number;
 }
 
-export type EffectCategory = "color" | "grade" | "blur" | "stylize" | "motion" | "distort" | "time";
+export type EffectCategory = "light" | "color" | "grade" | "blur" | "stylize" | "motion" | "distort" | "time";
 
 export interface EffectDefinition<P extends z.ZodType = z.ZodType> {
   id: string;
@@ -168,6 +171,7 @@ export const EFFECTS: EffectDefinition[] = [
     toFilter: (p) => `lut3d=file='${escapeFilterPath(p.file)}'`,
   }),
   ...gradeEffects,
+  ...colorEffects(),
 
   // --- blur & stylize -----------------------------------------------------------
   define({
@@ -410,4 +414,91 @@ function rgbToHue(r: number, g: number, b: number): number {
 /** Escape a filesystem path for use inside a single-quoted FFmpeg filter argument. */
 export function escapeFilterPath(p: string): string {
   return p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "'\\''");
+}
+
+/**
+ * The all-in-one "color" effect plus one effect per control, all compiled by colorFilter.
+ * Prefer the "color" effect (one per clip) so adjustments can be tweaked together.
+ */
+function colorEffects(): EffectDefinition[] {
+  const shape = ColorSettingsSchema.shape;
+  const single = (
+    id: string,
+    name: string,
+    category: EffectCategory,
+    description: string,
+    key: keyof ColorSettings,
+  ): EffectDefinition =>
+    define({
+      id,
+      name,
+      category,
+      description,
+      params: z.object({ value: ((shape[key] as z.ZodOptional<z.ZodNumber>).unwrap()).default(0) }),
+      toFilter: (p) => colorFilter({ [key]: (p as { value: unknown }).value } as ColorSettings) || "null",
+    });
+  return [
+    define({
+      id: "color",
+      name: "Color (all controls)",
+      category: "color",
+      description:
+        "Full color panel in one effect: exposure, contrast, highlights/shadows/whites/blacks, brilliance, temperature/tint, saturation, vibrance, per-color HSL, tone curves, color wheels, fade, clarity, sharpen, vignette, grain, auto-correct. Use one per clip and tweak values together.",
+      params: ColorSettingsSchema,
+      toFilter: (p) => colorFilter(p as ColorSettings) || "null",
+    }),
+    single("exposure", "Exposure", "light", "Brighten or darken like a camera exposure change (value in stops, -3..3).", "exposure"),
+    single("brightness", "Brightness", "light", "Overall brightness (-100..100).", "brightness"),
+    single("contrast", "Contrast", "light", "Contrast (-100..100).", "contrast"),
+    single("highlights", "Highlights", "light", "Recover (-) or boost (+) the brightest areas (-100..100).", "highlights"),
+    single("shadows", "Shadows", "light", "Lift (+) or deepen (-) dark areas (-100..100).", "shadows"),
+    single("whites", "Whites", "light", "White point: + brighter whites, - pull whites down (-100..100).", "whites"),
+    single("blacks", "Blacks", "light", "Black point: + lifted blacks, - crushed blacks (-100..100).", "blacks"),
+    single("brilliance", "Brilliance", "light", "Balances the image: + brightens shadows and tames highlights for a natural, even look (-100..100).", "brilliance"),
+    single("saturation", "Saturation", "color", "Saturation of all colors (-100..100, -100 = black and white).", "saturation"),
+    single("vibrance", "Vibrance", "color", "Smart saturation that boosts muted colors and protects skin tones (-100..100).", "vibrance"),
+    single("hue", "Hue", "color", "Rotate all hues (-180..180 degrees).", "hue"),
+    define({
+      id: "whiteBalance",
+      name: "White Balance",
+      category: "color",
+      description: "Relative white balance: temperature (- cooler, + warmer) and tint (- green, + magenta), each -100..100.",
+      params: z.object({ temperature: z.number().min(-100).max(100).default(0), tint: z.number().min(-100).max(100).default(0) }),
+      toFilter: (p) => colorFilter(p as ColorSettings) || "null",
+    }),
+    define({
+      id: "hsl",
+      name: "HSL / Color Mixer",
+      category: "color",
+      description: "Adjust hue, saturation and luminance per color range: red, orange, yellow, green, aqua, blue, purple, magenta.",
+      params: shape.hsl.unwrap(),
+      toFilter: (p) => colorFilter({ hsl: p } as ColorSettings) || "null",
+    }),
+    define({
+      id: "curves",
+      name: "Tone Curves",
+      category: "grade",
+      description: "Tone curve graphs: master and per-channel red/green/blue curves as [input, output] points in 0..1, or a preset shape.",
+      params: shape.curves.unwrap(),
+      toFilter: (p) => colorFilter({ curves: p } as ColorSettings) || "null",
+    }),
+    define({
+      id: "colorWheels",
+      name: "Color Wheels",
+      category: "grade",
+      description: "Color grading wheels: tint shadows, midtones and highlights separately, each with a hue (0..360) and amount (0..100). Teal shadows + orange highlights is the classic film look.",
+      params: shape.wheels.unwrap(),
+      toFilter: (p) => colorFilter({ wheels: p } as ColorSettings) || "null",
+    }),
+    single("fade", "Fade", "grade", "Matte film look: lifted blacks and softer contrast (0..100).", "fade"),
+    single("clarity", "Clarity", "stylize", "Local contrast: + crisp texture and detail, - soft and dreamy (-100..100).", "clarity"),
+    define({
+      id: "autoCorrect",
+      name: "Auto Correct",
+      category: "color",
+      description: "Automatic levels and white balance: stretches contrast and neutralizes color casts.",
+      params: z.object({}),
+      toFilter: () => colorFilter({ autoCorrect: true }),
+    }),
+  ];
 }

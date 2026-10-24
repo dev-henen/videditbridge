@@ -94,6 +94,7 @@ function claudeTools(): string {
     ["Audio", ["add_audio", "update_audio", "remove_audio"]],
     ["Transcript & captions", ["transcribe", "set_transcript", "get_transcript", "search_transcript", "cleanup_speech", "cut_ranges", "assemble_from_source", "set_captions", "export_captions"]],
     ["Voice-over", ["generate_voiceover"]],
+    ["Color", ["color_adjust", "get_color", "analyze_color", "render_scopes"]],
     ["Preview & render", ["render_frame", "render_contact_sheet", "render_preview", "render_video"]],
   ];
   const grouped = new Set(groups.flatMap(([, names]) => names));
