@@ -8,7 +8,9 @@
  *           tools.list, tools.execute, session.undo, session.redo, render.scrub, agent.run, agent.cancel
  * Notifications: state, activity, agent.text, agent.end, log
  */
-import { mkdir } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { rmSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { EditorSession } from "../claude/session.js";
@@ -20,7 +22,8 @@ import { OpenAITTS } from "../tools/voiceover/providers.js";
 import type { AspectRatio } from "../core/util.js";
 import { EditorAgent } from "./agent.js";
 import { ProjectStore } from "./projects.js";
-import { RpcError, StdioRpc } from "./rpc.js";
+import { RpcError, StdioRpc, serveLocal, type Handler } from "./rpc.js";
+import { HOST_INFO_FILE } from "./remote.js";
 
 // stdout is the protocol channel: route stray console output to stderr.
 console.log = console.error;
@@ -34,7 +37,7 @@ let projectDir: string | undefined;
 let agent: EditorAgent | undefined;
 let detach: (() => void) | undefined;
 
-const rpc = new StdioRpc({
+const handlers: Record<string, Handler> = {
   "host.info": () => ({
     version: "0.1.0",
     projectsDir: store.root,
@@ -74,7 +77,8 @@ const rpc = new StdioRpc({
     agent?.cancel();
     return true;
   },
-});
+};
+const rpc = new StdioRpc(handlers);
 
 function sessionOptions(dir: string) {
   return {
@@ -164,4 +168,15 @@ async function scrub(time: number): Promise<{ path: string | null; time: number 
   return { path: await job, time };
 }
 
+// Remote control: other local processes (scripts, Claude Code, a future MCP connector) can drive
+// this same session through a token-protected socket advertised in <projectsDir>/.host.json.
+const token = randomBytes(24).toString("hex");
+const remote = await serveLocal(handlers, token);
+const infoFile = path.join(store.root, HOST_INFO_FILE);
+await mkdir(store.root, { recursive: true });
+await writeFile(infoFile, JSON.stringify({ port: remote.port, token, pid: process.pid }), "utf8");
+process.on("exit", () => rmSync(infoFile, { force: true }));
+
 await rpc.start();
+remote.server.close();
+process.exit(0);

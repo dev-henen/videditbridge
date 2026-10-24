@@ -35,6 +35,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = _vm;
+        _vm.ProjectChanged += ResetViewer;
         _vm.StateUpdated += OnState;
         _vm.PropertyChanged += OnViewModelChanged;
         Timeline.Seek += t => SetScrubber(t, fromUser: true);

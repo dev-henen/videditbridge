@@ -28,6 +28,7 @@ Usage:
   ave preview <project.json> [--port 4321] [--no-open]  Live preview in your browser; reloads when the file changes
   ave probe <media>                        Inspect a media file
   ave tools                                Print Claude tool definitions (JSON)
+  ave remote <method> [json]               Call the running desktop app, e.g. ave remote tools.execute {"name":"get_project"}
 
 Relative media paths in a project resolve against the project file's folder.`;
 
@@ -126,6 +127,17 @@ async function main(argv: string[]): Promise<number> {
     }
     case "probe": {
       console.log(JSON.stringify(await probe(args[0]!), null, 2));
+      return 0;
+    }
+    case "remote": {
+      const { RemoteHost } = await import("./host/remote.js");
+      const host = await RemoteHost.connect(path.resolve(process.env.AVE_PROJECTS_DIR ?? "projects"));
+      try {
+        const result = await host.call(args[0] ?? "host.info", args[1] ? JSON.parse(args[1]) : {});
+        console.log(typeof result === "string" ? result : JSON.stringify(result, null, 2));
+      } finally {
+        host.close();
+      }
       return 0;
     }
     case "tools": {

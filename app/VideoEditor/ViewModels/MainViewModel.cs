@@ -23,6 +23,9 @@ public sealed class MainViewModel : Observable, IDisposable
     /// <summary>Raised on the UI thread whenever a new state snapshot arrives.</summary>
     public event Action<JsonNode>? StateUpdated;
 
+    /// <summary>Raised when a different project becomes active (also when switched remotely).</summary>
+    public event Action? ProjectChanged;
+
     public JsonNode? State { get; private set; }
 
     public MainViewModel()
@@ -295,7 +298,18 @@ public sealed class MainViewModel : Observable, IDisposable
         if (s is null) return;
         State = s;
         IsProjectOpen = true;
-        ProjectDir = s["projectDir"]?.GetValue<string>();
+        var dir = s["projectDir"]?.GetValue<string>();
+        if (dir != ProjectDir)
+        {
+            if (ProjectDir is not null)
+            {
+                Activities.Clear();
+                AgentText = "";
+            }
+            ProjectDir = dir;
+            HideProjects();
+            ProjectChanged?.Invoke();
+        }
         ProjectName = s["name"]?.GetValue<string>() ?? Path.GetFileName(ProjectDir) ?? "";
         Duration = s["duration"]?.GetValue<double>() ?? 0;
         var st = s["settings"];
