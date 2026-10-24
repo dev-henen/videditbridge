@@ -4,3 +4,4 @@ coverage/
 .render/
 *.log
 test/.output/
+projects/

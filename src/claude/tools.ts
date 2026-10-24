@@ -29,7 +29,7 @@ import { transcribeMedia } from "../tools/transcript/providers.js";
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
-import type { EditorSession } from "./session.js";
+import type { ActivityHandle, EditorSession } from "./session.js";
 
 export interface ToolResult {
   text: string;
@@ -45,7 +45,8 @@ export interface ToolDefinition<S extends z.ZodType = z.ZodType> {
   input: S;
   /** Tools that change the project. */
   mutates: boolean;
-  run(session: EditorSession, input: z.output<S>): Promise<ToolResult>;
+  /** `activity` is the live activity for this call; long-running tools report progress on it. */
+  run(session: EditorSession, input: z.output<S>, activity?: ActivityHandle): Promise<ToolResult>;
 }
 
 function tool<S extends z.ZodType>(def: ToolDefinition<S>): ToolDefinition {
@@ -677,10 +678,10 @@ export const TOOLS: ToolDefinition[] = [
     description: "Render a fast low-resolution preview video (shown in the live preview for the user). Optionally only a time range.",
     input: z.object({ scale: z.number().min(0.1).max(1).default(0.5), start: z.number().min(0).optional(), end: z.number().positive().optional() }),
     mutates: false,
-    run: async (s, i) => {
+    run: async (s, i, activity) => {
       const out = await s.outputPath("preview.mp4");
       const range = i.start !== undefined || i.end !== undefined ? { start: i.start ?? 0, end: i.end ?? Number.MAX_SAFE_INTEGER } : undefined;
-      const r = await render(s.project, { output: out, scale: i.scale, range, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir });
+      const r = await render(s.project, { output: out, scale: i.scale, range, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir, onProgress: (p) => activity?.progress(p) });
       s.recordRender({ kind: "preview", path: out });
       return ok(`Preview rendered (${r.duration}s): ${out}`);
     },
@@ -690,9 +691,9 @@ export const TOOLS: ToolDefinition[] = [
     description: "Render the final full-quality video file.",
     input: z.object({ output: z.string().describe("Output path, e.g. out/final.mp4") }),
     mutates: false,
-    run: async (s, i) => {
+    run: async (s, i, activity) => {
       const out = s.resolve(i.output);
-      const r = await render(s.project, { output: out, baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir });
+      const r = await render(s.project, { output: out, baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir, onProgress: (p) => activity?.progress(p) });
       s.recordRender({ kind: "video", path: out });
       return ok(`Rendered ${r.duration}s video to ${out}`);
     },
@@ -723,12 +724,68 @@ export async function executeTool(session: EditorSession, name: string, input: u
   if (!parsed.success) {
     return { text: `Invalid input for ${name}: ${parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ")}`, isError: true };
   }
+  const activity = session.startActivity(name.startsWith("render_") ? "render" : "tool", describeToolCall(name, parsed.data));
   try {
-    return await def.run(session, parsed.data);
+    const result = await def.run(session, parsed.data, activity);
+    const summary = result.text.split("\n")[0]!;
+    if (result.isError) activity.fail(summary);
+    else activity.done(summary);
+    return result;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     session.error(`${name}: ${message}`);
+    activity.fail(message.split("\n")[0]!);
     return { text: `${name} failed: ${message}`, isError: true };
+  }
+}
+
+const quote = (v: unknown, max = 40) => {
+  const t = String(v ?? "");
+  return `"${t.length > max ? `${t.slice(0, max - 1)}…` : t}"`;
+};
+
+/** Plain-language label for a tool call, shown to people watching the session. */
+export function describeToolCall(name: string, input: unknown): string {
+  const i = (input ?? {}) as Record<string, unknown>;
+  switch (name) {
+    case "get_project":
+      return "Reviewing the project";
+    case "apply_template":
+      return `Applying the ${quote(i.templateId)} template`;
+    case "import_media":
+      return `Importing ${quote(String(i.src).split(/[\\/]/).pop())}`;
+    case "add_clip":
+      return `Adding clip from ${quote(i.assetId)}`;
+    case "add_text":
+      return `Adding text ${quote(i.text)}`;
+    case "add_component":
+      return `Adding ${String(i.component).replace(/-/g, " ")}`;
+    case "add_effect":
+      return `Adding ${quote(i.type)} effect`;
+    case "set_transition":
+      return `Setting ${quote(i.type)} transition`;
+    case "set_captions":
+      return i.enabled === false ? "Turning captions off" : `Styling captions${i.style ? ` (${i.style})` : ""}`;
+    case "transcribe":
+      return `Transcribing ${quote(i.assetId)}`;
+    case "cleanup_speech":
+      return "Removing filler words and pauses";
+    case "search_transcript":
+      return `Searching speech for ${quote(i.query)}`;
+    case "generate_voiceover":
+      return `Recording voice-over ${quote(i.text, 30)}`;
+    case "render_frame":
+      return `Rendering frame at ${i.time}s`;
+    case "render_contact_sheet":
+      return "Rendering overview of the whole video";
+    case "render_preview":
+      return "Rendering preview video";
+    case "render_video":
+      return `Rendering final video ${quote(i.output)}`;
+    default: {
+      const words = name.replace(/_/g, " ");
+      return words[0]!.toUpperCase() + words.slice(1);
+    }
   }
 }
 

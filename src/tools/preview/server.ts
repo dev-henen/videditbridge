@@ -1,4 +1,5 @@
-import { createReadStream } from "node:fs";
+import { spawn } from "node:child_process";
+import { createReadStream, existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import path from "node:path";
@@ -37,6 +38,58 @@ export interface PreviewServerOptions {
   autoContactSheet?: boolean;
   /** Debounce for automatic renders, ms. */
   debounceMs?: number;
+  /** Pop up a preview window once the server is listening (see `openPreviewWindow`). */
+  open?: boolean;
+}
+
+function detachedSpawn(cmd: string, args: string[]): void {
+  try {
+    spawn(cmd, args, { detached: true, stdio: "ignore", windowsHide: false }).on("error", () => undefined).unref();
+  } catch {
+    // nothing to open with
+  }
+}
+
+/** Chromium-based browsers that support `--app` windows, per platform. */
+function appBrowserCandidates(): string[] {
+  if (process.platform === "win32") {
+    const roots = [process.env["ProgramFiles(x86)"], process.env.ProgramFiles, process.env.LOCALAPPDATA].filter(Boolean) as string[];
+    return roots.flatMap((r) => [
+      path.join(r, "Microsoft", "Edge", "Application", "msedge.exe"),
+      path.join(r, "Google", "Chrome", "Application", "chrome.exe"),
+      path.join(r, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+    ]);
+  }
+  if (process.platform === "darwin") {
+    return [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ];
+  }
+  return ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/microsoft-edge", "/snap/bin/chromium"];
+}
+
+/**
+ * Pop up the preview as its own app-style window (no tabs or address bar) using an installed
+ * Chromium browser in `--app` mode — Edge ships with Windows. Falls back to the default browser.
+ * Returns how it was opened.
+ */
+export function openPreviewWindow(url: string, size = { width: 1440, height: 900 }): "app-window" | "browser" {
+  const browser = appBrowserCandidates().find((p) => existsSync(p));
+  if (browser) {
+    detachedSpawn(browser, [`--app=${url}`, `--window-size=${size.width},${size.height}`, "--new-window"]);
+    return "app-window";
+  }
+  openInBrowser(url);
+  return "browser";
+}
+
+/** Open a URL in a normal tab of the system's default browser. */
+export function openInBrowser(url: string): void {
+  if (process.platform === "win32") detachedSpawn("explorer", [url]);
+  else detachedSpawn(process.platform === "darwin" ? "open" : "xdg-open", [url]);
 }
 
 export interface PreviewServer {
@@ -252,8 +305,10 @@ export async function startPreviewServer(source: PreviewSource, opts: PreviewSer
   });
   const address = server.address();
   const actualPort = typeof address === "object" && address ? address.port : port;
+  const url = `http://${host}:${actualPort}`;
+  if (opts.open) openPreviewWindow(url);
   return {
-    url: `http://${host}:${actualPort}`,
+    url,
     server,
     close: () =>
       new Promise((resolve) => {

@@ -35,10 +35,34 @@ export interface RenderArtifact {
   time?: number;
 }
 
+export type ActivityKind = "tool" | "render" | "file" | "info";
+
+/** A unit of work shown live to the user ("Adding text…", "Rendering preview… 45%"). */
+export interface Activity {
+  id: string;
+  kind: ActivityKind;
+  label: string;
+  status: "running" | "done" | "error";
+  /** 0..1 when known. */
+  progress?: number;
+  /** Result summary or error message. */
+  detail?: string;
+  startedAt: string;
+  endedAt?: string;
+}
+
+export interface ActivityHandle {
+  readonly id: string;
+  progress(value: number): void;
+  done(detail?: string): void;
+  fail(message: string): void;
+}
+
 export interface SessionEvents {
   change: [{ project: Project; action: string; revision: number }];
   render: [RenderArtifact];
   log: [{ level: "info" | "error"; message: string; at: string }];
+  activity: [Activity];
 }
 
 /**
@@ -52,7 +76,53 @@ export class EditorSession extends EventEmitter<SessionEvents> {
   private rev = 0;
   readonly renders: RenderArtifact[] = [];
   readonly log: { level: "info" | "error"; message: string; at: string }[] = [];
+  /** Recent activities, oldest first. */
+  readonly activities: Activity[] = [];
+  private activityCount = 0;
   readonly options: Required<Pick<SessionOptions, "baseDir" | "outputDir" | "historyLimit">> & SessionOptions;
+
+  /** Activities still in progress. */
+  get running(): Activity[] {
+    return this.activities.filter((a) => a.status === "running");
+  }
+
+  /** Begin a unit of work that viewers see live. Call `done` or `fail` when it ends. */
+  startActivity(kind: ActivityKind, label: string): ActivityHandle {
+    const activity: Activity = { id: `act${++this.activityCount}`, kind, label, status: "running", startedAt: new Date().toISOString() };
+    this.activities.push(activity);
+    if (this.activities.length > 200) this.activities.splice(0, this.activities.length - 200);
+    const emit = () => this.emit("activity", { ...activity });
+    const finish = (status: "done" | "error", detail?: string) => {
+      if (activity.status !== "running") return;
+      Object.assign(activity, { status, detail, endedAt: new Date().toISOString() });
+      if (status === "done") activity.progress = activity.progress === undefined ? undefined : 1;
+      emit();
+    };
+    emit();
+    return {
+      id: activity.id,
+      progress: (value) => {
+        if (activity.status !== "running") return;
+        activity.progress = Math.max(0, Math.min(1, value));
+        emit();
+      },
+      done: (detail) => finish("done", detail),
+      fail: (message) => finish("error", message),
+    };
+  }
+
+  /** Run `fn` as a tracked activity. */
+  async track<T>(kind: ActivityKind, label: string, fn: (activity: ActivityHandle) => Promise<T>): Promise<T> {
+    const activity = this.startActivity(kind, label);
+    try {
+      const result = await fn(activity);
+      activity.done();
+      return result;
+    } catch (e) {
+      activity.fail(e instanceof Error ? e.message.split("\n")[0]! : String(e));
+      throw e;
+    }
+  }
 
   constructor(project?: Project, options: SessionOptions = {}) {
     super();

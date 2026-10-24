@@ -29,7 +29,7 @@ const session = new EditorSession(undefined, {
   transcriber: process.env.OPENAI_API_KEY ? new OpenAITranscriber() : undefined,
   tts: process.env.OPENAI_API_KEY ? new OpenAITTS() : undefined,
 });
-const preview = await startPreviewServer(session);
+const preview = await startPreviewServer(session, { open: true });
 console.log(`Live preview: ${preview.url}\n`);
 
 const client = new Anthropic();

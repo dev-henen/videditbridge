@@ -25,7 +25,7 @@ Usage:
   ave frame <project.json> <time> <out.png>  Render one frame [--scale 0.5]
   ave sheet <project.json> <out.png>       Render a contact sheet [--columns 4 --rows 3]
   ave captions <project.json> <out.srt|vtt|ass>  Export captions
-  ave preview <project.json> [--port 4321] Live preview that reloads when the file changes
+  ave preview <project.json> [--port 4321] [--no-open]  Live preview in your browser; reloads when the file changes
   ave probe <media>                        Inspect a media file
   ave tools                                Print Claude tool definitions (JSON)
 
@@ -49,6 +49,7 @@ async function main(argv: string[]): Promise<number> {
       rows: { type: "string" },
       port: { type: "string" },
       json: { type: "boolean" },
+      "no-open": { type: "boolean" },
       fonts: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
@@ -135,7 +136,7 @@ async function main(argv: string[]): Promise<number> {
       const file = path.resolve(args[0]!);
       const { project, baseDir } = await loadProject(file);
       const session = new EditorSession(project, { baseDir, fontsDir: values.fonts });
-      const server = await startPreviewServer(session, { port: num(values.port) ?? 4321 });
+      const server = await startPreviewServer(session, { port: num(values.port) ?? 4321, open: !values["no-open"] });
       console.log(`Live preview: ${server.url}\nWatching ${file} — save the file to update. Ctrl+C to stop.`);
       let timer: NodeJS.Timeout | undefined;
       watch(file, () => {
