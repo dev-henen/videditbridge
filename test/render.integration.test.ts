@@ -239,7 +239,9 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
       };
       const first = await nextState();
       await executeTool(session, "add_text", { text: "Live!", start: 0, duration: 2 });
-      const second = await nextState();
+      // Activity updates ("Adding text…") are pushed too, at the same revision; skip to the edit.
+      let second = await nextState();
+      for (let n = 0; second.revision === first.revision && n < 10; n++) second = await nextState();
       expect(second.revision).toBe(first.revision + 1);
       expect(second.layers).toHaveLength(1);
       ctrl.abort();
