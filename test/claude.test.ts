@@ -96,7 +96,10 @@ describe("session + tools", () => {
     expect((await executeTool(s, "add_clip", {})).isError).toBe(true);
     expect((await executeTool(s, "remove_clip", { clipId: "nope" })).text).toMatch(/No clip with id/);
     expect((await executeTool(s, "nope", {})).isError).toBe(true);
-    expect((await executeTool(s, "transcribe", { assetId: "talk" })).text).toMatch(/No transcription provider/);
+    // Transcription always has the built-in local model; a missing media file is reported, not thrown.
+    const stt = await executeTool(s, "transcribe", { assetId: "talk" });
+    expect(stt.isError).toBe(true);
+    expect(stt.text).toMatch(/transcribe failed/);
   });
 
   it("lists catalogs", async () => {

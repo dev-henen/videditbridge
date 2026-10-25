@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ANALYSIS_RATE, analyzeSamples, detectBeats, formatSoundMap, soundRanges } from "../src/tools/audio/analyze.js";
+import { ANALYSIS_RATE, analyzeSamples, detectBeats, formatSoundMap, snapWordsToSpeech, soundRanges } from "../src/tools/audio/analyze.js";
 
 const SR = ANALYSIS_RATE;
 
@@ -97,6 +97,41 @@ describe("sound map", () => {
     expect(analyzeSamples(new Float32Array(0)).segments).toEqual([]);
     const quiet = analyzeSamples(signal([silence(3)]));
     expect(quiet.segments.map((s) => s.kind)).toEqual(["silence"]);
+  });
+});
+
+describe("snapping recognizer word times to speech", () => {
+  const map = {
+    duration: 10,
+    noiseFloor: -60,
+    threshold: -50,
+    loudMoments: [],
+    levels: [],
+    totals: { speech: 4, music: 0, sound: 0, silence: 6 },
+    segments: [
+      { start: 0, end: 2, kind: "silence" as const, level: -60, confidence: 1 },
+      { start: 2, end: 4, kind: "speech" as const, level: -20, confidence: 1 },
+      { start: 4, end: 6, kind: "silence" as const, level: -60, confidence: 1 },
+      { start: 6, end: 8, kind: "speech" as const, level: -20, confidence: 1 },
+      { start: 8, end: 10, kind: "silence" as const, level: -60, confidence: 1 },
+    ],
+  };
+
+  it("trims words stretched over a pause and moves words found in silence", () => {
+    const out = snapWordsToSpeech(
+      [
+        { text: "inside", start: 2.5, end: 3 },
+        { text: "stretched", start: 3.6, end: 5.5 },
+        { text: "early", start: 5.5, end: 5.8 },
+        { text: "far", start: 9.5, end: 9.8 },
+      ],
+      map,
+    );
+    expect(out[0]).toMatchObject({ start: 2.5, end: 3 });
+    expect(out[1]).toMatchObject({ start: 3.6, end: 4 });
+    expect(out[2]).toMatchObject({ start: 6, end: 6.3 });
+    // More than a second from any speech: left alone.
+    expect(out[3]).toMatchObject({ start: 9.5, end: 9.8 });
   });
 });
 

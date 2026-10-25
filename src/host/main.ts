@@ -42,7 +42,8 @@ const handlers: Record<string, Handler> = {
     version: "0.1.0",
     projectsDir: store.root,
     claudeAvailable: !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_PROFILE),
-    transcriptionAvailable: !!process.env.OPENAI_API_KEY,
+    // Transcription always works: OpenAI when a key is set, otherwise the built-in local Whisper.
+    transcriptionAvailable: true,
   }),
   "project.list": () => store.list(),
   "project.create": async (p) => {

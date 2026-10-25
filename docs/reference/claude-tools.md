@@ -555,12 +555,12 @@ _No parameters._
 
 ### transcribe
 
-**edits**. Transcribe an asset's speech with word timings (needs a transcription provider). Enables captions, search and filler removal.
+**edits**. Transcribe an asset's speech with word timings. Enables captions, transcript search and filler removal. Runs a Whisper model on this machine unless the session has another provider (no API key; the model downloads once, then works offline). Takes roughly real time on a CPU.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `assetId` | string | yes |  |  |
-| `language` | string |  |  |  |
+| `language` | string |  |  | Language code such as 'en' or 'fr'; omit to detect |
 
 ### set_transcript
 

@@ -47,10 +47,10 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 
 | Area | Exports |
 |---|---|
-| Transcript | `parseTranscript`, `fromSRT`, `fromVTT`, `fromWhisper`, `fromDeepgram`, `fromAssemblyAI`, `fromPlainText`, `sentences`, `formatTranscript`, `searchTranscript`, `findFillers`, `findRepetitions`, `findSilences`, `transcriptStats`, `sliceTranscript`, `planCleanup`, `cleanupSpeech`, `transcribeMedia`, `extractAudio`, `OpenAITranscriber`, `DeepgramTranscriber` |
+| Transcript | `LocalWhisperTranscriber`, `parseTranscript`, `fromSRT`, `fromVTT`, `fromWhisper`, `fromDeepgram`, `fromAssemblyAI`, `fromPlainText`, `sentences`, `formatTranscript`, `searchTranscript`, `findFillers`, `findRepetitions`, `findSilences`, `transcriptStats`, `sliceTranscript`, `planCleanup`, `cleanupSpeech`, `transcribeMedia`, `extractAudio`, `OpenAITranscriber`, `DeepgramTranscriber` |
 | Captions | `timelineWords`, `buildCaptions`, `chunkWords`, `exportCaptions`, `chunksToSRT`, `chunksToVTT`, `AssDocument` |
 | Voice-over | `OpenAITTS`, `ElevenLabsTTS`, `alignmentToWords` |
-| Audio analysis | `decodeAudio`, `analyzeSamples` (sound map), `detectBeats`, `formatSoundMap`, `soundRanges`, `renderSoundMapImage`, `renderSoundEffect` |
+| Audio analysis | `decodeAudio`, `analyzeSamples` (sound map), `detectBeats`, `formatSoundMap`, `soundRanges`, `snapWordsToSpeech`, `renderSoundMapImage`, `renderSoundEffect` |
 | Video analysis | `detectScenes` |
 | Render | `render`, `renderFrame`, `renderContactSheet`, `compileProject`, `probe`, `probeAssets`, `runFfmpeg`, `resolveFfmpegPath` |
 | Preview | `startPreviewServer`, `previewState` |

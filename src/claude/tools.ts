@@ -27,6 +27,7 @@ import { formatTranscript, searchTranscript, transcriptStats } from "../tools/tr
 import { parseTranscript } from "../tools/transcript/parse.js";
 import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
+import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
@@ -165,6 +166,11 @@ async function timelineBeats(s: EditorSession, source: string): Promise<{ beats:
 }
 
 const SoundKindSchema = z.enum(["speech", "music", "sound"]);
+
+/** The built-in on-device Whisper transcriber, reporting the first-use model download on the activity. */
+function localTranscriber(s: EditorSession, activity?: ActivityHandle): LocalWhisperTranscriber {
+  return new LocalWhisperTranscriber({ ffmpegPath: s.options.ffmpegPath, onDownload: (p) => activity?.progress(p * 0.5) });
+}
 
 /** Render a sound effect (cached on disk) and make sure the project has it as an asset. */
 async function sfxAsset(s: EditorSession, p: Project, type: string, params: Record<string, unknown> = {}): Promise<{ project: Project; assetId: string; duration: number }> {
@@ -1007,14 +1013,15 @@ export const TOOLS: ToolDefinition[] = [
   // -------------------------------------------------------------------------
   tool({
     name: "transcribe",
-    description: "Transcribe an asset's speech with word timings (needs a transcription provider). Enables captions, search and filler removal.",
-    input: z.object({ assetId: z.string(), language: z.string().optional() }),
+    description:
+      "Transcribe an asset's speech with word timings. Enables captions, transcript search and filler removal. Runs a Whisper model on this machine unless the session has another provider (no API key; the model downloads once, then works offline). Takes roughly real time on a CPU.",
+    input: z.object({ assetId: z.string(), language: z.string().optional().describe("Language code such as 'en' or 'fr'; omit to detect") }),
     mutates: true,
-    run: async (s, i) => {
-      if (!s.options.transcriber) return { text: "No transcription provider configured. Use set_transcript with an existing SRT/VTT/JSON transcript.", isError: true };
+    run: async (s, i, activity) => {
       const asset = s.project.assets.find((a) => a.id === i.assetId);
       if (!asset || !("src" in asset)) return { text: `Asset "${i.assetId}" not found or has no file`, isError: true };
-      const t = await transcribeMedia(s.resolve(asset.src), s.options.transcriber, { language: i.language, ffmpegPath: s.options.ffmpegPath });
+      const provider = s.options.transcriber ?? localTranscriber(s, activity);
+      const t = await transcribeMedia(s.resolve(asset.src), provider, { language: i.language, ffmpegPath: s.options.ffmpegPath });
       const r = commit(s, ops.setTranscript(s.project, i.assetId, t), "transcribe", i, `Transcribed ${i.assetId}: ${t.words.length} words.`);
       return { ...r, text: `${r.text}\n\n${formatTranscript(t)}` };
     },

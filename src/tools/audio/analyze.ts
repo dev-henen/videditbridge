@@ -477,6 +477,49 @@ export function formatSoundMap(map: SoundMap, opts: { offset?: number; maxLines?
   return lines.join("\n");
 }
 
+/**
+ * Tighten recognizer word timings with the sound map. Speech recognizers often stretch a word over
+ * the pause after it or start it a little early, in silence. Each word is trimmed to the part of it
+ * inside the sound it overlaps most; a word entirely in silence moves to the nearest edge of
+ * sound within `maxShift` seconds. Word order is kept.
+ */
+export function snapWordsToSpeech<W extends { start: number; end: number }>(words: W[], map: SoundMap, opts: { maxShift?: number } = {}): W[] {
+  const active = map.segments.filter((s) => s.kind !== "silence");
+  if (!active.length) return words.map((w) => ({ ...w }));
+  const maxShift = opts.maxShift ?? 1;
+  const out = words.map((w) => {
+    const len = w.end - w.start;
+    let best: SoundSegment | undefined;
+    let bestOverlap = 0;
+    for (const s of active) {
+      const o = Math.min(w.end, s.end) - Math.max(w.start, s.start);
+      if (o > bestOverlap) [best, bestOverlap] = [s, o];
+    }
+    if (best) {
+      if (bestOverlap >= len - 1e-6) return { ...w };
+      const start = Math.max(w.start, best.start);
+      return { ...w, start: round3(start), end: round3(Math.max(start + 0.05, Math.min(w.end, best.end))) };
+    }
+    // Entirely in silence: move to the closest edge of nearby sound, keeping (at most 0.6 s of) its length.
+    let edge: { t: number; after: boolean } | undefined;
+    for (const s of active) {
+      if (s.start >= w.end && s.start - w.end <= maxShift && (!edge || s.start - w.end < Math.abs(edge.t - (edge.after ? w.end : w.start)))) edge = { t: s.start, after: true };
+      if (s.end <= w.start && w.start - s.end <= maxShift && (!edge || w.start - s.end < Math.abs(edge.t - (edge.after ? w.end : w.start)))) edge = { t: s.end, after: false };
+    }
+    if (!edge) return { ...w };
+    const d = Math.min(len, 0.6);
+    return edge.after ? { ...w, start: round3(edge.t), end: round3(edge.t + d) } : { ...w, start: round3(edge.t - d), end: round3(edge.t) };
+  });
+  // Moving words can reorder neighbours by a hair; keep starts non-decreasing.
+  for (let i = 1; i < out.length; i++) {
+    if (out[i]!.start < out[i - 1]!.start) {
+      out[i]!.start = out[i - 1]!.start;
+      out[i]!.end = Math.max(out[i]!.end, round3(out[i]!.start + 0.05));
+    }
+  }
+  return out;
+}
+
 /** Source ranges that contain sound (speech, music or other), padded, for keeping when cutting silence. */
 export function soundRanges(map: SoundMap, opts: { kinds?: SoundKind[]; padding?: number; minGap?: number } = {}): { start: number; end: number }[] {
   const kinds = new Set(opts.kinds ?? ["speech", "music", "sound"]);

@@ -21,8 +21,14 @@ export function timelineWords(project: Project, timeline: Timeline = computeTime
     const visEnd = tc.end - (next ? next.transitionDuration / 2 : 0);
     const srcStart = tc.clip.in;
     const srcEnd = tc.clip.in + tc.sourceDuration;
+    const overlap = (c: (typeof timeline.clips)[number], w: Word) => Math.min(w.end, c.clip.in + c.sourceDuration) - Math.max(w.start, c.clip.in);
+    const siblings = timeline.clips.filter((c) => c !== tc && c.clip.assetId === tc.clip.assetId);
     for (const w of transcript.words) {
       if (w.end <= srcStart || w.start >= srcEnd) continue;
+      // A word stretched across a cut (common with recognizer timings over a removed pause) would
+      // show in both clips; it belongs to the one holding most of it.
+      const mine = overlap(tc, w);
+      if (mine < w.end - w.start - 1e-6 && siblings.some((c) => overlap(c, w) > mine + 1e-6)) continue;
       const start = sourceToTimeline(tc, Math.max(w.start, srcStart));
       const end = sourceToTimeline(tc, Math.min(w.end, srcEnd));
       const mid = (start + end) / 2;
