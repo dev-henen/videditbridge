@@ -96,7 +96,7 @@ function claudeTools(): string {
     ["Layers", ["add_text", "add_media_overlay", "add_shape", "add_component", "update_layer", "remove_layer"]],
     ["Audio", ["add_audio", "update_audio", "remove_audio", "set_volume", "enhance_audio", "add_audio_effect", "remove_audio_effect"]],
     ["Sound map, beats & moments", ["analyze_audio", "remove_silences", "detect_scenes", "detect_beats", "beat_sync", "add_moment_effect", "list_sound_effects", "add_sound_effect"]],
-    ["Transcript & captions", ["transcribe", "set_transcript", "get_transcript", "search_transcript", "cleanup_speech", "cut_ranges", "assemble_from_source", "set_captions", "export_captions"]],
+    ["Transcript & captions", ["transcribe", "set_transcript", "get_transcript", "search_transcript", "find_retakes", "remove_retakes", "cleanup_speech", "cut_ranges", "assemble_from_source", "set_captions", "export_captions"]],
     ["Voice-over", ["generate_voiceover"]],
     ["Color", ["color_adjust", "get_color", "analyze_color", "render_scopes"]],
     ["Preview & render", ["render_frame", "render_contact_sheet", "render_preview", "render_video"]],
@@ -152,8 +152,8 @@ function soundEffects(): string {
 }
 
 function transitions(): string {
-  let out = `${HEADER}# Transitions\n\n${TRANSITIONS.length} transitions between primary-track clips. Set one on the *incoming* clip:\n\n\`\`\`json\n{ "id": "c2", "assetId": "b", "transition": { "type": "slideleft", "duration": 0.4 } }\n\`\`\`\n\nThe transition overlaps the two clips by its duration, which shortens the timeline by that amount. Durations are clamped to fit short clips. All transitions are rendered with FFmpeg \`xfade\`, and audio crossfades at the same time.\n\n| id | Name | Category | Default duration | Description |\n|---|---|---|---|---|\n`;
-  for (const t of TRANSITIONS) out += `| \`${t.id}\` | ${t.name} | ${t.category} | ${t.defaultDuration}s | ${cell(t.description)}${t.xfade !== t.id ? ` (xfade \`${t.xfade}\`)` : ""} |\n`;
+  let out = `${HEADER}# Transitions\n\n${TRANSITIONS.length} transitions between primary-track clips. Set one on the *incoming* clip:\n\n\`\`\`json\n{ "id": "c2", "assetId": "b", "transition": { "type": "slideleft", "duration": 0.4 } }\n\`\`\`\n\nThe transition overlaps the two clips by its duration, which shortens the timeline by that amount. Durations are clamped to fit short clips. All transitions are rendered with FFmpeg \`xfade\`, and audio crossfades at the same time. With Claude, \`set_transition\` with \`sound: true\` adds the sound in the Sound column, peaking in the middle of the transition.\n\n| id | Name | Category | Default duration | Sound | Description |\n|---|---|---|---|---|---|\n`;
+  for (const t of TRANSITIONS) out += `| \`${t.id}\` | ${t.name} | ${t.category} | ${t.defaultDuration}s | ${t.sound ? `\`${t.sound}\`` : ""} | ${cell(t.description)}${t.xfade !== t.id ? ` (xfade \`${t.xfade}\`)` : ""} |\n`;
   return out;
 }
 

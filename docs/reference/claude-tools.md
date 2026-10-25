@@ -2,7 +2,7 @@
 
 # Claude tools
 
-65 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+67 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -15,7 +15,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Layers**: [add_text](#add_text), [add_media_overlay](#add_media_overlay), [add_shape](#add_shape), [add_component](#add_component), [update_layer](#update_layer), [remove_layer](#remove_layer)
 - **Audio**: [add_audio](#add_audio), [update_audio](#update_audio), [remove_audio](#remove_audio), [set_volume](#set_volume), [enhance_audio](#enhance_audio), [add_audio_effect](#add_audio_effect), [remove_audio_effect](#remove_audio_effect)
 - **Sound map, beats & moments**: [analyze_audio](#analyze_audio), [remove_silences](#remove_silences), [detect_scenes](#detect_scenes), [detect_beats](#detect_beats), [beat_sync](#beat_sync), [add_moment_effect](#add_moment_effect), [list_sound_effects](#list_sound_effects), [add_sound_effect](#add_sound_effect)
-- **Transcript & captions**: [transcribe](#transcribe), [set_transcript](#set_transcript), [get_transcript](#get_transcript), [search_transcript](#search_transcript), [cleanup_speech](#cleanup_speech), [cut_ranges](#cut_ranges), [assemble_from_source](#assemble_from_source), [set_captions](#set_captions), [export_captions](#export_captions)
+- **Transcript & captions**: [transcribe](#transcribe), [set_transcript](#set_transcript), [get_transcript](#get_transcript), [search_transcript](#search_transcript), [find_retakes](#find_retakes), [remove_retakes](#remove_retakes), [cleanup_speech](#cleanup_speech), [cut_ranges](#cut_ranges), [assemble_from_source](#assemble_from_source), [set_captions](#set_captions), [export_captions](#export_captions)
 - **Voice-over**: [generate_voiceover](#generate_voiceover)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
@@ -227,7 +227,7 @@ _No parameters._
 
 ### set_transition
 
-**edits**. Set the transition into a clip (or between all clips with all=true). type 'none' removes it.
+**edits**. Set the transition into a clip (or between all clips with all=true). type 'none' removes it. sound: true adds the sound that matches the motion (swoosh for slides and wipes, whoosh for whips and zooms, glitch for glitch cuts), peaking in the middle of the transition; or name a sound effect. Changing or removing the transition replaces its sound.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -235,6 +235,7 @@ _No parameters._
 | `all` | boolean |  | `false` |  |
 | `type` | string | yes |  |  |
 | `duration` | number |  | `0.5` | (> 0, ≤ 5) |
+| `sound` | boolean \| string |  | `false` | true = the transition's matching sound, or a sound effect id |
 
 ### add_effect
 
@@ -480,7 +481,7 @@ _No parameters._
 
 ### remove_silences
 
-**edits**. Cut dead air out of footage without a transcript: removes silent stretches (or everything that is not speech) from primary clips, leaving short padding so words are not clipped. Each kept part becomes its own clip (jump cuts). Layers, music and captions stay in sync. Run analyze_audio first to see what will go.
+**edits**. Cut dead air out of footage: removes silent stretches (or everything that is not speech) from primary clips, leaving short padding. Works without a transcript; with one, words are never cut into, so transcribe first when you can. Each kept part becomes its own clip (jump cuts). Layers, music and captions stay in sync. Run analyze_audio first to see what will go.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -532,6 +533,7 @@ _No parameters._
 | `type` | string | yes |  | zoomPunch, impactShake, flashHits, vibrate, smoothZoom or rackFocus |
 | `times` | number[] | yes |  | Timeline seconds |
 | `params` | object |  |  | Other params of the effect, e.g. {amount: 0.2} |
+| `sound` | boolean \| string |  | `false` | true = the matching sound (hit for zoomPunch and flashHits, impact for impactShake, whoosh for smoothZoom) peaking at each moment, or a sound effect id |
 
 ### list_sound_effects
 
@@ -541,13 +543,13 @@ _No parameters._
 
 ### add_sound_effect
 
-**edits**. Add a sound effect at timeline moments: a whoosh on a transition, a pop when text appears, an impact on a reveal, a riser ending on a drop. align 'end' makes the sound finish at the time (use it for risers); 'start' begins it there.
+**edits**. Add a sound effect at timeline moments where something visibly happens: a pop when text appears, an impact on a reveal, a riser ending on a drop. A sound with nothing on screen to match feels random: for transitions use set_transition with sound, for zoom punches and shakes use add_moment_effect with sound. align 'peak' (default) lines the loudest point up with the time, 'end' makes the sound finish there (risers), 'start' begins it there.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `type` | string | yes |  | Sound effect id (see list_sound_effects) |
 | `times` | number[] | yes |  | Timeline seconds |
-| `align` | "start" \| "end" |  | `"start"` |  |
+| `align` | "peak" \| "start" \| "end" |  | `"peak"` |  |
 | `volume` | number |  | `0.8` | (≥ 0, ≤ 4) |
 | `params` | object |  |  |  |
 
@@ -588,6 +590,23 @@ _No parameters._
 |---|---|---|---|---|
 | `query` | string | yes |  |  |
 | `assetId` | string |  |  |  |
+
+### find_retakes
+
+**read-only**. Read a transcribed recording sentence by sentence and find retakes (a line said again because the first try had a slip, or a sentence abandoned and restarted) and repeats (several sentences in a row saying nearly the same thing). Lists every sentence with its number and source time, the groups found and the suggested sentence to keep. Read the sentences yourself too: you judge meaning better than word overlap. Then use remove_retakes.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `assetId` | string | yes |  |  |
+
+### remove_retakes
+
+**edits**. Cut whole sentences out of a transcribed recording, cleanly: each cut runs from just after the previous kept word to just before the next one, so the pause goes too and no kept word is clipped. Without `sentences`, removes what find_retakes suggests. Sentence numbers come from find_retakes. Layers, music and captions stay in sync.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `assetId` | string | yes |  |  |
+| `sentences` | integer[] |  |  | Sentence numbers to remove (default: the suggested retakes and repeats) |
 
 ### cleanup_speech
 

@@ -18,7 +18,7 @@ import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, newId, type AspectRatio } from "../core/util.js";
 import { ColorSettingsSchema, SubjectRegionSchema, describeColorSettings, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
-import { listTransitions } from "../library/transitions/index.js";
+import { getTransition, listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
 import { listCaptionStyles } from "../library/caption-styles/index.js";
 import { addComponent, listComponents } from "../library/components/index.js";
@@ -26,6 +26,7 @@ import { applyTemplate, describeTemplate, getTemplate, listTemplates } from "../
 import { formatTranscript, searchTranscript, transcriptStats } from "../tools/transcript/analyze.js";
 import { parseTranscript } from "../tools/transcript/parse.js";
 import { cleanupSpeech } from "../tools/transcript/cleanup.js";
+import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
@@ -173,13 +174,45 @@ function localTranscriber(s: EditorSession, activity?: ActivityHandle): LocalWhi
 }
 
 /** Render a sound effect (cached on disk) and make sure the project has it as an asset. */
-async function sfxAsset(s: EditorSession, p: Project, type: string, params: Record<string, unknown> = {}): Promise<{ project: Project; assetId: string; duration: number }> {
+async function sfxAsset(
+  s: EditorSession,
+  p: Project,
+  type: string,
+  params: Record<string, unknown> = {},
+): Promise<{ project: Project; assetId: string; duration: number; peak: number }> {
   const sfx = await renderSoundEffect(type, params, path.join(s.options.outputDir, "sfx"), { ffmpegPath: s.options.ffmpegPath });
   const existing = p.assets.find((a) => "src" in a && s.resolve(a.src) === sfx.path);
-  if (existing) return { project: p, assetId: existing.id, duration: sfx.duration };
+  if (existing) return { project: p, assetId: existing.id, duration: sfx.duration, peak: sfx.peak };
   const id = assetIdFromSrc(p, `sfx-${type}`);
-  return { project: ops.addAsset(p, { type: "audio", id, src: sfx.path, duration: sfx.duration, label: `${type} sound effect` }), assetId: id, duration: sfx.duration };
+  return { project: ops.addAsset(p, { type: "audio", id, src: sfx.path, duration: sfx.duration, label: `${type} sound effect` }), assetId: id, duration: sfx.duration, peak: sfx.peak };
 }
+
+/**
+ * Place the matching sound on each clip's incoming transition, peaking at the middle of the
+ * transition. Sounds are labeled "transition:<clipId>" so changing a transition replaces its sound.
+ */
+async function transitionSounds(s: EditorSession, p: Project, clipIds: string[], override?: string): Promise<{ project: Project; placed: string[] }> {
+  let project = { ...p, audio: p.audio.filter((a) => !clipIds.some((id) => a.label === `transition:${id}`)) };
+  const placed: string[] = [];
+  for (const id of clipIds) {
+    const tc = computeTimeline(project).clips.find((c) => c.clip.id === id);
+    if (!tc?.clip.transition || tc.transitionDuration <= 0) continue;
+    const type = override ?? getTransition(tc.clip.transition.type)?.sound;
+    if (!type) continue;
+    const d = tc.transitionDuration;
+    // Stretch whooshes with the transition so the swell matches the motion.
+    const params = type === "whoosh" ? { duration: Math.min(1.2, Math.max(0.5, d * 2.5)) } : type === "swoosh" ? { duration: Math.min(0.6, Math.max(0.25, d * 1.5)) } : {};
+    const sfx = await sfxAsset(s, project, type, params);
+    project = sfx.project;
+    const start = Math.max(0, Math.round((tc.start + d / 2 - sfx.peak) * 1000) / 1000);
+    project = ops.addAudio(project, { assetId: sfx.assetId, role: "sfx", start, volume: 0.55, label: `transition:${id}` });
+    placed.push(`${type} at ${start}s`);
+  }
+  return { project, placed };
+}
+
+/** Sound that matches a moment effect, for add_moment_effect with sound: true. */
+const MOMENT_SOUNDS: Record<string, string> = { zoomPunch: "hit", impactShake: "impact", flashHits: "hit", smoothZoom: "whoosh" };
 
 export const TOOLS: ToolDefinition[] = [
   // -------------------------------------------------------------------------
@@ -455,14 +488,29 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "set_transition",
-    description: "Set the transition into a clip (or between all clips with all=true). type 'none' removes it.",
-    input: z.object({ clipId: z.string().optional(), all: z.boolean().default(false), type: z.string(), duration: z.number().positive().max(5).default(0.5) }),
+    description:
+      "Set the transition into a clip (or between all clips with all=true). type 'none' removes it. sound: true adds the sound that matches the motion (swoosh for slides and wipes, whoosh for whips and zooms, glitch for glitch cuts), peaking in the middle of the transition; or name a sound effect. Changing or removing the transition replaces its sound.",
+    input: z.object({
+      clipId: z.string().optional(),
+      all: z.boolean().default(false),
+      type: z.string(),
+      duration: z.number().positive().max(5).default(0.5),
+      sound: z.union([z.boolean(), z.string()]).default(false).describe("true = the transition's matching sound, or a sound effect id"),
+    }),
     mutates: true,
     run: async (s, i) => {
       const t = i.type === "none" ? null : { type: i.type, duration: i.duration };
-      if (i.all) return commit(s, ops.setAllTransitions(s.project, t), "set_transition", i, `Set ${i.type} between all clips.`);
-      if (!i.clipId) return { text: "Provide clipId or all=true", isError: true };
-      return commit(s, ops.setTransition(s.project, i.clipId, t), "set_transition", i, `Transition into ${i.clipId}: ${i.type}.`);
+      if (!i.all && !i.clipId) return { text: "Provide clipId or all=true", isError: true };
+      let p = i.all ? ops.setAllTransitions(s.project, t) : ops.setTransition(s.project, i.clipId!, t);
+      const ids = i.all ? p.clips.slice(1).map((c) => c.id) : [i.clipId!];
+      let note = "";
+      if (i.sound !== false || !t) {
+        // Without a transition (type none), this just removes the old sounds.
+        const r = await transitionSounds(s, p, ids, typeof i.sound === "string" ? i.sound : undefined);
+        p = r.project;
+        if (i.sound !== false) note = r.placed.length ? ` Sound: ${r.placed.join(", ")}.` : ` No matching sound for ${i.type}.`;
+      }
+      return commit(s, p, "set_transition", i, `${i.all ? `Set ${i.type} between all clips` : `Transition into ${i.clipId}: ${i.type}`}.${note}`);
     },
   }),
   tool({
@@ -845,7 +893,7 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "remove_silences",
     description:
-      "Cut dead air out of footage without a transcript: removes silent stretches (or everything that is not speech) from primary clips, leaving short padding so words are not clipped. Each kept part becomes its own clip (jump cuts). Layers, music and captions stay in sync. Run analyze_audio first to see what will go.",
+      "Cut dead air out of footage: removes silent stretches (or everything that is not speech) from primary clips, leaving short padding. Works without a transcript; with one, words are never cut into, so transcribe first when you can. Each kept part becomes its own clip (jump cuts). Layers, music and captions stay in sync. Run analyze_audio first to see what will go.",
     input: z.object({
       assetId: z.string().optional().describe("Only cut clips of this asset (default: every clip with sound)"),
       keep: z.array(SoundKindSchema).default(["speech", "music", "sound"]).describe('What counts as worth keeping; ["speech"] also removes music, noise and other non-speech sound'),
@@ -867,7 +915,13 @@ export const TOOLS: ToolDefinition[] = [
         const asset = mediaAsset(s, id);
         const { map } = await analyzeSound(s, asset.src);
         activity?.progress((n + 1) / assetIds.length);
-        const keep = soundRanges(map, { kinds: i.keep, padding: i.padding });
+        // With a transcript, every word is protected too: quiet word edges ("and", trailing
+        // consonants) can fall below the sound threshold, and a cut there clips the word.
+        const words = s.project.transcripts[id]?.words ?? [];
+        const keep = [
+          ...soundRanges(map, { kinds: i.keep, padding: i.padding }),
+          ...words.map((w) => ({ start: Math.max(0, w.start - Math.max(0.08, i.padding)), end: w.end + Math.max(0.12, i.padding) })),
+        ];
         const cut = invertRanges(keep, 0, map.duration).filter((r) => r.end - r.start >= i.minSilence);
         if (!cut.length) {
           notes.push(`${id}: nothing to remove`);
@@ -930,11 +984,11 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "add_sound_effect",
     description:
-      "Add a sound effect at timeline moments: a whoosh on a transition, a pop when text appears, an impact on a reveal, a riser ending on a drop. align 'end' makes the sound finish at the time (use it for risers); 'start' begins it there.",
+      "Add a sound effect at timeline moments where something visibly happens: a pop when text appears, an impact on a reveal, a riser ending on a drop. A sound with nothing on screen to match feels random: for transitions use set_transition with sound, for zoom punches and shakes use add_moment_effect with sound. align 'peak' (default) lines the loudest point up with the time, 'end' makes the sound finish there (risers), 'start' begins it there.",
     input: z.object({
       type: z.string().describe("Sound effect id (see list_sound_effects)"),
       times: z.array(z.number().min(0)).min(1).max(64).describe("Timeline seconds"),
-      align: z.enum(["start", "end"]).default("start"),
+      align: z.enum(["peak", "start", "end"]).default("peak"),
       volume: z.number().min(0).max(4).default(0.8),
       params: z.record(z.string(), z.unknown()).optional(),
     }),
@@ -943,7 +997,8 @@ export const TOOLS: ToolDefinition[] = [
       if (!getSoundEffect(i.type)) return { text: `Unknown sound effect "${i.type}". Use list_sound_effects.`, isError: true };
       const sfx = await sfxAsset(s, s.project, i.type, i.params);
       let p = sfx.project;
-      const starts = i.times.map((t) => Math.max(0, Math.round((i.align === "end" ? t - sfx.duration : t) * 1000) / 1000));
+      const offset = i.align === "end" ? sfx.duration : i.align === "peak" ? sfx.peak : 0;
+      const starts = i.times.map((t) => Math.max(0, Math.round((t - offset) * 1000) / 1000));
       for (const start of starts) p = ops.addAudio(p, { assetId: sfx.assetId, role: "sfx", start, volume: i.volume, label: i.type });
       return commit(s, p, "add_sound_effect", i, `Added ${i.type} (${sfx.duration}s) at ${starts.join(", ")}s.`);
     },
@@ -956,11 +1011,26 @@ export const TOOLS: ToolDefinition[] = [
       type: z.string().describe("zoomPunch, impactShake, flashHits, vibrate, smoothZoom or rackFocus"),
       times: z.array(z.number().min(0)).min(1).max(64).describe("Timeline seconds"),
       params: z.record(z.string(), z.unknown()).optional().describe("Other params of the effect, e.g. {amount: 0.2}"),
+      sound: z
+        .union([z.boolean(), z.string()])
+        .default(false)
+        .describe("true = the matching sound (hit for zoomPunch and flashHits, impact for impactShake, whoosh for smoothZoom) peaking at each moment, or a sound effect id"),
     }),
     mutates: true,
     run: async (s, i) => {
-      const { project, placed } = ops.placeMomentEffect(s.project, i.type, i.times, i.params);
-      return commit(s, project, "add_moment_effect", i, `${i.type} on ${placed.map((x) => `${x.clipId} at ${x.times.join(", ")}s into it`).join("; ")}.`);
+      const r = ops.placeMomentEffect(s.project, i.type, i.times, i.params);
+      let project = r.project;
+      let note = "";
+      const type = typeof i.sound === "string" ? i.sound : i.sound ? MOMENT_SOUNDS[i.type] : undefined;
+      if (i.sound !== false && !type) note = ` No matching sound for ${i.type}.`;
+      if (type) {
+        if (!getSoundEffect(type)) return { text: `Unknown sound effect "${type}". Use list_sound_effects.`, isError: true };
+        const sfx = await sfxAsset(s, project, type);
+        project = sfx.project;
+        for (const t of i.times) project = ops.addAudio(project, { assetId: sfx.assetId, role: "sfx", start: Math.max(0, Math.round((t - sfx.peak) * 1000) / 1000), volume: 0.6, label: type });
+        note = ` ${type} on each moment.`;
+      }
+      return commit(s, project, "add_moment_effect", i, `${i.type} on ${r.placed.map((x) => `${x.clipId} at ${x.times.join(", ")}s into it`).join("; ")}.${note}`);
     },
   }),
   tool({
@@ -1091,6 +1161,47 @@ export const TOOLS: ToolDefinition[] = [
       const out = commit(s, r.project, "cleanup_speech", i, `Removed ${r.removed.length} segments (${r.removedDuration}s).`);
       const detail = r.removed.slice(0, 40).map((x) => `${x.start}-${x.end}s ${x.reason}${x.text ? ` "${x.text}"` : ""}`).join("\n");
       return { ...out, text: `${out.text}\n${detail}${r.removed.length > 40 ? `\n…and ${r.removed.length - 40} more` : ""}` };
+    },
+  }),
+  tool({
+    name: "find_retakes",
+    description:
+      "Read a transcribed recording sentence by sentence and find retakes (a line said again because the first try had a slip, or a sentence abandoned and restarted) and repeats (several sentences in a row saying nearly the same thing). " +
+      "Lists every sentence with its number and source time, the groups found and the suggested sentence to keep. Read the sentences yourself too: you judge meaning better than word overlap. Then use remove_retakes.",
+    input: z.object({ assetId: z.string() }),
+    mutates: false,
+    run: async (s, i) => {
+      const t = s.project.transcripts[i.assetId];
+      if (!t) return { text: `No transcript for "${i.assetId}". Run transcribe first.`, isError: true };
+      const r = findRetakes(t);
+      const lines = r.sentences.map((x, k) => `${k}. [${x.start}-${x.end}s]${r.remove.includes(k) ? " (suggest remove)" : ""} ${x.text}`);
+      const groups = r.groups.map((g) => `${g.kind} ${g.sentences.join(", ")}: keep ${g.keep}. ${g.reason}.`);
+      return ok(`Sentences of ${i.assetId} (source time):\n${lines.join("\n")}\n\n${groups.length ? `Found:\n${groups.join("\n")}\nSuggested removal: ${r.remove.join(", ")}` : "No retakes or repeats found."}`, r);
+    },
+  }),
+  tool({
+    name: "remove_retakes",
+    description:
+      "Cut whole sentences out of a transcribed recording, cleanly: each cut runs from just after the previous kept word to just before the next one, so the pause goes too and no kept word is clipped. Without `sentences`, removes what find_retakes suggests. Sentence numbers come from find_retakes. Layers, music and captions stay in sync.",
+    input: z.object({
+      assetId: z.string(),
+      sentences: z.array(z.number().int().min(0)).optional().describe("Sentence numbers to remove (default: the suggested retakes and repeats)"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const t = s.project.transcripts[i.assetId];
+      if (!t) return { text: `No transcript for "${i.assetId}". Run transcribe first.`, isError: true };
+      const r = findRetakes(t);
+      const remove = i.sentences ?? r.remove;
+      if (!remove.length) return ok("Nothing to remove: no retakes or repeats found.");
+      const bad = remove.filter((k) => !r.sentences[k]);
+      if (bad.length) return { text: `No sentence ${bad.join(", ")}; there are ${r.sentences.length} (0-${r.sentences.length - 1}).`, isError: true };
+      const ranges = sentenceCutRanges(t, r.sentences, remove);
+      const before = computeTimeline(s.project).duration;
+      const p = ops.cutSourceRanges(s.project, i.assetId, ranges);
+      const gone = Math.round((before - computeTimeline(p).duration) * 100) / 100;
+      const removed = remove.map((k) => `${k}. "${r.sentences[k]!.text}"`).join("\n");
+      return commit(s, p, "remove_retakes", i, `Removed ${remove.length} sentences (${gone}s of the edit):\n${removed}`);
     },
   }),
   tool({

@@ -17,6 +17,8 @@ export interface SoundEffectDefinition<P extends z.ZodType = z.ZodType> {
   params: P;
   /** Length in seconds for the given params. */
   duration(params: z.output<P>): number;
+  /** Seconds from the start to the loudest moment, the point to line up with a cut or hit (default 0). */
+  peak?(params: z.output<P>): number;
   /** FFmpeg filter graph (sources and filters) ending in the label [sfx]. 48 kHz mono. */
   graph(params: z.output<P>): string;
 }
@@ -39,6 +41,7 @@ export const SOUND_EFFECTS: SoundEffectDefinition[] = [
     description: "Airy whoosh that swells and fades. Put it on a cut, a slide or zoom transition, or a title flying in; start it slightly before the cut.",
     params: z.object({ duration: len(0.8, 0.2, 3) }),
     duration: (p) => p.duration,
+    peak: (p) => p.duration / 2,
     graph: (p) =>
       `${noise("pink", p.duration, 0.9)},highpass=f=250,bandpass=f=1100:width_type=o:w=2.5,volume='pow(sin(PI*t/${p.duration}),3)*2.5':eval=frame[sfx]`,
   }),
@@ -49,6 +52,7 @@ export const SOUND_EFFECTS: SoundEffectDefinition[] = [
     description: "Short, bright swipe for fast cuts, sliding text and UI motion.",
     params: z.object({ duration: len(0.35, 0.1, 1.5) }),
     duration: (p) => p.duration,
+    peak: (p) => p.duration / 2,
     graph: (p) => `${noise("white", p.duration, 0.8)},highpass=f=1500,bandpass=f=3500:width_type=o:w=2,volume='pow(sin(PI*t/${p.duration}),2)*1.2':eval=frame[sfx]`,
   }),
   define({
@@ -58,6 +62,7 @@ export const SOUND_EFFECTS: SoundEffectDefinition[] = [
     description: "Rising tone and noise that builds tension up to a reveal or drop. End it exactly on the moment it leads to.",
     params: z.object({ duration: len(2, 0.5, 8) }),
     duration: (p) => p.duration,
+    peak: (p) => p.duration,
     graph: (p) => {
       const d = p.duration;
       return [
@@ -74,6 +79,7 @@ export const SOUND_EFFECTS: SoundEffectDefinition[] = [
     description: "Digital stutter and crunch for glitch transitions and tech looks.",
     params: z.object({ duration: len(0.5, 0.1, 2) }),
     duration: (p) => p.duration,
+    peak: (p) => p.duration / 2,
     graph: (p) => `${noise("white", p.duration, 0.5)},acrusher=bits=4:mode=lin:mix=1,volume='gt(sin(2*PI*23*t)*sin(2*PI*7*t+1),0.05)':eval=frame,lowpass=f=6000[sfx]`,
   }),
 

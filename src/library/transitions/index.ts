@@ -9,6 +9,20 @@ export interface TransitionDefinition {
   xfade: string;
   /** Suggested duration in seconds. */
   defaultDuration: number;
+  /**
+   * Sound effect that matches the motion (a swoosh for a slide, a whoosh for a whip), placed by
+   * set_transition with sound: true. Calm transitions (fades, dissolves) have none.
+   */
+  sound?: string;
+}
+
+/** Moving transitions get a sound that matches their motion. */
+function soundFor(id: string, category: TransitionCategory): string | undefined {
+  if (["pixelize", "glitch"].includes(id)) return "glitch";
+  if (["hblur", "whip", "zoomin", "hlwind", "hrwind", "distance"].includes(id) || id.startsWith("smooth")) return "whoosh";
+  if (category === "slide" || category === "wipe" || /slice$/.test(id)) return "swoosh";
+  if (["circleopen", "circleclose", "horzopen", "vertopen", "horzclose", "vertclose", "radial"].includes(id)) return "whoosh";
+  return undefined;
 }
 
 const t = (
@@ -18,7 +32,10 @@ const t = (
   description: string,
   defaultDuration = 0.5,
   xfade = id,
-): TransitionDefinition => ({ id, name, category, description, xfade, defaultDuration });
+): TransitionDefinition => {
+  const sound = soundFor(id, category);
+  return { id, name, category, description, xfade, defaultDuration, ...(sound ? { sound } : {}) };
+};
 
 export const TRANSITIONS: TransitionDefinition[] = [
   t("fade", "Crossfade", "basic", "Smooth dissolve between clips. Safe default for any content.", 0.5),

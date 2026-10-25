@@ -14,7 +14,7 @@ export async function renderSoundEffect(
   params: Record<string, unknown> = {},
   dir: string,
   opts: FfmpegOptions = {},
-): Promise<{ path: string; duration: number }> {
+): Promise<{ path: string; duration: number; peak: number }> {
   const def = getSoundEffect(id);
   if (!def) throw new Error(`Unknown sound effect "${id}"`);
   const p = def.params.parse(params);
@@ -24,5 +24,5 @@ export async function renderSoundEffect(
     await mkdir(dir, { recursive: true });
     await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-filter_complex", def.graph(p), "-map", "[sfx]", "-ac", "1", "-c:a", "pcm_s16le", file], opts);
   }
-  return { path: file, duration: def.duration(p) };
+  return { path: file, duration: def.duration(p), peak: def.peak?.(p) ?? 0 };
 }

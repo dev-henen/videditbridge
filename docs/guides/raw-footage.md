@@ -33,7 +33,11 @@ Without an `assetId`, `analyze_audio` maps the current timeline: each primary cl
 
 ## Cutting
 
-- **`remove_silences`** cuts gaps of at least `minSilence` seconds from the primary clips and keeps `padding` around each kept part, so words are not clipped. Each kept part becomes its own clip (jump cuts). `keep: ["speech"]` also removes music and noise between phrases. Layers, music and captions shift to stay in sync, exactly as with `cut_ranges`.
+Start with the words when there is speech: `transcribe` runs locally (see [Transcripts & captions](transcripts-and-captions.md)), and its word times are tied to the sound map.
+
+- **`find_retakes`** lists every sentence with its source time and finds two problems an editor removes first. **Retakes** are a line said again shortly after, because the first try had a slip or was abandoned; the later, corrected take is kept. **Repeats** are several sentences in a row that say nearly the same thing ("a nice video to edit", "a nice video to post", "a nice video to experiment with"); the most complete one is kept. It compares the words of whole sentences, so read the list too and override the suggestion when the meaning says otherwise.
+- **`remove_retakes`** cuts the suggested sentences, or the numbers you give, from just after the previous kept word to just before the next one, so the pause around a removed line goes with it.
+- **`remove_silences`** cuts gaps of at least `minSilence` seconds from the primary clips and keeps `padding` around each kept part. When the asset has a transcript, every word is protected as well, so soft word edges that fall below the sound threshold (an "and", a trailing consonant) are never cut into. Each kept part becomes its own clip (jump cuts). `keep: ["speech"]` also removes music and noise between phrases. Layers, music and captions shift to stay in sync, exactly as with `cut_ranges`.
 - **`detect_scenes`** finds hard cuts between shots by comparing frames at low resolution, so it is fast on long files. `split: true` splits the primary clips at every change, as long as both sides would be at least half a second long. The default threshold (0.3) finds clear cuts; 0.15 to 0.2 also finds gentle ones.
 - **`assemble_from_source`** builds a new primary track from chosen source ranges. Together with the sound map, it picks the best moments of a long recording.
 
