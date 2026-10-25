@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   addAudio,
+  addAudioEffect,
   addClip,
   addLayer,
+  removeAudioEffect,
+  setAudioEffectParams,
+  setSpeed,
+  setVolume,
   computeTimeline,
   createProject,
   cutTimelineRanges,
@@ -137,6 +142,47 @@ describe("operations", () => {
     expect(() => removeClip(base(), "nope")).toThrow(/Clip ids: c1, c2, c3/);
     expect(() => addClip(base(), { assetId: "missing" })).toThrow(/Unknown asset/);
   });
+
+  it("changes speed of clips and audio clips, keeping the source range", () => {
+    let p = setSpeed(base(), "c1", 2);
+    expect(computeTimeline(p).clips[0]!.duration).toBe(2);
+    p = addAudio(p, { id: "m1", assetId: "music", duration: 10 });
+    p = setSpeed(p, "m1", 2);
+    expect(p.audio[0]!.duration).toBe(5);
+    p = addAudio(p, { id: "m2", assetId: "music" });
+    p = setSpeed(p, "m2", 1.5);
+    expect(computeTimeline(p).audio[1]!.duration).toBe(20);
+    expect(() => setSpeed(p, "c1", 8)).toThrow(/between/);
+    expect(() => setSpeed(p, "nope", 2)).toThrow(/clip id or audio clip id/);
+  });
+
+  it("sets volume on clips, audio, media layers and the master mix", () => {
+    let p = addAudio(base(), { id: "m1", assetId: "music" });
+    p = addLayer(p, { type: "media", id: "pip", assetId: "a", start: 0, duration: 2 });
+    p = setVolume(p, "c1", 0.5, { muted: true });
+    p = setVolume(p, "m1", 2);
+    p = setVolume(p, "pip", 0.3);
+    p = setVolume(p, "master", 0.5);
+    expect(p.clips[0]).toMatchObject({ volume: 0.5, muted: true });
+    expect(p.audio[0]!.volume).toBe(2);
+    expect(p.layers[0]!.type === "media" && p.layers[0]!.volume).toBe(0.3);
+    expect(p.audioEffects).toEqual([{ type: "gain", params: { db: -6.021 } }]);
+    expect(setVolume(base(), "master", 1)).toEqual(base());
+  });
+
+  it("adds and removes audio effects on every audio target", () => {
+    let p = addAudio(base(), { id: "m1", assetId: "music" });
+    for (const target of ["c1", "m1", "master"]) p = addAudioEffect(p, target, { type: "denoise" });
+    expect(p.clips[0]!.audioEffects).toHaveLength(1);
+    expect(p.audio[0]!.audioEffects).toHaveLength(1);
+    expect(p.audioEffects).toHaveLength(1);
+    p = setAudioEffectParams(p, "c1", "dehum", { frequency: 60 }, { prepend: true });
+    expect(p.clips[0]!.audioEffects.map((e) => e.type)).toEqual(["dehum", "denoise"]);
+    p = removeAudioEffect(p, "c1", "denoise");
+    expect(p.clips[0]!.audioEffects.map((e) => e.type)).toEqual(["dehum"]);
+    expect(() => removeAudioEffect(p, "c1", "reverb")).toThrow(/has no/);
+    expect(() => addAudioEffect(p, "nope", { type: "denoise" })).toThrow(/must be a clip id/);
+  });
 });
 
 describe("validation", () => {
@@ -148,7 +194,7 @@ describe("validation", () => {
     const r = validateProject({
       assets: [{ type: "video", id: "a", src: "a.mp4", duration: 5 }],
       clips: [
-        { id: "c1", assetId: "a", in: 4, duration: 3, effects: [{ type: "sparkles" }] },
+        { id: "c1", assetId: "a", in: 4, duration: 3, effects: [{ type: "sparkles" }], audioEffects: [{ type: "autotune" }, { type: "denoise", params: { amount: 500 } }] },
         { id: "c2", assetId: "zzz", transition: { type: "warp", duration: 0.5 } },
       ],
       captions: { style: "nope" },
@@ -157,6 +203,8 @@ describe("validation", () => {
     expect(r.ok).toBe(false);
     expect(msgs).toMatch(/exceeds source length/);
     expect(msgs).toMatch(/Unknown effect "sparkles"/);
+    expect(msgs).toMatch(/Unknown audio effect "autotune"/);
+    expect(r.issues.some((i) => i.path === "clips.0.audioEffects.1.params")).toBe(true);
     expect(msgs).toMatch(/Unknown asset "zzz"/);
     expect(msgs).toMatch(/Unknown caption style/);
   });

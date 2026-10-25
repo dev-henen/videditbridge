@@ -2,7 +2,7 @@
 
 # Effects
 
-57 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+59 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -16,6 +16,7 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
 - **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance)
 - **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox)
+- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur)
 - **blur**: [blur](#blur), [sharpen](#sharpen)
 - **distort**: [mirror](#mirror)
 - **motion**: [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [shake](#shake), [pulse](#pulse)
@@ -477,6 +478,38 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `ratio` | number |  | `2.39` | Target aspect ratio of the visible area, e.g. 2.39 (≥ 1, ≤ 4) |
+
+## Retouch
+
+### beauty
+
+**Beauty / Skin Retouch**. Portrait retouch: edge-preserving skin smoothing that keeps eyes, hair and outlines sharp, plus optional brightening and warmth. Applies to the whole frame, or only inside a face region (x, y, width, height as frame fractions; check placement with render_frame).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `smooth` | number |  | `50` | Skin smoothing strength (≥ 0, ≤ 100) |
+| `brighten` | number |  | `15` | Lift and even out skin tones (≥ 0, ≤ 100) |
+| `warmth` | number |  | `10` | + warmer, healthier skin, - cooler (≥ -100, ≤ 100) |
+| `region` | { x, y, width, height } |  |  | Only retouch inside this ellipse (the face); omit for the whole frame |
+| `region.x` | number | yes |  | Center x (0 = left edge, 1 = right edge) (≥ 0, ≤ 1) |
+| `region.y` | number | yes |  | Center y (0 = top, 1 = bottom) (≥ 0, ≤ 1) |
+| `region.width` | number | yes |  | Ellipse width as a fraction of frame width (> 0, ≤ 2) |
+| `region.height` | number | yes |  | Ellipse height as a fraction of frame height (> 0, ≤ 2) |
+
+### backgroundBlur
+
+**Background Blur / Portrait Mode**. Keep the subject sharp and blur everything around it, like a portrait-mode lens. There is no automatic subject detection: set the subject ellipse (x, y = its center, width, height as frame fractions) around the person, then check it with render_frame. A larger feather gives a softer, more natural falloff.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `amount` | number |  | `25` | Background blur strength (≥ 1, ≤ 100) |
+| `subject` | { x, y, width, height } |  | `{"x":0.5,"y":0.45,"width":0.6,"height":0.7}` | Ellipse around the subject that stays sharp |
+| `subject.x` | number | yes |  | Center x (0 = left edge, 1 = right edge) (≥ 0, ≤ 1) |
+| `subject.y` | number | yes |  | Center y (0 = top, 1 = bottom) (≥ 0, ≤ 1) |
+| `subject.width` | number | yes |  | Ellipse width as a fraction of frame width (> 0, ≤ 2) |
+| `subject.height` | number | yes |  | Ellipse height as a fraction of frame height (> 0, ≤ 2) |
+| `feather` | number |  | `0.35` | Softness of the subject edge, as a fraction of its size (≥ 0.02, ≤ 1) |
+| `dim` | number |  | `0` | Also darken the background (0 = no change) (≥ 0, ≤ 1) |
 
 ## Blur
 

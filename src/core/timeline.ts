@@ -20,6 +20,7 @@ export interface TimedAudio {
   clip: AudioClip;
   asset: Asset;
   start: number;
+  /** Seconds on the timeline (source seconds / speed). */
   duration: number;
   end: number;
 }
@@ -87,7 +88,7 @@ export function computeTimeline(project: Project): Timeline {
     if (clip.duration !== undefined) duration = clip.duration;
     else if (clip.loop) duration = Math.max(0, visualDuration - clip.start);
     else if ((asset.type === "audio" || asset.type === "video") && asset.duration !== undefined)
-      duration = Math.max(0, asset.duration - clip.in);
+      duration = Math.max(0, asset.duration - clip.in) / clip.speed;
     else throw new TimelineError(`Audio clip "${clip.id}" needs a duration (probe asset "${asset.id}" first)`);
     return { clip, asset, start: clip.start, duration: round3(duration), end: round3(clip.start + duration) };
   });

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { TOOLS } from "../src/claude/tools.js";
 import { EFFECTS } from "../src/library/effects/index.js";
+import { AUDIO_EFFECTS } from "../src/library/audio-effects/index.js";
 import { TRANSITIONS } from "../src/library/transitions/index.js";
 import { ANIMATIONS } from "../src/library/animations/index.js";
 import { CAPTION_STYLES, CaptionStyleSchema } from "../src/library/caption-styles/index.js";
@@ -88,10 +89,11 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9 _-]/g, "").replace
 function claudeTools(): string {
   const groups: [string, string[]][] = [
     ["Inspect & project", ["get_project", "new_project", "set_project_settings", "undo", "redo"]],
-    ["Library", ["list_templates", "get_template", "apply_template", "list_effects", "list_transitions", "list_animations", "list_caption_styles", "list_components"]],
-    ["Media & primary track", ["import_media", "add_clip", "update_clip", "remove_clip", "move_clip", "split_clip", "trim_clip", "set_transition", "add_effect", "remove_effect"]],
+    ["Library", ["list_templates", "get_template", "apply_template", "list_effects", "list_audio_effects", "list_transitions", "list_animations", "list_caption_styles", "list_components"]],
+    ["Media & primary track", ["import_media", "add_clip", "update_clip", "remove_clip", "move_clip", "split_clip", "trim_clip", "set_speed", "set_transition", "add_effect", "remove_effect"]],
+    ["Retouch", ["retouch"]],
     ["Layers", ["add_text", "add_media_overlay", "add_shape", "add_component", "update_layer", "remove_layer"]],
-    ["Audio", ["add_audio", "update_audio", "remove_audio"]],
+    ["Audio", ["add_audio", "update_audio", "remove_audio", "set_volume", "enhance_audio", "add_audio_effect", "remove_audio_effect"]],
     ["Transcript & captions", ["transcribe", "set_transcript", "get_transcript", "search_transcript", "cleanup_speech", "cut_ranges", "assemble_from_source", "set_captions", "export_captions"]],
     ["Voice-over", ["generate_voiceover"]],
     ["Color", ["color_adjust", "get_color", "analyze_color", "render_scopes"]],
@@ -122,6 +124,17 @@ function effects(): string {
   for (const c of cats) {
     out += `\n## ${c[0]!.toUpperCase()}${c.slice(1)}\n`;
     for (const e of EFFECTS.filter((x) => x.category === c)) out += `\n### ${e.id}\n\n**${e.name}**. ${e.description}\n\n${paramTable(jsonSchema(e.params))}`;
+  }
+  return out;
+}
+
+function audioEffects(): string {
+  const cats = [...new Set(AUDIO_EFFECTS.map((e) => e.category))];
+  let out = `${HEADER}# Audio effects\n\n${AUDIO_EFFECTS.length} audio effects. Apply them to a primary clip (\`clips[].audioEffects\`), an audio clip (\`audio[].audioEffects\`), a media layer (\`layers[].audioEffects\`), or the final mix (\`project.audioEffects\`). With Claude, use \`add_audio_effect\` and target a clip, audio clip or layer id, or \`"master"\`. \`enhance_audio\` sets up a full speech cleanup chain in one call.\n\n\`\`\`json\n{ "type": "denoise", "params": { "amount": 40 } }\n\`\`\`\n\nEffects run in order, after speed and before volume and fades. Parameters you omit take their defaults. Each effect compiles to an FFmpeg audio filter chain ([src/library/audio-effects/index.ts](../../src/library/audio-effects/index.ts)). Register your own with \`registerAudioEffect\`.\n\n## Contents\n\n`;
+  for (const c of cats) out += `- **${c}**: ${AUDIO_EFFECTS.filter((e) => e.category === c).map((e) => `[${e.id}](#${slug(e.id)})`).join(", ")}\n`;
+  for (const c of cats) {
+    out += `\n## ${c[0]!.toUpperCase()}${c.slice(1)}\n`;
+    for (const e of AUDIO_EFFECTS.filter((x) => x.category === c)) out += `\n### ${e.id}\n\n**${e.name}**. ${e.description}\n\n${paramTable(jsonSchema(e.params))}`;
   }
   return out;
 }
@@ -187,6 +200,7 @@ export async function generateDocs(): Promise<Record<string, string>> {
   return {
     "claude-tools.md": claudeTools(),
     "effects.md": effects(),
+    "audio-effects.md": audioEffects(),
     "transitions.md": transitions(),
     "animations.md": animations(),
     "caption-styles.md": captionStyles() + captionOverrides(),

@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { TEMPLATES, applyTemplate } from "../src/library/index.js";
+import { AUDIO_EFFECTS, TEMPLATES, applyTemplate } from "../src/library/index.js";
 import { probe, render, renderContactSheet, renderFrame, startPreviewServer } from "../src/tools/index.js";
 import { EditorSession, executeTool } from "../src/claude/index.js";
-import { validateProject, type Transcript } from "../src/core/index.js";
+import { computeTimeline, validateProject, type Transcript } from "../src/core/index.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "./helpers/media.js";
 import { sampleInputs } from "./helpers/inputs.js";
 
@@ -87,6 +87,48 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     const scopes = await executeTool(session, "render_scopes", { time: 1 });
     expect(scopes.isError, scopes.text).toBeFalsy();
     expect((await probe(scopes.images![0]!.path)).width).toBeGreaterThan(1000);
+  });
+
+  it("renders retouch, audio effects, speed and volume through Claude tools", async () => {
+    const session = new EditorSession(undefined, { outputDir: out("retouch") });
+    await executeTool(session, "new_project", { aspectRatio: "16:9" });
+    await executeTool(session, "import_media", { src: fx.talk, id: "talk" });
+    await executeTool(session, "import_media", { src: fx.music, id: "music" });
+    await executeTool(session, "add_clip", { assetId: "talk", duration: 3 });
+    const clipId = session.project.clips[0]!.id;
+    const call = async (name: string, input: unknown) => {
+      const r = await executeTool(session, name, input);
+      expect(r.isError, r.text).toBeFalsy();
+      return r;
+    };
+
+    await call("retouch", { target: clipId, beauty: { smooth: 70, region: { x: 0.5, y: 0.4, width: 0.3, height: 0.5 } }, backgroundBlur: { amount: 40 } });
+    await call("add_media_overlay", { assetId: "talk", start: 0.5, duration: 2, size: { width: 0.4 }, position: { x: 0.75, y: 0.3 }, volume: 0.5 });
+    const layerId = session.project.layers[0]!.id;
+    await call("retouch", { target: layerId, beauty: {} });
+    await call("retouch", { target: "global", beauty: { smooth: 30 } });
+    await call("set_speed", { target: clipId, speed: 1.5 });
+    expect(computeTimeline(session.project).primaryDuration).toBe(2);
+
+    // Every audio effect in one chain proves each filter string is accepted by ffmpeg.
+    for (const e of AUDIO_EFFECTS) await call("add_audio_effect", { target: clipId, type: e.id });
+    await call("enhance_audio", { target: layerId, removeHum: 60, normalize: -16 });
+    await call("add_audio", { assetId: "music", role: "music", duration: 2 });
+    const audioId = session.project.audio[0]!.id;
+    await call("set_speed", { target: audioId, speed: 2 });
+    expect(session.project.audio[0]!.duration).toBe(1);
+    await call("add_audio_effect", { target: audioId, type: "reverb", params: { room: "hall" } });
+    await call("set_volume", { target: audioId, db: -6 });
+    await call("set_volume", { target: "master", volume: 0.8 });
+    await call("add_audio_effect", { target: "master", type: "normalize" });
+    expect(validateProject(session.project).ok).toBe(true);
+
+    const frame = await call("render_frame", { time: 1 });
+    expect(existsSync(frame.images![0]!.path)).toBe(true);
+    const r = await render(session.project, { output: out("retouch.mp4"), preset: "ultrafast", scale: 0.5 });
+    const info = await probe(r.output);
+    expect(info.hasAudio).toBe(true);
+    expect(info.duration).toBeCloseTo(2, 0);
   });
 
   it("renders a still frame and a range directly", async () => {

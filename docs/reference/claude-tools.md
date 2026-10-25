@@ -2,17 +2,18 @@
 
 # Claude tools
 
-50 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+57 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
 ## Contents
 
 - **Inspect & project**: [get_project](#get_project), [new_project](#new_project), [set_project_settings](#set_project_settings), [undo](#undo), [redo](#redo)
-- **Library**: [list_templates](#list_templates), [get_template](#get_template), [apply_template](#apply_template), [list_effects](#list_effects), [list_transitions](#list_transitions), [list_animations](#list_animations), [list_caption_styles](#list_caption_styles), [list_components](#list_components)
-- **Media & primary track**: [import_media](#import_media), [add_clip](#add_clip), [update_clip](#update_clip), [remove_clip](#remove_clip), [move_clip](#move_clip), [split_clip](#split_clip), [trim_clip](#trim_clip), [set_transition](#set_transition), [add_effect](#add_effect), [remove_effect](#remove_effect)
+- **Library**: [list_templates](#list_templates), [get_template](#get_template), [apply_template](#apply_template), [list_effects](#list_effects), [list_audio_effects](#list_audio_effects), [list_transitions](#list_transitions), [list_animations](#list_animations), [list_caption_styles](#list_caption_styles), [list_components](#list_components)
+- **Media & primary track**: [import_media](#import_media), [add_clip](#add_clip), [update_clip](#update_clip), [remove_clip](#remove_clip), [move_clip](#move_clip), [split_clip](#split_clip), [trim_clip](#trim_clip), [set_speed](#set_speed), [set_transition](#set_transition), [add_effect](#add_effect), [remove_effect](#remove_effect)
+- **Retouch**: [retouch](#retouch)
 - **Layers**: [add_text](#add_text), [add_media_overlay](#add_media_overlay), [add_shape](#add_shape), [add_component](#add_component), [update_layer](#update_layer), [remove_layer](#remove_layer)
-- **Audio**: [add_audio](#add_audio), [update_audio](#update_audio), [remove_audio](#remove_audio)
+- **Audio**: [add_audio](#add_audio), [update_audio](#update_audio), [remove_audio](#remove_audio), [set_volume](#set_volume), [enhance_audio](#enhance_audio), [add_audio_effect](#add_audio_effect), [remove_audio_effect](#remove_audio_effect)
 - **Transcript & captions**: [transcribe](#transcribe), [set_transcript](#set_transcript), [get_transcript](#get_transcript), [search_transcript](#search_transcript), [cleanup_speech](#cleanup_speech), [cut_ranges](#cut_ranges), [assemble_from_source](#assemble_from_source), [set_captions](#set_captions), [export_captions](#export_captions)
 - **Voice-over**: [generate_voiceover](#generate_voiceover)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [render_scopes](#render_scopes)
@@ -97,11 +98,19 @@ _No parameters._
 
 ### list_effects
 
-**read-only**. List available visual effects (color grades, blur, zoom/motion, stylize) with their parameters.
+**read-only**. List available visual effects (color grades, retouch, blur, zoom/motion, stylize) with their parameters.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `category` | "color" \| "grade" \| "blur" \| "stylize" \| "motion" \| "distort" \| "time" |  |  |  |
+| `category` | "light" \| "color" \| "grade" \| "retouch" \| "blur" \| "stylize" \| "motion" \| "distort" \| "time" |  |  |  |
+
+### list_audio_effects
+
+**read-only**. List audio effects (noise reduction, voice enhancement, EQ, dynamics, loudness, reverb, pitch, robot, telephone…) with their parameters.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `category` | "cleanup" \| "voice" \| "dynamics" \| "eq" \| "volume" \| "creative" |  |  |  |
 
 ### list_transitions
 
@@ -163,7 +172,7 @@ _No parameters._
 
 ### update_clip
 
-**edits**. Change properties of a primary-track clip (in, duration, speed, volume, muted, fit, effects, transition, fadeIn, fadeOut).
+**edits**. Change properties of a primary-track clip (in, duration, speed, volume, muted, fit, effects, audioEffects, transition, fadeIn, fadeOut).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -206,6 +215,15 @@ _No parameters._
 | `sourceIn` | number | yes |  | (≥ 0) |
 | `sourceOut` | number | yes |  | (> 0) |
 
+### set_speed
+
+**edits**. Speed up or slow down a primary clip or an audio clip (0.25-4; 0.5 = half speed slow motion, 2 = double speed). Audio keeps its pitch. The clip covers the same source footage, so it gets shorter or longer on the timeline and later clips move. Captions follow automatically.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | Clip id or audio clip id |
+| `speed` | number | yes |  | (≥ 0.25, ≤ 4) |
+
 ### set_transition
 
 **edits**. Set the transition into a clip (or between all clips with all=true). type 'none' removes it.
@@ -235,6 +253,18 @@ _No parameters._
 |---|---|---|---|---|
 | `target` | string | yes |  |  |
 | `type` | string | yes |  |  |
+
+## Retouch
+
+### retouch
+
+**edits**. Retouch people in a clip, a media layer, every clip, or the whole video. beauty: skin smoothing that keeps edges sharp, plus brighten and warmth, on the whole frame or only inside a face region. backgroundBlur: portrait mode, keeping an ellipse around the subject sharp and blurring the rest. There is no automatic subject detection, so look at the shot with render_frame first, set the region or subject ellipse (center x, y and width, height as frame fractions) around the person, then check the result with render_frame. Settings merge into the target's existing retouch, so you can tweak one value at a time. Pass false to remove one.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | A clip id, a media layer id, "all-clips", or "global" (whole video) |
+| `beauty` | false \| { smooth, brighten, warmth, region } |  |  |  |
+| `backgroundBlur` | false \| { amount, subject, feather, dim } |  |  |  |
 
 ## Layers
 
@@ -376,7 +406,7 @@ _No parameters._
 
 ### update_audio
 
-**edits**. Change an audio clip (volume, start, fades, duck, loop…).
+**edits**. Change an audio clip (volume, speed, start, fades, duck, loop, audioEffects…).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -390,6 +420,49 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `audioId` | string | yes |  |  |
+
+### set_volume
+
+**edits**. Set the volume of a primary clip, an audio clip, a media layer, or the whole mix (target "master"). volume is a multiplier: 1 = original, 0.5 = about -6 dB, 2 = about +6 dB, 0 = silent (max 4). Or give db instead. muted applies to primary clips.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | Clip id, audio clip id, media layer id, or "master" |
+| `volume` | number |  |  | (≥ 0, ≤ 4) |
+| `db` | number |  |  | Volume in decibels relative to the original level (0 = original), instead of volume (≥ -60, ≤ 12) |
+| `muted` | boolean |  |  |  |
+
+### enhance_audio
+
+**edits**. One-call cleanup for speech: removes hum, reduces background noise, enhances the voice (clarity, presence, de-essing, compression, even levels) and optionally normalizes loudness. Target a clip, an audio clip (e.g. a voice-over), a media layer, "all-clips", or "master". Calling it again replaces the previous cleanup settings on the target.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | Clip id, audio clip id, media layer id, "all-clips", or "master" |
+| `noiseReduction` | number |  | `40` | Background noise reduction 0-100 (0 = off) (≥ 0, ≤ 100) |
+| `noiseFloor` | number |  |  | Level of the noise in dB (default -35); raise toward -25 for loud hiss (≥ -70, ≤ -20) |
+| `voice` | number |  | `60` | Voice enhancement strength 0-100 (0 = off) (≥ 0, ≤ 100) |
+| `removeHum` | 50 \| 60 |  |  | Remove mains hum at 50 Hz or 60 Hz |
+| `normalize` | number |  |  | Normalize loudness to this LUFS target (-14 for social video, -16 for podcasts) (≥ -30, ≤ -8) |
+
+### add_audio_effect
+
+**edits**. Add an audio effect to a primary clip, an audio clip, a media layer, or the final mix (target "master"). Effects run in order; put cleanup (denoise, dehum) before creative effects. See list_audio_effects.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | Clip id, audio clip id, media layer id, or "master" |
+| `type` | string | yes |  |  |
+| `params` | object |  |  |  |
+
+### remove_audio_effect
+
+**edits**. Remove an audio effect (by type) from a clip, audio clip, media layer or "master".
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  |  |
+| `type` | string | yes |  |  |
 
 ## Transcript & captions
 

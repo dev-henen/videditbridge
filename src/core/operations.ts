@@ -230,6 +230,99 @@ function effectList(d: Project, target: string): Effect[] {
 }
 
 // ---------------------------------------------------------------------------
+// Audio effects, speed & volume
+// ---------------------------------------------------------------------------
+
+/** Target is a clip id, an audio clip id, a media layer id, or "master" (the final mix). */
+export function addAudioEffect(p: Project, target: string, effect: Effect): Project {
+  const e = EffectSchema.parse(effect);
+  return edit(p, (d) => void audioEffectList(d, target).push(e));
+}
+
+/** The params of the first audio effect of a type on a target, if any. */
+export function getAudioEffectParams(p: Project, target: string, effectType: string): Record<string, unknown> | undefined {
+  return audioEffectList(p, target).find((e) => e.type === effectType)?.params;
+}
+
+/**
+ * Set the params of the first audio effect of a type on a target, adding the effect if it isn't there.
+ * `prepend` adds a new effect first (cleanup belongs before creative effects).
+ */
+export function setAudioEffectParams(p: Project, target: string, effectType: string, params: Record<string, unknown>, opts: { prepend?: boolean } = {}): Project {
+  return edit(p, (d) => {
+    const list = audioEffectList(d, target);
+    const existing = list.find((e) => e.type === effectType);
+    if (existing) existing.params = params;
+    else if (opts.prepend) list.unshift(EffectSchema.parse({ type: effectType, params }));
+    else list.push(EffectSchema.parse({ type: effectType, params }));
+  });
+}
+
+export function removeAudioEffect(p: Project, target: string, effectType: string): Project {
+  return edit(p, (d) => {
+    const list = audioEffectList(d, target);
+    const i = list.findIndex((e) => e.type === effectType);
+    if (i === -1) throw new EditError(`"${target}" has no "${effectType}" audio effect`);
+    list.splice(i, 1);
+  });
+}
+
+function audioEffectList(d: Project, target: string): Effect[] {
+  if (target === "master") return d.audioEffects;
+  const clip = d.clips.find((c) => c.id === target);
+  if (clip) return clip.audioEffects;
+  const audio = d.audio.find((a) => a.id === target);
+  if (audio) return audio.audioEffects;
+  const layer = d.layers.find((l) => l.id === target);
+  if (layer?.type === "media") return layer.audioEffects;
+  throw new EditError(`Audio effects target "${target}" must be a clip id, audio clip id, media layer id, or "master"`);
+}
+
+/**
+ * Change playback speed of a primary clip or an audio clip (0.25-4, pitch preserved).
+ * The source range stays the same, so the clip gets shorter or longer on the timeline.
+ */
+export function setSpeed(p: Project, target: string, speed: number): Project {
+  if (!(speed >= 0.25 && speed <= 4)) throw new EditError("Speed must be between 0.25 and 4");
+  return edit(p, (d) => {
+    const clip = d.clips.find((c) => c.id === target);
+    if (clip) return void (clip.speed = speed);
+    const audio = d.audio.find((a) => a.id === target);
+    if (!audio) throw new EditError(`Speed target "${target}" must be a clip id or audio clip id`);
+    // An explicit duration is timeline time; keep the same source range at the new speed.
+    if (audio.duration !== undefined) audio.duration = round3((audio.duration * audio.speed) / speed);
+    audio.speed = speed;
+  });
+}
+
+/**
+ * Set the volume of a clip, audio clip or media layer (linear gain, 1 = original, 0-4),
+ * or of the whole mix with target "master" (stored as a master "gain" audio effect).
+ */
+export function setVolume(p: Project, target: string, volume: number, opts: { muted?: boolean } = {}): Project {
+  if (!(volume >= 0 && volume <= 4)) throw new EditError("Volume must be between 0 and 4 (1 = original level)");
+  if (target === "master") {
+    const db = volume === 0 ? -60 : round3(20 * Math.log10(volume));
+    return volume === 1 && !p.audioEffects.some((e) => e.type === "gain")
+      ? p
+      : setAudioEffectParams(p, "master", "gain", { db: Math.max(-60, Math.min(24, db)) });
+  }
+  return edit(p, (d) => {
+    const clip = d.clips.find((c) => c.id === target);
+    if (clip) {
+      clip.volume = volume;
+      if (opts.muted !== undefined) clip.muted = opts.muted;
+      return;
+    }
+    const audio = d.audio.find((a) => a.id === target);
+    if (audio) return void (audio.volume = volume);
+    const layer = d.layers.find((l) => l.id === target);
+    if (layer?.type === "media") return void (layer.volume = volume);
+    throw new EditError(`Volume target "${target}" must be a clip id, audio clip id, media layer id, or "master"`);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Layers
 // ---------------------------------------------------------------------------
 

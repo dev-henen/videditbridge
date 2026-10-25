@@ -322,7 +322,7 @@ export function buildFromTemplate(specInput: TemplateSpec, inputs: TemplateInput
       const asset = ensureMedia(vo, spec.voiceover.slot, "audio");
       if (!project.assets.some((a) => a.id === asset.id)) project.assets.push(asset);
       if (vo.transcript) project.transcripts[asset.id] = vo.transcript;
-      project.audio.push({ id: newId("audio"), assetId: asset.id, role: "voiceover", start: 0, in: vo.in ?? 0, volume: spec.voiceover.volume, fadeIn: 0, fadeOut: 0, loop: false, ...(vo.duration ? { duration: vo.duration } : {}) });
+      project.audio.push({ id: newId("audio"), assetId: asset.id, role: "voiceover", start: 0, in: vo.in ?? 0, speed: 1, volume: spec.voiceover.volume, audioEffects: [], fadeIn: 0, fadeOut: 0, loop: false, ...(vo.duration ? { duration: vo.duration } : {}) });
     }
   }
   if (spec.music) {
@@ -337,7 +337,9 @@ export function buildFromTemplate(specInput: TemplateSpec, inputs: TemplateInput
         start: 0,
         in: m.in ?? 0,
         duration: timeline.duration,
+        speed: 1,
         volume: spec.music.volume,
+        audioEffects: [],
         fadeIn: spec.music.fadeIn,
         fadeOut: spec.music.fadeOut,
         loop: true,

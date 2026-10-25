@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   ANIMATIONS,
+  AUDIO_EFFECTS,
+  atempoChain,
+  audioEffectToFilter,
   COMPONENTS,
   EFFECTS,
   TEMPLATES,
@@ -36,8 +39,37 @@ describe("effects", () => {
     expect(() => effectToFilter({ type: "nope" }, ctx)).toThrow(/Unknown effect/);
   });
 
+  it("retouch effects blend through a mask sized to the frame", () => {
+    const f = effectToFilter({ type: "backgroundBlur", params: { subject: { x: 0.3, y: 0.5, width: 0.4, height: 0.8 } } }, ctx);
+    expect(f).toContain("nullsrc=s=1080x1920");
+    expect(f).toContain("maskedmerge");
+    expect(f).toContain("(X/SW/W-0.3)/0.2");
+    expect(effectToFilter({ type: "beauty" }, { ...ctx, alpha: true })).toContain("format=yuva420p");
+    expect(effectToFilter({ type: "beauty", params: { smooth: 0, brighten: 0, warmth: 0 } }, ctx)).toBe("null");
+  });
+
   it("kenBurns zooms over the clip's frame count", () => {
     expect(effectToFilter({ type: "kenBurns", params: { zoomTo: 1.5 } }, ctx)).toContain("on/120");
+  });
+});
+
+describe("audio effects", () => {
+  it.each(AUDIO_EFFECTS.map((e) => [e.id]))("%s compiles with default params", (id) => {
+    const f = audioEffectToFilter({ type: id });
+    expect(f).toMatch(/^[a-z]/);
+    expect(f).not.toMatch(/undefined|NaN/);
+  });
+
+  it("rejects bad params and unknown ids", () => {
+    expect(() => audioEffectToFilter({ type: "denoise", params: { amount: 200 } })).toThrow();
+    expect(() => audioEffectToFilter({ type: "nope" })).toThrow(/Unknown audio effect/);
+  });
+
+  it("chains atempo for speeds outside 0.5-2 and keeps duration when shifting pitch", () => {
+    expect(atempoChain(4)).toEqual(["atempo=2", "atempo=2"]);
+    expect(atempoChain(0.25)).toEqual(["atempo=0.5", "atempo=0.5"]);
+    expect(atempoChain(1)).toEqual([]);
+    expect(audioEffectToFilter({ type: "pitch", params: { semitones: 12 } })).toBe("aresample=48000,asetrate=96000,aresample=48000,atempo=0.5");
   });
 });
 

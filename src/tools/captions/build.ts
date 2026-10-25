@@ -33,10 +33,11 @@ export function timelineWords(project: Project, timeline: Timeline = computeTime
   for (const ta of timeline.audio) {
     const transcript = project.transcripts[ta.clip.assetId];
     if (!transcript || ta.clip.role !== "voiceover") continue;
+    const speed = ta.clip.speed;
     for (const w of transcript.words) {
-      if (w.end <= ta.clip.in || w.start >= ta.clip.in + ta.duration) continue;
-      const start = ta.start + Math.max(0, w.start - ta.clip.in);
-      const end = ta.start + Math.min(ta.duration, w.end - ta.clip.in);
+      if (w.end <= ta.clip.in || w.start >= ta.clip.in + ta.duration * speed) continue;
+      const start = ta.start + Math.max(0, w.start - ta.clip.in) / speed;
+      const end = ta.start + Math.min(ta.duration, (w.end - ta.clip.in) / speed);
       words.push({ ...w, start: round3(start), end: round3(end) });
     }
   }

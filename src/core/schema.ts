@@ -80,6 +80,12 @@ export const EffectSchema = z.object({
   params: z.record(z.string(), z.unknown()).optional(),
 });
 
+const audioEffects = (what: string) =>
+  z
+    .array(EffectSchema)
+    .default([])
+    .describe(`Audio effects applied to ${what}, in order (ids from the audio effects catalog, e.g. 'enhanceVoice', 'denoise')`);
+
 export const TransitionSchema = z.object({
   type: z.string().min(1).describe("Transition id from the transitions catalog, e.g. 'fade', 'slideleft'"),
   duration: z.number().positive().max(5).default(0.5),
@@ -134,6 +140,7 @@ export const ClipSchema = z.object({
   speed: z.number().min(0.25).max(4).default(1),
   volume: z.number().min(0).max(4).default(1),
   muted: z.boolean().default(false),
+  audioEffects: audioEffects("this clip's audio"),
   fit: FitSchema.default("cover"),
   focus: PositionSchema.optional().describe("With fit cover: where to crop when the source does not fit (x: 0 keeps the left edge, 1 the right edge; y: 0 top, 1 bottom; default center). Use it to keep the subject when reframing 16:9 to 9:16"),
   effects: z.array(EffectSchema).default([]),
@@ -167,6 +174,7 @@ export const MediaLayerSchema = z.object({
   fit: FitSchema.default("cover"),
   opacity: z.number().min(0).max(1).default(1),
   volume: z.number().min(0).max(4).default(0).describe("Overlay audio volume (0 = muted)"),
+  audioEffects: audioEffects("the overlay's audio"),
   effects: z.array(EffectSchema).default([]),
 });
 
@@ -196,8 +204,10 @@ export const AudioClipSchema = z.object({
   role: z.enum(["music", "voiceover", "sfx"]).default("music"),
   start: time.default(0).describe("Timeline start (seconds)"),
   in: time.default(0),
-  duration: z.number().positive().optional().describe("Defaults to the rest of the source (or the video length if loop)"),
+  duration: z.number().positive().optional().describe("Timeline seconds. Defaults to the rest of the source (or the video length if loop)"),
+  speed: z.number().min(0.25).max(4).default(1).describe("Playback speed; pitch is preserved"),
   volume: z.number().min(0).max(4).default(1),
+  audioEffects: audioEffects("this audio clip"),
   fadeIn: z.number().min(0).default(0),
   fadeOut: z.number().min(0).default(0),
   loop: z.boolean().default(false),
@@ -266,6 +276,7 @@ export const ProjectSchema = z.object({
   layers: z.array(LayerSchema).default([]).describe("Overlays drawn on top of the primary track, in array order"),
   audio: z.array(AudioClipSchema).default([]),
   effects: z.array(EffectSchema).default([]).describe("Global effects applied to the composed primary track"),
+  audioEffects: audioEffects("the final mix (master)"),
   captions: CaptionsSchema.optional(),
   transcripts: z.record(z.string(), TranscriptSchema).default({}).describe("Transcripts keyed by asset id"),
   export: ExportSettingsSchema.default(ExportSettingsSchema.parse({})),

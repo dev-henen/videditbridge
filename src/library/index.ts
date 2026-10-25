@@ -1,5 +1,6 @@
-/** Catalogs an AI browses and applies: effects, transitions, animations, caption styles, components and templates. */
+/** Catalogs an AI browses and applies: effects, audio effects, transitions, animations, caption styles, components and templates. */
 export * from "./effects/index.js";
+export * from "./audio-effects/index.js";
 export * from "./transitions/index.js";
 export * from "./animations/index.js";
 export * from "./caption-styles/index.js";

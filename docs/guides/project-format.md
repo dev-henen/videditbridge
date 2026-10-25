@@ -19,6 +19,7 @@ An edit is one JSON document, a `Project`. It is validated by the zod schema in 
   "layers": [],
   "audio": [],
   "effects": [],
+  "audioEffects": [],
   "captions": { "style": "bold-pop" },
   "transcripts": {},
   "export": { "videoCodec": "libx264", "crf": 20, "preset": "medium", "audioCodec": "aac", "audioBitrate": "192k" },
@@ -49,6 +50,7 @@ The media an edit uses. Clips, layers and audio refer to assets by `id`.
 | `duration` | rest of source | Source seconds used. Required for images, colors and gradients |
 | `speed` | `1` | 0.25-4. The timeline length is `duration / speed`. Audio is pitch-preserved |
 | `volume`, `muted` | `1`, `false` | |
+| `audioEffects` | `[]` | See [audio effects](../reference/audio-effects.md) |
 | `fit` | `cover` | `cover` crops, `contain` letterboxes, `stretch` distorts, `blur` letterboxes over a blurred copy (good for landscape footage in vertical video) |
 | `effects` | `[]` | See [effects](../reference/effects.md) |
 | `transition` | | Blend in from the previous clip. See [transitions](../reference/transitions.md) |
@@ -69,7 +71,7 @@ Layers are drawn on top of the primary track in array order (later entries are o
 | `size` | `{ width: 1 }` | `width` is a fraction of the frame width. Add `height` to fill a box using `fit`. Without `height`, the source aspect ratio is kept |
 | `opacity` | `1` | |
 | `volume` | `0` | Overlays are muted by default |
-| `effects` | `[]` | |
+| `effects`, `audioEffects` | `[]` | |
 
 **`text`**
 
@@ -91,12 +93,14 @@ Layers are drawn on top of the primary track in array order (later entries are o
 |---|---|---|
 | `assetId` | | An audio or video asset |
 | `role` | `music` | `music`, `voiceover` or `sfx` |
-| `start`, `in`, `duration` | `0`, `0`, rest of source | |
+| `start`, `in`, `duration` | `0`, `0`, rest of source | `duration` is in timeline seconds |
+| `speed` | `1` | 0.25-4, pitch-preserved. Without a `duration`, the clip lasts `(source length - in) / speed` |
 | `volume`, `fadeIn`, `fadeOut` | `1`, `0`, `0` | |
+| `audioEffects` | `[]` | See [audio effects](../reference/audio-effects.md) |
 | `loop` | `false` | Repeats to the end of the video |
 | `duck` | `true` for music | Lowers music while voice audio plays (sidechain compression) |
 
-The final mix is: clip audio, voice-overs and media-layer audio, then ducked music, then un-ducked music and SFX, then a limiter.
+Each source runs speed, then its `audioEffects`, then volume and fades. The final mix is: clip audio, voice-overs and media-layer audio, then ducked music, then un-ducked music and SFX, then the top-level `audioEffects` (the master chain), then a limiter.
 
 ## Transcripts and captions
 

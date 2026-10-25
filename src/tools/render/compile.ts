@@ -4,6 +4,7 @@ import { computeTimeline, type Timeline, type TimedClip } from "../../core/timel
 import { round3, toFfmpegColor } from "../../core/util.js";
 import { effectsToFilter, escapeFilterPath, type EffectContext } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
+import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
 import { overlayMotion } from "../../library/animations/index.js";
 import { AssDocument, addCaptionEvents } from "../captions/ass.js";
 import { buildCaptions } from "../captions/build.js";
@@ -45,22 +46,6 @@ export const FILTER_SCRIPT = "graph.txt";
 export const ASS_FILE = "overlay.ass";
 
 const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
-
-/** atempo accepts 0.5-2 per instance; chain for larger factors. */
-function atempoChain(speed: number): string[] {
-  const out: string[] = [];
-  let s = speed;
-  while (s > 2) {
-    out.push("atempo=2");
-    s /= 2;
-  }
-  while (s < 0.5) {
-    out.push("atempo=0.5");
-    s /= 0.5;
-  }
-  if (Math.abs(s - 1) > 1e-6) out.push(`atempo=${round3(s)}`);
-  return out;
-}
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
@@ -168,7 +153,14 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     return out;
   };
 
-  const effectCtx = (duration: number, w = W, h = H): EffectContext => ({ width: w, height: h, fps: F, duration });
+  const effectCtx = (duration: number, w = W, h = H, alpha = false): EffectContext => ({
+    width: w,
+    height: h,
+    fps: F,
+    duration,
+    alpha,
+    label: (p) => g.label(p),
+  });
   const chain = (filters: (string | false | 0 | undefined)[]) => filters.filter(Boolean).join(",");
 
   // -------------------------------------------------------------------------
@@ -201,6 +193,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         `[${k}:a]${chain([
           "asetpts=PTS-STARTPTS",
           ...atempoChain(clip.speed),
+          ...audioEffectsToFilter(clip.audioEffects),
           clip.volume !== 1 && `volume=${clip.volume}`,
           clip.fadeIn && `afade=t=in:st=0:d=${clip.fadeIn}`,
           clip.fadeOut && `afade=t=out:st=${round3(Math.max(0, tc.duration - clip.fadeOut))}:d=${clip.fadeOut}`,
@@ -295,7 +288,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     g.add(
       `[${fitted}]${chain([
         "format=yuva420p",
-        ...effectsToFilter(layer.effects, effectCtx(layer.duration, w, h)),
+        ...effectsToFilter(layer.effects, effectCtx(layer.duration, w, h, true)),
         layer.opacity < 1 && `colorchannelmixer=aa=${layer.opacity}`,
         fadeIn && `fade=t=in:st=0:d=${fadeIn}:alpha=1`,
         fadeOut && `fade=t=out:st=${round3(Math.max(0, layer.duration - fadeOut))}:d=${fadeOut}:alpha=1`,
@@ -306,7 +299,9 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     if (asset.type === "video" && asset.hasAudio !== false && layer.volume > 0) {
       a = g.label("la");
       const ms = Math.round(layer.start * 1000);
-      g.add(`[${k}:a]asetpts=PTS-STARTPTS,volume=${layer.volume},${AUDIO_FMT},adelay=${ms}|${ms}[${a}]`);
+      g.add(
+        `[${k}:a]${chain(["asetpts=PTS-STARTPTS", ...audioEffectsToFilter(layer.audioEffects), `volume=${layer.volume}`, AUDIO_FMT, `adelay=${ms}|${ms}`])}[${a}]`,
+      );
     }
     return { v, a };
   }
@@ -349,13 +344,16 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     const { clip, asset } = ta;
     if (ta.duration <= 0 || clip.volume === 0) continue;
     const srcDur = asset.type === "audio" || asset.type === "video" ? asset.duration : undefined;
-    const loop = clip.loop && (srcDur === undefined || clip.in + ta.duration > srcDur);
-    const k = sourceInput(asset, loop ? 0 : clip.in, ta.duration, loop);
+    const sourceSeconds = round3(ta.duration * clip.speed);
+    const loop = clip.loop && (srcDur === undefined || clip.in + sourceSeconds > srcDur);
+    const k = sourceInput(asset, loop ? 0 : clip.in, sourceSeconds, loop);
     const label = g.label("au");
     const ms = Math.round(ta.start * 1000);
     g.add(
       `[${k}:a]${chain([
         "asetpts=PTS-STARTPTS",
+        ...atempoChain(clip.speed),
+        ...audioEffectsToFilter(clip.audioEffects),
         clip.volume !== 1 && `volume=${clip.volume}`,
         clip.fadeIn > 0 && `afade=t=in:st=0:d=${clip.fadeIn}`,
         clip.fadeOut > 0 && `afade=t=out:st=${round3(Math.max(0, ta.duration - clip.fadeOut))}:d=${clip.fadeOut}`,
@@ -397,7 +395,15 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   finalInputs.push(...otherAudio);
   const aMixed = mix(finalInputs, "first");
   const aOut = "aout";
-  g.add(`[${aMixed}]alimiter=limit=0.95:level=false,apad,atrim=duration=${total}[${aOut}]`);
+  g.add(
+    `[${aMixed}]${chain([
+      // Master effects can change the sample rate (loudnorm), so reformat before limiting.
+      ...(project.audioEffects.length ? [...audioEffectsToFilter(project.audioEffects), AUDIO_FMT] : []),
+      "alimiter=limit=0.95:level=false",
+      "apad",
+      `atrim=duration=${total}`,
+    ])}[${aOut}]`,
+  );
 
   // -------------------------------------------------------------------------
   // Output

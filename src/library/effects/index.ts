@@ -11,9 +11,13 @@ export interface EffectContext {
   fps: number;
   /** Duration of the clip/layer the effect is applied to (seconds, after speed). */
   duration: number;
+  /** The stream has an alpha channel (media layers). */
+  alpha?: boolean;
+  /** Unique filter-graph label generator, for effects that branch the stream. */
+  label?: (prefix: string) => string;
 }
 
-export type EffectCategory = "light" | "color" | "grade" | "blur" | "stylize" | "motion" | "distort" | "time";
+export type EffectCategory = "light" | "color" | "grade" | "retouch" | "blur" | "stylize" | "motion" | "distort" | "time";
 
 export interface EffectDefinition<P extends z.ZodType = z.ZodType> {
   id: string;
@@ -37,6 +41,49 @@ function zoompan(ctx: EffectContext, zoomExpr: string, xExpr = "iw/2-(iw/zoom/2)
   const w2 = ctx.width * 2;
   const h2 = ctx.height * 2;
   return `scale=${w2}:${h2},zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=1:s=${ctx.width}x${ctx.height}:fps=${ctx.fps}`;
+}
+
+export const SubjectRegionSchema = z.object({
+  x: z.number().min(0).max(1).describe("Center x (0 = left edge, 1 = right edge)"),
+  y: z.number().min(0).max(1).describe("Center y (0 = top, 1 = bottom)"),
+  width: z.number().positive().max(2).describe("Ellipse width as a fraction of frame width"),
+  height: z.number().positive().max(2).describe("Ellipse height as a fraction of frame height"),
+});
+export type SubjectRegion = z.infer<typeof SubjectRegionSchema>;
+
+let fallbackLabel = 0;
+
+/**
+ * Run `branch` on a copy of the stream and blend it back through a static mask: either
+ * a feathered ellipse (inside or outside it) or, without a region, the whole frame.
+ * The mask is drawn once with geq; maskedmerge holds its last frame for the whole clip.
+ * Returns a graph fragment that still reads and writes one unlabeled stream.
+ */
+function maskedBlend(
+  ctx: EffectContext,
+  branch: string,
+  opts: { region?: SubjectRegion; inside: boolean; feather?: number; strength: number },
+): string {
+  const label = ctx.label ?? ((p: string) => `${p}${fallbackLabel++}`);
+  const [orig, copy, done, mask] = [label("fxo"), label("fxc"), label("fxb"), label("fxm")];
+  const fmt = ctx.alpha ? "yuva420p" : "yuv420p";
+  const s = round3(clamp(opts.strength, 0, 1) * 255);
+  let e = String(s);
+  if (opts.region) {
+    const r = opts.region;
+    const f = round3(clamp(opts.feather ?? 0.3, 0.02, 1));
+    // Normalized distance from the ellipse center: 1 on its edge. X/SW maps chroma samples to luma pixels.
+    const d = `hypot((X/SW/W-${round3(r.x)})/${round3(r.width / 2)},(Y/SH/H-${round3(r.y)})/${round3(r.height / 2)})`;
+    const outside = `clip((${d}-1+${f})/${round3(2 * f)},0,1)`;
+    e = `${s}*${opts.inside ? `(1-${outside})` : outside}`;
+  }
+  const planes = `lum='${e}':cb='${e}':cr='${e}'${ctx.alpha ? `:a='${e}'` : ""}`;
+  return [
+    `format=${fmt},split=2[${orig}][${copy}]`,
+    `[${copy}]${branch}[${done}]`,
+    `nullsrc=s=${ctx.width}x${ctx.height}:r=${ctx.fps},trim=end_frame=1,format=${fmt},geq=${planes}[${mask}]`,
+    `[${orig}][${done}][${mask}]maskedmerge`,
+  ].join(";");
 }
 
 const GRADES: Record<string, { name: string; description: string; filter: string }> = {
@@ -172,6 +219,55 @@ export const EFFECTS: EffectDefinition[] = [
   }),
   ...gradeEffects,
   ...colorEffects(),
+
+  // --- retouch --------------------------------------------------------------------
+  define({
+    id: "beauty",
+    name: "Beauty / Skin Retouch",
+    category: "retouch",
+    description:
+      "Portrait retouch: edge-preserving skin smoothing that keeps eyes, hair and outlines sharp, plus optional brightening and warmth. Applies to the whole frame, or only inside a face region (x, y, width, height as frame fractions; check placement with render_frame).",
+    params: z.object({
+      smooth: num(50, 0, 100, "Skin smoothing strength"),
+      brighten: num(15, 0, 100, "Lift and even out skin tones"),
+      warmth: num(10, -100, 100, "+ warmer, healthier skin, - cooler"),
+      region: SubjectRegionSchema.optional().describe("Only retouch inside this ellipse (the face); omit for the whole frame"),
+    }),
+    toFilter: (p, ctx) => {
+      const s = p.smooth / 100;
+      const scale = Math.min(ctx.width, ctx.height) / 1080;
+      const retouched = [
+        s > 0 && `bilateral=sigmaS=${round3((2 + 10 * s) * scale)}:sigmaR=${round3(0.04 + 0.08 * s)}:planes=7`,
+        p.brighten > 0 && `eq=brightness=${round3(p.brighten * 0.0006)}:gamma=${round3(1 + p.brighten * 0.002)}`,
+        p.warmth !== 0 && `colortemperature=temperature=${Math.round(6500 - p.warmth * 15)}`,
+      ];
+      if (!retouched.some(Boolean)) return "null";
+      // Smoothing is blended back over the original so detail survives even at full strength.
+      return maskedBlend(ctx, retouched.filter(Boolean).join(","), {
+        region: p.region,
+        inside: true,
+        strength: 0.55 + 0.4 * Math.max(s, 0.25),
+      });
+    },
+  }),
+  define({
+    id: "backgroundBlur",
+    name: "Background Blur / Portrait Mode",
+    category: "retouch",
+    description:
+      "Keep the subject sharp and blur everything around it, like a portrait-mode lens. There is no automatic subject detection: set the subject ellipse (x, y = its center, width, height as frame fractions) around the person, then check it with render_frame. A larger feather gives a softer, more natural falloff.",
+    params: z.object({
+      amount: num(25, 1, 100, "Background blur strength"),
+      subject: SubjectRegionSchema.default({ x: 0.5, y: 0.45, width: 0.6, height: 0.7 }).describe("Ellipse around the subject that stays sharp"),
+      feather: num(0.35, 0.02, 1, "Softness of the subject edge, as a fraction of its size"),
+      dim: num(0, 0, 1, "Also darken the background (0 = no change)"),
+    }),
+    toFilter: (p, ctx) => {
+      const scale = Math.min(ctx.width, ctx.height) / 1080;
+      const blurred = [`gblur=sigma=${round3(p.amount * 0.6 * scale)}`, p.dim > 0 && `eq=brightness=${round3(-0.25 * p.dim)}`].filter(Boolean).join(",");
+      return maskedBlend(ctx, blurred, { region: p.subject, inside: false, feather: p.feather, strength: 1 });
+    },
+  }),
 
   // --- blur & stylize -----------------------------------------------------------
   define({

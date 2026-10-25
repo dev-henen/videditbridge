@@ -13,6 +13,8 @@ The engine model. Pure, with no I/O.
 | `addAsset`, `upsertAsset`, `removeAsset`, `setTranscript` | Assets |
 | `addClip`, `updateClip`, `removeClip`, `moveClip`, `trimClip`, `splitClip`, `setTransition`, `setAllTransitions` | Primary track |
 | `addEffect`, `removeEffect` | Effects on a clip, a media layer or `"global"` |
+| `addAudioEffect`, `removeAudioEffect`, `setAudioEffectParams` | Audio effects on a clip, an audio clip, a media layer or `"master"` |
+| `setSpeed`, `setVolume` | Speed of a clip or audio clip; volume of a clip, audio clip, media layer or `"master"` |
 | `addLayer`, `updateLayer`, `removeLayer`, `reorderLayer` | Layers |
 | `addAudio`, `updateAudio`, `removeAudio` | Audio |
 | `setCaptions`, `updateSettings` | Captions, resolution, fps |
@@ -31,7 +33,8 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 
 | Area | Exports |
 |---|---|
-| Effects | `EFFECTS`, `getEffect`, `listEffects`, `registerEffect`, `effectToFilter`, `resolveEffectParams` |
+| Effects | `EFFECTS`, `getEffect`, `listEffects`, `registerEffect`, `effectToFilter`, `resolveEffectParams`, `SubjectRegionSchema` |
+| Audio effects | `AUDIO_EFFECTS`, `getAudioEffect`, `listAudioEffects`, `registerAudioEffect`, `audioEffectToFilter`, `atempoChain` |
 | Transitions | `TRANSITIONS`, `getTransition`, `listTransitions` |
 | Animations | `ANIMATIONS`, `getAnimation`, `listAnimations` |
 | Caption styles | `CAPTION_STYLES`, `CaptionStyleSchema`, `getCaptionStyle`, `listCaptionStyles`, `resolveCaptionStyle`, `registerCaptionStyle` |

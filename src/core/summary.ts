@@ -16,6 +16,8 @@ const fx = (effects: Effect[]) =>
         .join(", ")}]`
     : "";
 
+const afx = (effects: Effect[]) => fx(effects).replace(/^ fx:/, " audio fx:");
+
 const span = (start: number, end: number) => `${formatTime(start)}-${formatTime(end)}`;
 
 /**
@@ -64,7 +66,7 @@ export function summarizeProject(project: Project): string {
       const extra = [c.speed !== 1 && `speed ${c.speed}x`, c.muted && "muted", c.volume !== 1 && `vol ${c.volume}`, c.fit !== "cover" && `fit ${c.fit}`]
         .filter(Boolean)
         .join(", ");
-      lines.push(`  [${tc.index}] ${c.id} ${span(tc.start, tc.end)} ${c.assetId}${src}${tr}${extra ? ` (${extra})` : ""}${fx(c.effects)}${c.label ? ` "${c.label}"` : ""}`);
+      lines.push(`  [${tc.index}] ${c.id} ${span(tc.start, tc.end)} ${c.assetId}${src}${tr}${extra ? ` (${extra})` : ""}${fx(c.effects)}${afx(c.audioEffects)}${c.label ? ` "${c.label}"` : ""}`);
     }
   }
 
@@ -77,7 +79,7 @@ export function summarizeProject(project: Project): string {
         l.type === "text"
           ? `text "${l.text.length > 60 ? `${l.text.slice(0, 57)}...` : l.text}" ${l.style.fontFamily} ${l.style.fontSize}px ${l.style.color}`
           : l.type === "media"
-            ? `media ${l.assetId} w=${l.size.width}${l.size.height ? ` h=${l.size.height}` : ""}${l.opacity < 1 ? ` opacity ${l.opacity}` : ""}${fx(l.effects)}`
+            ? `media ${l.assetId} w=${l.size.width}${l.size.height ? ` h=${l.size.height}` : ""}${l.opacity < 1 ? ` opacity ${l.opacity}` : ""}${l.volume > 0 ? ` vol ${l.volume}` : ""}${fx(l.effects)}${afx(l.audioEffects)}`
             : `shape ${l.shape} ${l.size.width}x${l.size.height} ${l.color}`;
       lines.push(`  ${l.id} ${span(l.start, l.start + l.duration)} ${what}${pos}${anim ? ` [${anim}]` : ""}`);
     }
@@ -87,14 +89,15 @@ export function summarizeProject(project: Project): string {
     lines.push("", `Audio (${project.audio.length}):`);
     for (const ta of timeline.audio) {
       const a = ta.clip;
-      const flags = [a.volume !== 1 && `vol ${a.volume}`, a.loop && "loop", a.role === "music" && a.duck !== false && "ducked", a.fadeIn && `fadeIn ${a.fadeIn}s`, a.fadeOut && `fadeOut ${a.fadeOut}s`]
+      const flags = [a.speed !== 1 && `speed ${a.speed}x`, a.volume !== 1 && `vol ${a.volume}`, a.loop && "loop", a.role === "music" && a.duck !== false && "ducked", a.fadeIn && `fadeIn ${a.fadeIn}s`, a.fadeOut && `fadeOut ${a.fadeOut}s`]
         .filter(Boolean)
         .join(", ");
-      lines.push(`  ${a.id} ${a.role} ${span(ta.start, ta.end)} ${a.assetId}${flags ? ` (${flags})` : ""}`);
+      lines.push(`  ${a.id} ${a.role} ${span(ta.start, ta.end)} ${a.assetId}${flags ? ` (${flags})` : ""}${afx(a.audioEffects)}`);
     }
   }
 
   if (project.effects.length) lines.push("", `Global effects:${fx(project.effects)}`);
+  if (project.audioEffects.length) lines.push("", `Master audio:${afx(project.audioEffects)}`);
   if (project.captions) {
     const c = project.captions;
     lines.push(

@@ -1,6 +1,7 @@
 import type { Effect, Project } from "./schema.js";
 import { ProjectSchema } from "./schema.js";
 import { getEffect } from "../library/effects/index.js";
+import { getAudioEffect } from "../library/audio-effects/index.js";
 import { getTransition } from "../library/transitions/index.js";
 import { getAnimation } from "../library/animations/index.js";
 import { getCaptionStyle, CaptionStyleSchema } from "../library/caption-styles/index.js";
@@ -41,10 +42,10 @@ export function validateProject(input: unknown): ValidationResult {
   p.audio.forEach((a, i) => checkId(a.id, `audio.${i}`));
 
   const assetIds = new Set(p.assets.map((a) => a.id));
-  const checkEffects = (effects: Effect[], path: string) =>
+  const checkEffects = (effects: Effect[], path: string, audio = false) =>
     effects.forEach((e, i) => {
-      const def = getEffect(e.type);
-      if (!def) return err(`${path}.${i}`, `Unknown effect "${e.type}"`);
+      const def = audio ? getAudioEffect(e.type) : getEffect(e.type);
+      if (!def) return err(`${path}.${i}`, `Unknown ${audio ? "audio " : ""}effect "${e.type}"`);
       const r = def.params.safeParse(e.params ?? {});
       if (!r.success) err(`${path}.${i}.params`, r.error.issues.map((x) => `${x.path.join(".")}: ${x.message}`).join("; "));
     });
@@ -69,12 +70,14 @@ export function validateProject(input: unknown): ValidationResult {
       if (!getTransition(c.transition.type)) err(`clips.${i}.transition.type`, `Unknown transition "${c.transition.type}"`);
     }
     checkEffects(c.effects, `clips.${i}.effects`);
+    checkEffects(c.audioEffects, `clips.${i}.audioEffects`, true);
   });
 
   p.layers.forEach((l, i) => {
     if (l.type === "media") {
       if (!assetIds.has(l.assetId)) err(`layers.${i}.assetId`, `Unknown asset "${l.assetId}"`);
       checkEffects(l.effects, `layers.${i}.effects`);
+      checkEffects(l.audioEffects, `layers.${i}.audioEffects`, true);
     }
     if (l.type === "text" && !l.text.trim()) warn(`layers.${i}.text`, "Empty text layer");
     checkAnim(l.animationIn?.type, `layers.${i}.animationIn`, l.type === "media");
@@ -87,9 +90,11 @@ export function validateProject(input: unknown): ValidationResult {
     const asset = p.assets.find((x) => x.id === a.assetId);
     if (!asset) err(`audio.${i}.assetId`, `Unknown asset "${a.assetId}"`);
     else if (asset.type !== "audio" && asset.type !== "video") err(`audio.${i}.assetId`, `Asset "${asset.id}" (${asset.type}) has no audio`);
+    checkEffects(a.audioEffects, `audio.${i}.audioEffects`, true);
   });
 
   checkEffects(p.effects, "effects");
+  checkEffects(p.audioEffects, "audioEffects", true);
 
   if (p.captions) {
     if (!getCaptionStyle(p.captions.style)) err("captions.style", `Unknown caption style "${p.captions.style}"`);

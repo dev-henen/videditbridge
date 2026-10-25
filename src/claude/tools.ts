@@ -16,7 +16,8 @@ import { computeTimeline, sourceToTimeline } from "../core/timeline.js";
 import { validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, newId, type AspectRatio } from "../core/util.js";
-import { ColorSettingsSchema, describeColorSettings, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
+import { ColorSettingsSchema, SubjectRegionSchema, describeColorSettings, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
+import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
 import { listCaptionStyles } from "../library/caption-styles/index.js";
@@ -208,12 +209,28 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "list_effects",
-    description: "List available visual effects (color grades, blur, zoom/motion, stylize) with their parameters.",
-    input: z.object({ category: z.enum(["color", "grade", "blur", "stylize", "motion", "distort", "time"]).optional() }),
+    description: "List available visual effects (color grades, retouch, blur, zoom/motion, stylize) with their parameters.",
+    input: z.object({ category: z.enum(["light", "color", "grade", "retouch", "blur", "stylize", "motion", "distort", "time"]).optional() }),
     mutates: false,
     run: async (_s, i) =>
       ok(
         listEffects(i.category)
+          .map((e) => {
+            const shape = (e.params as unknown as { shape?: Record<string, z.ZodType> }).shape ?? {};
+            const params = Object.entries(shape).map(([k, v]) => `${k}${v.description ? `: ${v.description}` : ""}`);
+            return `${e.id} (${e.category}): ${e.description}${params.length ? ` Params: ${params.join("; ")}` : ""}`;
+          })
+          .join("\n"),
+      ),
+  }),
+  tool({
+    name: "list_audio_effects",
+    description: "List audio effects (noise reduction, voice enhancement, EQ, dynamics, loudness, reverb, pitch, robot, telephone…) with their parameters.",
+    input: z.object({ category: z.enum(["cleanup", "voice", "dynamics", "eq", "volume", "creative"]).optional() }),
+    mutates: false,
+    run: async (_s, i) =>
+      ok(
+        listAudioEffects(i.category)
           .map((e) => {
             const shape = (e.params as unknown as { shape?: Record<string, z.ZodType> }).shape ?? {};
             const params = Object.entries(shape).map(([k, v]) => `${k}${v.description ? `: ${v.description}` : ""}`);
@@ -304,7 +321,7 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "update_clip",
-    description: "Change properties of a primary-track clip (in, duration, speed, volume, muted, fit, effects, transition, fadeIn, fadeOut).",
+    description: "Change properties of a primary-track clip (in, duration, speed, volume, muted, fit, effects, audioEffects, transition, fadeIn, fadeOut).",
     input: z.object({ clipId: z.string(), patch: z.record(z.string(), z.unknown()) }),
     mutates: true,
     run: async (s, i) => commit(s, ops.updateClip(s.project, i.clipId, i.patch as never), "update_clip", i, `Updated ${i.clipId}.`),
@@ -365,6 +382,75 @@ export const TOOLS: ToolDefinition[] = [
     input: z.object({ target: z.string(), type: z.string() }),
     mutates: true,
     run: async (s, i) => commit(s, ops.removeEffect(s.project, i.target, i.type), "remove_effect", i, `Removed ${i.type} from ${i.target}.`),
+  }),
+  tool({
+    name: "retouch",
+    description:
+      "Retouch people in a clip, a media layer, every clip, or the whole video. beauty: skin smoothing that keeps edges sharp, plus brighten and warmth, on the whole frame or only inside a face region. " +
+      "backgroundBlur: portrait mode, keeping an ellipse around the subject sharp and blurring the rest. There is no automatic subject detection, so look at the shot with render_frame first, set the region or subject ellipse (center x, y and width, height as frame fractions) around the person, then check the result with render_frame. " +
+      "Settings merge into the target's existing retouch, so you can tweak one value at a time. Pass false to remove one.",
+    input: z.object({
+      target: z.string().describe('A clip id, a media layer id, "all-clips", or "global" (whole video)'),
+      beauty: z
+        .union([
+          z.literal(false),
+          z.object({
+            smooth: z.number().min(0).max(100).optional().describe("Skin smoothing 0-100 (default 50; 30 subtle, 70 strong)"),
+            brighten: z.number().min(0).max(100).optional().describe("Brighten skin 0-100 (default 15)"),
+            warmth: z.number().min(-100).max(100).optional().describe("Warmth -100..100 (default 10)"),
+            region: SubjectRegionSchema.nullable().optional().describe("Face ellipse to limit the retouch to; null for the whole frame"),
+          }),
+        ])
+        .optional(),
+      backgroundBlur: z
+        .union([
+          z.literal(false),
+          z.object({
+            amount: z.number().min(1).max(100).optional().describe("Blur strength 1-100 (default 25)"),
+            subject: SubjectRegionSchema.optional().describe("Ellipse around the subject that stays sharp"),
+            feather: z.number().min(0.02).max(1).optional().describe("Edge softness (default 0.35)"),
+            dim: z.number().min(0).max(1).optional().describe("Darken the background 0-1 (default 0)"),
+          }),
+        ])
+        .optional(),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      if (i.beauty === undefined && i.backgroundBlur === undefined) return { text: "Give beauty and/or backgroundBlur settings.", isError: true };
+      const targets = i.target === "all-clips" ? s.project.clips.map((c) => c.id) : [i.target];
+      if (!targets.length) return { text: "There are no clips to retouch.", isError: true };
+      let p = s.project;
+      const done: string[] = [];
+      for (const [type, settings] of [["beauty", i.beauty], ["backgroundBlur", i.backgroundBlur]] as const) {
+        if (settings === undefined) continue;
+        for (const target of targets) {
+          // Throws for an unknown target, so the removal below only skips a missing effect.
+          const current = ops.getEffectParams(p, target, type);
+          if (settings === false) {
+            try {
+              p = ops.removeEffect(p, target, type);
+            } catch {
+              // Nothing to remove on this target.
+            }
+            continue;
+          }
+          const merged: Record<string, unknown> = { ...(current ?? {}), ...settings };
+          if (merged.region === null) delete merged.region;
+          // Validate (and fill defaults) now so a bad value fails the call instead of the render.
+          p = ops.setEffectParams(p, target, type, getEffect(type)!.params.parse(merged) as Record<string, unknown>);
+        }
+        done.push(settings === false ? `removed ${type}` : type);
+      }
+      return commit(s, p, "retouch", i, `Retouch on ${i.target}: ${done.join(", ")}. Check it with render_frame.`);
+    },
+  }),
+  tool({
+    name: "set_speed",
+    description:
+      "Speed up or slow down a primary clip or an audio clip (0.25-4; 0.5 = half speed slow motion, 2 = double speed). Audio keeps its pitch. The clip covers the same source footage, so it gets shorter or longer on the timeline and later clips move. Captions follow automatically.",
+    input: z.object({ target: z.string().describe("Clip id or audio clip id"), speed: z.number().min(0.25).max(4) }),
+    mutates: true,
+    run: async (s, i) => commit(s, ops.setSpeed(s.project, i.target, i.speed), "set_speed", i, `Speed of ${i.target}: ${i.speed}x.`),
   }),
 
   // -------------------------------------------------------------------------
@@ -481,7 +567,7 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "update_audio",
-    description: "Change an audio clip (volume, start, fades, duck, loop…).",
+    description: "Change an audio clip (volume, speed, start, fades, duck, loop, audioEffects…).",
     input: z.object({ audioId: z.string(), patch: z.record(z.string(), z.unknown()) }),
     mutates: true,
     run: async (s, i) => commit(s, ops.updateAudio(s.project, i.audioId, i.patch as never), "update_audio", i, `Updated ${i.audioId}.`),
@@ -492,6 +578,98 @@ export const TOOLS: ToolDefinition[] = [
     input: z.object({ audioId: z.string() }),
     mutates: true,
     run: async (s, i) => commit(s, ops.removeAudio(s.project, i.audioId), "remove_audio", i, `Removed ${i.audioId}.`),
+  }),
+  tool({
+    name: "set_volume",
+    description:
+      'Set the volume of a primary clip, an audio clip, a media layer, or the whole mix (target "master"). volume is a multiplier: 1 = original, 0.5 = about -6 dB, 2 = about +6 dB, 0 = silent (max 4). Or give db instead. muted applies to primary clips.',
+    input: z.object({
+      target: z.string().describe('Clip id, audio clip id, media layer id, or "master"'),
+      volume: z.number().min(0).max(4).optional(),
+      db: z.number().min(-60).max(12).optional().describe("Volume in decibels relative to the original level (0 = original), instead of volume"),
+      muted: z.boolean().optional(),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      if (i.volume === undefined && i.db === undefined && i.muted === undefined) return { text: "Give volume, db or muted.", isError: true };
+      const current = (() => {
+        if (i.target === "master") {
+          const db = ops.getAudioEffectParams(s.project, "master", "gain")?.db;
+          return typeof db === "number" ? Math.round(10 ** (db / 20) * 1000) / 1000 : 1;
+        }
+        const c = s.project.clips.find((x) => x.id === i.target) ?? s.project.audio.find((x) => x.id === i.target);
+        if (c) return c.volume;
+        const l = s.project.layers.find((x) => x.id === i.target);
+        return l?.type === "media" ? l.volume : 1;
+      })();
+      const volume = i.volume ?? (i.db !== undefined ? Math.round(10 ** (i.db / 20) * 1000) / 1000 : current);
+      return commit(s, ops.setVolume(s.project, i.target, Math.min(4, volume), { muted: i.muted }), "set_volume", i, `Volume of ${i.target}: ${volume}${i.muted !== undefined ? `, ${i.muted ? "muted" : "unmuted"}` : ""}.`);
+    },
+  }),
+  tool({
+    name: "add_audio_effect",
+    description:
+      'Add an audio effect to a primary clip, an audio clip, a media layer, or the final mix (target "master"). Effects run in order; put cleanup (denoise, dehum) before creative effects. See list_audio_effects.',
+    input: z.object({
+      target: z.string().describe('Clip id, audio clip id, media layer id, or "master"'),
+      type: z.string(),
+      params: z.record(z.string(), z.unknown()).optional(),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const def = getAudioEffect(i.type);
+      if (!def) return { text: `Unknown audio effect "${i.type}". Use list_audio_effects.`, isError: true };
+      def.params.parse(i.params ?? {});
+      return commit(s, ops.addAudioEffect(s.project, i.target, { type: i.type, params: i.params }), "add_audio_effect", i, `Added ${i.type} audio effect to ${i.target}.`);
+    },
+  }),
+  tool({
+    name: "remove_audio_effect",
+    description: 'Remove an audio effect (by type) from a clip, audio clip, media layer or "master".',
+    input: z.object({ target: z.string(), type: z.string() }),
+    mutates: true,
+    run: async (s, i) => commit(s, ops.removeAudioEffect(s.project, i.target, i.type), "remove_audio_effect", i, `Removed ${i.type} audio effect from ${i.target}.`),
+  }),
+  tool({
+    name: "enhance_audio",
+    description:
+      "One-call cleanup for speech: removes hum, reduces background noise, enhances the voice (clarity, presence, de-essing, compression, even levels) and optionally normalizes loudness. " +
+      'Target a clip, an audio clip (e.g. a voice-over), a media layer, "all-clips", or "master". Calling it again replaces the previous cleanup settings on the target.',
+    input: z.object({
+      target: z.string().describe('Clip id, audio clip id, media layer id, "all-clips", or "master"'),
+      noiseReduction: z.number().min(0).max(100).default(40).describe("Background noise reduction 0-100 (0 = off)"),
+      noiseFloor: z.number().min(-70).max(-20).optional().describe("Level of the noise in dB (default -35); raise toward -25 for loud hiss"),
+      voice: z.number().min(0).max(100).default(60).describe("Voice enhancement strength 0-100 (0 = off)"),
+      removeHum: z.union([z.literal(50), z.literal(60)]).optional().describe("Remove mains hum at 50 Hz or 60 Hz"),
+      normalize: z.number().min(-30).max(-8).optional().describe("Normalize loudness to this LUFS target (-14 for social video, -16 for podcasts)"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const targets = i.target === "all-clips" ? s.project.clips.map((c) => c.id) : [i.target];
+      if (!targets.length) return { text: "There are no clips to enhance.", isError: true };
+      const chain: [string, Record<string, unknown> | undefined][] = [
+        ["dehum", i.removeHum ? { frequency: i.removeHum } : undefined],
+        ["denoise", i.noiseReduction > 0 ? { amount: i.noiseReduction, ...(i.noiseFloor !== undefined ? { noiseFloor: i.noiseFloor } : {}) } : undefined],
+        // Noise is already handled by the dedicated stage above.
+        ["enhanceVoice", i.voice > 0 ? { amount: i.voice, denoise: false } : undefined],
+        ["normalize", i.normalize !== undefined ? { target: i.normalize } : undefined],
+      ];
+      let p = s.project;
+      for (const target of targets) {
+        for (const [type] of chain) {
+          try {
+            p = ops.removeAudioEffect(p, target, type);
+          } catch (e) {
+            // A missing effect is fine; an unknown target is not.
+            if (!/has no/.test((e as Error).message)) throw e;
+          }
+        }
+        // Prepend in reverse so the cleanup chain runs first, in order, ahead of creative effects.
+        for (const [type, params] of [...chain].reverse()) if (params) p = ops.setAudioEffectParams(p, target, type, params, { prepend: true });
+      }
+      const applied = chain.filter(([, v]) => v).map(([t]) => t);
+      return commit(s, p, "enhance_audio", i, `Audio on ${i.target}: ${applied.join(" > ") || "cleanup removed"}.`);
+    },
   }),
 
   // -------------------------------------------------------------------------
