@@ -77,8 +77,8 @@ async function main(argv: string[]): Promise<number> {
     case "validate": {
       const raw = JSON.parse(await readFile(args[0]!, "utf8"));
       const r = validateProject(raw);
-      for (const i of r.issues) console.log(`${i.level === "error" ? "✗" : "⚠"} ${i.path}: ${i.message}`);
-      console.log(r.ok ? "✓ valid" : "✗ invalid");
+      for (const i of r.issues) console.log(`${i.level === "error" ? "Error" : "Warning"}: ${i.path}: ${i.message}`);
+      console.log(r.ok ? "Valid" : "Invalid");
       return r.ok ? 0 : 1;
     }
     case "summary": {
@@ -104,7 +104,7 @@ async function main(argv: string[]): Promise<number> {
         },
       });
       process.stderr.write("\n");
-      console.log(`✓ ${r.output} (${r.duration}s)`);
+      console.log(`Done: ${r.output} (${r.duration}s)`);
       return 0;
     }
     case "frame": {
@@ -122,7 +122,7 @@ async function main(argv: string[]): Promise<number> {
       const out = args[1]!;
       const format = path.extname(out).slice(1) as CaptionExportFormat;
       await writeFile(out, exportCaptions(project, format), "utf8");
-      console.log(`✓ ${out}`);
+      console.log(`Done: ${out}`);
       return 0;
     }
     case "probe": {
@@ -175,7 +175,7 @@ async function main(argv: string[]): Promise<number> {
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (e) => {
-    console.error(`✗ ${e instanceof Error ? e.message : e}`);
+    console.error(`Error: ${e instanceof Error ? e.message : e}`);
     process.exit(1);
   },
 );

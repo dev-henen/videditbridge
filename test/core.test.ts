@@ -178,6 +178,6 @@ describe("summary", () => {
     const s = summarizeProject(base());
     expect(s).toContain("1080x1920");
     expect(s).toContain("c2 00:03.0-00:06.0 b");
-    expect(s).toContain("⟵fade(1s)");
+    expect(s).toContain("transition fade 1s");
   });
 });

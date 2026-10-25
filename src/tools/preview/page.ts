@@ -1,4 +1,4 @@
-/** Self-contained live preview UI served by the preview server. */
+﻿/** Self-contained live preview UI served by the preview server. */
 export const PREVIEW_PAGE = /* html */ `<!doctype html>
 <html lang="en">
 <head>
@@ -171,7 +171,7 @@ export const PREVIEW_PAGE = /* html */ `<!doctype html>
     html += "</div>";
     html += '<div class="track"><div class="name">Primary</div><div class="lane">' + state.clips.map(function (c) {
       var tr = c.transition ? '<span class="tr" style="width:' + (c.transition.duration / (c.end - c.start) * 100) + '%"></span>' : "";
-      return block("clip", c.start, c.end, (c.label || c.assetId), c.id + " · " + c.assetId + (c.transition ? " · ⟵" + c.transition.type : "") + (c.effects.length ? " · fx: " + c.effects.join(", ") : ""), tr);
+      return block("clip", c.start, c.end, (c.label || c.assetId), c.id + " · " + c.assetId + (c.transition ? " · transition " + c.transition.type : "") + (c.effects.length ? " · fx: " + c.effects.join(", ") : ""), tr);
     }).join("") + "</div></div>";
     lanesFor(state.layers.slice().sort(function (a, b) { return a.start - b.start; })).forEach(function (lane, i) {
       html += '<div class="track"><div class="name">' + (i === 0 ? "Layers" : "") + '</div><div class="lane">' + lane.map(function (l) {

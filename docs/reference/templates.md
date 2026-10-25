@@ -302,7 +302,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Look:** captions none, transition `fadewhite`, grade `faded` + `warm`, fonts Georgia / Georgia
 - **Tags:** wedding, anniversary, memories, family, romantic
 
-**Editing guidance:** Slow pacing (4-6s shots), emotional arc: preparation → ceremony → celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available.
+**Editing guidance:** Slow pacing (4-6s shots), emotional arc: preparation, then ceremony, then celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available.
 
 **Inputs**
 
@@ -380,7 +380,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Look:** captions none, transition `whip`, grade `vibrant`, fonts Arial Black / Arial
 - **Tags:** ecommerce, product, ad, ugc, shop
 
-**Editing guidance:** Problem → product → proof → offer. First shot must show the product in use within 1s. Feature labels are benefits, not specs ("Charges in 10 min" not "65W"). Keep each feature 2-3s. End with price + urgency.
+**Editing guidance:** Problem, then product, then proof, then offer. First shot must show the product in use within 1s. Feature labels are benefits, not specs ("Charges in 10 min" not "65W"). Keep each feature 2-3s. End with price + urgency.
 
 **Inputs**
 
@@ -431,7 +431,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Look:** captions none, transition `fadeblack`, grade `tealOrange` + `letterbox`, fonts Georgia / Arial
 - **Tags:** trailer, teaser, cinematic, dramatic, launch
 
-**Editing guidance:** Three acts: setup (slow) → conflict (faster) → climax (rapid cuts, 0.5-1s) → title → date. Text cards between shots carry the story. Sync cuts to music hits.
+**Editing guidance:** Three acts: setup (slow), then conflict (faster), then climax (rapid cuts, 0.5-1s), then title, then date. Text cards between shots carry the story. Sync cuts to music hits.
 
 **Inputs**
 
@@ -684,7 +684,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Look:** captions `cinematic`, transition `fadeblack`, grade `cinematic`, fonts Georgia / Georgia
 - **Tags:** essay, explainer, documentary, narration, chapters
 
-**Editing guidance:** Structure: hook question → context → 3-5 sections → conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4-8s. Fit section lengths to the voice-over sentences.
+**Editing guidance:** Structure: hook question, then context, then 3-5 sections, then conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4-8s. Fit section lengths to the voice-over sentences.
 
 **Inputs**
 
@@ -813,7 +813,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Look:** captions none, transition `fade`, grade `bright`, fonts Georgia / Arial
 - **Tags:** real estate, property, listing, tour, home
 
-**Editing guidance:** Open with the best exterior or hero room. Flow through the house logically (entry → living → kitchen → bedrooms → outdoor). 3-4s per photo.
+**Editing guidance:** Open with the best exterior or hero room. Flow through the house logically (entry, then living, then kitchen, then bedrooms, then outdoor). 3-4s per photo.
 
 **Inputs**
 

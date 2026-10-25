@@ -158,7 +158,7 @@ export const COMPONENTS: ComponentDefinition[] = [
         id: "subscribe",
         start: 0,
         duration: ctx.duration,
-        text: `▶ ${p.text}`,
+        text: p.text,
         position: { x: p.x, y: p.y },
         style: { fontFamily: "Arial Black", fontSize: px(ctx, 50), color: "#FFFFFF", background: "#FF0000", outlineWidth: px(ctx, 18) },
         animationIn: anim("pop", 0.4),

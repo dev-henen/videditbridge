@@ -151,6 +151,9 @@ _No parameters._
 | `index` | integer |  |  | Insert position (default: end) (≥ 0) |
 | `speed` | number |  |  |  |
 | `fit` | "cover" \| "contain" \| "stretch" \| "blur" |  |  | cover = fill & crop, contain = letterbox, stretch = distort, blur = contain over blurred copy |
+| `focus` | { x, y } |  |  | Crop focus for fit cover: x 0 = keep left edge, 1 = right edge |
+| `focus.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `focus.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
 | `volume` | number |  |  |  |
 | `muted` | boolean |  |  |  |
 | `transition` | { type, duration } |  |  | Transition into this clip |

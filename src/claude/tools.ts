@@ -62,7 +62,8 @@ const empty = z.object({});
 function commit(session: EditorSession, project: Project, action: string, input: unknown, message: string): ToolResult {
   session.commit(project, action, input);
   const v = validateProject(project);
-  const problems = v.issues.filter((i) => i.level === "error").map((i) => `${i.path}: ${i.message}`);
+  // An empty project is a normal starting point (e.g. while importing media), not a problem to report.
+  const problems = v.issues.filter((i) => i.level === "error" && !/is empty/.test(i.message)).map((i) => `${i.path}: ${i.message}`);
   const duration = (() => {
     try {
       return computeTimeline(project).duration;
@@ -71,7 +72,7 @@ function commit(session: EditorSession, project: Project, action: string, input:
     }
   })();
   return ok(
-    `${message}${duration !== undefined ? ` (video now ${duration}s)` : ""}${problems.length ? `\n⚠ Problems to fix:\n- ${problems.join("\n- ")}` : ""}`,
+    `${message}${duration !== undefined ? ` (video now ${duration}s)` : ""}${problems.length ? `\nProblems to fix:\n- ${problems.join("\n- ")}` : ""}`,
   );
 }
 
@@ -95,7 +96,7 @@ export const TOOLS: ToolDefinition[] = [
     mutates: false,
     run: async (s, i) => {
       const v = validateProject(s.project);
-      const issues = v.issues.map((x) => `${x.level === "error" ? "✗" : "⚠"} ${x.path}: ${x.message}`).join("\n");
+      const issues = v.issues.map((x) => `${x.level === "error" ? "Error" : "Warning"}: ${x.path}: ${x.message}`).join("\n");
       return ok(`${summarizeProject(s.project)}${issues ? `\n\nIssues:\n${issues}` : "\n\nNo issues."}${i.includeJson ? `\n\nJSON:\n${JSON.stringify(s.project)}` : ""}`);
     },
   }),
@@ -287,6 +288,7 @@ export const TOOLS: ToolDefinition[] = [
       index: z.number().int().min(0).optional().describe("Insert position (default: end)"),
       speed: z.number().optional(),
       fit: FitSchema.optional(),
+      focus: PositionSchema.optional().describe("Crop focus for fit cover: x 0 = keep left edge, 1 = right edge"),
       volume: z.number().optional(),
       muted: z.boolean().optional(),
       transition: TransitionSchema.optional().describe("Transition into this clip"),
@@ -550,7 +552,7 @@ export const TOOLS: ToolDefinition[] = [
         if (!t) continue;
         for (const m of searchTranscript(t, i.query)) {
           const tc = timeline?.clips.find((c) => c.clip.assetId === id && m.start >= c.clip.in && m.end <= c.clip.in + c.sourceDuration);
-          const tl = tc ? ` → timeline ${formatTime(sourceToTimeline(tc, m.start))} (clip ${tc.clip.id})` : " (not in the edit)";
+          const tl = tc ? ` at timeline ${formatTime(sourceToTimeline(tc, m.start))} (clip ${tc.clip.id})` : " (not in the edit)";
           lines.push(`${id} source ${m.start}-${m.end}s${tl}: "…${m.context}…"`);
         }
       }
@@ -749,7 +751,7 @@ export const TOOLS: ToolDefinition[] = [
       const out = await s.outputPath("contact-sheet.png");
       await renderContactSheet(s.project, { output: out, ...i, baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir });
       s.recordRender({ kind: "contact-sheet", path: out });
-      return { text: `Contact sheet (${i.columns}x${i.rows}, left→right, top→bottom): ${out}`, images: [{ path: out, mediaType: "image/png" }] };
+      return { text: `Contact sheet (${i.columns}x${i.rows}, read left to right, top to bottom): ${out}`, images: [{ path: out, mediaType: "image/png" }] };
     },
   }),
   tool({

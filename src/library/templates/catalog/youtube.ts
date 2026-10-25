@@ -71,7 +71,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "16:9",
     idealDuration: [180, 1200],
     aiGuidance:
-      "Structure: hook question → context → 3-5 sections → conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4-8s. Fit section lengths to the voice-over sentences.",
+      "Structure: hook question, then context, then 3-5 sections, then conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4-8s. Fit section lengths to the voice-over sentences.",
     slots: [
       { id: "title", kind: "text", description: "Essay title", required: true },
       { id: "sections", kind: "list", description: "Sections", required: true, fields: { heading: "Chapter heading", media: "B-roll", seconds: "Section length" } },
@@ -155,7 +155,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["YouTube", "Social"],
     aspectRatio: "16:9",
     idealDuration: [30, 120],
-    aiGuidance: "Three acts: setup (slow) → conflict (faster) → climax (rapid cuts, 0.5-1s) → title → date. Text cards between shots carry the story. Sync cuts to music hits.",
+    aiGuidance: "Three acts: setup (slow), then conflict (faster), then climax (rapid cuts, 0.5-1s), then title, then date. Text cards between shots carry the story. Sync cuts to music hits.",
     slots: [
       { id: "beats", kind: "list", description: "Shots and text beats", required: true, fields: { media: "Shot", text: "Optional card text shown over the shot" } },
       { id: "title", kind: "text", description: "Title", required: true },

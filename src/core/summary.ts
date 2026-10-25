@@ -30,7 +30,7 @@ export function summarizeProject(project: Project): string {
     timeline = computeTimeline(project);
   } catch (e) {
     timeline = undefined;
-    lines.push(`⚠ Timeline cannot be computed: ${(e as Error).message}`);
+    lines.push(`Warning: timeline cannot be computed: ${(e as Error).message}`);
   }
   lines.push(
     `Project "${project.name}" (${project.id}): ${s.width}x${s.height} @ ${s.fps}fps` +
@@ -49,7 +49,7 @@ export function summarizeProject(project: Project): string {
             ? `${a.width ? `${a.width}x${a.height}` : ""}`
             : a.type === "color"
               ? a.color
-              : a.colors.join("→");
+              : a.colors.join(" to ");
     const tr = project.transcripts[a.id] ? ` [transcript: ${project.transcripts[a.id]!.words.length} words]` : "";
     const src = "src" in a ? ` ${a.src}` : "";
     lines.push(`  ${a.id} (${a.type}) ${info}${src}${tr}`);
@@ -59,7 +59,7 @@ export function summarizeProject(project: Project): string {
   if (timeline) {
     for (const tc of timeline.clips) {
       const c = tc.clip;
-      const tr = c.transition && tc.index > 0 ? ` ⟵${c.transition.type}(${tc.transitionDuration}s)` : "";
+      const tr = c.transition && tc.index > 0 ? ` transition ${c.transition.type} ${tc.transitionDuration}s` : "";
       const src = tc.asset.type === "video" ? ` src ${c.in}-${+(c.in + tc.sourceDuration).toFixed(3)}s` : "";
       const extra = [c.speed !== 1 && `speed ${c.speed}x`, c.muted && "muted", c.volume !== 1 && `vol ${c.volume}`, c.fit !== "cover" && `fit ${c.fit}`]
         .filter(Boolean)
@@ -69,7 +69,7 @@ export function summarizeProject(project: Project): string {
   }
 
   if (project.layers.length) {
-    lines.push("", `Layers (${project.layers.length}, bottom→top; text/shapes always draw above media):`);
+    lines.push("", `Layers (${project.layers.length}, bottom to top; text/shapes always draw above media):`);
     for (const l of project.layers) {
       const anim = [l.animationIn && `in:${l.animationIn.type}`, l.animationOut && `out:${l.animationOut.type}`].filter(Boolean).join(" ");
       const pos = "position" in l ? ` @(${l.position.x},${l.position.y})` : "";

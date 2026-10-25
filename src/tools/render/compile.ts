@@ -132,12 +132,18 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   };
 
   /** Scale/crop/pad to w×h. Returns label of the fitted stream. */
-  const fit = (input: string, fitMode: Fit, w: number, h: number, alpha: boolean): string => {
+  const fit = (input: string, fitMode: Fit, w: number, h: number, alpha: boolean, focus?: { x: number; y: number }): string => {
     const out = g.label("fit");
     const padColor = alpha ? "black@0" : bg;
     switch (fitMode) {
       case "cover":
-        g.add(`[${input}]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1[${out}]`);
+        {
+          // Keep the focus point in frame when the crop has to drop part of the source.
+          const fx = round3(Math.min(1, Math.max(0, focus?.x ?? 0.5)));
+          const fy = round3(Math.min(1, Math.max(0, focus?.y ?? 0.5)));
+          const pos = focus ? `:(iw-ow)*${fx}:(ih-oh)*${fy}` : "";
+          g.add(`[${input}]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}${pos},setsar=1[${out}]`);
+        }
         break;
       case "stretch":
         g.add(`[${input}]scale=${w}:${h},setsar=1[${out}]`);
@@ -174,7 +180,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     const raw = g.label("raw");
     const speed = asset.type === "video" ? clip.speed : 1;
     g.add(`[${k}:v]${chain(["setpts=PTS-STARTPTS", speed !== 1 && `setpts=PTS/${speed}`, `fps=${F}`])}[${raw}]`);
-    const fitted = fit(raw, clip.fit, W, H, false);
+    const fitted = fit(raw, clip.fit, W, H, false, clip.focus);
     const v = g.label("v");
     g.add(
       `[${fitted}]${chain([

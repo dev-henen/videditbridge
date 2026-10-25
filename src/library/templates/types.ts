@@ -16,7 +16,7 @@ export const SlotSpecSchema = z.object({
   description: z.string(),
   required: z.boolean().default(false),
   multiple: z.boolean().default(false).describe("Accepts an array of media"),
-  fields: z.record(z.string(), z.string()).optional().describe("For list slots: field name → description"),
+  fields: z.record(z.string(), z.string()).optional().describe("For list slots: field name to its description"),
   example: z.unknown().optional(),
 });
 

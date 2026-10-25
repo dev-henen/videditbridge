@@ -228,7 +228,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "9:16",
     idealDuration: [15, 30],
     aiGuidance:
-      "Problem → product → proof → offer. First shot must show the product in use within 1s. Feature labels are benefits, not specs (\"Charges in 10 min\" not \"65W\"). Keep each feature 2-3s. End with price + urgency.",
+      "Problem, then product, then proof, then offer. First shot must show the product in use within 1s. Feature labels are benefits, not specs (\"Charges in 10 min\" not \"65W\"). Keep each feature 2-3s. End with price + urgency.",
     slots: [
       { id: "hook", kind: "text", description: "Opening hook / problem statement", required: true },
       { id: "hero", kind: "media", description: "Hero shot of the product", required: true },

@@ -12,7 +12,7 @@ export const PERSONAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Instagram", "Facebook", "YouTube", "Private"],
     aspectRatio: "16:9",
     idealDuration: [60, 240],
-    aiGuidance: "Slow pacing (4-6s shots), emotional arc: preparation → ceremony → celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available.",
+    aiGuidance: "Slow pacing (4-6s shots), emotional arc: preparation, then ceremony, then celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available.",
     slots: [
       { id: "names", kind: "text", description: "e.g. 'Anna & Ben'", required: true },
       { id: "date", kind: "text", description: "Date / place" },

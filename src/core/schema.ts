@@ -135,6 +135,7 @@ export const ClipSchema = z.object({
   volume: z.number().min(0).max(4).default(1),
   muted: z.boolean().default(false),
   fit: FitSchema.default("cover"),
+  focus: PositionSchema.optional().describe("With fit cover: where to crop when the source does not fit (x: 0 keeps the left edge, 1 the right edge; y: 0 top, 1 bottom; default center). Use it to keep the subject when reframing 16:9 to 9:16"),
   effects: z.array(EffectSchema).default([]),
   transition: TransitionSchema.optional().describe("Transition INTO this clip from the previous clip"),
   fadeIn: z.number().min(0).optional().describe("Fade from black at clip start (seconds)"),
