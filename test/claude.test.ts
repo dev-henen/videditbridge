@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LocalTTS } from "../src/tools/voiceover/local.js";
 import { EditorSession, TOOLS, executeTool, toAnthropicTools } from "../src/claude/index.js";
 import { parseProject } from "../src/core/index.js";
 
@@ -100,6 +101,23 @@ describe("session + tools", () => {
     const stt = await executeTool(s, "transcribe", { assetId: "talk" });
     expect(stt.isError).toBe(true);
     expect(stt.text).toMatch(/transcribe failed/);
+  });
+
+  it("lists local voices and sets the project voice", async () => {
+    const s = session();
+    const list = await executeTool(s, "list_voices", {});
+    expect(list.text).toMatch(/af_heart: Heart, American female, grade A \(project voice\)/);
+    expect(list.text).not.toMatch(/am_adam/);
+    expect((await executeTool(s, "list_voices", { all: true })).text).toMatch(/am_adam/);
+    expect((await executeTool(s, "set_voice", { voice: "bm_george" })).isError).toBeFalsy();
+    expect(s.project.metadata.voice).toEqual({ voice: "bm_george" });
+    expect((await executeTool(s, "list_voices", { all: true })).text).toMatch(/bm_george: George, British male, grade C \(project voice\)/);
+    expect((await executeTool(s, "set_voice", { voice: "nobody" })).isError).toBe(true);
+    // The app passes the local voice in explicitly; that is not "another engine".
+    const local = new EditorSession(undefined, { tts: new LocalTTS() });
+    expect((await executeTool(local, "list_voices", {})).text).not.toMatch(/another voice engine/);
+    expect((await executeTool(local, "set_voice", { voice: "nobody" })).isError).toBe(true);
+    expect((await executeTool(s, "revoice", { all: true })).text).toMatch(/No narration/);
   });
 
   it("lists catalogs", async () => {

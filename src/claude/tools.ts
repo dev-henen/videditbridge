@@ -29,7 +29,7 @@ import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
-import { LOCAL_VOICES, LocalTTS } from "../tools/voiceover/local.js";
+import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
@@ -168,6 +168,36 @@ async function timelineBeats(s: EditorSession, source: string): Promise<{ beats:
 }
 
 const SoundKindSchema = z.enum(["speech", "music", "sound"]);
+
+/** How a narration was made, kept in project.metadata.narration[assetId] so it can be re-voiced. */
+interface NarrationInfo {
+  text: string;
+  voice?: string;
+  speed?: number;
+  instructions?: string;
+}
+
+function rememberNarration(p: Project, assetId: string, info: NarrationInfo): Project {
+  const narration = { ...((p.metadata.narration ?? {}) as Record<string, NarrationInfo>), [assetId]: info };
+  return { ...p, metadata: { ...p.metadata, narration } };
+}
+
+/** The session was given a voice engine other than the built-in local one. */
+function externalVoice(s: EditorSession): boolean {
+  return !!s.options.tts && s.options.tts.name !== "local-kokoro";
+}
+
+/** The project's narration voice (set_voice), if any. */
+function projectVoice(s: EditorSession): { voice?: string; speed?: number } {
+  return (s.project.metadata.voice ?? {}) as { voice?: string; speed?: number };
+}
+
+/** Speak text with the session's provider, or the local voice model. */
+async function speak(s: EditorSession, text: string, opts: { voice?: string; speed?: number; instructions?: string }, activity?: ActivityHandle) {
+  const tts = s.options.tts ?? new LocalTTS({ ffmpegPath: s.options.ffmpegPath, onDownload: (p) => activity?.progress(p * 0.5) });
+  const file = await s.outputPath(tts.name === "local-kokoro" ? "voiceover.wav" : "voiceover.mp3");
+  return tts.synthesize(text, file, opts);
+}
 
 /** The built-in on-device Whisper transcriber, reporting the first-use model download on the activity. */
 function localTranscriber(s: EditorSession, activity?: ActivityHandle): LocalWhisperTranscriber {
@@ -1290,25 +1320,113 @@ export const TOOLS: ToolDefinition[] = [
     name: "generate_voiceover",
     description:
       "Synthesize narration from text and add it as a voice-over with measured word timings for captions. Runs a neural voice on this machine unless the session has another provider (no API key; the model downloads once). " +
-      `Local voices: ${LOCAL_VOICES.join(", ")} (af/am = American female/male, bf/bm = British). Write it the way people talk, in short sentences; one call per section lets you place each part on the timeline.`,
+      "Pick a voice with list_voices and audition it with preview_voice; the project's default voice (set_voice) is used when none is given. Write it the way people talk, in short sentences; one call per section lets you place each part on the timeline.",
     input: z.object({
       text: z.string(),
       start: z.number().min(0).default(0),
-      voice: z.string().optional().describe("Default af_heart for the local voice"),
+      voice: z.string().optional().describe("Voice id (see list_voices); default: the project's voice, else af_heart"),
       speed: z.number().optional().describe("1 = normal, 1.1 a little brisker"),
-      instructions: z.string().optional().describe("Delivery style, e.g. 'warm and upbeat' (OpenAI voices only)"),
+      instructions: z.string().optional().describe("Delivery style, e.g. 'warm and upbeat' (only for an optional external voice provider; the local voice ignores it)"),
       volume: z.number().default(1),
     }),
     mutates: true,
     run: async (s, i, activity) => {
-      const tts = s.options.tts ?? new LocalTTS({ ffmpegPath: s.options.ffmpegPath, onDownload: (p) => activity?.progress(p * 0.5) });
-      const file = await s.outputPath(tts.name === "local-kokoro" ? "voiceover.wav" : "voiceover.mp3");
-      const vo = await tts.synthesize(i.text, file, { voice: i.voice, speed: i.speed, instructions: i.instructions });
+      const voice = i.voice ?? projectVoice(s).voice;
+      const speed = i.speed ?? projectVoice(s).speed;
+      const vo = await speak(s, i.text, { voice, speed, instructions: i.instructions }, activity);
       const id = assetIdFromSrc(s.project, "voiceover");
-      let p = ops.addAsset(s.project, { type: "audio", id, src: vo.path, duration: vo.duration });
+      let p = ops.addAsset(s.project, { type: "audio", id, src: vo.path, duration: vo.duration, label: "voice-over" });
       p = ops.setTranscript(p, id, vo.transcript);
       p = ops.addAudio(p, { assetId: id, role: "voiceover", start: i.start, volume: i.volume });
-      return commit(s, p, "generate_voiceover", i, `Added voice-over "${id}" (${vo.duration}s) at ${i.start}s.`);
+      p = rememberNarration(p, id, { text: i.text, voice, speed, instructions: i.instructions });
+      return commit(s, p, "generate_voiceover", i, `Added voice-over "${id}" (${vo.duration}s, voice ${voice ?? "provider default"}) at ${i.start}s.`);
+    },
+  }),
+  tool({
+    name: "list_voices",
+    description:
+      "List the narration voices: the local voices that run on this machine (with accent, gender and quality grade) and the session's own provider if it has one. Grades are the voice model's published ones; prefer A to C+ for narration.",
+    input: z.object({ all: z.boolean().default(false).describe("Include weaker voices (graded below C+)") }),
+    mutates: false,
+    run: async (s, i) => {
+      const current = projectVoice(s);
+      const rows = VOICES.filter((v) => i.all || RECOMMENDED_VOICES.includes(v.id)).map(
+        (v) => `${v.id}: ${v.name}, ${v.accent} ${v.gender}, grade ${v.grade}${v.id === (current.voice ?? "af_heart") ? " (project voice)" : ""}`,
+      );
+      const provider = externalVoice(s) ? `This session uses another voice engine (${s.options.tts!.name}) with its own voice names; the local voices below are the built-in ones.\n` : "";
+      return ok(`${provider}Local voices${i.all ? "" : " (recommended; all=true lists every voice)"}:\n${rows.join("\n")}`, { voices: VOICES, recommended: RECOMMENDED_VOICES });
+    },
+  }),
+  tool({
+    name: "preview_voice",
+    description:
+      "Speak a sample line in one or more voices and save each as a WAV file to listen to and compare, without changing the project. Use the actual opening line of the script, so the choice is made on real material.",
+    input: z.object({
+      voices: z.array(z.string()).min(1).max(6).describe("Voice ids to audition"),
+      text: z.string().default("Here are five quick tips that will change how you use your phone.").describe("Line to speak"),
+      speed: z.number().optional(),
+    }),
+    mutates: false,
+    run: async (s, i, activity) => {
+      const tts = new LocalTTS({ ffmpegPath: s.options.ffmpegPath, alignWords: false, onDownload: (p) => activity?.progress(p * 0.5) });
+      const lines: string[] = [];
+      for (const [k, voice] of i.voices.entries()) {
+        if (!LOCAL_VOICES.includes(voice)) return { text: `Unknown voice "${voice}". Use list_voices.`, isError: true };
+        const file = await s.outputPath(`voice-preview-${voice}.wav`);
+        const vo = await tts.synthesize(i.text, file, { voice, speed: i.speed });
+        activity?.progress(0.5 + (0.5 * (k + 1)) / i.voices.length);
+        const info = VOICES.find((v) => v.id === voice)!;
+        lines.push(`${voice} (${info.name}, ${info.accent} ${info.gender}, grade ${info.grade}): ${vo.duration}s ${file}`);
+      }
+      return ok(`Voice previews of "${i.text}":\n${lines.join("\n")}\nListen to them, then use set_voice or pass voice to generate_voiceover.`);
+    },
+  }),
+  tool({
+    name: "set_voice",
+    description: "Set the project's narration voice and speed, used by generate_voiceover and revoice when no voice is given. Use revoice with all=true to apply it to narration already in the project.",
+    input: z.object({ voice: z.string(), speed: z.number().min(0.5).max(2).optional() }),
+    mutates: true,
+    run: async (s, i) => {
+      if (!externalVoice(s) && !LOCAL_VOICES.includes(i.voice)) return { text: `Unknown voice "${i.voice}". Use list_voices.`, isError: true };
+      const p = { ...s.project, metadata: { ...s.project.metadata, voice: { voice: i.voice, ...(i.speed ? { speed: i.speed } : {}) } } };
+      return commit(s, p, "set_voice", i, `Project voice: ${i.voice}${i.speed ? ` at ${i.speed}x` : ""}.`);
+    },
+  }),
+  tool({
+    name: "revoice",
+    description:
+      "Re-generate narration already in the project with a new voice, speed or wording, keeping each voice-over where it is on the timeline. Target one voice-over (its audio clip id or asset id), or all=true for every narration made with generate_voiceover. New wording changes the length: check what follows and the graphics timed to words.",
+    input: z.object({
+      target: z.string().optional().describe("Voice-over audio clip id or asset id"),
+      all: z.boolean().default(false),
+      voice: z.string().optional().describe("Default: the project's voice"),
+      speed: z.number().optional(),
+      text: z.string().optional().describe("New wording (one target only)"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const narrations = (s.project.metadata.narration ?? {}) as Record<string, NarrationInfo>;
+      const clips = s.project.audio.filter((a) => a.role === "voiceover" && (i.all ? narrations[a.assetId] : a.id === i.target || a.assetId === i.target));
+      if (!clips.length) return { text: i.all ? "No narration made with generate_voiceover in this project." : `No voice-over "${i.target}".`, isError: true };
+      if (i.text && clips.length > 1) return { text: "New wording needs a single target.", isError: true };
+      let p = s.project;
+      const done: string[] = [];
+      for (const [k, clip] of clips.entries()) {
+        const before = narrations[clip.assetId];
+        const text = i.text ?? before?.text ?? s.project.transcripts[clip.assetId]?.words.map((w) => w.text).join(" ");
+        if (!text) return { text: `No script or transcript for "${clip.assetId}"; give text.`, isError: true };
+        const voice = i.voice ?? projectVoice(s).voice ?? before?.voice;
+        const speed = i.speed ?? before?.speed ?? projectVoice(s).speed;
+        const vo = await speak(s, text, { voice, speed, instructions: before?.instructions }, activity);
+        activity?.progress((k + 1) / clips.length);
+        const asset = p.assets.find((a) => a.id === clip.assetId)!;
+        p = ops.upsertAsset(p, { ...asset, src: vo.path, duration: vo.duration } as Asset);
+        p = ops.setTranscript(p, clip.assetId, vo.transcript);
+        if (clip.duration !== undefined) p = ops.updateAudio(p, clip.id, { duration: vo.duration });
+        p = rememberNarration(p, clip.assetId, { text, voice, speed, instructions: before?.instructions });
+        done.push(`${clip.assetId} ${vo.duration}s`);
+      }
+      return commit(s, p, "revoice", i, `Re-voiced ${done.length} narration${done.length > 1 ? "s" : ""}${i.voice ? ` with ${i.voice}` : ""}: ${done.join(", ")}.`);
     },
   }),
 

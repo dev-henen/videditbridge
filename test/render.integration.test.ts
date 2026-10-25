@@ -9,6 +9,8 @@ import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "./helpers
 import { sampleInputs } from "./helpers/inputs.js";
 
 const hasFfmpeg = await ffmpegAvailable();
+/** The local voice needs the optional kokoro-js package (its model downloads on first use). */
+const hasLocalVoice = await import("kokoro-js").then(() => true, () => false);
 const FULL = process.env.FULL_RENDER === "1";
 /** A representative template per category; FULL_RENDER=1 renders all of them. */
 const SUBSET = ["viral-talking-head", "listicle-countdown", "documentary", "real-estate-tour", "announcement", "wedding-memories", "reaction-split"];
@@ -220,6 +222,29 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     const r = await render(session.project, { output: out("review-graphics.mp4"), preset: "ultrafast", scale: 0.5 });
     expect((await probe(r.output)).duration).toBeCloseTo(computeTimeline(session.project).duration, 0);
   });
+
+  it.skipIf(!hasLocalVoice)("narrates with the local voice, then re-voices it in place", async () => {
+    const session = new EditorSession(undefined, { outputDir: out("voice") });
+    const call = async (name: string, input: unknown) => {
+      const r = await executeTool(session, name, input);
+      expect(r.isError, r.text).toBeFalsy();
+      return r;
+    };
+    await call("new_project", { aspectRatio: "16:9" });
+    await call("set_voice", { voice: "af_bella" });
+    await call("generate_voiceover", { text: "Here are three quick tips.", start: 1 });
+    const vo = session.project.audio[0]!;
+    expect(session.project.metadata.narration).toMatchObject({ [vo.assetId]: { text: "Here are three quick tips.", voice: "af_bella" } });
+    // Word timings are measured from the audio.
+    expect(session.project.transcripts[vo.assetId]!.words.map((w) => w.text.toLowerCase().replace(/[^a-z]/g, ""))).toEqual(["here", "are", "three", "quick", "tips"]);
+    const before = (session.project.assets.find((a) => a.id === vo.assetId) as { src: string }).src;
+    await call("revoice", { target: vo.id, voice: "am_michael", text: "Here are four quick tips." });
+    expect(session.project.audio[0]!.start).toBe(1);
+    expect((session.project.assets.find((a) => a.id === vo.assetId) as { src: string }).src).not.toBe(before);
+    expect(session.project.transcripts[vo.assetId]!.words.some((w) => /four/i.test(w.text))).toBe(true);
+    const preview = await call("preview_voice", { voices: ["af_heart", "bf_emma"], text: "Testing one two." });
+    expect(preview.text.match(/\.wav/g)).toHaveLength(2);
+  }, 600_000);
 
   it("renders every visual effect", async () => {
     // One short clip per effect in a single render: a failing filter graph names the effect's filters.

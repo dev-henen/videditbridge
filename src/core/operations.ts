@@ -207,10 +207,16 @@ export function setEffectParams(p: Project, target: string, effectType: string, 
     const list = effectList(d, target);
     const existing = list.find((e) => e.type === effectType);
     if (existing) existing.params = params;
-    else if (opts.prepend) list.unshift(EffectSchema.parse({ type: effectType, params }));
-    else list.push(EffectSchema.parse({ type: effectType, params }));
+    else if (opts.prepend) {
+      // "First" still comes after keying: a green screen must be keyed on the original colors.
+      const keyed = list.reduce((last, e, k) => (KEYING_EFFECTS.has(e.type) ? k + 1 : last), 0);
+      list.splice(keyed, 0, EffectSchema.parse({ type: effectType, params }));
+    } else list.push(EffectSchema.parse({ type: effectType, params }));
   });
 }
+
+/** Effects that must see the untouched source colors, so prepended effects go after them. */
+const KEYING_EFFECTS = new Set(["chromaKey"]);
 
 export function removeEffect(p: Project, target: string, effectType: string): Project {
   return edit(p, (d) => {

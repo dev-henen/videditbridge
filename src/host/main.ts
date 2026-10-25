@@ -17,8 +17,8 @@ import { EditorSession } from "../claude/session.js";
 import { TOOLS, executeTool } from "../claude/tools.js";
 import { previewState } from "../tools/preview/server.js";
 import { renderFrame } from "../tools/render/render.js";
-import { OpenAITranscriber } from "../tools/transcript/providers.js";
-import { OpenAITTS } from "../tools/voiceover/providers.js";
+import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
+import { LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import type { AspectRatio } from "../core/util.js";
 import { EditorAgent } from "./agent.js";
 import { ProjectStore } from "./projects.js";
@@ -42,10 +42,13 @@ const handlers: Record<string, Handler> = {
     version: "0.1.0",
     projectsDir: store.root,
     claudeAvailable: !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_PROFILE),
-    // Transcription always works: OpenAI when a key is set, otherwise the built-in local Whisper.
+    // Transcription and narration run on this machine; no service or key is involved.
     transcriptionAvailable: true,
+    voiceAvailable: true,
   }),
   "project.list": () => store.list(),
+  // Narration voices for the app: the full list with grades, and which ones are recommended.
+  "voices.list": () => ({ voices: VOICES, recommended: RECOMMENDED_VOICES }),
   "project.create": async (p) => {
     const { dir, project } = await store.create(String(p.name ?? "Untitled"), (p.aspectRatio as AspectRatio) ?? "16:9");
     return attach(new EditorSession(project, sessionOptions(dir)), dir);
@@ -85,8 +88,8 @@ function sessionOptions(dir: string) {
   return {
     baseDir: dir,
     outputDir: path.join(dir, ".render"),
-    transcriber: process.env.OPENAI_API_KEY ? new OpenAITranscriber() : undefined,
-    tts: process.env.OPENAI_API_KEY ? new OpenAITTS() : undefined,
+    transcriber: new LocalWhisperTranscriber(),
+    tts: new LocalTTS(),
   };
 }
 

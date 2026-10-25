@@ -2,7 +2,7 @@
 
 # Claude tools
 
-69 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+73 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -16,7 +16,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Audio**: [add_audio](#add_audio), [update_audio](#update_audio), [remove_audio](#remove_audio), [set_volume](#set_volume), [enhance_audio](#enhance_audio), [add_audio_effect](#add_audio_effect), [remove_audio_effect](#remove_audio_effect)
 - **Sound map, beats & moments**: [analyze_audio](#analyze_audio), [remove_silences](#remove_silences), [detect_scenes](#detect_scenes), [detect_beats](#detect_beats), [beat_sync](#beat_sync), [add_moment_effect](#add_moment_effect), [list_sound_effects](#list_sound_effects), [add_sound_effect](#add_sound_effect)
 - **Transcript & captions**: [transcribe](#transcribe), [set_transcript](#set_transcript), [get_transcript](#get_transcript), [search_transcript](#search_transcript), [find_retakes](#find_retakes), [remove_retakes](#remove_retakes), [cleanup_speech](#cleanup_speech), [cut_ranges](#cut_ranges), [assemble_from_source](#assemble_from_source), [set_captions](#set_captions), [export_captions](#export_captions)
-- **Voice-over**: [generate_voiceover](#generate_voiceover)
+- **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
 
@@ -689,20 +689,59 @@ _No parameters._
 | `format` | "srt" \| "vtt" \| "ass" |  | `"srt"` |  |
 | `output` | string |  |  |  |
 
-## Voice-over
+## Voice
+
+### list_voices
+
+**read-only**. List the narration voices: the local voices that run on this machine (with accent, gender and quality grade) and the session's own provider if it has one. Grades are the voice model's published ones; prefer A to C+ for narration.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `all` | boolean |  | `false` | Include weaker voices (graded below C+) |
+
+### preview_voice
+
+**read-only**. Speak a sample line in one or more voices and save each as a WAV file to listen to and compare, without changing the project. Use the actual opening line of the script, so the choice is made on real material.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `voices` | string[] | yes |  | Voice ids to audition |
+| `text` | string |  | `"Here are five quick tips that will change how you use your phone."` | Line to speak |
+| `speed` | number |  |  |  |
+
+### set_voice
+
+**edits**. Set the project's narration voice and speed, used by generate_voiceover and revoice when no voice is given. Use revoice with all=true to apply it to narration already in the project.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `voice` | string | yes |  |  |
+| `speed` | number |  |  | (≥ 0.5, ≤ 2) |
 
 ### generate_voiceover
 
-**edits**. Synthesize narration from text and add it as a voice-over with measured word timings for captions. Runs a neural voice on this machine unless the session has another provider (no API key; the model downloads once). Local voices: af_heart, af_bella, af_nicole, af_sarah, af_nova, af_sky, af_river, af_jessica, af_alloy, af_aoede, af_kore, am_michael, am_adam, am_eric, am_liam, am_onyx, am_echo, am_fenrir, am_puck, bf_emma, bf_isabella, bf_alice, bf_lily, bm_george, bm_lewis, bm_daniel, bm_fable (af/am = American female/male, bf/bm = British). Write it the way people talk, in short sentences; one call per section lets you place each part on the timeline.
+**edits**. Synthesize narration from text and add it as a voice-over with measured word timings for captions. Runs a neural voice on this machine unless the session has another provider (no API key; the model downloads once). Pick a voice with list_voices and audition it with preview_voice; the project's default voice (set_voice) is used when none is given. Write it the way people talk, in short sentences; one call per section lets you place each part on the timeline.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `text` | string | yes |  |  |
 | `start` | number |  | `0` | (≥ 0) |
-| `voice` | string |  |  | Default af_heart for the local voice |
+| `voice` | string |  |  | Voice id (see list_voices); default: the project's voice, else af_heart |
 | `speed` | number |  |  | 1 = normal, 1.1 a little brisker |
-| `instructions` | string |  |  | Delivery style, e.g. 'warm and upbeat' (OpenAI voices only) |
+| `instructions` | string |  |  | Delivery style, e.g. 'warm and upbeat' (only for an optional external voice provider; the local voice ignores it) |
 | `volume` | number |  | `1` |  |
+
+### revoice
+
+**edits**. Re-generate narration already in the project with a new voice, speed or wording, keeping each voice-over where it is on the timeline. Target one voice-over (its audio clip id or asset id), or all=true for every narration made with generate_voiceover. New wording changes the length: check what follows and the graphics timed to words.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string |  |  | Voice-over audio clip id or asset id |
+| `all` | boolean |  | `false` |  |
+| `voice` | string |  |  | Default: the project's voice |
+| `speed` | number |  |  |  |
+| `text` | string |  |  | New wording (one target only) |
 
 ## Color
 

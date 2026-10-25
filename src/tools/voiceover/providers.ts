@@ -16,17 +16,23 @@ export interface SpeechOptions {
   voice?: string;
   /** Provider-specific speaking speed (1 = normal). */
   speed?: number;
-  /** Delivery instructions, e.g. "excited, fast-paced" (OpenAI gpt-4o-mini-tts). */
+  /** Delivery instructions, e.g. "excited, fast-paced" (only the optional OpenAI provider uses this). */
   instructions?: string;
 }
 
-/** Text-to-speech provider. Implement this to plug in any TTS engine. */
+/**
+ * Text-to-speech engine. The default, used everywhere unless you pass something else, is LocalTTS
+ * (voiceover/local.ts): it runs on this machine and needs no account or key. Implement this to plug in another engine.
+ */
 export interface TTSProvider {
   readonly name: string;
   synthesize(text: string, outPath: string, opts?: SpeechOptions): Promise<VoiceoverResult>;
 }
 
-/** OpenAI TTS (`gpt-4o-mini-tts`, `tts-1`, `tts-1-hd`). Word timings are estimated. */
+/**
+ * Optional extra: OpenAI TTS (`gpt-4o-mini-tts`, `tts-1`, `tts-1-hd`). Sends text to OpenAI and needs your
+ * own key. Never used by default; word timings are estimated.
+ */
 export class OpenAITTS implements TTSProvider {
   readonly name = "openai";
   constructor(private readonly options: { apiKey?: string; model?: string; baseUrl?: string } & FfmpegOptions = {}) {}
@@ -53,7 +59,7 @@ export class OpenAITTS implements TTSProvider {
   }
 }
 
-/** ElevenLabs TTS with character-level alignment → exact word timings for captions. */
+/** Optional extra: ElevenLabs TTS (needs your own key, sends text to ElevenLabs). Never used by default. */
 export class ElevenLabsTTS implements TTSProvider {
   readonly name = "elevenlabs";
   constructor(private readonly options: { apiKey?: string; model?: string; defaultVoiceId?: string } = {}) {}

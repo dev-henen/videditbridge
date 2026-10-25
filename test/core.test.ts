@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   addAudio,
   addAudioEffect,
+  addEffect,
+  setEffectParams,
   addClip,
   addLayer,
   removeAudioEffect,
@@ -170,6 +172,14 @@ describe("operations", () => {
     expect(p.layers[0]!.type === "media" && p.layers[0]!.volume).toBe(0.3);
     expect(p.audioEffects).toEqual([{ type: "gain", params: { db: -6.021 } }]);
     expect(setVolume(base(), "master", 1)).toEqual(base());
+  });
+
+  it("puts prepended color correction after a green-screen key", () => {
+    let p = addEffect(base(), "c1", { type: "chromaKey", params: { color: "#00FF00" } });
+    p = addEffect(p, "c1", { type: "kenBurns" });
+    p = setEffectParams(p, "c1", "color", { exposure: 0.5 }, { prepend: true });
+    expect(p.clips[0]!.effects.map((e) => e.type)).toEqual(["chromaKey", "color", "kenBurns"]);
+    expect(setEffectParams(base(), "c2", "color", {}, { prepend: true }).clips[1]!.effects.map((e) => e.type)).toEqual(["color"]);
   });
 
   it("places moment effects on the clips playing at timeline times", () => {

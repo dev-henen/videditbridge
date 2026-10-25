@@ -5,7 +5,11 @@ import type { Transcript } from "../../core/schema.js";
 import { runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
 import { fromWhisper, fromDeepgram } from "./parse.js";
 
-/** Anything that turns an audio file into a word-timed transcript. */
+/**
+ * Anything that turns an audio file into a word-timed transcript. The default, used everywhere
+ * unless you pass something else, is LocalWhisperTranscriber (transcript/local.ts): it runs on this
+ * machine and needs no account or key.
+ */
 export interface TranscriptionProvider {
   readonly name: string;
   transcribe(audioPath: string, opts?: { language?: string; prompt?: string }): Promise<Transcript>;
@@ -18,7 +22,10 @@ export interface OpenAITranscriptionOptions {
   baseUrl?: string;
 }
 
-/** OpenAI Whisper API (word-level timestamps). */
+/**
+ * Optional extra: the OpenAI Whisper API. Uploads audio to OpenAI and needs your own key. Never used
+ * by default; pass it in explicitly (e.g. as a session's transcriber) only if you want it.
+ */
 export class OpenAITranscriber implements TranscriptionProvider {
   readonly name = "openai";
   constructor(private readonly options: OpenAITranscriptionOptions = {}) {}
@@ -44,7 +51,7 @@ export class OpenAITranscriber implements TranscriptionProvider {
   }
 }
 
-/** Deepgram pre-recorded API (word timestamps, punctuation, diarization). */
+/** Optional extra: the Deepgram API (needs your own key, uploads audio). Never used by default. */
 export class DeepgramTranscriber implements TranscriptionProvider {
   readonly name = "deepgram";
   constructor(private readonly options: { apiKey?: string; model?: string; diarize?: boolean } = {}) {}

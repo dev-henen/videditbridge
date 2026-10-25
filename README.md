@@ -3,11 +3,11 @@
 An AI-native video editing library. The edit is a plain JSON document that Claude (or any model) can read and change through ~46 tools. Rendering goes through FFmpeg.
 
 - **33 templates** that describe a style of video in JSON (viral talking head, podcast clip, listicle, documentary, real-estate tour, wedding film…). Claude can read them, follow their editing guidance, and write new ones.
-- **Transcript tools**: parse Whisper, Deepgram, AssemblyAI, SRT and VTT; search speech; find fillers, stutters and pauses; cut them. Captions stay in sync after every edit.
+- **Transcription on your machine**: a local Whisper model gives word-timed transcripts with no account or key. Also reads Whisper, Deepgram, AssemblyAI, SRT and VTT files. Search speech, find fillers, stutters, retakes and repeats, and cut them. Captions stay in sync after every edit.
 - **14 caption styles** (bold-pop/Hormozi, karaoke, word-by-word, boxed, neon, cinematic…), exportable as SRT, VTT or ASS.
 - **38 effects** (color grades, Ken Burns, punch-in zooms, shake, glitch, letterbox…), **46 transitions**, and **14 text animations**.
 - **14 components**: lower-thirds, title cards, CTAs, subscribe buttons, quotes, number badges, countdowns, end screens.
-- **Voice-over** through OpenAI or ElevenLabs TTS, with word timings so the narration gets captions.
+- **Voice-over on your machine**: a local neural voice model (27 English voices) with measured word timings, so narration gets captions. No account or key.
 - **Live preview**: a local web page that updates on every edit, with a timeline, frame scrubber, contact sheets and preview video. Claude can also render frames and contact sheets to check its own work.
 
 **Documentation:** [docs/](docs/README.md) has guides plus a reference for every Claude tool, template, effect, transition, animation, caption style and component.
@@ -157,7 +157,7 @@ ave preview <project.json> [--port 4321]   ave probe <media>   ave tools
 
 - `registerEffect`, `registerComponent`, `registerCaptionStyle` and `registerTemplate` add to the catalogs. Templates are validated JSON, so Claude can author them.
 - Template text can use placeholders: `{{slot}}`, `{{item.field}}`, `{{index}}`, `{{theme.accentColor}}`, `{{list.0.media}}`.
-- Implement `TranscriptionProvider` or `TTSProvider` to plug in another speech service. OpenAI, Deepgram, OpenAI TTS and ElevenLabs are built in.
+- Transcription and voice-over run locally by default (`LocalWhisperTranscriber`, `LocalTTS`). Implement `TranscriptionProvider` or `TTSProvider` to plug in another engine. Optional classes for OpenAI, Deepgram and ElevenLabs are included for anyone who wants them; they need your own key and are never used unless you pass one in.
 
 ## Known limits
 

@@ -27,7 +27,7 @@ Times are in **source** seconds of the asset the transcript belongs to. Attach a
 | AssemblyAI | `fromAssemblyAI` | Milliseconds converted, speakers |
 | Plain text + duration | `fromPlainText` | Even spread, e.g. for a script |
 
-**Transcribe media on this machine.** `LocalWhisperTranscriber` runs OpenAI's Whisper model locally with ONNX Runtime (through the optional `@huggingface/transformers` package). It needs no API key and uploads nothing. The model downloads once (about 80 MB for the default `onnx-community/whisper-base_timestamped`) to `~/.cache/ai-video-editor/models` (or `$AVE_MODELS_DIR`), then works offline. On a laptop CPU, 57 s of speech took 25 s.
+**Transcribe media on this machine (default).** `LocalWhisperTranscriber` runs the open Whisper speech model locally with ONNX Runtime (through the `@huggingface/transformers` package). It needs no account or key and uploads nothing. The model downloads once (about 80 MB for the default `onnx-community/whisper-base_timestamped`) to `~/.cache/ai-video-editor/models` (or `$AVE_MODELS_DIR`), then works offline. On a laptop CPU, 57 s of speech took 25 s.
 
 ```ts
 import { transcribeMedia, LocalWhisperTranscriber } from "ai-video-editor";
@@ -38,16 +38,9 @@ Whisper's word timestamps are approximate: words are often stretched over the pa
 
 Pick a model with `new LocalWhisperTranscriber({ model })`: `whisper-tiny_timestamped` is fastest, and `whisper-small_timestamped` is more accurate on clear speech but about 7 times slower, and in testing it skipped a stretch of quieter speech that base caught. Proper names are a common miss (here "Claude" came out as "cloud"), so read the transcript and fix words with `set_transcript` before captioning.
 
-The Claude `transcribe` tool uses the local model unless the session was given another provider.
+The Claude `transcribe` tool and the desktop app always use the local model.
 
-**Transcribe with a service.**
-
-```ts
-import { transcribeMedia, OpenAITranscriber, DeepgramTranscriber } from "ai-video-editor";
-const t = await transcribeMedia("talk.mp4", new OpenAITranscriber());   // extracts audio with FFmpeg first
-```
-
-To use another service, implement `TranscriptionProvider` (`transcribe(audioPath) → Transcript`).
+**Another engine.** Implement `TranscriptionProvider` (`transcribe(audioPath) → Transcript`) and pass it as a session's `transcriber`. For anyone who prefers a hosted service, the library also includes optional `OpenAITranscriber` and `DeepgramTranscriber` classes; they need your own key, upload the audio to that company, and are never used unless you pass one in.
 
 ## Analysis
 

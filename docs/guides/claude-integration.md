@@ -59,8 +59,8 @@ Put this in your system prompt (the example includes a version of it):
 new EditorSession(project, {
   baseDir,                                 // relative media paths resolve here
   outputDir,                               // renders, frames and voice-overs go here (default <baseDir>/.render)
-  transcriber: new OpenAITranscriber(),    // enables the `transcribe` tool
-  tts: new ElevenLabsTTS(),                // enables `generate_voiceover`
+  // transcriber and tts default to the local engines (LocalWhisperTranscriber, LocalTTS).
+  // Pass another engine only if you want one, e.g. the optional OpenAITranscriber.
   fontsDir: "./fonts",
 });
 ```

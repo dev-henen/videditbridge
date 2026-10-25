@@ -20,12 +20,32 @@ export interface LocalVoiceOptions {
   ffmpegPath?: string;
 }
 
-/** Voices of Kokoro v1.0: a = American, b = British; f = female, m = male. */
-export const LOCAL_VOICES = [
-  "af_heart", "af_bella", "af_nicole", "af_sarah", "af_nova", "af_sky", "af_river", "af_jessica", "af_alloy", "af_aoede", "af_kore",
-  "am_michael", "am_adam", "am_eric", "am_liam", "am_onyx", "am_echo", "am_fenrir", "am_puck",
-  "bf_emma", "bf_isabella", "bf_alice", "bf_lily", "bm_george", "bm_lewis", "bm_daniel", "bm_fable",
-];
+export interface VoiceInfo {
+  id: string;
+  name: string;
+  accent: "American" | "British";
+  gender: "female" | "male";
+  /** Overall quality grade published with Kokoro v1.0 (A best, F worst). */
+  grade: string;
+}
+
+/** Kokoro v1.0 English voices, best first within each group. Grades are the model's published ones. */
+export const VOICES: VoiceInfo[] = (
+  [
+    ["af_heart", "Heart", "A"], ["af_bella", "Bella", "A-"], ["af_nicole", "Nicole", "B-"], ["af_aoede", "Aoede", "C+"], ["af_kore", "Kore", "C+"],
+    ["af_sarah", "Sarah", "C+"], ["af_alloy", "Alloy", "C"], ["af_nova", "Nova", "C"], ["af_sky", "Sky", "C-"], ["af_jessica", "Jessica", "D"], ["af_river", "River", "D"],
+    ["am_michael", "Michael", "C+"], ["am_fenrir", "Fenrir", "C+"], ["am_puck", "Puck", "C+"], ["am_echo", "Echo", "D"], ["am_eric", "Eric", "D"],
+    ["am_liam", "Liam", "D"], ["am_onyx", "Onyx", "D"], ["am_adam", "Adam", "F+"],
+    ["bf_emma", "Emma", "B-"], ["bf_isabella", "Isabella", "C"], ["bf_alice", "Alice", "D"], ["bf_lily", "Lily", "D"],
+    ["bm_fable", "Fable", "C"], ["bm_george", "George", "C"], ["bm_lewis", "Lewis", "D+"], ["bm_daniel", "Daniel", "D"],
+  ] as const
+).map(([id, name, grade]) => ({ id, name, grade, accent: id[0] === "a" ? "American" : "British", gender: id[1] === "f" ? "female" : "male" }));
+
+/** Voice ids of the local voice model. */
+export const LOCAL_VOICES = VOICES.map((v) => v.id);
+
+/** Voices graded C+ or better: the ones worth using for narration. */
+export const RECOMMENDED_VOICES = VOICES.filter((v) => /^[AB]|^C\+/.test(v.grade)).map((v) => v.id);
 
 interface Kokoro {
   generate(text: string, opts: { voice: string; speed?: number }): Promise<{ audio: Float32Array; sampling_rate: number }>;
