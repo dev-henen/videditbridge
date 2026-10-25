@@ -14,6 +14,7 @@
 | [Voice-over](guides/voiceover.md) | Text-to-speech providers and narrated edits |
 | [Retouch & audio](guides/retouch-and-audio.md) | Beauty retouch, background blur, voice cleanup, audio effects, speed and volume |
 | [Editing raw footage](guides/raw-footage.md) | Sound maps (speech, silence, music), silence removal, shot detection, beat sync, moment effects and sound effects |
+| [Roadmap](roadmap.md) | Suggested improvements, in priority order, and why each matters |
 
 ## Reference
 
