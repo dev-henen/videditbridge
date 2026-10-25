@@ -14,6 +14,28 @@ export interface TransitionDefinition {
    * set_transition with sound: true. Calm transitions (fades, dissolves) have none.
    */
   sound?: string;
+  /**
+   * Custom transition drawn with an xfade expression instead of a built-in xfade. Gets the
+   * transition origin (frame fractions) and the frame aspect ratio (width / height).
+   */
+  custom?: (origin: { x: number; y: number }, aspect: number) => string;
+}
+
+const r3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/**
+ * A soft-edged circle that grows from `origin` until it covers the frame, revealing the next
+ * clip (xfade's P runs 1 → 0, so progress is 1 - P). Distances are in frame heights, so the
+ * circle stays round on any aspect ratio and on subsampled chroma planes.
+ */
+function circleReveal(origin: { x: number; y: number }, aspect: number): string {
+  const ox = r3(origin.x);
+  const oy = r3(origin.y);
+  const reach = r3(Math.hypot(Math.max(ox, 1 - ox) * aspect, Math.max(oy, 1 - oy)) + 0.03);
+  const d = `hypot((X/W-${ox})*${r3(aspect)},Y/H-${oy})`;
+  const radius = `${reach}*pow(1-P,1.6)`;
+  const mix = `clip((${radius}-${d})/0.02+0.5,0,1)`;
+  return `A*(1-${mix})+B*${mix}`;
 }
 
 /** Moving transitions get a sound that matches their motion. */
@@ -84,6 +106,18 @@ export const TRANSITIONS: TransitionDefinition[] = [
   t("squeeze", "Squeeze", "stylized", "Alias of squeezev.", 0.5, "squeezev"),
   t("whip", "Whip Pan", "stylized", "Fast blurred whip pan. Alias of hblur with a short duration.", 0.25, "hblur"),
   t("glitch", "Glitch Cut", "stylized", "Short pixelize burst, reads as a digital glitch.", 0.25, "pixelize"),
+  {
+    ...t(
+      "circlereveal",
+      "Circle Reveal",
+      "shape",
+      "A soft circle grows from a chosen point (origin, e.g. the presenter's hand or the product) until the next clip fills the frame. Into a solid-color section card it reads as a branded bubble transition, as in polished tech videos.",
+      0.7,
+      "custom",
+    ),
+    sound: "whoosh",
+    custom: circleReveal,
+  },
 ];
 
 const byId = new Map(TRANSITIONS.map((tr) => [tr.id, tr]));

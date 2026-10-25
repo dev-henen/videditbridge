@@ -353,6 +353,104 @@ export const COMPONENTS: ComponentDefinition[] = [
     ],
   }),
   define({
+    id: "section-card",
+    name: "Section Card",
+    category: "structure",
+    description:
+      "Branded section opener, as in polished tech reviews: a solid bubble grows from a point (the presenter's hand, the product) until it fills the frame, then a large faint logo shape and a bold italic title wipe in. It sits on top of the video, so narration and music carry on underneath. Use between topics (\"WHAT'S NEW\", \"BATTERY\", \"VERDICT\").",
+    defaultDuration: 2,
+    params: z.object({
+      title: z.string(),
+      subtitle: z.string().default(""),
+      color: color("#5AA9F5").describe("Bubble and background color"),
+      textColor: color("#FFFFFF"),
+      originX: z.number().min(0).max(1).default(0.5).describe("Where the bubble grows from"),
+      originY: z.number().min(0).max(1).default(0.5),
+      motif: z.boolean().default(true).describe("Faint rounded-square shape behind the title"),
+    }),
+    build: (p, ctx) => {
+      // Big enough to cover the farthest corner from the origin.
+      const reach = Math.hypot(Math.max(p.originX, 1 - p.originX) * ctx.width, Math.max(p.originY, 1 - p.originY) * ctx.height) * 2.1;
+      const grow = 0.55;
+      const out = anim("fade", 0.25);
+      const layers: ComponentLayer[] = [
+        { type: "shape", id: "bubble", shape: "ellipse", start: 0, duration: ctx.duration, position: { x: p.originX, y: p.originY }, size: { width: reach / ctx.width, height: reach / ctx.height }, color: p.color, animationIn: { type: "grow", duration: grow, easing: "ease-in" }, animationOut: out },
+      ];
+      if (p.motif) {
+        const side = 0.62 * Math.min(ctx.width, ctx.height);
+        layers.push({ type: "shape", id: "motif", shape: "roundedRect", start: grow * 0.7, duration: ctx.duration - grow * 0.7, position: { x: 0.5, y: 0.5 }, size: { width: side / ctx.width, height: side / ctx.height }, radius: side * 0.22, fill: false, strokeWidth: px(ctx, 34), strokeColor: "#FFFFFF2E", color: p.color, animationIn: anim("zoom", 0.5), animationOut: out });
+      }
+      layers.push({ type: "text", id: "title", start: grow * 0.8, duration: ctx.duration - grow * 0.8, text: p.title, position: { x: 0.5, y: p.subtitle ? 0.47 : 0.5 }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 120), color: p.textColor, italic: true, uppercase: true, outlineWidth: 0, shadow: px(ctx, 4), shadowColor: "#00000040" }, animationIn: anim("wipe", 0.45), animationOut: out });
+      if (p.subtitle)
+        layers.push({ type: "text", id: "subtitle", start: grow + 0.15, duration: ctx.duration - grow - 0.15, text: p.subtitle, position: { x: 0.5, y: 0.58 }, style: { fontFamily: "Arial", bold: true, fontSize: px(ctx, 44), color: p.textColor, outlineWidth: 0 }, animationIn: anim("slide-up", 0.35), animationOut: out });
+      return layers;
+    },
+  }),
+  define({
+    id: "feature-callout",
+    name: "Feature Callout",
+    category: "text",
+    description:
+      "Bold italic uppercase word that pops in next to a product or detail (\"ANC\", \"WIRELESS CHARGING\", \"USB-C\"). Add several with staggered starts to list features one by one, as in product reviews. Place it in clear space beside the object.",
+    defaultDuration: 2.5,
+    params: z.object({
+      text: z.string(),
+      x: z.number().default(0.5),
+      y: z.number().default(0.3),
+      size: z.number().default(64).describe("Font size at 1080p"),
+      color: color("#FFFFFF"),
+    }),
+    build: (p, ctx) => [
+      { type: "text", id: "callout", start: 0, duration: ctx.duration, text: p.text, position: { x: p.x, y: p.y }, style: { fontFamily: "Arial Black", fontSize: px(ctx, p.size), color: p.color, italic: true, uppercase: true, outlineWidth: 0, shadow: px(ctx, 5), shadowColor: "#00000066" }, animationIn: anim("pop", 0.3), animationOut: anim("fade", 0.25) },
+    ],
+  }),
+  define({
+    id: "highlight-box",
+    name: "Highlight Box",
+    category: "text",
+    description: "Rounded outline that pops around part of the frame (a setting on a phone screen, a button, a port), with an optional label above it. x, y is the box center; width, height are frame fractions.",
+    defaultDuration: 2.5,
+    params: z.object({
+      x: z.number().default(0.5),
+      y: z.number().default(0.5),
+      width: z.number().positive().default(0.2),
+      height: z.number().positive().default(0.12),
+      color: color("#FFFFFF"),
+      thickness: z.number().default(8).describe("Outline width at 1080p"),
+      label: z.string().default(""),
+    }),
+    build: (p, ctx) => {
+      const layers: ComponentLayer[] = [
+        { type: "shape", id: "box", shape: "roundedRect", start: 0, duration: ctx.duration, position: { x: p.x, y: p.y }, size: { width: p.width, height: p.height }, radius: px(ctx, 28), fill: false, strokeWidth: px(ctx, p.thickness), strokeColor: p.color, animationIn: anim("pop", 0.3), animationOut: anim("fade", 0.25) },
+      ];
+      if (p.label)
+        layers.push({ type: "text", id: "label", start: 0.15, duration: ctx.duration - 0.15, text: p.label, position: { x: p.x, y: Math.max(0.05, p.y - p.height / 2 - 0.05) }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 44), color: p.color, italic: true, uppercase: true, outlineWidth: 0, shadow: px(ctx, 4), shadowColor: "#00000066" }, animationIn: anim("slide-up", 0.3), animationOut: anim("fade", 0.25) });
+      return layers;
+    },
+  }),
+  define({
+    id: "step-badge",
+    name: "Step Badge",
+    category: "list",
+    description: "Small white circle with a dark number in a corner, marking which tip, step or point is being shown (stays up for the whole section).",
+    defaultDuration: 4,
+    params: z.object({
+      number: z.union([z.string(), z.number()]).transform(String),
+      corner: z.enum(["top-left", "top-right"]).default("top-left"),
+      color: color("#FFFFFF"),
+      numberColor: color("#1A1A1A"),
+    }),
+    build: (p, ctx) => {
+      const d = px(ctx, 92);
+      const x = p.corner === "top-left" ? (px(ctx, 40) + d / 2) / ctx.width : 1 - (px(ctx, 40) + d / 2) / ctx.width;
+      const y = (px(ctx, 40) + d / 2) / ctx.height;
+      return [
+        { type: "shape", id: "circle", shape: "ellipse", start: 0, duration: ctx.duration, position: { x, y }, size: { width: d / ctx.width, height: d / ctx.height }, color: p.color, shadow: px(ctx, 6), animationIn: anim("pop", 0.3), animationOut: anim("fade", 0.25) },
+        { type: "text", id: "number", start: 0, duration: ctx.duration, text: p.number, position: { x, y }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 58), color: p.numberColor, italic: true, outlineWidth: 0 }, animationIn: anim("pop", 0.3), animationOut: anim("fade", 0.25) },
+      ];
+    },
+  }),
+  define({
     id: "end-screen",
     name: "End Screen",
     category: "structure",

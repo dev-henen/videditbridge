@@ -86,3 +86,22 @@ The effects catalog has looks that suit raw footage, all with defaults that work
 - **Style:** `trails`, `vhs`.
 
 Use them where they mean something: a push-in while someone makes their point, a punch on the beat drop, handheld on footage shot from a tripod. Every effect is listed in the [effects reference](../reference/effects.md).
+
+## Graphics like a tech review
+
+Polished review channels lean on a small set of graphics. The library has each one, and they stay editable layers:
+
+| Look | Use |
+|---|---|
+| A solid bubble grows from the presenter's hand into a branded section title | `section-card` component (overlay, so narration and music carry on), or the `circlereveal` transition with an `origin` into a color clip |
+| Feature names pop in beside the product ("ANC", "WIRELESS CHARGING") | `feature-callout` component; time each one to the word with `search_transcript` |
+| A rounded outline around a setting on a phone screen | `highlight-box` component, or `add_shape` with `shape: "roundedRect"` and `fill: false` |
+| A numbered circle in the corner for the current tip | `step-badge` component |
+| A dark pill label under the subject ("TOUCH ID") | `add_shape` with a `roundedRect` whose radius is half its height, plus `add_text` on top |
+| A phone screen or screenshot floating over b-roll | `add_media_overlay` with `cornerRadius` and `shadow` |
+| A UI on a green-screen phone | `chromaKey` effect (measure the screen with `sample_color` first: real screens are rarely pure green), then shapes and text on the screen |
+| A title that must read over a busy shot | a full-frame black `add_shape` at about 35% opacity, moved under the title with `reorder_layer` |
+
+Pair motion with sound: `set_transition` and `add_moment_effect` take `sound: true`, and a `section-card` reads best with a whoosh peaking as the bubble fills the frame (`add_sound_effect` with the default `align: "peak"`).
+
+Stock footage and music: Mixkit's free licenses allow commercial use without attribution (not reselling the files unaltered); check each item's license before downloading.

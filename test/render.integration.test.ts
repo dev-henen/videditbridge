@@ -191,6 +191,36 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     expect(info.duration!).toBeCloseTo(computeTimeline(session.project).duration, 0);
   });
 
+  it("renders review-style graphics: circle reveal, shapes, rounded overlays, keying and components", async () => {
+    const session = new EditorSession(undefined, { outputDir: out("review-graphics") });
+    const call = async (name: string, input: unknown) => {
+      const r = await executeTool(session, name, input);
+      expect(r.isError, r.text).toBeFalsy();
+      return r;
+    };
+    await call("new_project", { aspectRatio: "16:9" });
+    await call("import_media", { src: fx.talk, id: "talk" });
+    await call("import_media", { src: fx.image, id: "photo" });
+    await call("add_clip", { assetId: "talk", duration: 2 });
+    await call("add_clip", { assetId: "photo", duration: 2 });
+    await call("set_transition", { clipId: session.project.clips[1]!.id, type: "circlereveal", duration: 0.6, origin: { x: 0.3, y: 0.6 }, sound: true });
+    expect(session.project.audio.some((a) => a.label === `transition:${session.project.clips[1]!.id}`)).toBe(true);
+    await call("add_media_overlay", { assetId: "photo", start: 0.2, duration: 1.5, size: { width: 0.3 }, position: { x: 0.75, y: 0.4 }, cornerRadius: 30, shadow: 16, effects: [{ type: "chromaKey", params: { color: "#00FF00", replace: "transparent" } }] });
+    await call("add_shape", { start: 0, duration: 2, shape: "roundedRect", position: { x: 0.3, y: 0.3 }, size: { width: 0.2, height: 0.12 }, fill: false, strokeWidth: 6, radius: 24 });
+    await call("add_shape", { start: 0, duration: 2, shape: "ellipse", position: { x: 0.1, y: 0.15 }, size: { width: 0.06, height: 0.1 }, color: "#FFFFFF", shadow: 6 });
+    for (const [component, params] of [
+      ["section-card", { title: "What's new", originX: 0.4, originY: 0.6 }],
+      ["feature-callout", { text: "ANC", x: 0.7, y: 0.3 }],
+      ["highlight-box", { x: 0.5, y: 0.5, label: "Here" }],
+      ["step-badge", { number: 1 }],
+    ] as const)
+      await call("add_component", { component, start: 1, duration: 1.5, params });
+    const frame = await call("render_frame", { time: 2.0, scale: 0.5 });
+    expect(existsSync(frame.images![0]!.path)).toBe(true);
+    const r = await render(session.project, { output: out("review-graphics.mp4"), preset: "ultrafast", scale: 0.5 });
+    expect((await probe(r.output)).duration).toBeCloseTo(computeTimeline(session.project).duration, 0);
+  });
+
   it("renders every visual effect", async () => {
     // One short clip per effect in a single render: a failing filter graph names the effect's filters.
     const effects = EFFECTS.filter((e) => e.id !== "lut");

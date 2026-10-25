@@ -210,7 +210,7 @@ const mean = (a: ArrayLike<number>, from = 0, to = a.length) => {
  * sounds. Music is sustained and tonal; steady noise is sustained but spectrally flat.
  * Speech over music still swings, just less, so it scores as speech.
  */
-function soundScores(ff: FrameFeatures, from: number, to: number): { speech: number; music: number; flatness: number } {
+function soundScores(ff: FrameFeatures, from: number, to: number): { speech: number; music: number; flatness: number; voiceUpFront: boolean } {
   const n = to - from;
   let modulation = 0;
   for (let i = from; i < to; i++) {
@@ -219,6 +219,11 @@ function soundScores(ff: FrameFeatures, from: number, to: number): { speech: num
     modulation += (ff.level[i]! - mean(ff.level, a, b)) ** 2;
   }
   modulation = Math.sqrt(modulation / n);
+  // A voice in front drops to near silence between syllables; a music bed never empties.
+  const loud = percentile(ff.level.subarray(from, to), 0.95);
+  let deep = 0;
+  for (let i = from; i < to; i++) if (ff.level[i]! < loud - 15) deep++;
+  const voiceUpFront = modulation >= 5 && deep / n >= 0.25;
   const zMean = mean(ff.zcr, from, to);
   let zVar = 0;
   for (let i = from; i < to; i++) zVar += (ff.zcr[i]! - zMean) ** 2;
@@ -226,10 +231,13 @@ function soundScores(ff: FrameFeatures, from: number, to: number): { speech: num
   const flat = mean(ff.flatness, from, to);
   const speech = clamp01(0.7 * clamp01((modulation - 1.6) / 2) + 0.3 * clamp01((zcrCv - 0.45) / 0.3));
   const music = clamp01(0.5 * clamp01((1.8 - modulation) / 1) + 0.5 * clamp01((0.35 - flat) / 0.3));
-  return { speech, music, flatness: flat };
+  return { speech, music, flatness: flat, voiceUpFront };
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+/** Beat strength (tempo ratio over about 6 s) from which a window counts as beat-driven music. Measured per window: speech up to 3.5, beat-driven music around 5-11. */
+const BEAT_RATIO_MUSIC = 4;
 
 /** Analyze decoded samples (16 kHz mono) into a sound map. */
 export function analyzeSamples(samples: Float32Array, opts: AnalyzeOptions = {}): SoundMap {
@@ -238,6 +246,7 @@ export function analyzeSamples(samples: Float32Array, opts: AnalyzeOptions = {})
   const duration = round3(samples.length / ANALYSIS_RATE);
   const ff = frameFeatures(samples);
   const n = ff.level.length;
+  const onset = onsetEnvelope(ff);
   const totals: Record<SoundKind, number> = { speech: 0, music: 0, sound: 0, silence: 0 };
   if (!n) return { duration, noiseFloor: -120, threshold: -120, segments: duration ? [{ start: 0, end: duration, kind: "silence", level: -120, confidence: 1 }] : [], loudMoments: [], levels: [], totals: { ...totals, silence: duration } };
 
@@ -290,8 +299,14 @@ export function analyzeSamples(samples: Float32Array, opts: AnalyzeOptions = {})
       const s = soundScores(ff, Math.max(lo, start - 40), Math.min(hi, end + 40));
       // Fades make music swing like speech at its edges, but it stays strongly tonal.
       const tonal = s.flatness < 0.12 && s.speech < 0.35;
-      const kind: SoundKind = s.speech >= 0.5 && s.speech >= s.music ? "speech" : s.music >= 0.6 || tonal ? "music" : "sound";
-      const c = kind === "speech" ? s.speech : kind === "music" ? s.music : 1 - Math.max(s.speech, s.music);
+      // Percussive music swings like speech too, but on a steady beat that speech never has.
+      // Measured within this run of sound only, and only when it is long enough to show a beat.
+      const mid = (start + end) >> 1;
+      const [b0, b1] = [Math.max(i, mid - 3 * FPS), Math.min(j, mid + 3 * FPS)];
+      const beat = b1 - b0 >= 3 * FPS ? tempo(onset, b0, b1).ratio : 0;
+      const beatDriven = beat >= BEAT_RATIO_MUSIC && !s.voiceUpFront;
+      const kind: SoundKind = beatDriven ? "music" : s.speech >= 0.5 && s.speech >= s.music ? "speech" : s.music >= 0.6 || tonal ? "music" : "sound";
+      const c = beatDriven ? clamp01((beat - 1.5) / 3) : kind === "speech" ? s.speech : kind === "music" ? s.music : 1 - Math.max(s.speech, s.music);
       kinds.fill(kind, start, end);
       conf.fill(c, start, end);
     }
@@ -379,11 +394,9 @@ function mergeShortSegments(segments: SoundSegment[], minLen: number): SoundSegm
 }
 
 /** Tempo and beat times, for cutting or adding effects on the beat. */
-export function detectBeats(samples: Float32Array, range?: { start: number; end: number }): BeatAnalysis {
-  const ff = frameFeatures(samples);
+/** Onset strength per frame: spectral flux minus its local average, half-wave rectified. */
+function onsetEnvelope(ff: FrameFeatures): Float32Array {
   const n = ff.flux.length;
-  if (n < FPS * 4) return { confidence: 0, beats: [], downbeats: [] };
-  // Onset strength: flux minus its local average, half-wave rectified.
   const onset = new Float32Array(n);
   const half = Math.round(0.25 * FPS);
   let run = 0;
@@ -396,17 +409,25 @@ export function detectBeats(samples: Float32Array, range?: { start: number; end:
     const avg = run / (Math.min(n - 1, b) - Math.max(0, a + 1) + 1);
     onset[i] = Math.max(0, ff.flux[i]! - avg);
   }
-  // Tempo: autocorrelation over 60-200 BPM, weighted toward ~120 BPM.
+  return onset;
+}
+
+/**
+ * Tempo by autocorrelation of the onset envelope over 60-200 BPM (weighted toward ~120 BPM) within
+ * [from, to). `ratio` is how far the best tempo stands out from all others: measured on whole
+ * files, speech 1.6-1.8, ambient music with a soft pulse about 2.3, pop with a clear beat above 10.
+ */
+function tempo(onset: Float32Array, from = 0, to = onset.length): { lag: number; ratio: number; scores: number[]; minLag: number } {
   const minLag = Math.round((60 / 200) * FPS);
   const maxLag = Math.round((60 / 60) * FPS);
   let best = 0;
-  let bestLag = 0;
+  let bestLag = minLag;
   let total = 0;
   const scores: number[] = [];
   for (let lag = minLag; lag <= maxLag; lag++) {
     let s = 0;
-    for (let i = lag; i < n; i++) s += onset[i]! * onset[i - lag]!;
-    s /= n - lag;
+    for (let i = from + lag; i < to; i++) s += onset[i]! * onset[i - lag]!;
+    s /= Math.max(1, to - from - lag);
     const bpm = (60 * FPS) / lag;
     const w = Math.exp(-0.5 * (Math.log2(bpm / 120) / 0.9) ** 2);
     scores.push(s);
@@ -416,8 +437,17 @@ export function detectBeats(samples: Float32Array, range?: { start: number; end:
       bestLag = lag;
     }
   }
-  const avgScore = total / scores.length;
+  return { lag: bestLag, ratio: scores[bestLag - minLag]! / (total / scores.length + 1e-9), scores, minLag };
+}
+
+export function detectBeats(samples: Float32Array, range?: { start: number; end: number }): BeatAnalysis {
+  const ff = frameFeatures(samples);
+  const n = ff.flux.length;
+  if (n < FPS * 4) return { confidence: 0, beats: [], downbeats: [] };
+  const onset = onsetEnvelope(ff);
+  const { lag: bestLag, scores, minLag } = tempo(onset);
   const peakScore = scores[bestLag - minLag]!;
+  const avgScore = scores.reduce((s, v) => s + v, 0) / scores.length;
   // How far the best tempo stands out from all others. Measured: speech 1.6-1.8, ambient music
   // with a soft pulse about 2.3, pop with a clear beat above 10, a click track about 25.
   const ratio = peakScore / (avgScore + 1e-9);

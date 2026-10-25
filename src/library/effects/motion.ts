@@ -372,6 +372,34 @@ export function motionEffects(): EffectDefinition[] {
       },
     }),
 
+    // --- compositing ----------------------------------------------------------------
+    define({
+      id: "chromaKey",
+      name: "Green Screen / Chroma Key",
+      category: "distort",
+      description:
+        "Key out a green (or blue) screen: replace it with a solid color to draw a UI or label on (phone screens, monitors), or make it transparent on a media overlay so whatever is underneath shows through. Removes green spill from edges and fingers.",
+      params: z.object({
+        color: z.string().default("#00FF00").describe("Screen color to remove, #RRGGBB. Measure it with sample_color: real screens are rarely pure green"),
+        similarity: num(0.1, 0.01, 0.6, "How far from the key color still counts as screen (raise slowly if green remains)"),
+        blend: num(0.04, 0, 0.5, "Edge softness"),
+        replace: z.string().default("#111216").describe('Color to fill the keyed area with, or "transparent" (media overlays only)'),
+      }),
+      toFilter: (p, ctx) => {
+        // colorkey compares full RGB (brightness included): pale, desaturated screens (often lime or
+        // mint on phones) stay apart from beige wood and skin, which chromakey's UV-only distance confuses.
+        const key = `format=rgba,colorkey=color=0x${p.color.replace(/^#/, "").slice(0, 6)}:similarity=${p.similarity}:blend=${p.blend},despill=type=${/^#?0000/i.test(p.color) ? "blue" : "green"}`;
+        if (p.replace === "transparent") return `${key},format=yuva420p`;
+        const label = labeler(ctx);
+        const [fg, bg] = [label("fkf"), label("fkb")];
+        return [
+          `${key}[${fg}]`,
+          `color=c=0x${p.replace.replace(/^#/, "").slice(0, 6)}:s=${ctx.width}x${ctx.height}:r=${ctx.fps}:d=${round3(ctx.duration + 1)}[${bg}]`,
+          `[${bg}][${fg}]overlay=shortest=1,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+        ].join(";");
+      },
+    }),
+
     // --- stylize --------------------------------------------------------------------
     define({
       id: "trails",

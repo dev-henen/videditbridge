@@ -92,6 +92,37 @@ export function addTextLayer(doc: AssDocument, layer: TextLayer, z: number): voi
   });
 }
 
+/** ASS override color `&HBBGGRR&` (alpha goes in a separate tag). */
+const bgr = (c: { r: number; g: number; b: number }) =>
+  `&H${[c.b, c.g, c.r].map((v) => Math.round(v).toString(16).padStart(2, "0").toUpperCase()).join("")}&`;
+
+/** ASS drawing path for a w×h shape with its top-left at 0,0. Curves use the standard 0.5523 Bezier circle constant. */
+export function shapePath(shape: ShapeLayer["shape"], w: number, h: number, radius: number): string {
+  const k = 0.5523;
+  const n = (v: number) => Math.round(v * 10) / 10;
+  if (shape === "ellipse") {
+    const [rx, ry] = [w / 2, h / 2];
+    const [cx, cy] = [rx, ry];
+    return [
+      `m ${n(cx + rx)} ${n(cy)}`,
+      `b ${n(cx + rx)} ${n(cy + k * ry)} ${n(cx + k * rx)} ${n(cy + ry)} ${n(cx)} ${n(cy + ry)}`,
+      `b ${n(cx - k * rx)} ${n(cy + ry)} ${n(cx - rx)} ${n(cy + k * ry)} ${n(cx - rx)} ${n(cy)}`,
+      `b ${n(cx - rx)} ${n(cy - k * ry)} ${n(cx - k * rx)} ${n(cy - ry)} ${n(cx)} ${n(cy - ry)}`,
+      `b ${n(cx + k * rx)} ${n(cy - ry)} ${n(cx + rx)} ${n(cy - k * ry)} ${n(cx + rx)} ${n(cy)}`,
+    ].join(" ");
+  }
+  const r = shape === "roundedRect" ? Math.min(radius, w / 2, h / 2) : 0;
+  if (r <= 0) return `m 0 0 l ${w} 0 ${w} ${h} 0 ${h}`;
+  const c = r * (1 - k);
+  return [
+    `m ${n(r)} 0 l ${n(w - r)} 0`,
+    `b ${n(w - c)} 0 ${w} ${n(c)} ${w} ${n(r)} l ${w} ${n(h - r)}`,
+    `b ${w} ${n(h - c)} ${n(w - c)} ${h} ${n(w - r)} ${h} l ${n(r)} ${h}`,
+    `b ${n(c)} ${h} 0 ${n(h - c)} 0 ${n(h - r)} l 0 ${n(r)}`,
+    `b 0 ${n(c)} ${n(c)} 0 ${n(r)} 0`,
+  ].join(" ");
+}
+
 export function addShapeLayer(doc: AssDocument, layer: ShapeLayer, z: number): void {
   const color = parseColor(layer.color);
   const style = doc.addStyle(
@@ -117,10 +148,35 @@ export function addShapeLayer(doc: AssDocument, layer: ShapeLayer, z: number): v
   );
   const w = Math.round(layer.size.width * doc.width);
   const h = Math.round(layer.size.height * doc.height);
-  const alpha = Math.round(255 * (1 - color.a * layer.opacity))
-    .toString(16)
-    .padStart(2, "0")
-    .toUpperCase();
+  const hexAlpha = (opacity: number) =>
+    Math.round(255 * (1 - opacity))
+      .toString(16)
+      .padStart(2, "0")
+      .toUpperCase();
+  const stroke = parseColor(layer.strokeColor);
+  const tags = [
+    `\\1a&H${layer.fill ? hexAlpha(color.a * layer.opacity) : "FF"}&`,
+    layer.strokeWidth > 0 ? `\\bord${layer.strokeWidth}\\3c${bgr(stroke)}\\3a&H${hexAlpha(stroke.a * layer.opacity)}&` : "",
+    "\\p1",
+  ].join("");
+  const anim = {
+    animIn: layer.animationIn?.type === "typewriter" ? { ...layer.animationIn, type: "fade" } : layer.animationIn,
+    animOut: layer.animationOut,
+  };
+  // The shadow is its own blurred, offset copy underneath: ASS blur on the shape itself would soften its edge.
+  if (layer.shadow > 0) {
+    addPhased(doc, {
+      layer: z,
+      start: layer.start,
+      end: layer.start + layer.duration,
+      style,
+      x: Math.round(layer.position.x * doc.width),
+      y: Math.round(layer.position.y * doc.height + layer.shadow),
+      tags: `\\1c&H000000&\\1a&H${hexAlpha(0.5 * layer.opacity)}&\\bord0\\blur${Math.max(2, Math.round(layer.shadow))}\\p1`,
+      body: shapePath(layer.shape, w, h, layer.radius),
+      ...anim,
+    });
+  }
   addPhased(doc, {
     layer: z,
     start: layer.start,
@@ -128,9 +184,8 @@ export function addShapeLayer(doc: AssDocument, layer: ShapeLayer, z: number): v
     style,
     x: Math.round(layer.position.x * doc.width),
     y: Math.round(layer.position.y * doc.height),
-    tags: `\\1a&H${alpha}&\\p1`,
-    body: `m 0 0 l ${w} 0 ${w} ${h} 0 ${h}`,
-    animIn: layer.animationIn?.type === "typewriter" ? { ...layer.animationIn, type: "fade" } : layer.animationIn,
-    animOut: layer.animationOut,
+    tags,
+    body: shapePath(layer.shape, w, h, layer.radius),
+    ...anim,
   });
 }

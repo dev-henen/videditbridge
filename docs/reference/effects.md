@@ -2,7 +2,7 @@
 
 # Effects
 
-78 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+79 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -18,7 +18,7 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 - **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs)
 - **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur)
 - **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur)
-- **distort**: [mirror](#mirror), [tilt](#tilt)
+- **distort**: [mirror](#mirror), [chromaKey](#chromakey), [tilt](#tilt)
 - **motion**: [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat)
 - **shake**: [shake](#shake), [handheld](#handheld), [vibrate](#vibrate), [earthquake](#earthquake), [impactShake](#impactshake)
 - **time**: [fadeIn](#fadein), [fadeOut](#fadeout), [flash](#flash)
@@ -651,6 +651,17 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `direction` | "horizontal" \| "vertical" |  | `"horizontal"` |  |
+
+### chromaKey
+
+**Green Screen / Chroma Key**. Key out a green (or blue) screen: replace it with a solid color to draw a UI or label on (phone screens, monitors), or make it transparent on a media overlay so whatever is underneath shows through. Removes green spill from edges and fingers.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `color` | string |  | `"#00FF00"` | Screen color to remove, #RRGGBB. Measure it with sample_color: real screens are rarely pure green |
+| `similarity` | number |  | `0.1` | How far from the key color still counts as screen (raise slowly if green remains) (≥ 0.01, ≤ 0.6) |
+| `blend` | number |  | `0.04` | Edge softness (≥ 0, ≤ 0.5) |
+| `replace` | string |  | `"#111216"` | Color to fill the keyed area with, or "transparent" (media overlays only) |
 
 ### tilt
 

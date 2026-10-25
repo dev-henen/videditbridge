@@ -28,3 +28,4 @@ Easing is one of `linear`, `ease-in`, `ease-out` (default) or `ease-in-out`. Tex
 | `wipe` | Wipe |  | 0.5s | Revealed left-to-right by a moving mask. |
 | `drop` | Drop |  | 0.35s | Falls from above with a fade, like a title slam. |
 | `stretch` | Stretch |  | 0.4s | Expands horizontally from a thin line. |
+| `grow` | Grow |  | 0.5s | Scales up from nothing (out: shrinks to nothing) around its center, without overshoot. Use with ease-in for a bubble or circle reveal that accelerates, as in branded section transitions. |

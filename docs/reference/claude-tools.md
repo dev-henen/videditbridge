@@ -2,7 +2,7 @@
 
 # Claude tools
 
-67 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+69 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -12,12 +12,12 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Library**: [list_templates](#list_templates), [get_template](#get_template), [apply_template](#apply_template), [list_effects](#list_effects), [list_audio_effects](#list_audio_effects), [list_transitions](#list_transitions), [list_animations](#list_animations), [list_caption_styles](#list_caption_styles), [list_components](#list_components)
 - **Media & primary track**: [import_media](#import_media), [add_clip](#add_clip), [update_clip](#update_clip), [remove_clip](#remove_clip), [move_clip](#move_clip), [split_clip](#split_clip), [trim_clip](#trim_clip), [set_speed](#set_speed), [set_transition](#set_transition), [add_effect](#add_effect), [remove_effect](#remove_effect)
 - **Retouch**: [retouch](#retouch)
-- **Layers**: [add_text](#add_text), [add_media_overlay](#add_media_overlay), [add_shape](#add_shape), [add_component](#add_component), [update_layer](#update_layer), [remove_layer](#remove_layer)
+- **Layers**: [add_text](#add_text), [add_media_overlay](#add_media_overlay), [add_shape](#add_shape), [add_component](#add_component), [update_layer](#update_layer), [reorder_layer](#reorder_layer), [remove_layer](#remove_layer)
 - **Audio**: [add_audio](#add_audio), [update_audio](#update_audio), [remove_audio](#remove_audio), [set_volume](#set_volume), [enhance_audio](#enhance_audio), [add_audio_effect](#add_audio_effect), [remove_audio_effect](#remove_audio_effect)
 - **Sound map, beats & moments**: [analyze_audio](#analyze_audio), [remove_silences](#remove_silences), [detect_scenes](#detect_scenes), [detect_beats](#detect_beats), [beat_sync](#beat_sync), [add_moment_effect](#add_moment_effect), [list_sound_effects](#list_sound_effects), [add_sound_effect](#add_sound_effect)
 - **Transcript & captions**: [transcribe](#transcribe), [set_transcript](#set_transcript), [get_transcript](#get_transcript), [search_transcript](#search_transcript), [find_retakes](#find_retakes), [remove_retakes](#remove_retakes), [cleanup_speech](#cleanup_speech), [cut_ranges](#cut_ranges), [assemble_from_source](#assemble_from_source), [set_captions](#set_captions), [export_captions](#export_captions)
 - **Voice-over**: [generate_voiceover](#generate_voiceover)
-- **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [render_scopes](#render_scopes)
+- **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
 
 ## Inspect & project
@@ -166,9 +166,12 @@ _No parameters._
 | `focus.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
 | `volume` | number |  |  |  |
 | `muted` | boolean |  |  |  |
-| `transition` | { type, duration } |  |  | Transition into this clip |
+| `transition` | { type, duration, origin } |  |  | Transition into this clip |
 | `transition.type` | string | yes |  | Transition id from the transitions catalog, e.g. 'fade', 'slideleft' |
 | `transition.duration` | number |  | `0.5` | (> 0, ≤ 5) |
+| `transition.origin` | { x, y } |  |  | Where shape transitions such as circlereveal start (frame fractions; default center) |
+| `transition.origin.x` | number | yes |  | (≥ 0, ≤ 1) |
+| `transition.origin.y` | number | yes |  | (≥ 0, ≤ 1) |
 | `effects` | { type, params }[] |  |  |  |
 
 ### update_clip
@@ -235,6 +238,9 @@ _No parameters._
 | `all` | boolean |  | `false` |  |
 | `type` | string | yes |  |  |
 | `duration` | number |  | `0.5` | (> 0, ≤ 5) |
+| `origin` | { x, y } |  |  | Start point for circlereveal (frame fractions), e.g. the presenter's hand |
+| `origin.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `origin.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
 | `sound` | boolean \| string |  | `false` | true = the transition's matching sound, or a sound effect id |
 
 ### add_effect
@@ -323,6 +329,8 @@ _No parameters._
 | `size.height` | number |  |  | (> 0) |
 | `fit` | "cover" \| "contain" \| "stretch" \| "blur" |  |  | cover = fill & crop, contain = letterbox, stretch = distort, blur = contain over blurred copy |
 | `opacity` | number |  |  | (≥ 0, ≤ 1) |
+| `cornerRadius` | number |  |  | Rounded corners in pixels (phone screens, screenshots) (≥ 0) |
+| `shadow` | number |  |  | Drop shadow in pixels (≥ 0) |
 | `volume` | number |  |  |  |
 | `effects` | { type, params }[] |  |  |  |
 | `animationIn` | { type, duration, easing } |  |  |  |
@@ -336,12 +344,13 @@ _No parameters._
 
 ### add_shape
 
-**edits**. Add a colored rectangle (backgrounds behind text, bars, dimming panels).
+**edits**. Add a shape: rect, roundedRect (pills behind labels, cards, a highlight box around part of a screen with fill=false) or ellipse (circles, number badges, rings, spotlights). Size is in frame fractions; radius, strokeWidth and shadow are in output pixels.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `start` | number | yes |  | (≥ 0) |
 | `duration` | number | yes |  | (> 0) |
+| `shape` | "rect" \| "roundedRect" \| "ellipse" |  | `"rect"` |  |
 | `position` | { x, y } |  |  |  |
 | `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
 | `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
@@ -350,6 +359,11 @@ _No parameters._
 | `size.height` | number | yes |  | (> 0) |
 | `color` | string |  | `"#000000"` |  |
 | `opacity` | number |  | `1` | (≥ 0, ≤ 1) |
+| `radius` | number |  |  | roundedRect corner radius in pixels (≥ 0) |
+| `fill` | boolean |  |  | false = outline only |
+| `strokeWidth` | number |  |  | (≥ 0) |
+| `strokeColor` | string |  |  |  |
+| `shadow` | number |  |  | (≥ 0) |
 | `animationIn` | { type, duration, easing } |  |  |  |
 | `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
 | `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
@@ -378,6 +392,17 @@ _No parameters._
 |---|---|---|---|---|
 | `layerId` | string | yes |  |  |
 | `patch` | object | yes |  |  |
+
+### reorder_layer
+
+**edits**. Change which layer draws on top. Layers draw in list order (later on top); text and shapes always draw above media overlays. Put a layer directly below or above another layer (e.g. a dimming shape below a title), or at an index.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `below` | string |  |  | Layer id to place it directly under |
+| `above` | string |  |  | Layer id to place it directly over |
+| `toIndex` | integer |  |  | 0 = bottom (≥ 0) |
 
 ### remove_layer
 
@@ -636,9 +661,12 @@ _No parameters._
 |---|---|---|---|---|
 | `assetId` | string | yes |  |  |
 | `ranges` | { start, end }[] | yes |  |  |
-| `transition` | { type, duration } |  |  |  |
+| `transition` | { type, duration, origin } |  |  |  |
 | `transition.type` | string | yes |  | Transition id from the transitions catalog, e.g. 'fade', 'slideleft' |
 | `transition.duration` | number |  | `0.5` | (> 0, ≤ 5) |
+| `transition.origin` | { x, y } |  |  | Where shape transitions such as circlereveal start (frame fractions; default center) |
+| `transition.origin.x` | number | yes |  | (≥ 0, ≤ 1) |
+| `transition.origin.y` | number | yes |  | (≥ 0, ≤ 1) |
 | `fit` | "cover" \| "contain" \| "stretch" \| "blur" |  |  | cover = fill & crop, contain = letterbox, stretch = distort, blur = contain over blurred copy |
 
 ### set_captions
@@ -665,15 +693,15 @@ _No parameters._
 
 ### generate_voiceover
 
-**edits**. Synthesize narration from text (needs a TTS provider), add it as a voice-over with word timings for captions.
+**edits**. Synthesize narration from text and add it as a voice-over with measured word timings for captions. Runs a neural voice on this machine unless the session has another provider (no API key; the model downloads once). Local voices: af_heart, af_bella, af_nicole, af_sarah, af_nova, af_sky, af_river, af_jessica, af_alloy, af_aoede, af_kore, am_michael, am_adam, am_eric, am_liam, am_onyx, am_echo, am_fenrir, am_puck, bf_emma, bf_isabella, bf_alice, bf_lily, bm_george, bm_lewis, bm_daniel, bm_fable (af/am = American female/male, bf/bm = British). Write it the way people talk, in short sentences; one call per section lets you place each part on the timeline.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `text` | string | yes |  |  |
 | `start` | number |  | `0` | (≥ 0) |
-| `voice` | string |  |  |  |
-| `speed` | number |  |  |  |
-| `instructions` | string |  |  | Delivery style, e.g. 'warm and upbeat' |
+| `voice` | string |  |  | Default af_heart for the local voice |
+| `speed` | number |  |  | 1 = normal, 1.1 a little brisker |
+| `instructions` | string |  |  | Delivery style, e.g. 'warm and upbeat' (OpenAI voices only) |
 | `volume` | number |  | `1` |  |
 
 ## Color
@@ -771,6 +799,18 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `time` | number |  |  | Timeline time; defaults to the middle of the video (≥ 0) |
+
+### sample_color
+
+**read-only**. Measure the average color of a small area of a source video or image at a source time, e.g. a green screen before chromaKey, or a brand color to match text and section cards to. x, y are frame fractions of the area's center.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `assetId` | string | yes |  |  |
+| `time` | number |  | `0` | Source seconds (≥ 0) |
+| `x` | number | yes |  | (≥ 0, ≤ 1) |
+| `y` | number | yes |  | (≥ 0, ≤ 1) |
+| `size` | number |  | `0.02` | Square side as a fraction of the frame width (≥ 0.002, ≤ 0.5) |
 
 ### render_scopes
 

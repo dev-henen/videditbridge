@@ -93,12 +93,12 @@ function claudeTools(): string {
     ["Library", ["list_templates", "get_template", "apply_template", "list_effects", "list_audio_effects", "list_transitions", "list_animations", "list_caption_styles", "list_components"]],
     ["Media & primary track", ["import_media", "add_clip", "update_clip", "remove_clip", "move_clip", "split_clip", "trim_clip", "set_speed", "set_transition", "add_effect", "remove_effect"]],
     ["Retouch", ["retouch"]],
-    ["Layers", ["add_text", "add_media_overlay", "add_shape", "add_component", "update_layer", "remove_layer"]],
+    ["Layers", ["add_text", "add_media_overlay", "add_shape", "add_component", "update_layer", "reorder_layer", "remove_layer"]],
     ["Audio", ["add_audio", "update_audio", "remove_audio", "set_volume", "enhance_audio", "add_audio_effect", "remove_audio_effect"]],
     ["Sound map, beats & moments", ["analyze_audio", "remove_silences", "detect_scenes", "detect_beats", "beat_sync", "add_moment_effect", "list_sound_effects", "add_sound_effect"]],
     ["Transcript & captions", ["transcribe", "set_transcript", "get_transcript", "search_transcript", "find_retakes", "remove_retakes", "cleanup_speech", "cut_ranges", "assemble_from_source", "set_captions", "export_captions"]],
     ["Voice-over", ["generate_voiceover"]],
-    ["Color", ["color_adjust", "get_color", "analyze_color", "render_scopes"]],
+    ["Color", ["color_adjust", "get_color", "analyze_color", "sample_color", "render_scopes"]],
     ["Preview & render", ["render_frame", "render_contact_sheet", "render_preview", "render_video"]],
   ];
   const grouped = new Set(groups.flatMap(([, names]) => names));

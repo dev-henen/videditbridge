@@ -2,7 +2,7 @@
 
 # Transitions
 
-46 transitions between primary-track clips. Set one on the *incoming* clip:
+47 transitions between primary-track clips. Set one on the *incoming* clip:
 
 ```json
 { "id": "c2", "assetId": "b", "transition": { "type": "slideleft", "duration": 0.4 } }
@@ -58,3 +58,4 @@ The transition overlaps the two clips by its duration, which shortens the timeli
 | `squeeze` | Squeeze | stylized | 0.5s |  | Alias of squeezev. (xfade `squeezev`) |
 | `whip` | Whip Pan | stylized | 0.25s | `whoosh` | Fast blurred whip pan. Alias of hblur with a short duration. (xfade `hblur`) |
 | `glitch` | Glitch Cut | stylized | 0.25s | `glitch` | Short pixelize burst, reads as a digital glitch. (xfade `pixelize`) |
+| `circlereveal` | Circle Reveal | shape | 0.7s | `whoosh` | A soft circle grows from a chosen point (origin, e.g. the presenter's hand or the product) until the next clip fills the frame. Into a solid-color section card it reads as a branded bubble transition, as in polished tech videos. (xfade `custom`) |

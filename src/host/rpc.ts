@@ -102,7 +102,10 @@ export function serveLocal(handlers: Record<string, Handler>, token: string): Pr
         socket.end();
       }
     });
+    // A client that exits abruptly resets the connection. readline re-emits the socket error on
+    // the interface, and an unhandled 'error' there would crash the host (and close the app).
     socket.on("error", () => undefined);
+    rl.on("error", () => undefined);
   });
   return new Promise((resolve, reject) => {
     server.once("error", reject);

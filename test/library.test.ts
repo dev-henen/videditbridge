@@ -22,6 +22,8 @@ import {
   type TemplateSpecInput,
 } from "../src/library/index.js";
 import { createProject, validateProject } from "../src/core/index.js";
+import { getTransition } from "../src/library/transitions/index.js";
+import { shapePath } from "../src/tools/render/text.js";
 import { sampleInputs } from "./helpers/inputs.js";
 
 const ctx = { width: 1080, height: 1920, fps: 30, duration: 4 };
@@ -74,6 +76,26 @@ describe("audio effects", () => {
   });
 });
 
+describe("graphics building blocks", () => {
+  it("draws rounded rectangles and ellipses with curves, plain rectangles with lines", () => {
+    expect(shapePath("rect", 100, 50, 10)).toBe("m 0 0 l 100 0 100 50 0 50");
+    expect(shapePath("roundedRect", 100, 50, 10)).toMatch(/^m 10 0 l 90 0 b /);
+    // A radius larger than half the height becomes a pill, not an overlapping shape.
+    expect(shapePath("roundedRect", 100, 40, 99)).toMatch(/^m 20 0 l 80 0/);
+    expect(shapePath("ellipse", 80, 40, 0).match(/ b /g)).toHaveLength(4);
+  });
+
+  it("circlereveal is a custom xfade expression from the given origin", () => {
+    const t = getTransition("circlereveal")!;
+    const expr = t.custom!({ x: 0.3, y: 0.7 }, 16 / 9);
+    expect(expr).toContain("X/W-0.3");
+    expect(expr).toContain("Y/H-0.7");
+    expect(t.sound).toBe("whoosh");
+    expect(getTransition("slideleft")!.sound).toBe("swoosh");
+    expect(getTransition("fade")!.sound).toBeUndefined();
+  });
+});
+
 describe("sound effects", () => {
   it.each(SOUND_EFFECTS.map((e) => [e.id, e]))("%s builds a graph ending in [sfx]", (_id, e) => {
     const p = e.params.parse({});
@@ -117,6 +139,9 @@ describe("components", () => {
     logo: { assetId: "logo" },
     label: { text: "BEFORE" },
     "meme-text": { top: "top", bottom: "bottom" },
+    "section-card": { title: "What's new", originX: 0.3, originY: 0.6 },
+    "feature-callout": { text: "ANC" },
+    "step-badge": { number: 2 },
   };
   it.each(COMPONENTS.map((c) => [c.id]))("%s builds valid layers", (id) => {
     const layers = buildComponentLayers({ component: id, start: 2, params: params[id] }, { width: 1080, height: 1920 });

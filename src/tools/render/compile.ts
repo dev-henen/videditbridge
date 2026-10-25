@@ -222,9 +222,11 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const ao = g.label("ax");
       if (tc.transitionDuration > 0) {
         const def = getTransition(tc.clip.transition!.type);
-        const xf = def?.xfade ?? "fade";
         const d = tc.transitionDuration;
-        g.add(`[${vCur}][${next.v}]xfade=transition=${xf}:duration=${d}:offset=${round3(curDur - d)}[${vo}]`);
+        const kind = def?.custom
+          ? `custom:expr='${def.custom(tc.clip.transition!.origin ?? { x: 0.5, y: 0.5 }, W / H)}'`
+          : (def?.xfade ?? "fade");
+        g.add(`[${vCur}][${next.v}]xfade=transition=${kind}:duration=${d}:offset=${round3(curDur - d)}[${vo}]`);
         g.add(`[${aCur}][${next.a}]acrossfade=d=${d}:c1=tri:c2=tri[${ao}]`);
         curDur = round3(curDur + tc.duration - d);
       } else {
@@ -278,17 +280,43 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     else if ((asset.type === "video" || asset.type === "image") && asset.width && asset.height) h = even((w * asset.height) / asset.width);
     else if (asset.type === "color" || asset.type === "gradient") h = even((w * H) / W);
     else h = even((w * 9) / 16);
-    const k = sourceInput(asset, layer.in, layer.duration);
+    const input = sourceInput(asset, layer.in, layer.duration);
     const raw = g.label("lraw");
-    g.add(`[${k}:v]setpts=PTS-STARTPTS,fps=${F},format=yuva420p[${raw}]`);
+    g.add(`[${input}:v]setpts=PTS-STARTPTS,fps=${F},format=yuva420p[${raw}]`);
     const fitted = fit(raw, layer.size.height ? (layer.fit === "blur" ? "contain" : layer.fit) : "stretch", w, h, true);
+    let styled = g.label("lfx");
+    g.add(`[${fitted}]${chain(["format=yuva420p", ...effectsToFilter(layer.effects, effectCtx(layer.duration, w, h, true))])}[${styled}]`);
+    // Rounded corners: multiply the layer's alpha by a rounded-rectangle mask drawn once.
+    const radius = Math.min(Math.round(layer.cornerRadius * k), Math.floor(Math.min(w, h) / 2));
+    if (radius > 0) {
+      const [colorPart, alphaPart, mask, alpha, out] = [g.label("lrc"), g.label("lra"), g.label("lrm"), g.label("lrx"), g.label("lrr")];
+      const inside = `lte(hypot(max(${radius}-X,X-(W-1-${radius}))*gt(max(${radius}-X,X-(W-1-${radius})),0),max(${radius}-Y,Y-(H-1-${radius}))*gt(max(${radius}-Y,Y-(H-1-${radius})),0)),${radius})`;
+      g.add(`[${styled}]split=2[${colorPart}][${alphaPart}]`);
+      g.add(`nullsrc=s=${w}x${h}:r=${F},trim=end_frame=1,format=gray,geq=lum='255*${inside}'[${mask}]`);
+      g.add(`[${alphaPart}]alphaextract[${alpha}]`);
+      const merged = g.label("lrb");
+      g.add(`[${alpha}][${mask}]blend=all_mode=multiply[${merged}]`);
+      g.add(`[${colorPart}][${merged}]alphamerge[${out}]`);
+      styled = out;
+    }
+    // Drop shadow: a blurred black silhouette, offset down, under the layer. Padding keeps the center in place.
+    const shadow = Math.round(layer.shadow * k);
+    if (shadow > 0) {
+      const pad = shadow * 3;
+      const [padded, top, sil, out] = [g.label("lsp"), g.label("lst"), g.label("lss"), g.label("lsh")];
+      g.add(`[${styled}]pad=${w + 2 * pad}:${h + 2 * pad}:${pad}:${pad}:color=black@0,split=2[${padded}][${top}]`);
+      g.add(
+        `[${padded}]lutyuv=y=16:u=128:v=128:a='val*0.55',gblur=sigma=${round3(shadow * 0.9)},crop=iw:ih-${shadow}:0:0,pad=iw:ih+${shadow}:0:${shadow}:color=black@0[${sil}]`,
+      );
+      g.add(`[${sil}][${top}]overlay=0:0:format=auto[${out}]`);
+      styled = out;
+    }
     const v = g.label("lv");
     const fadeIn = layer.animationIn && layer.animationIn.type !== "none" ? layer.animationIn.duration : 0;
     const fadeOut = layer.animationOut && layer.animationOut.type !== "none" ? layer.animationOut.duration : 0;
     g.add(
-      `[${fitted}]${chain([
+      `[${styled}]${chain([
         "format=yuva420p",
-        ...effectsToFilter(layer.effects, effectCtx(layer.duration, w, h, true)),
         layer.opacity < 1 && `colorchannelmixer=aa=${layer.opacity}`,
         fadeIn && `fade=t=in:st=0:d=${fadeIn}:alpha=1`,
         fadeOut && `fade=t=out:st=${round3(Math.max(0, layer.duration - fadeOut))}:d=${fadeOut}:alpha=1`,
@@ -300,7 +328,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       a = g.label("la");
       const ms = Math.round(layer.start * 1000);
       g.add(
-        `[${k}:a]${chain(["asetpts=PTS-STARTPTS", ...audioEffectsToFilter(layer.audioEffects), `volume=${layer.volume}`, AUDIO_FMT, `adelay=${ms}|${ms}`])}[${a}]`,
+        `[${input}:a]${chain(["asetpts=PTS-STARTPTS", ...audioEffectsToFilter(layer.audioEffects), `volume=${layer.volume}`, AUDIO_FMT, `adelay=${ms}|${ms}`])}[${a}]`,
       );
     }
     return { v, a };

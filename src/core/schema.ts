@@ -89,6 +89,10 @@ const audioEffects = (what: string) =>
 export const TransitionSchema = z.object({
   type: z.string().min(1).describe("Transition id from the transitions catalog, e.g. 'fade', 'slideleft'"),
   duration: z.number().positive().max(5).default(0.5),
+  origin: z
+    .object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) })
+    .optional()
+    .describe("Where shape transitions such as circlereveal start (frame fractions; default center)"),
 });
 
 export const EasingSchema = z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]);
@@ -173,6 +177,8 @@ export const MediaLayerSchema = z.object({
     .default({ width: 1 }),
   fit: FitSchema.default("cover"),
   opacity: z.number().min(0).max(1).default(1),
+  cornerRadius: z.number().min(0).default(0).describe("Rounded corners in output pixels (phone screens, screenshots, picture-in-picture)"),
+  shadow: z.number().min(0).default(0).describe("Soft drop shadow in output pixels, lifts the overlay off the background"),
   volume: z.number().min(0).max(4).default(0).describe("Overlay audio volume (0 = muted)"),
   audioEffects: audioEffects("the overlay's audio"),
   effects: z.array(EffectSchema).default([]),
@@ -189,11 +195,19 @@ export const TextLayerSchema = z.object({
 export const ShapeLayerSchema = z.object({
   ...layerBase,
   type: z.literal("shape"),
-  shape: z.enum(["rect"]).default("rect"),
+  shape: z
+    .enum(["rect", "roundedRect", "ellipse"])
+    .default("rect")
+    .describe("rect, roundedRect (pills, cards, highlight boxes) or ellipse (circles, badges, spotlights)"),
   position: PositionSchema.default({ x: 0.5, y: 0.5 }),
   size: z.object({ width: z.number().positive(), height: z.number().positive() }),
   color: color.default("#000000"),
   opacity: z.number().min(0).max(1).default(1),
+  radius: z.number().min(0).default(24).describe("roundedRect corner radius in output pixels (half the height makes a pill)"),
+  fill: z.boolean().default(true).describe("false draws only the outline (highlight boxes, rings)"),
+  strokeWidth: z.number().min(0).default(0).describe("Outline width in output pixels"),
+  strokeColor: color.default("#FFFFFF"),
+  shadow: z.number().min(0).default(0).describe("Soft drop shadow distance in output pixels"),
 });
 
 export const LayerSchema = z.discriminatedUnion("type", [MediaLayerSchema, TextLayerSchema, ShapeLayerSchema]);

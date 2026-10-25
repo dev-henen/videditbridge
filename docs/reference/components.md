@@ -2,7 +2,7 @@
 
 # Components
 
-14 reusable composite elements. Each one expands into ordinary text, shape or media layers that stay editable afterward, and every created layer is labelled `component:<id>`.
+18 reusable composite elements. Each one expands into ordinary text, shape or media layers that stay editable afterward, and every created layer is labelled `component:<id>`.
 
 ```ts
 addComponent(project, { component: "lower-third", start: 2, duration: 4, params: { name: "Ada", title: "Engineer" } });
@@ -25,6 +25,10 @@ With Claude, use the `add_component` tool. Templates use components in their sce
 - [meme-text](#meme-text): Meme Text
 - [countdown](#countdown): Countdown
 - [label](#label): Label / Callout
+- [section-card](#section-card): Section Card
+- [feature-callout](#feature-callout): Feature Callout
+- [highlight-box](#highlight-box): Highlight Box
+- [step-badge](#step-badge): Step Badge
 - [end-screen](#end-screen): End Screen
 
 ## lower-third
@@ -176,6 +180,57 @@ With Claude, use the `add_component` tool. Templates use components in their sce
 | `color` | string |  | `"#FFFFFF"` |  |
 | `size` | number |  | `44` | Font size at 1080p |
 | `animation` | string |  | `"pop"` |  |
+
+## section-card
+
+**Section Card** (structure, default 2s). Branded section opener, as in polished tech reviews: a solid bubble grows from a point (the presenter's hand, the product) until it fills the frame, then a large faint logo shape and a bold italic title wipe in. It sits on top of the video, so narration and music carry on underneath. Use between topics ("WHAT'S NEW", "BATTERY", "VERDICT").
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `title` | string | yes |  |  |
+| `subtitle` | string |  | `""` |  |
+| `color` | string |  | `"#5AA9F5"` | Bubble and background color |
+| `textColor` | string |  | `"#FFFFFF"` |  |
+| `originX` | number |  | `0.5` | Where the bubble grows from (≥ 0, ≤ 1) |
+| `originY` | number |  | `0.5` | (≥ 0, ≤ 1) |
+| `motif` | boolean |  | `true` | Faint rounded-square shape behind the title |
+
+## feature-callout
+
+**Feature Callout** (text, default 2.5s). Bold italic uppercase word that pops in next to a product or detail ("ANC", "WIRELESS CHARGING", "USB-C"). Add several with staggered starts to list features one by one, as in product reviews. Place it in clear space beside the object.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `text` | string | yes |  |  |
+| `x` | number |  | `0.5` |  |
+| `y` | number |  | `0.3` |  |
+| `size` | number |  | `64` | Font size at 1080p |
+| `color` | string |  | `"#FFFFFF"` |  |
+
+## highlight-box
+
+**Highlight Box** (text, default 2.5s). Rounded outline that pops around part of the frame (a setting on a phone screen, a button, a port), with an optional label above it. x, y is the box center; width, height are frame fractions.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `x` | number |  | `0.5` |  |
+| `y` | number |  | `0.5` |  |
+| `width` | number |  | `0.2` | (> 0) |
+| `height` | number |  | `0.12` | (> 0) |
+| `color` | string |  | `"#FFFFFF"` |  |
+| `thickness` | number |  | `8` | Outline width at 1080p |
+| `label` | string |  | `""` |  |
+
+## step-badge
+
+**Step Badge** (list, default 4s). Small white circle with a dark number in a corner, marking which tip, step or point is being shown (stays up for the whole section).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `number` | string \| number | yes |  |  |
+| `corner` | "top-left" \| "top-right" |  | `"top-left"` |  |
+| `color` | string |  | `"#FFFFFF"` |  |
+| `numberColor` | string |  | `"#1A1A1A"` |  |
 
 ## end-screen
 

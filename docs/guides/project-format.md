@@ -53,7 +53,7 @@ The media an edit uses. Clips, layers and audio refer to assets by `id`.
 | `audioEffects` | `[]` | See [audio effects](../reference/audio-effects.md) |
 | `fit` | `cover` | `cover` crops, `contain` letterboxes, `stretch` distorts, `blur` letterboxes over a blurred copy (good for landscape footage in vertical video) |
 | `effects` | `[]` | See [effects](../reference/effects.md) |
-| `transition` | | Blend in from the previous clip. See [transitions](../reference/transitions.md) |
+| `transition` | | Blend in from the previous clip: `{ type, duration, origin? }`, where `origin` sets where shape transitions such as `circlereveal` start. See [transitions](../reference/transitions.md) |
 | `fadeIn`, `fadeOut` | | Fade from or to black, with audio |
 
 **Timing with transitions.** A transition of length *d* overlaps a clip with the one before it by *d*, so the video gets *d* seconds shorter. If clip A is 4s and clip B is 3s with a 1s fade, A runs 0-4, B runs 3-6, and the total is 6s. Transitions are clamped so they never exceed the shorter neighbor. `computeTimeline(project)` returns the exact timeline position of every clip.
@@ -70,6 +70,7 @@ Layers are drawn on top of the primary track in array order (later entries are o
 | `position` | center | |
 | `size` | `{ width: 1 }` | `width` is a fraction of the frame width. Add `height` to fill a box using `fit`. Without `height`, the source aspect ratio is kept |
 | `opacity` | `1` | |
+| `cornerRadius`, `shadow` | `0`, `0` | Rounded corners and a soft drop shadow, in output pixels (phone screens, screenshots, picture-in-picture) |
 | `volume` | `0` | Overlays are muted by default |
 | `effects`, `audioEffects` | `[]` | |
 
@@ -85,7 +86,7 @@ Layers are drawn on top of the primary track in array order (later entries are o
 | `style.background` | | Draws an opaque box behind the text |
 | `style.bold`, `italic`, `uppercase`, `align`, `letterSpacing` | | |
 
-**`shape`**: `shape: "rect"`, `size: { width, height }`, `color`, `opacity`.
+**`shape`**: `shape` (`rect`, `roundedRect` or `ellipse`), `size: { width, height }`, `color`, `opacity`, `radius` (corner radius in pixels), `fill` (`false` draws only the outline), `strokeWidth`, `strokeColor`, `shadow` (pixels).
 
 ## Audio
 

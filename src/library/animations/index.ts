@@ -31,6 +31,7 @@ export const ANIMATIONS: AnimationDefinition[] = [
   { id: "wipe", name: "Wipe", description: "Revealed left-to-right by a moving mask.", media: false, defaultDuration: 0.5 },
   { id: "drop", name: "Drop", description: "Falls from above with a fade, like a title slam.", media: false, defaultDuration: 0.35 },
   { id: "stretch", name: "Stretch", description: "Expands horizontally from a thin line.", media: false, defaultDuration: 0.4 },
+  { id: "grow", name: "Grow", description: "Scales up from nothing (out: shrinks to nothing) around its center, without overshoot. Use with ease-in for a bubble or circle reveal that accelerates, as in branded section transitions.", media: false, defaultDuration: 0.5 },
 ];
 
 const byId = new Map(ANIMATIONS.map((a) => [a.id, a]));
@@ -100,6 +101,8 @@ export function assEnterPhase(anim: Animation, ctx: AssAnimContext): AssPhase {
     }
     case "zoom":
       return { tags: `${pos}\\fad(${d},0)\\fscx50\\fscy50\\t(0,${d},${a},\\fscx100\\fscy100)` };
+    case "grow":
+      return { tags: `${pos}\\fscx0\\fscy0\\t(0,${d},${a},\\fscx100\\fscy100)` };
     case "stretch":
       return { tags: `${pos}\\fscx0\\t(0,${d},${a},\\fscx100)` };
     case "blur":
@@ -154,6 +157,8 @@ export function assExitPhase(anim: Animation, ctx: AssAnimContext): AssPhase {
     }
     case "zoom":
       return { tags: `${pos}\\fad(0,${d})\\t(0,${d},${a},\\fscx50\\fscy50)` };
+    case "grow":
+      return { tags: `${pos}\\t(0,${d},${a},\\fscx0\\fscy0)` };
     case "stretch":
       return { tags: `${pos}\\t(0,${d},${a},\\fscx0)` };
     case "blur":

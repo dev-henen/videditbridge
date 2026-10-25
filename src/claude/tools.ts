@@ -29,8 +29,9 @@ import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
+import { LOCAL_VOICES, LocalTTS } from "../tools/voiceover/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
-import { probe } from "../tools/render/ffmpeg.js";
+import { probe, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
 import { analyzeColor, renderScopes } from "../tools/render/color-analysis.js";
 import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
@@ -495,11 +496,12 @@ export const TOOLS: ToolDefinition[] = [
       all: z.boolean().default(false),
       type: z.string(),
       duration: z.number().positive().max(5).default(0.5),
+      origin: PositionSchema.optional().describe("Start point for circlereveal (frame fractions), e.g. the presenter's hand"),
       sound: z.union([z.boolean(), z.string()]).default(false).describe("true = the transition's matching sound, or a sound effect id"),
     }),
     mutates: true,
     run: async (s, i) => {
-      const t = i.type === "none" ? null : { type: i.type, duration: i.duration };
+      const t = i.type === "none" ? null : { type: i.type, duration: i.duration, ...(i.origin ? { origin: i.origin } : {}) };
       if (!i.all && !i.clipId) return { text: "Provide clipId or all=true", isError: true };
       let p = i.all ? ops.setAllTransitions(s.project, t) : ops.setTransition(s.project, i.clipId!, t);
       const ids = i.all ? p.clips.slice(1).map((c) => c.id) : [i.clipId!];
@@ -630,6 +632,8 @@ export const TOOLS: ToolDefinition[] = [
       size: z.object({ width: z.number().positive(), height: z.number().positive().optional() }).optional(),
       fit: FitSchema.optional(),
       opacity: z.number().min(0).max(1).optional(),
+      cornerRadius: z.number().min(0).optional().describe("Rounded corners in pixels (phone screens, screenshots)"),
+      shadow: z.number().min(0).optional().describe("Drop shadow in pixels"),
       volume: z.number().optional(),
       effects: z.array(EffectSchema).optional(),
       animationIn: AnimationSchema.optional(),
@@ -643,14 +647,21 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "add_shape",
-    description: "Add a colored rectangle (backgrounds behind text, bars, dimming panels).",
+    description:
+      "Add a shape: rect, roundedRect (pills behind labels, cards, a highlight box around part of a screen with fill=false) or ellipse (circles, number badges, rings, spotlights). Size is in frame fractions; radius, strokeWidth and shadow are in output pixels.",
     input: z.object({
       start: z.number().min(0),
       duration: z.number().positive(),
+      shape: z.enum(["rect", "roundedRect", "ellipse"]).default("rect"),
       position: PositionSchema.optional(),
       size: z.object({ width: z.number().positive(), height: z.number().positive() }),
       color: z.string().default("#000000"),
       opacity: z.number().min(0).max(1).default(1),
+      radius: z.number().min(0).optional().describe("roundedRect corner radius in pixels"),
+      fill: z.boolean().optional().describe("false = outline only"),
+      strokeWidth: z.number().min(0).optional(),
+      strokeColor: z.string().optional(),
+      shadow: z.number().min(0).optional(),
       animationIn: AnimationSchema.optional(),
       animationOut: AnimationSchema.optional(),
     }),
@@ -683,6 +694,30 @@ export const TOOLS: ToolDefinition[] = [
     input: z.object({ layerId: z.string() }),
     mutates: true,
     run: async (s, i) => commit(s, ops.removeLayer(s.project, i.layerId), "remove_layer", i, `Removed ${i.layerId}.`),
+  }),
+  tool({
+    name: "reorder_layer",
+    description:
+      "Change which layer draws on top. Layers draw in list order (later on top); text and shapes always draw above media overlays. Put a layer directly below or above another layer (e.g. a dimming shape below a title), or at an index.",
+    input: z.object({
+      layerId: z.string(),
+      below: z.string().optional().describe("Layer id to place it directly under"),
+      above: z.string().optional().describe("Layer id to place it directly over"),
+      toIndex: z.number().int().min(0).optional().describe("0 = bottom"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const others = s.project.layers.filter((l) => l.id !== i.layerId);
+      const ref = i.below ?? i.above;
+      let index = i.toIndex;
+      if (ref) {
+        const k = others.findIndex((l) => l.id === ref);
+        if (k === -1) return { text: `No layer "${ref}".`, isError: true };
+        index = i.below ? k : k + 1;
+      }
+      if (index === undefined) return { text: "Give below, above or toIndex.", isError: true };
+      return commit(s, ops.reorderLayer(s.project, i.layerId, index), "reorder_layer", i, `Moved ${i.layerId} to position ${index} of ${others.length + 1}.`);
+    },
   }),
 
   // -------------------------------------------------------------------------
@@ -1253,20 +1288,22 @@ export const TOOLS: ToolDefinition[] = [
   // -------------------------------------------------------------------------
   tool({
     name: "generate_voiceover",
-    description: "Synthesize narration from text (needs a TTS provider), add it as a voice-over with word timings for captions.",
+    description:
+      "Synthesize narration from text and add it as a voice-over with measured word timings for captions. Runs a neural voice on this machine unless the session has another provider (no API key; the model downloads once). " +
+      `Local voices: ${LOCAL_VOICES.join(", ")} (af/am = American female/male, bf/bm = British). Write it the way people talk, in short sentences; one call per section lets you place each part on the timeline.`,
     input: z.object({
       text: z.string(),
       start: z.number().min(0).default(0),
-      voice: z.string().optional(),
-      speed: z.number().optional(),
-      instructions: z.string().optional().describe("Delivery style, e.g. 'warm and upbeat'"),
+      voice: z.string().optional().describe("Default af_heart for the local voice"),
+      speed: z.number().optional().describe("1 = normal, 1.1 a little brisker"),
+      instructions: z.string().optional().describe("Delivery style, e.g. 'warm and upbeat' (OpenAI voices only)"),
       volume: z.number().default(1),
     }),
     mutates: true,
-    run: async (s, i) => {
-      if (!s.options.tts) return { text: "No TTS provider configured.", isError: true };
-      const file = await s.outputPath("voiceover.mp3");
-      const vo = await s.options.tts.synthesize(i.text, file, { voice: i.voice, speed: i.speed, instructions: i.instructions });
+    run: async (s, i, activity) => {
+      const tts = s.options.tts ?? new LocalTTS({ ffmpegPath: s.options.ffmpegPath, onDownload: (p) => activity?.progress(p * 0.5) });
+      const file = await s.outputPath(tts.name === "local-kokoro" ? "voiceover.wav" : "voiceover.mp3");
+      const vo = await tts.synthesize(i.text, file, { voice: i.voice, speed: i.speed, instructions: i.instructions });
       const id = assetIdFromSrc(s.project, "voiceover");
       let p = ops.addAsset(s.project, { type: "audio", id, src: vo.path, duration: vo.duration });
       p = ops.setTranscript(p, id, vo.transcript);
@@ -1313,6 +1350,43 @@ export const TOOLS: ToolDefinition[] = [
     run: async (s, i) => {
       const params = (ops.getEffectParams(s.project, i.target, "color") ?? {}) as ColorSettings;
       return ok(`${i.target}: ${describeColorSettings(params)}\n${JSON.stringify(params)}`, params);
+    },
+  }),
+  tool({
+    name: "sample_color",
+    description:
+      "Measure the average color of a small area of a source video or image at a source time, e.g. a green screen before chromaKey, or a brand color to match text and section cards to. x, y are frame fractions of the area's center.",
+    input: z.object({
+      assetId: z.string(),
+      time: z.number().min(0).default(0).describe("Source seconds"),
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      size: z.number().min(0.002).max(0.5).default(0.02).describe("Square side as a fraction of the frame width"),
+    }),
+    mutates: false,
+    run: async (s, i) => {
+      const asset = s.project.assets.find((a) => a.id === i.assetId);
+      if (!asset || (asset.type !== "video" && asset.type !== "image")) return { text: `"${i.assetId}" is not a video or image asset.`, isError: true };
+      const side = `max(2\\,trunc(iw*${i.size}))`;
+      const res = await runFfmpegOrThrow(
+        [
+          "-hide_banner", "-loglevel", "error",
+          ...(asset.type === "video" ? ["-ss", String(i.time)] : []),
+          "-i", s.resolve(asset.src),
+          "-frames:v", "1",
+          "-vf", `crop=${side}:${side}:iw*${i.x}-${side}/2:ih*${i.y}-${side}/2,scale=8:8:flags=area`,
+          "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+        ],
+        { ffmpegPath: s.options.ffmpegPath, binaryStdout: true },
+      );
+      const b = res.stdoutBuffer!;
+      const avg = [0, 1, 2].map((c) => {
+        let sum = 0;
+        for (let k = c; k < b.length; k += 3) sum += b[k]!;
+        return Math.round(sum / (b.length / 3));
+      });
+      const hex = `#${avg.map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+      return ok(`Average color at (${i.x}, ${i.y}) of ${i.assetId} at ${i.time}s: ${hex} (r ${avg[0]}, g ${avg[1]}, b ${avg[2]}).`, { hex, rgb: avg });
     },
   }),
   tool({

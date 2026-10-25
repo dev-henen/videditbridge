@@ -18,7 +18,8 @@ export class RemoteHost {
   private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
 
   private constructor(private readonly socket: Socket) {
-    createInterface({ input: socket }).on("line", (line) => {
+    const rl = createInterface({ input: socket });
+    rl.on("line", (line) => {
       const msg = JSON.parse(line) as { id?: number; result?: unknown; error?: { message: string } };
       const p = msg.id !== undefined ? this.pending.get(msg.id) : undefined;
       if (!p) return;
@@ -26,6 +27,9 @@ export class RemoteHost {
       if (msg.error) p.reject(new Error(msg.error.message));
       else p.resolve(msg.result);
     });
+    // If the app goes away mid-call, reject pending calls (on close) instead of crashing.
+    socket.on("error", () => undefined);
+    rl.on("error", () => undefined);
     socket.on("close", () => {
       for (const p of this.pending.values()) p.reject(new Error("Connection to the app closed"));
       this.pending.clear();
