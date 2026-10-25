@@ -2,7 +2,7 @@
 
 # Effects
 
-59 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+78 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -14,12 +14,13 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 
 - **color**: [adjust](#adjust), [temperature](#temperature), [grayscale](#grayscale), [sepia](#sepia), [invert](#invert), [hueShift](#hueshift), [tint](#tint), [color](#color), [saturation](#saturation), [vibrance](#vibrance), [hue](#hue), [whiteBalance](#whitebalance), [hsl](#hsl), [autoCorrect](#autocorrect)
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
-- **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance)
-- **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox)
+- **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe)
+- **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs)
 - **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur)
-- **blur**: [blur](#blur), [sharpen](#sharpen)
-- **distort**: [mirror](#mirror)
-- **motion**: [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [shake](#shake), [pulse](#pulse)
+- **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur)
+- **distort**: [mirror](#mirror), [tilt](#tilt)
+- **motion**: [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat)
+- **shake**: [shake](#shake), [handheld](#handheld), [vibrate](#vibrate), [earthquake](#earthquake), [impactShake](#impactshake)
 - **time**: [fadeIn](#fadein), [fadeOut](#fadeout), [flash](#flash)
 
 ## Color
@@ -421,6 +422,58 @@ _No parameters._
 |---|---|---|---|---|
 | `value` | number |  | `0` | (≥ -100, ≤ 100) |
 
+### glow
+
+**Glow / Bloom**. Bright areas bloom with a soft glow (dreamy, cinematic, neon at night).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `strength` | number |  | `0.8` | Glow opacity (≥ 0, ≤ 1) |
+| `threshold` | number |  | `45` | Only parts brighter than this glow (≥ 0, ≤ 100) |
+| `radius` | number |  | `30` | Glow spread (≥ 1, ≤ 100) |
+
+### bokehLights
+
+**Floating Bokeh Lights**. Soft out-of-focus light orbs of different sizes drifting slowly upward over the picture. Romantic, festive or dreamy openers, weddings, night scenes and title backgrounds.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `count` | integer |  | `12` | Number of orbs (≥ 1, ≤ 30) |
+| `size` | number |  | `30` | Orb size (≥ 1, ≤ 100) |
+| `speed` | number |  | `25` | How fast they drift upward (≥ 0, ≤ 100) |
+| `color` | string |  | `"#FFD8A0"` | Light color #RRGGBB (warm gold by default) |
+| `opacity` | number |  | `0.6` | Overall strength (≥ 0, ≤ 1) |
+
+### lightLeak
+
+**Light Leak**. Warm film light leaks washing slowly across the frame from the edges. Nostalgic, vintage, summer and wedding looks.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `color` | string |  | `"#FF7A2E"` | Leak color #RRGGBB |
+| `opacity` | number |  | `0.45` | Strength (≥ 0, ≤ 1) |
+| `speed` | number |  | `30` | How fast the leaks move (≥ 0, ≤ 100) |
+
+### flashHits
+
+**Flash Hits**. Quick white (or colored-feel) flashes at chosen moments that fade out, e.g. on beats, cuts or impacts. Use add_moment_effect or beat_sync to place them.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `times` | number[] |  | `[0]` | Moments, in seconds from the start of the clip or layer it is on (add_moment_effect and beat_sync fill these from timeline times) |
+| `strength` | number |  | `0.6` | Brightness of each flash (≥ 0.05, ≤ 1) |
+| `decay` | number |  | `8` | How fast each flash fades (higher = shorter) (≥ 1, ≤ 40) |
+
+### strobe
+
+**Strobe / Flicker**. Rhythmic strobe flashes (club, music video) or an irregular old-film flicker.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `mode` | "strobe" \| "flicker" |  | `"strobe"` |  |
+| `rate` | number |  | `8` | Flashes per second (strobe) (≥ 0.5, ≤ 30) |
+| `strength` | number |  | `0.35` | Brightness change (≥ 0, ≤ 1) |
+
 ## Stylize
 
 ### clarity
@@ -479,6 +532,22 @@ _No parameters._
 |---|---|---|---|---|
 | `ratio` | number |  | `2.39` | Target aspect ratio of the visible area, e.g. 2.39 (≥ 1, ≤ 4) |
 
+### trails
+
+**Light Trails / Echo**. Bright moving things leave fading trails (light painting, dance, night traffic, dreamy echoes).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `length` | number |  | `50` | Trail length (≥ 1, ≤ 100) |
+
+### vhs
+
+**VHS / Retro Tape**. Old videotape look: color bleed, soft picture, tape noise and scanlines.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `amount` | number |  | `50` | Strength (≥ 0, ≤ 100) |
+
 ## Retouch
 
 ### beauty
@@ -529,6 +598,50 @@ _No parameters._
 |---|---|---|---|---|
 | `amount` | number |  | `1` | Sharpen strength (≥ 0, ≤ 3) |
 
+### bokeh
+
+**Bokeh / Lens Blur**. Out-of-focus lens blur where points of light become soft discs (bokeh), unlike a plain blur. Use on night lights, city backgrounds or b-roll behind titles. Give a subject ellipse to keep a person sharp in front of a bokeh background.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `amount` | number |  | `40` | Disc size / defocus strength (≥ 1, ≤ 100) |
+| `highlights` | number |  | `50` | Make bright spots bloom into brighter discs (≥ 0, ≤ 100) |
+| `subject` | { x, y, width, height } |  |  | Ellipse that stays sharp (x, y center, width, height as frame fractions); omit to defocus the whole frame |
+| `subject.x` | number | yes |  | Center x (0 = left edge, 1 = right edge) (≥ 0, ≤ 1) |
+| `subject.y` | number | yes |  | Center y (0 = top, 1 = bottom) (≥ 0, ≤ 1) |
+| `subject.width` | number | yes |  | Ellipse width as a fraction of frame width (> 0, ≤ 2) |
+| `subject.height` | number | yes |  | Ellipse height as a fraction of frame height (> 0, ≤ 2) |
+| `feather` | number |  | `0.35` | Softness of the subject edge (≥ 0.02, ≤ 1) |
+
+### zoomBlur
+
+**Zoom Blur**. Radial blur streaking out from a point, like zooming the lens during exposure. Pairs well with zoomPunch and whoosh sound effects for energetic moments.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `amount` | number |  | `40` | Streak length (≥ 1, ≤ 100) |
+| `x` | number |  | `0.5` | Center x (≥ 0, ≤ 1) |
+| `y` | number |  | `0.5` | Center y (≥ 0, ≤ 1) |
+
+### rackFocus
+
+**Rack Focus / Focus Pull**. Animate focus: start blurred and pull into sharp focus (direction in), or drift out of focus (direction out), over a time window in the clip. A classic opener or scene ending.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `direction` | "in" \| "out" |  | `"in"` | in = blurred to sharp, out = sharp to blurred |
+| `start` | number |  | `0` | Seconds from the clip start when the focus change begins (≥ 0, ≤ 3600) |
+| `duration` | number |  | `1.2` | Seconds the focus change takes (≥ 0.1, ≤ 30) |
+| `amount` | number |  | `30` | Blur at the blurred end (≥ 1, ≤ 100) |
+
+### motionBlur
+
+**Motion Blur**. Blend neighbouring frames so movement smears like a slow shutter. Smooths fast pans and sped-up footage.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `frames` | integer |  | `3` | Frames blended together (≥ 2, ≤ 8) |
+
 ## Distort
 
 ### mirror
@@ -538,6 +651,14 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `direction` | "horizontal" \| "vertical" |  | `"horizontal"` |  |
+
+### tilt
+
+**Dutch Tilt / Rotate**. Rotate the frame by a fixed angle and zoom just enough to hide the corners. A tilted (dutch) angle adds unease or energy.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `degrees` | number |  | `6` | Rotation, positive = clockwise (≥ -45, ≤ 45) |
 
 ## Motion
 
@@ -570,15 +691,6 @@ _No parameters._
 | `interval` | number |  | `3` | Seconds between zoom changes (≥ 0.5, ≤ 30) |
 | `scale` | number |  | `1.15` | Zoom factor when punched in (≥ 1.01, ≤ 2) |
 
-### shake
-
-**Camera Shake**. Handheld/impact camera shake.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `intensity` | number |  | `10` | Max offset in pixels (≥ 1, ≤ 60) |
-| `speed` | number |  | `20` | Shake frequency (≥ 1, ≤ 60) |
-
 ### pulse
 
 **Beat Pulse**. Rhythmic zoom pulse, e.g. on a music beat.
@@ -587,6 +699,91 @@ _No parameters._
 |---|---|---|---|---|
 | `bpm` | number |  | `120` | Beats per minute (≥ 30, ≤ 240) |
 | `amount` | number |  | `0.06` | Zoom added on each beat (≥ 0.01, ≤ 0.5) |
+
+### smoothZoom
+
+**Smooth Zoom (Push In / Pull Out)**. Eased zoom between two framings over a time window: a slow push-in for emphasis, a fast crash zoom (short duration), or a pull-out reveal (to < from). Times are seconds from the clip start; x, y is the point to zoom toward.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `from` | number |  | `1` | Zoom at the start (1 = full frame) (≥ 1, ≤ 4) |
+| `to` | number |  | `1.3` | Zoom at the end (≥ 1, ≤ 4) |
+| `start` | number |  | `0` | Seconds from the clip start when the zoom begins (≥ 0, ≤ 3600) |
+| `duration` | number |  | `2` | Seconds the zoom takes (≥ 0.05, ≤ 3600) |
+| `easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-in-out"` |  |
+| `x` | number |  | `0.5` | Zoom toward this x (≥ 0, ≤ 1) |
+| `y` | number |  | `0.5` | Zoom toward this y (≥ 0, ≤ 1) |
+
+### zoomPunch
+
+**Zoom Punch**. Snap zoom-in hits that spring back, at chosen moments: emphasis on a key word, a beat drop, a joke landing. Use add_moment_effect or beat_sync to place them on the timeline.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `times` | number[] |  | `[0]` | Moments, in seconds from the start of the clip or layer it is on (add_moment_effect and beat_sync fill these from timeline times) |
+| `amount` | number |  | `0.15` | Extra zoom at the peak of each hit (≥ 0.02, ≤ 1) |
+| `decay` | number |  | `5` | How fast it springs back (higher = snappier) (≥ 0.5, ≤ 30) |
+| `x` | number |  | `0.5` | Zoom toward this x (≥ 0, ≤ 1) |
+| `y` | number |  | `0.5` | Zoom toward this y (≥ 0, ≤ 1) |
+
+### heartbeat
+
+**Heartbeat Pulse**. Double zoom pulse like a heartbeat (lub-dub). Suspense, romance, tension.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `bpm` | number |  | `70` | Heartbeats per minute (≥ 30, ≤ 180) |
+| `amount` | number |  | `0.05` | Zoom on each beat (≥ 0.01, ≤ 0.3) |
+
+## Shake
+
+### shake
+
+**Camera Shake**. Constant camera shake that runs for the whole clip. For a natural handheld look use handheld; for hits at moments use impactShake.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `intensity` | number |  | `10` | Max offset in pixels (≥ 1, ≤ 60) |
+| `speed` | number |  | `20` | Shake frequency (≥ 1, ≤ 60) |
+
+### handheld
+
+**Handheld Camera**. Gentle, organic drift and sway like a camera held by hand. Makes tripod or screen footage feel alive and documentary-like.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `amount` | number |  | `30` | How much the camera wanders (≥ 1, ≤ 100) |
+
+### vibrate
+
+**Vibrate / Buzz**. Fast, small jitter like a phone buzzing, a bass hit or an engine rumble. Runs the whole clip, or only for `length` seconds after each of `times`.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `intensity` | number |  | `6` | Jitter size in pixels (at 1080p) (≥ 1, ≤ 40) |
+| `frequency` | number |  | `25` | Jitters per second (≥ 5, ≤ 60) |
+| `times` | number[] |  |  | Moments, in seconds from the start of the clip or layer it is on (add_moment_effect and beat_sync fill these from timeline times) |
+| `length` | number |  | `0.4` | Seconds each vibration lasts when times are given (≥ 0.05, ≤ 10) |
+
+### earthquake
+
+**Earthquake**. Violent, chaotic shaking with rotation: explosions, earthquakes, chaos, hype moments. Optionally builds up over time.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `intensity` | number |  | `40` | Shake size in pixels (at 1080p) (≥ 5, ≤ 120) |
+| `rotation` | number |  | `2` | Max tilt in degrees (≥ 0, ≤ 10) |
+| `buildUp` | number |  | `0` | Seconds to grow from nothing to full strength (≥ 0, ≤ 30) |
+
+### impactShake
+
+**Impact Shake**. A hard jolt that settles quickly, at chosen moments: hits, drops, slams, punchlines. Use add_moment_effect or beat_sync to place them.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `times` | number[] |  | `[0]` | Moments, in seconds from the start of the clip or layer it is on (add_moment_effect and beat_sync fill these from timeline times) |
+| `intensity` | number |  | `30` | Jolt size in pixels (at 1080p) (≥ 2, ≤ 120) |
+| `decay` | number |  | `7` | How fast it settles (higher = shorter) (≥ 1, ≤ 30) |
 
 ## Time
 

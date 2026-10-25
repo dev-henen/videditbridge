@@ -31,6 +31,13 @@ import { exportCaptions } from "../tools/captions/build.js";
 import { probe } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
 import { analyzeColor, renderScopes } from "../tools/render/color-analysis.js";
+import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
+import { renderSoundMapImage } from "../tools/audio/image.js";
+import { renderSoundEffect } from "../tools/audio/sfx.js";
+import { detectScenes } from "../tools/video/scenes.js";
+import { getSoundEffect, listSoundEffects } from "../library/sound-effects/index.js";
+import { invertRanges } from "../core/ranges.js";
+import { stat } from "node:fs/promises";
 import type { ActivityHandle, EditorSession } from "./session.js";
 
 export interface ToolResult {
@@ -83,6 +90,89 @@ function assetIdFromSrc(project: Project, src: string): string {
   let n = 2;
   while (project.assets.some((a) => a.id === id)) id = `${base}_${n++}`;
   return id;
+}
+
+// ---------------------------------------------------------------------------
+// Sound analysis, cached per file so a long recording is decoded once
+// ---------------------------------------------------------------------------
+
+interface SoundAnalysis {
+  map: SoundMap;
+  beats: BeatAnalysis;
+}
+
+const soundCache = new Map<string, Promise<SoundAnalysis>>();
+
+/** Sound map and beats of a media file, or of `range` (source seconds) within it. */
+async function analyzeSound(s: EditorSession, src: string, range?: { start: number; end: number }): Promise<SoundAnalysis> {
+  const file = s.resolve(src);
+  const mtime = await stat(file).then((x) => x.mtimeMs, () => 0);
+  const key = `${file}|${mtime}|${range ? `${range.start}-${range.end}` : "all"}`;
+  let pending = soundCache.get(key);
+  if (!pending) {
+    pending = decodeAudio(file, { ffmpegPath: s.options.ffmpegPath, start: range?.start, duration: range ? range.end - range.start : undefined }).then((x) => ({
+      map: analyzeSamples(x),
+      beats: detectBeats(x),
+    }));
+    soundCache.set(key, pending);
+    if (soundCache.size > 32) soundCache.delete(soundCache.keys().next().value!);
+    pending.catch(() => soundCache.delete(key));
+  }
+  return pending;
+}
+
+function mediaAsset(s: EditorSession, assetId: string): Extract<Asset, { type: "video" | "audio" }> {
+  const asset = s.project.assets.find((a) => a.id === assetId);
+  if (!asset) throw new Error(`Unknown asset "${assetId}". Assets: ${s.project.assets.map((a) => a.id).join(", ") || "(none)"}`);
+  if (asset.type !== "video" && asset.type !== "audio") throw new Error(`Asset "${assetId}" is ${asset.type === "image" ? "an image" : `a ${asset.type}`} and has no sound`);
+  if (asset.type === "video" && asset.hasAudio === false) throw new Error(`Video "${assetId}" has no audio track`);
+  return asset;
+}
+
+/** Beat times on the timeline, from an audio clip (following its start, trim, speed and loop) or a primary-track asset. */
+async function timelineBeats(s: EditorSession, source: string): Promise<{ beats: number[]; downbeats: number[]; bpm?: number; confidence: number }> {
+  const timeline = computeTimeline(s.project);
+  const ta = timeline.audio.find((a) => a.clip.id === source);
+  if (ta) {
+    const asset = mediaAsset(s, ta.clip.assetId);
+    const { beats } = await analyzeSound(s, asset.src);
+    if (!beats.bpm) return { beats: [], downbeats: [], confidence: beats.confidence };
+    const srcLen = asset.duration ?? Infinity;
+    // Looped audio plays from the top of the file (as the renderer does), repeating every srcLen.
+    const loops = ta.clip.loop && Number.isFinite(srcLen);
+    const from = loops ? 0 : ta.clip.in;
+    const map = (list: number[]) => {
+      const out: number[] = [];
+      const reps = loops ? Math.ceil((ta.duration * ta.clip.speed) / srcLen) : 1;
+      for (let k = 0; k < reps; k++)
+        for (const b of list) {
+          const src = b + k * srcLen;
+          if (src < from) continue;
+          const t = ta.start + (src - from) / ta.clip.speed;
+          if (t <= ta.end) out.push(Math.round(t * 1000) / 1000);
+        }
+      return out;
+    };
+    return { beats: map(beats.beats), downbeats: map(beats.downbeats), bpm: Math.round(beats.bpm * ta.clip.speed * 10) / 10, confidence: beats.confidence };
+  }
+  const clips = timeline.clips.filter((c) => c.clip.assetId === source);
+  if (!clips.length) throw new Error(`"${source}" is not an audio clip id or an asset on the primary track`);
+  const asset = mediaAsset(s, source);
+  const { beats } = await analyzeSound(s, asset.src);
+  const map = (list: number[]) =>
+    clips.flatMap((tc) => list.filter((b) => b >= tc.clip.in && b < tc.clip.in + tc.sourceDuration).map((b) => Math.round(sourceToTimeline(tc, b) * 1000) / 1000));
+  return { beats: map(beats.beats), downbeats: map(beats.downbeats), bpm: beats.bpm, confidence: beats.confidence };
+}
+
+const SoundKindSchema = z.enum(["speech", "music", "sound"]);
+
+/** Render a sound effect (cached on disk) and make sure the project has it as an asset. */
+async function sfxAsset(s: EditorSession, p: Project, type: string, params: Record<string, unknown> = {}): Promise<{ project: Project; assetId: string; duration: number }> {
+  const sfx = await renderSoundEffect(type, params, path.join(s.options.outputDir, "sfx"), { ffmpegPath: s.options.ffmpegPath });
+  const existing = p.assets.find((a) => "src" in a && s.resolve(a.src) === sfx.path);
+  if (existing) return { project: p, assetId: existing.id, duration: sfx.duration };
+  const id = assetIdFromSrc(p, `sfx-${type}`);
+  return { project: ops.addAsset(p, { type: "audio", id, src: sfx.path, duration: sfx.duration, label: `${type} sound effect` }), assetId: id, duration: sfx.duration };
 }
 
 export const TOOLS: ToolDefinition[] = [
@@ -209,8 +299,8 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "list_effects",
-    description: "List available visual effects (color grades, retouch, blur, zoom/motion, stylize) with their parameters.",
-    input: z.object({ category: z.enum(["light", "color", "grade", "retouch", "blur", "stylize", "motion", "distort", "time"]).optional() }),
+    description: "List available visual effects (color grades, retouch, bokeh and blur, light, zooms and motion, shakes, stylize) with their parameters.",
+    input: z.object({ category: z.enum(["light", "color", "grade", "retouch", "blur", "stylize", "motion", "shake", "distort", "time"]).optional() }),
     mutates: false,
     run: async (_s, i) =>
       ok(
@@ -669,6 +759,246 @@ export const TOOLS: ToolDefinition[] = [
       }
       const applied = chain.filter(([, v]) => v).map(([t]) => t);
       return commit(s, p, "enhance_audio", i, `Audio on ${i.target}: ${applied.join(" > ") || "cleanup removed"}.`);
+    },
+  }),
+
+  // -------------------------------------------------------------------------
+  // Sound map, beats, scenes and sound effects
+  // -------------------------------------------------------------------------
+  tool({
+    name: "analyze_audio",
+    description:
+      "Map the sound of a recording without a transcript: where someone is speaking, where it is silent, where music or other sound plays, loud moments (claps, bangs, laughs) and the beat. " +
+      "Give an assetId for source times (best for raw footage, before cutting), or omit it to map every primary clip on the timeline. Returns a timeline of segments and a picture (waveform with a colored band: green speech, blue music, orange other sound, dark silence, red loud moments). " +
+      "Labels come from signal analysis, not speech recognition: treat '(unsure)' segments with care and check with render_frame or your own judgement. Use the times with remove_silences, assemble_from_source, split_clip, add_sound_effect and beat_sync.",
+    input: z.object({
+      assetId: z.string().optional().describe("Asset to analyze (source times); omit for the current timeline"),
+      start: z.number().min(0).optional().describe("Source seconds to start at (asset mode)"),
+      end: z.number().positive().optional().describe("Source seconds to stop at (asset mode)"),
+      image: z.boolean().default(true).describe("Also return the sound map picture"),
+    }),
+    mutates: false,
+    run: async (s, i, activity) => {
+      if (i.assetId) {
+        const asset = mediaAsset(s, i.assetId);
+        const range = i.start !== undefined || i.end !== undefined ? { start: i.start ?? 0, end: i.end ?? asset.duration ?? 1e9 } : undefined;
+        activity?.progress(0.1);
+        const { map, beats } = await analyzeSound(s, asset.src, range);
+        const lines = [`Sound map of ${i.assetId} (source time${range ? `, from ${range.start}s` : ""}):`, formatSoundMap(map, { offset: range?.start })];
+        if (beats.bpm) lines.push(`Beat: ${beats.bpm} BPM (confidence ${beats.confidence}), ${beats.beats.length} beats. Use detect_beats for the times.`);
+        else lines.push("No steady musical beat.");
+        let images: ToolResult["images"];
+        if (i.image) {
+          const file = await s.outputPath(`soundmap-${i.assetId}.png`);
+          await renderSoundMapImage(s.resolve(asset.src), map, file, { ffmpegPath: s.options.ffmpegPath, start: range?.start, beats: beats.bpm ? beats.beats : undefined });
+          images = [{ path: file, mediaType: "image/png" }];
+          lines.push("Picture: the full width is the analyzed range, with a gray line every 10%.");
+        }
+        return { text: lines.join("\n"), images, data: { map, beats } };
+      }
+      // Timeline mode: each primary clip's source range, mapped to timeline time.
+      const timeline = computeTimeline(s.project);
+      const lines: string[] = [];
+      const totals: Record<SoundKind, number> = { speech: 0, music: 0, sound: 0, silence: 0 };
+      for (const tc of timeline.clips) {
+        const asset = tc.asset;
+        if (asset.type !== "video" || asset.hasAudio === false || tc.clip.muted) {
+          lines.push(`${tc.clip.id} ${formatTime(tc.start)}-${formatTime(tc.end)}: no sound${tc.clip.muted ? " (muted)" : ""}`);
+          continue;
+        }
+        const { map } = await analyzeSound(s, asset.src, { start: tc.clip.in, end: tc.clip.in + tc.sourceDuration });
+        activity?.progress((tc.index + 1) / timeline.clips.length);
+        const segs = map.segments.map((g) => {
+          const a = Math.round((tc.start + g.start / tc.clip.speed) * 1000) / 1000;
+          const b = Math.round((tc.start + g.end / tc.clip.speed) * 1000) / 1000;
+          totals[g.kind] += b - a;
+          return `${formatTime(a)}-${formatTime(b)} ${g.kind}${g.kind === "silence" ? "" : ` ${g.level} dB${g.confidence < 0.6 ? " (unsure)" : ""}`}`;
+        });
+        lines.push(`${tc.clip.id} (${tc.clip.assetId}, timeline ${formatTime(tc.start)}-${formatTime(tc.end)}):\n  ${segs.join("\n  ")}`);
+      }
+      const sum = Object.entries(totals).map(([k, v]) => `${k} ${Math.round(v * 10) / 10}s`).join(", ");
+      return ok(`Sound on the timeline (clip audio only; music and voice-over tracks are not included). ${sum}.\n${lines.join("\n")}`);
+    },
+  }),
+  tool({
+    name: "detect_beats",
+    description: "Find the tempo and beat times of music: an audio clip (times on the timeline) or an asset (source times). Use them to cut, punch, shake or flash on the beat (beat_sync does this for you).",
+    input: z.object({ source: z.string().describe("Audio clip id (timeline times) or asset id (source times)") }),
+    mutates: false,
+    run: async (s, i) => {
+      const onTimeline = s.project.audio.some((a) => a.id === i.source) || s.project.clips.some((c) => c.assetId === i.source);
+      const r = onTimeline ? await timelineBeats(s, i.source) : (await analyzeSound(s, mediaAsset(s, i.source).src)).beats;
+      if (!r.bpm) return ok(`No steady beat found in ${i.source} (confidence ${r.confidence}). It may be speech, ambient music or noise.`);
+      const fmt = (l: number[]) => (l.length > 64 ? `${l.slice(0, 64).join(", ")} …(${l.length - 64} more)` : l.join(", "));
+      return ok(
+        `${i.source}: ${r.bpm} BPM, confidence ${r.confidence}, ${r.beats.length} beats (${onTimeline ? "timeline" : "source"} seconds).\nDownbeats (bar starts): ${fmt(r.downbeats)}\nBeats: ${fmt(r.beats)}`,
+        r,
+      );
+    },
+  }),
+  tool({
+    name: "remove_silences",
+    description:
+      "Cut dead air out of footage without a transcript: removes silent stretches (or everything that is not speech) from primary clips, leaving short padding so words are not clipped. Each kept part becomes its own clip (jump cuts). Layers, music and captions stay in sync. Run analyze_audio first to see what will go.",
+    input: z.object({
+      assetId: z.string().optional().describe("Only cut clips of this asset (default: every clip with sound)"),
+      keep: z.array(SoundKindSchema).default(["speech", "music", "sound"]).describe('What counts as worth keeping; ["speech"] also removes music, noise and other non-speech sound'),
+      minSilence: z.number().min(0.1).default(0.5).describe("Only remove gaps at least this long (seconds)"),
+      padding: z.number().min(0).max(1).default(0.15).describe("Seconds kept before and after each kept part"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const assetIds = [...new Set(s.project.clips.map((c) => c.assetId))].filter((id) => {
+        if (i.assetId && id !== i.assetId) return false;
+        const a = s.project.assets.find((x) => x.id === id);
+        return a?.type === "video" && a.hasAudio !== false;
+      });
+      if (!assetIds.length) return { text: i.assetId ? `No primary clips use "${i.assetId}" with sound.` : "No primary clips with sound.", isError: true };
+      let p = s.project;
+      let removed = 0;
+      const notes: string[] = [];
+      for (const [n, id] of assetIds.entries()) {
+        const asset = mediaAsset(s, id);
+        const { map } = await analyzeSound(s, asset.src);
+        activity?.progress((n + 1) / assetIds.length);
+        const keep = soundRanges(map, { kinds: i.keep, padding: i.padding });
+        const cut = invertRanges(keep, 0, map.duration).filter((r) => r.end - r.start >= i.minSilence);
+        if (!cut.length) {
+          notes.push(`${id}: nothing to remove`);
+          continue;
+        }
+        const before = computeTimeline(p).duration;
+        p = ops.cutSourceRanges(p, id, cut);
+        const gone = Math.round((before - computeTimeline(p).duration) * 100) / 100;
+        removed += gone;
+        notes.push(`${id}: removed ${gone}s in ${cut.length} gaps`);
+      }
+      const r = commit(s, p, "remove_silences", i, `Removed ${Math.round(removed * 100) / 100}s (${notes.join("; ")}).`);
+      return { ...r, text: `${r.text}\nPrimary track now has ${p.clips.length} clips.` };
+    },
+  }),
+  tool({
+    name: "detect_scenes",
+    description:
+      "Find shot changes (cuts between camera angles or scenes) in a video asset. With split=true, the primary clips using it are split at every change inside them, so each shot becomes its own clip to trim, reorder, grade or give a transition.",
+    input: z.object({
+      assetId: z.string(),
+      threshold: z.number().min(0.05).max(0.9).default(0.3).describe("0.3 finds clear cuts; 0.15-0.2 also finds gentle ones"),
+      split: z.boolean().default(false),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const asset = s.project.assets.find((a) => a.id === i.assetId);
+      if (!asset || asset.type !== "video") return { text: `"${i.assetId}" is not a video asset.`, isError: true };
+      const scenes = await detectScenes(s.resolve(asset.src), { threshold: i.threshold, ffmpegPath: s.options.ffmpegPath });
+      const list = scenes.map((c) => `${c.time}s (${c.score})`).join(", ") || "none";
+      if (!i.split) return ok(`${scenes.length} shot changes in ${i.assetId} (source seconds, score): ${list}`, scenes);
+      let p = s.project;
+      let splits = 0;
+      for (const c of scenes) {
+        // Skip changes within half a second of a clip edge: splitting there leaves a sliver, not a shot.
+        const tc = computeTimeline(p).clips.find((x) => x.clip.assetId === i.assetId && c.time > x.clip.in + 0.5 && c.time < x.clip.in + x.sourceDuration - 0.5);
+        if (!tc) continue;
+        p = ops.splitClip(p, tc.clip.id, sourceToTimeline(tc, c.time)).project;
+        splits++;
+      }
+      return commit(s, p, "detect_scenes", i, `${scenes.length} shot changes in ${i.assetId}: ${list}. Split ${splits} times; the primary track has ${p.clips.length} clips.`);
+    },
+  }),
+  tool({
+    name: "list_sound_effects",
+    description: "List the built-in sound effects (whoosh, swoosh, riser, glitch, impact, hit, bass drop, pop, click, notification, error, typing, ding, success, shutter, heartbeat).",
+    input: empty,
+    mutates: false,
+    run: async () =>
+      ok(
+        listSoundEffects()
+          .map((e) => {
+            const shape = (e.params as unknown as { shape?: Record<string, z.ZodType> }).shape ?? {};
+            const params = Object.entries(shape).map(([k, v]) => `${k}${v.description ? `: ${v.description}` : ""}`);
+            return `${e.id} (${e.category}, ${e.duration(e.params.parse({}))}s): ${e.description}${params.length ? ` Params: ${params.join("; ")}` : ""}`;
+          })
+          .join("\n"),
+      ),
+  }),
+  tool({
+    name: "add_sound_effect",
+    description:
+      "Add a sound effect at timeline moments: a whoosh on a transition, a pop when text appears, an impact on a reveal, a riser ending on a drop. align 'end' makes the sound finish at the time (use it for risers); 'start' begins it there.",
+    input: z.object({
+      type: z.string().describe("Sound effect id (see list_sound_effects)"),
+      times: z.array(z.number().min(0)).min(1).max(64).describe("Timeline seconds"),
+      align: z.enum(["start", "end"]).default("start"),
+      volume: z.number().min(0).max(4).default(0.8),
+      params: z.record(z.string(), z.unknown()).optional(),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      if (!getSoundEffect(i.type)) return { text: `Unknown sound effect "${i.type}". Use list_sound_effects.`, isError: true };
+      const sfx = await sfxAsset(s, s.project, i.type, i.params);
+      let p = sfx.project;
+      const starts = i.times.map((t) => Math.max(0, Math.round((i.align === "end" ? t - sfx.duration : t) * 1000) / 1000));
+      for (const start of starts) p = ops.addAudio(p, { assetId: sfx.assetId, role: "sfx", start, volume: i.volume, label: i.type });
+      return commit(s, p, "add_sound_effect", i, `Added ${i.type} (${sfx.duration}s) at ${starts.join(", ")}s.`);
+    },
+  }),
+  tool({
+    name: "add_moment_effect",
+    description:
+      "Put a timed effect on whatever primary clip is playing at given timeline moments: zoomPunch, impactShake, flashHits or vibrate at each time, or smoothZoom / rackFocus starting at the time. Times already on the clip are kept, so you can add moments one at a time.",
+    input: z.object({
+      type: z.string().describe("zoomPunch, impactShake, flashHits, vibrate, smoothZoom or rackFocus"),
+      times: z.array(z.number().min(0)).min(1).max(64).describe("Timeline seconds"),
+      params: z.record(z.string(), z.unknown()).optional().describe("Other params of the effect, e.g. {amount: 0.2}"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const { project, placed } = ops.placeMomentEffect(s.project, i.type, i.times, i.params);
+      return commit(s, project, "add_moment_effect", i, `${i.type} on ${placed.map((x) => `${x.clipId} at ${x.times.join(", ")}s into it`).join("; ")}.`);
+    },
+  }),
+  tool({
+    name: "beat_sync",
+    description:
+      "Edit to the music's beat. action 'cuts' moves every cut between primary clips onto the nearest beat; an effect action (zoomPunch, impactShake, flashHits, vibrate) puts that effect on the beats. " +
+      "Choose every Nth beat (2 or 4 for calmer pacing; downbeats=true for bar starts only) and an optional time window. sound adds a sound effect on the same beats.",
+    input: z.object({
+      source: z.string().describe("Music audio clip id, or an asset on the primary track"),
+      action: z.enum(["cuts", "zoomPunch", "impactShake", "flashHits", "vibrate"]),
+      every: z.number().int().min(1).max(16).default(1),
+      downbeats: z.boolean().default(false).describe("Use only bar starts"),
+      start: z.number().min(0).optional().describe("Timeline seconds to start at"),
+      end: z.number().positive().optional().describe("Timeline seconds to stop at"),
+      params: z.record(z.string(), z.unknown()).optional().describe("Effect params, e.g. {amount: 0.12}"),
+      sound: z.string().optional().describe("Sound effect to add on the same beats, e.g. 'hit'"),
+      minClip: z.number().min(0.1).default(0.4).describe("cuts: shortest clip allowed"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const b = await timelineBeats(s, i.source);
+      if (!b.bpm) return { text: `No steady beat in ${i.source} (confidence ${b.confidence}).`, isError: true };
+      const pool = (i.downbeats ? b.downbeats : b.beats).filter((t) => (i.start === undefined || t >= i.start) && (i.end === undefined || t <= i.end));
+      const times = pool.filter((_, k) => k % i.every === 0);
+      if (!times.length) return { text: "No beats in that window.", isError: true };
+      let p = s.project;
+      let detail: string;
+      if (i.action === "cuts") {
+        const r = ops.snapCutsToTimes(p, times, { minClip: i.minClip });
+        p = r.project;
+        detail = `moved ${r.moved.length} cuts onto beats`;
+      } else {
+        const r = ops.placeMomentEffect(p, i.action, times.filter((t) => t < computeTimeline(p).primaryDuration), i.params);
+        p = r.project;
+        detail = `${i.action} on ${times.length} beats across ${r.placed.length} clips`;
+      }
+      if (i.sound) {
+        if (!getSoundEffect(i.sound)) return { text: `Unknown sound effect "${i.sound}". Use list_sound_effects.`, isError: true };
+        const sfx = await sfxAsset(s, p, i.sound);
+        p = sfx.project;
+        for (const t of times) p = ops.addAudio(p, { assetId: sfx.assetId, role: "sfx", start: t, volume: 0.7, label: i.sound });
+        detail += `, ${i.sound} on each`;
+      }
+      return commit(s, p, "beat_sync", i, `Beat sync to ${i.source} (${b.bpm} BPM): ${detail}.`);
     },
   }),
 

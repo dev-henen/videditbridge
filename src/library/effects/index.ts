@@ -1,90 +1,13 @@
 import { z } from "zod";
 import type { Effect } from "../../core/schema.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
+import { define, maskedBlend, num, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
+import { motionEffects } from "./motion.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
 
 export * from "./color.js";
+export * from "./helpers.js";
 
-export interface EffectContext {
-  width: number;
-  height: number;
-  fps: number;
-  /** Duration of the clip/layer the effect is applied to (seconds, after speed). */
-  duration: number;
-  /** The stream has an alpha channel (media layers). */
-  alpha?: boolean;
-  /** Unique filter-graph label generator, for effects that branch the stream. */
-  label?: (prefix: string) => string;
-}
-
-export type EffectCategory = "light" | "color" | "grade" | "retouch" | "blur" | "stylize" | "motion" | "distort" | "time";
-
-export interface EffectDefinition<P extends z.ZodType = z.ZodType> {
-  id: string;
-  name: string;
-  category: EffectCategory;
-  description: string;
-  params: P;
-  /** Returns a comma-separated FFmpeg filter chain. */
-  toFilter(params: z.output<P>, ctx: EffectContext): string;
-}
-
-const num = (def: number, min: number, max: number, desc: string) =>
-  z.number().min(min).max(max).default(def).describe(desc);
-
-function define<P extends z.ZodType>(def: EffectDefinition<P>): EffectDefinition {
-  return def as unknown as EffectDefinition;
-}
-
-/** zoompan always produces the project size; upscaling first avoids sub-pixel jitter. */
-function zoompan(ctx: EffectContext, zoomExpr: string, xExpr = "iw/2-(iw/zoom/2)", yExpr = "ih/2-(ih/zoom/2)") {
-  const w2 = ctx.width * 2;
-  const h2 = ctx.height * 2;
-  return `scale=${w2}:${h2},zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=1:s=${ctx.width}x${ctx.height}:fps=${ctx.fps}`;
-}
-
-export const SubjectRegionSchema = z.object({
-  x: z.number().min(0).max(1).describe("Center x (0 = left edge, 1 = right edge)"),
-  y: z.number().min(0).max(1).describe("Center y (0 = top, 1 = bottom)"),
-  width: z.number().positive().max(2).describe("Ellipse width as a fraction of frame width"),
-  height: z.number().positive().max(2).describe("Ellipse height as a fraction of frame height"),
-});
-export type SubjectRegion = z.infer<typeof SubjectRegionSchema>;
-
-let fallbackLabel = 0;
-
-/**
- * Run `branch` on a copy of the stream and blend it back through a static mask: either
- * a feathered ellipse (inside or outside it) or, without a region, the whole frame.
- * The mask is drawn once with geq; maskedmerge holds its last frame for the whole clip.
- * Returns a graph fragment that still reads and writes one unlabeled stream.
- */
-function maskedBlend(
-  ctx: EffectContext,
-  branch: string,
-  opts: { region?: SubjectRegion; inside: boolean; feather?: number; strength: number },
-): string {
-  const label = ctx.label ?? ((p: string) => `${p}${fallbackLabel++}`);
-  const [orig, copy, done, mask] = [label("fxo"), label("fxc"), label("fxb"), label("fxm")];
-  const fmt = ctx.alpha ? "yuva420p" : "yuv420p";
-  const s = round3(clamp(opts.strength, 0, 1) * 255);
-  let e = String(s);
-  if (opts.region) {
-    const r = opts.region;
-    const f = round3(clamp(opts.feather ?? 0.3, 0.02, 1));
-    // Normalized distance from the ellipse center: 1 on its edge. X/SW maps chroma samples to luma pixels.
-    const d = `hypot((X/SW/W-${round3(r.x)})/${round3(r.width / 2)},(Y/SH/H-${round3(r.y)})/${round3(r.height / 2)})`;
-    const outside = `clip((${d}-1+${f})/${round3(2 * f)},0,1)`;
-    e = `${s}*${opts.inside ? `(1-${outside})` : outside}`;
-  }
-  const planes = `lum='${e}':cb='${e}':cr='${e}'${ctx.alpha ? `:a='${e}'` : ""}`;
-  return [
-    `format=${fmt},split=2[${orig}][${copy}]`,
-    `[${copy}]${branch}[${done}]`,
-    `nullsrc=s=${ctx.width}x${ctx.height}:r=${ctx.fps},trim=end_frame=1,format=${fmt},geq=${planes}[${mask}]`,
-    `[${orig}][${done}][${mask}]maskedmerge`,
-  ].join(";");
-}
 
 const GRADES: Record<string, { name: string; description: string; filter: string }> = {
   cinematic: {
@@ -409,8 +332,8 @@ export const EFFECTS: EffectDefinition[] = [
   define({
     id: "shake",
     name: "Camera Shake",
-    category: "motion",
-    description: "Handheld/impact camera shake.",
+    category: "shake",
+    description: "Constant camera shake that runs for the whole clip. For a natural handheld look use handheld; for hits at moments use impactShake.",
     params: z.object({
       intensity: num(10, 1, 60, "Max offset in pixels"),
       speed: num(20, 1, 60, "Shake frequency"),
@@ -434,6 +357,8 @@ export const EFFECTS: EffectDefinition[] = [
       return zoompan(ctx, `1+${p.amount}*exp(-8*mod(it,${period})/${period})`);
     },
   }),
+
+  ...motionEffects(),
 
   // --- time -----------------------------------------------------------------------
   define({

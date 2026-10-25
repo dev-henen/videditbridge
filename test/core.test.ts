@@ -5,7 +5,9 @@ import {
   addClip,
   addLayer,
   removeAudioEffect,
+  placeMomentEffect,
   setAudioEffectParams,
+  snapCutsToTimes,
   setSpeed,
   setVolume,
   computeTimeline,
@@ -168,6 +170,33 @@ describe("operations", () => {
     expect(p.layers[0]!.type === "media" && p.layers[0]!.volume).toBe(0.3);
     expect(p.audioEffects).toEqual([{ type: "gain", params: { db: -6.021 } }]);
     expect(setVolume(base(), "master", 1)).toEqual(base());
+  });
+
+  it("places moment effects on the clips playing at timeline times", () => {
+    // c1 0-4, c2 3-6 (1s fade overlap), c3 6-8.
+    let r = placeMomentEffect(base(), "zoomPunch", [1, 3.5, 7], { amount: 0.2 });
+    expect(r.placed).toEqual([
+      { clipId: "c1", times: [1] },
+      { clipId: "c2", times: [0.5] },
+      { clipId: "c3", times: [1] },
+    ]);
+    // More moments merge with the ones already there.
+    r = placeMomentEffect(r.project, "zoomPunch", [2]);
+    const fx = r.project.clips[0]!.effects.find((e) => e.type === "zoomPunch")!;
+    expect(fx.params).toMatchObject({ times: [1, 2], amount: 0.2 });
+    expect(placeMomentEffect(base(), "smoothZoom", [5]).project.clips[1]!.effects[0]!.params).toMatchObject({ start: 2 });
+    expect(() => placeMomentEffect(base(), "blur", [1])).toThrow(/no times or start/);
+    expect(() => placeMomentEffect(base(), "zoomPunch", [50])).toThrow(/None of the times/);
+  });
+
+  it("snaps cuts to the nearest given times without running past the source", () => {
+    const { project, moved } = snapCutsToTimes(base(), [3.6, 6.4, 7.5]);
+    // c1 (4s, ends at 4) snaps to 3.6; c2 then ends at 3.6 - 1 + 3 = 5.6 and snaps to 6.4 (b.mp4 has room: 6s source).
+    expect(moved.map((m) => m.to)).toEqual([3.6, 6.4]);
+    expect(project.clips[0]!.duration).toBe(3.6);
+    expect(computeTimeline(project).clips[1]!.end).toBe(6.4);
+    // A clip cannot grow past its source: c1 uses a.mp4 from 1s, so at most 9s.
+    expect(snapCutsToTimes(base(), [12]).moved).toEqual([]);
   });
 
   it("adds and removes audio effects on every audio target", () => {

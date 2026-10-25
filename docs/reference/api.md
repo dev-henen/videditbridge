@@ -15,6 +15,7 @@ The engine model. Pure, with no I/O.
 | `addEffect`, `removeEffect` | Effects on a clip, a media layer or `"global"` |
 | `addAudioEffect`, `removeAudioEffect`, `setAudioEffectParams` | Audio effects on a clip, an audio clip, a media layer or `"master"` |
 | `setSpeed`, `setVolume` | Speed of a clip or audio clip; volume of a clip, audio clip, media layer or `"master"` |
+| `placeMomentEffect`, `snapCutsToTimes` | Timed effects at timeline moments; cuts moved onto given times (beats) |
 | `addLayer`, `updateLayer`, `removeLayer`, `reorderLayer` | Layers |
 | `addAudio`, `updateAudio`, `removeAudio` | Audio |
 | `setCaptions`, `updateSettings` | Captions, resolution, fps |
@@ -35,6 +36,7 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 |---|---|
 | Effects | `EFFECTS`, `getEffect`, `listEffects`, `registerEffect`, `effectToFilter`, `resolveEffectParams`, `SubjectRegionSchema` |
 | Audio effects | `AUDIO_EFFECTS`, `getAudioEffect`, `listAudioEffects`, `registerAudioEffect`, `audioEffectToFilter`, `atempoChain` |
+| Sound effects | `SOUND_EFFECTS`, `getSoundEffect`, `listSoundEffects`, `registerSoundEffect` |
 | Transitions | `TRANSITIONS`, `getTransition`, `listTransitions` |
 | Animations | `ANIMATIONS`, `getAnimation`, `listAnimations` |
 | Caption styles | `CAPTION_STYLES`, `CaptionStyleSchema`, `getCaptionStyle`, `listCaptionStyles`, `resolveCaptionStyle`, `registerCaptionStyle` |
@@ -48,6 +50,8 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 | Transcript | `parseTranscript`, `fromSRT`, `fromVTT`, `fromWhisper`, `fromDeepgram`, `fromAssemblyAI`, `fromPlainText`, `sentences`, `formatTranscript`, `searchTranscript`, `findFillers`, `findRepetitions`, `findSilences`, `transcriptStats`, `sliceTranscript`, `planCleanup`, `cleanupSpeech`, `transcribeMedia`, `extractAudio`, `OpenAITranscriber`, `DeepgramTranscriber` |
 | Captions | `timelineWords`, `buildCaptions`, `chunkWords`, `exportCaptions`, `chunksToSRT`, `chunksToVTT`, `AssDocument` |
 | Voice-over | `OpenAITTS`, `ElevenLabsTTS`, `alignmentToWords` |
+| Audio analysis | `decodeAudio`, `analyzeSamples` (sound map), `detectBeats`, `formatSoundMap`, `soundRanges`, `renderSoundMapImage`, `renderSoundEffect` |
+| Video analysis | `detectScenes` |
 | Render | `render`, `renderFrame`, `renderContactSheet`, `compileProject`, `probe`, `probeAssets`, `runFfmpeg`, `resolveFfmpegPath` |
 | Preview | `startPreviewServer`, `previewState` |
 

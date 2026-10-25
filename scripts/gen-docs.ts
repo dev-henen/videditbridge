@@ -10,6 +10,7 @@ import { z } from "zod";
 import { TOOLS } from "../src/claude/tools.js";
 import { EFFECTS } from "../src/library/effects/index.js";
 import { AUDIO_EFFECTS } from "../src/library/audio-effects/index.js";
+import { SOUND_EFFECTS } from "../src/library/sound-effects/index.js";
 import { TRANSITIONS } from "../src/library/transitions/index.js";
 import { ANIMATIONS } from "../src/library/animations/index.js";
 import { CAPTION_STYLES, CaptionStyleSchema } from "../src/library/caption-styles/index.js";
@@ -94,6 +95,7 @@ function claudeTools(): string {
     ["Retouch", ["retouch"]],
     ["Layers", ["add_text", "add_media_overlay", "add_shape", "add_component", "update_layer", "remove_layer"]],
     ["Audio", ["add_audio", "update_audio", "remove_audio", "set_volume", "enhance_audio", "add_audio_effect", "remove_audio_effect"]],
+    ["Sound map, beats & moments", ["analyze_audio", "remove_silences", "detect_scenes", "detect_beats", "beat_sync", "add_moment_effect", "list_sound_effects", "add_sound_effect"]],
     ["Transcript & captions", ["transcribe", "set_transcript", "get_transcript", "search_transcript", "cleanup_speech", "cut_ranges", "assemble_from_source", "set_captions", "export_captions"]],
     ["Voice-over", ["generate_voiceover"]],
     ["Color", ["color_adjust", "get_color", "analyze_color", "render_scopes"]],
@@ -135,6 +137,16 @@ function audioEffects(): string {
   for (const c of cats) {
     out += `\n## ${c[0]!.toUpperCase()}${c.slice(1)}\n`;
     for (const e of AUDIO_EFFECTS.filter((x) => x.category === c)) out += `\n### ${e.id}\n\n**${e.name}**. ${e.description}\n\n${paramTable(jsonSchema(e.params))}`;
+  }
+  return out;
+}
+
+function soundEffects(): string {
+  let out = `${HEADER}# Sound effects\n\n${SOUND_EFFECTS.length} sound effects, synthesized by FFmpeg, so no audio files are needed. With Claude, use \`add_sound_effect\` with timeline times (\`align: "end"\` makes a sound finish at the time, for risers), or \`beat_sync\` with \`sound\` to add one on every beat. Each effect is rendered once to a WAV file in the session's output folder and added as an \`sfx\` audio clip.\n\nDefinitions live in [src/library/sound-effects/index.ts](../../src/library/sound-effects/index.ts). Register your own with \`registerSoundEffect\`.\n\n| id | Name | Category | Length | Params | Description |\n|---|---|---|---|---|---|\n`;
+  for (const e of SOUND_EFFECTS) {
+    const shape = (e.params as unknown as { shape?: Record<string, z.ZodType> }).shape ?? {};
+    const params = Object.entries(shape).map(([k, v]) => `\`${k}\`${v.description ? ` (${v.description})` : ""}`).join(", ");
+    out += `| \`${e.id}\` | ${e.name} | ${e.category} | ${e.duration(e.params.parse({}))}s | ${cell(params)} | ${cell(e.description)} |\n`;
   }
   return out;
 }
@@ -201,6 +213,7 @@ export async function generateDocs(): Promise<Record<string, string>> {
     "claude-tools.md": claudeTools(),
     "effects.md": effects(),
     "audio-effects.md": audioEffects(),
+    "sound-effects.md": soundEffects(),
     "transitions.md": transitions(),
     "animations.md": animations(),
     "caption-styles.md": captionStyles() + captionOverrides(),

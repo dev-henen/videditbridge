@@ -2,7 +2,7 @@
 
 # Claude tools
 
-57 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+65 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -14,6 +14,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Retouch**: [retouch](#retouch)
 - **Layers**: [add_text](#add_text), [add_media_overlay](#add_media_overlay), [add_shape](#add_shape), [add_component](#add_component), [update_layer](#update_layer), [remove_layer](#remove_layer)
 - **Audio**: [add_audio](#add_audio), [update_audio](#update_audio), [remove_audio](#remove_audio), [set_volume](#set_volume), [enhance_audio](#enhance_audio), [add_audio_effect](#add_audio_effect), [remove_audio_effect](#remove_audio_effect)
+- **Sound map, beats & moments**: [analyze_audio](#analyze_audio), [remove_silences](#remove_silences), [detect_scenes](#detect_scenes), [detect_beats](#detect_beats), [beat_sync](#beat_sync), [add_moment_effect](#add_moment_effect), [list_sound_effects](#list_sound_effects), [add_sound_effect](#add_sound_effect)
 - **Transcript & captions**: [transcribe](#transcribe), [set_transcript](#set_transcript), [get_transcript](#get_transcript), [search_transcript](#search_transcript), [cleanup_speech](#cleanup_speech), [cut_ranges](#cut_ranges), [assemble_from_source](#assemble_from_source), [set_captions](#set_captions), [export_captions](#export_captions)
 - **Voice-over**: [generate_voiceover](#generate_voiceover)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [render_scopes](#render_scopes)
@@ -98,11 +99,11 @@ _No parameters._
 
 ### list_effects
 
-**read-only**. List available visual effects (color grades, retouch, blur, zoom/motion, stylize) with their parameters.
+**read-only**. List available visual effects (color grades, retouch, bokeh and blur, light, zooms and motion, shakes, stylize) with their parameters.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `category` | "light" \| "color" \| "grade" \| "retouch" \| "blur" \| "stylize" \| "motion" \| "distort" \| "time" |  |  |  |
+| `category` | "light" \| "color" \| "grade" \| "retouch" \| "blur" \| "stylize" \| "motion" \| "shake" \| "distort" \| "time" |  |  |  |
 
 ### list_audio_effects
 
@@ -463,6 +464,92 @@ _No parameters._
 |---|---|---|---|---|
 | `target` | string | yes |  |  |
 | `type` | string | yes |  |  |
+
+## Sound map, beats & moments
+
+### analyze_audio
+
+**read-only**. Map the sound of a recording without a transcript: where someone is speaking, where it is silent, where music or other sound plays, loud moments (claps, bangs, laughs) and the beat. Give an assetId for source times (best for raw footage, before cutting), or omit it to map every primary clip on the timeline. Returns a timeline of segments and a picture (waveform with a colored band: green speech, blue music, orange other sound, dark silence, red loud moments). Labels come from signal analysis, not speech recognition: treat '(unsure)' segments with care and check with render_frame or your own judgement. Use the times with remove_silences, assemble_from_source, split_clip, add_sound_effect and beat_sync.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `assetId` | string |  |  | Asset to analyze (source times); omit for the current timeline |
+| `start` | number |  |  | Source seconds to start at (asset mode) (≥ 0) |
+| `end` | number |  |  | Source seconds to stop at (asset mode) (> 0) |
+| `image` | boolean |  | `true` | Also return the sound map picture |
+
+### remove_silences
+
+**edits**. Cut dead air out of footage without a transcript: removes silent stretches (or everything that is not speech) from primary clips, leaving short padding so words are not clipped. Each kept part becomes its own clip (jump cuts). Layers, music and captions stay in sync. Run analyze_audio first to see what will go.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `assetId` | string |  |  | Only cut clips of this asset (default: every clip with sound) |
+| `keep` | "speech" \| "music" \| "sound"[] |  | `["speech","music","sound"]` | What counts as worth keeping; ["speech"] also removes music, noise and other non-speech sound |
+| `minSilence` | number |  | `0.5` | Only remove gaps at least this long (seconds) (≥ 0.1) |
+| `padding` | number |  | `0.15` | Seconds kept before and after each kept part (≥ 0, ≤ 1) |
+
+### detect_scenes
+
+**edits**. Find shot changes (cuts between camera angles or scenes) in a video asset. With split=true, the primary clips using it are split at every change inside them, so each shot becomes its own clip to trim, reorder, grade or give a transition.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `assetId` | string | yes |  |  |
+| `threshold` | number |  | `0.3` | 0.3 finds clear cuts; 0.15-0.2 also finds gentle ones (≥ 0.05, ≤ 0.9) |
+| `split` | boolean |  | `false` |  |
+
+### detect_beats
+
+**read-only**. Find the tempo and beat times of music: an audio clip (times on the timeline) or an asset (source times). Use them to cut, punch, shake or flash on the beat (beat_sync does this for you).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `source` | string | yes |  | Audio clip id (timeline times) or asset id (source times) |
+
+### beat_sync
+
+**edits**. Edit to the music's beat. action 'cuts' moves every cut between primary clips onto the nearest beat; an effect action (zoomPunch, impactShake, flashHits, vibrate) puts that effect on the beats. Choose every Nth beat (2 or 4 for calmer pacing; downbeats=true for bar starts only) and an optional time window. sound adds a sound effect on the same beats.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `source` | string | yes |  | Music audio clip id, or an asset on the primary track |
+| `action` | "cuts" \| "zoomPunch" \| "impactShake" \| "flashHits" \| "vibrate" | yes |  |  |
+| `every` | integer |  | `1` | (≥ 1, ≤ 16) |
+| `downbeats` | boolean |  | `false` | Use only bar starts |
+| `start` | number |  |  | Timeline seconds to start at (≥ 0) |
+| `end` | number |  |  | Timeline seconds to stop at (> 0) |
+| `params` | object |  |  | Effect params, e.g. {amount: 0.12} |
+| `sound` | string |  |  | Sound effect to add on the same beats, e.g. 'hit' |
+| `minClip` | number |  | `0.4` | cuts: shortest clip allowed (≥ 0.1) |
+
+### add_moment_effect
+
+**edits**. Put a timed effect on whatever primary clip is playing at given timeline moments: zoomPunch, impactShake, flashHits or vibrate at each time, or smoothZoom / rackFocus starting at the time. Times already on the clip are kept, so you can add moments one at a time.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `type` | string | yes |  | zoomPunch, impactShake, flashHits, vibrate, smoothZoom or rackFocus |
+| `times` | number[] | yes |  | Timeline seconds |
+| `params` | object |  |  | Other params of the effect, e.g. {amount: 0.2} |
+
+### list_sound_effects
+
+**read-only**. List the built-in sound effects (whoosh, swoosh, riser, glitch, impact, hit, bass drop, pop, click, notification, error, typing, ding, success, shutter, heartbeat).
+
+_No parameters._
+
+### add_sound_effect
+
+**edits**. Add a sound effect at timeline moments: a whoosh on a transition, a pop when text appears, an impact on a reveal, a riser ending on a drop. align 'end' makes the sound finish at the time (use it for risers); 'start' begins it there.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `type` | string | yes |  | Sound effect id (see list_sound_effects) |
+| `times` | number[] | yes |  | Timeline seconds |
+| `align` | "start" \| "end" |  | `"start"` |  |
+| `volume` | number |  | `0.8` | (≥ 0, ≤ 4) |
+| `params` | object |  |  |  |
 
 ## Transcript & captions
 

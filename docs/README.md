@@ -13,6 +13,7 @@
 | [Color correction & grading](guides/color.md) | Exposure, white balance, tone, HSL, curves, color wheels, finishing, analysis and scopes |
 | [Voice-over](guides/voiceover.md) | Text-to-speech providers and narrated edits |
 | [Retouch & audio](guides/retouch-and-audio.md) | Beauty retouch, background blur, voice cleanup, audio effects, speed and volume |
+| [Editing raw footage](guides/raw-footage.md) | Sound maps (speech, silence, music), silence removal, shot detection, beat sync, moment effects and sound effects |
 
 ## Reference
 
@@ -20,8 +21,9 @@
 |---|---|
 | [Claude tools](reference/claude-tools.md) | All Claude tools with their parameters |
 | [Templates](reference/templates.md) | All 33 templates: inputs, scenes, look and editing guidance |
-| [Effects](reference/effects.md) | Color controls, grades, retouch, motion, blur and stylize effects with parameters |
+| [Effects](reference/effects.md) | Color controls, grades, retouch, bokeh and blur, light, zooms, shakes and stylize effects with parameters |
 | [Audio effects](reference/audio-effects.md) | Noise reduction, voice enhancement, dynamics, EQ and creative sound effects |
+| [Sound effects](reference/sound-effects.md) | Synthesized whooshes, impacts, pops, risers and other sounds to place on the timeline |
 | [Transitions](reference/transitions.md) | Transitions between clips |
 | [Animations](reference/animations.md) | Entrance and exit animations for layers |
 | [Caption styles](reference/caption-styles.md) | Caption presets and the fields you can override |

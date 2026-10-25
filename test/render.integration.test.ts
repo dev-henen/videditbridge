@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { AUDIO_EFFECTS, TEMPLATES, applyTemplate } from "../src/library/index.js";
-import { probe, render, renderContactSheet, renderFrame, startPreviewServer } from "../src/tools/index.js";
+import { AUDIO_EFFECTS, EFFECTS, TEMPLATES, applyTemplate } from "../src/library/index.js";
+import { probe, render, renderContactSheet, renderFrame, runFfmpegOrThrow, startPreviewServer } from "../src/tools/index.js";
 import { EditorSession, executeTool } from "../src/claude/index.js";
 import { computeTimeline, validateProject, type Transcript } from "../src/core/index.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "./helpers/media.js";
@@ -129,6 +129,77 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     const info = await probe(r.output);
     expect(info.hasAudio).toBe(true);
     expect(info.duration).toBeCloseTo(2, 0);
+  });
+
+  it("edits raw footage by its sound: silences, shots, beats, moments and sound effects", async () => {
+    // 12 s: two shots (cut at 6 s); sound at 0.5-2.5, 5-7.5 and 10-11.5 s, silence between.
+    const raw = out("raw-sound.mp4");
+    const click = out("click-120.wav");
+    const tone = "0.3*sin(2*PI*220*t)*(0.6+0.4*sin(2*PI*5*t))*(between(t,0.5,2.5)+between(t,5,7.5)+between(t,10,11.5))";
+    await runFfmpegOrThrow([
+      "-y", "-loglevel", "error",
+      "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=6",
+      "-f", "lavfi", "-i", "mandelbrot=s=320x180:r=30",
+      "-f", "lavfi", "-i", `aevalsrc=exprs='${tone}':s=48000:d=12`,
+      "-filter_complex", "[1:v]trim=duration=6,setpts=PTS-STARTPTS,format=yuv420p[m];[0:v][m]concat=n=2:v=1:a=0[v]",
+      "-map", "[v]", "-map", "2:a", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", raw,
+    ]);
+    await runFfmpegOrThrow(["-y", "-loglevel", "error", "-f", "lavfi", "-i", "aevalsrc=exprs='0.6*sin(2*PI*1500*t)*lt(mod(t,0.5),0.03)':s=48000:d=12", click]);
+
+    const session = new EditorSession(undefined, { outputDir: out("raw-edit") });
+    const call = async (name: string, input: unknown) => {
+      const r = await executeTool(session, name, input);
+      expect(r.isError, r.text).toBeFalsy();
+      return r;
+    };
+    await call("new_project", { aspectRatio: "16:9" });
+    await call("import_media", { src: raw, id: "raw" });
+    await call("add_clip", { assetId: "raw" });
+
+    const map = await call("analyze_audio", { assetId: "raw" });
+    expect(map.text).toMatch(/silence/);
+    expect(existsSync(map.images![0]!.path)).toBe(true);
+
+    await call("remove_silences", { minSilence: 0.5, padding: 0.1 });
+    const afterCut = computeTimeline(session.project).duration;
+    expect(afterCut).toBeGreaterThan(6);
+    expect(afterCut).toBeLessThan(7.5);
+
+    const scenes = await call("detect_scenes", { assetId: "raw", split: true });
+    expect(scenes.text).toMatch(/6s/);
+    expect(session.project.clips.length).toBe(4);
+
+    await call("import_media", { src: click, id: "click" });
+    await call("add_audio", { assetId: "click", role: "music", duck: false });
+    const music = session.project.audio[0]!.id;
+    const beats = await call("detect_beats", { source: music });
+    expect(beats.text).toMatch(/120(\.\d)? BPM/);
+    await call("beat_sync", { source: music, action: "cuts" });
+    for (const c of computeTimeline(session.project).clips.slice(1)) {
+      // Every cut lands on a beat (the start of the next clip, plus the transition overlap: none here).
+      expect(Math.abs(((c.start + 0.25) % 0.5) - 0.25)).toBeLessThan(0.03);
+    }
+    await call("beat_sync", { source: music, action: "zoomPunch", every: 2, sound: "hit" });
+    await call("add_moment_effect", { type: "impactShake", times: [1] });
+    await call("add_sound_effect", { type: "whoosh", times: [2], align: "end" });
+    expect(session.project.audio.filter((a) => a.role === "sfx").length).toBeGreaterThan(3);
+    expect(validateProject(session.project).ok).toBe(true);
+
+    const r = await render(session.project, { output: out("raw-edit.mp4"), preset: "ultrafast", scale: 0.5 });
+    const info = await probe(r.output);
+    expect(info.hasAudio).toBe(true);
+    expect(info.duration!).toBeCloseTo(computeTimeline(session.project).duration, 0);
+  });
+
+  it("renders every visual effect", async () => {
+    // One short clip per effect in a single render: a failing filter graph names the effect's filters.
+    const effects = EFFECTS.filter((e) => e.id !== "lut");
+    const session = new EditorSession(undefined, { outputDir: out("all-effects") });
+    await executeTool(session, "new_project", { aspectRatio: "9:16" });
+    await executeTool(session, "import_media", { src: fx.talk, id: "talk" });
+    for (const e of effects) await executeTool(session, "add_clip", { assetId: "talk", duration: 0.4, effects: [{ type: e.id }] });
+    const r = await render(session.project, { output: out("all-effects.mp4"), preset: "ultrafast", scale: 0.25 });
+    expect((await probe(r.output)).duration).toBeCloseTo(effects.length * 0.4, 0);
   });
 
   it("renders a still frame and a range directly", async () => {

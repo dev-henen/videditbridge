@@ -19,7 +19,8 @@ import {
   SettingsSchema,
   TransitionSchema,
 } from "./schema.js";
-import { computeTimeline, getAsset, timelineToSource, type Timeline } from "./timeline.js";
+import { clipAtTime, computeTimeline, getAsset, timelineToSource, type Timeline } from "./timeline.js";
+import { getEffect } from "../library/effects/index.js";
 import { mergeRanges, type TimeRange } from "./ranges.js";
 import { ASPECT_RATIOS, deepClone, dimensionsFor, newId, round3, type AspectRatio } from "./util.js";
 import type { z } from "zod";
@@ -320,6 +321,89 @@ export function setVolume(p: Project, target: string, volume: number, opts: { mu
     if (layer?.type === "media") return void (layer.volume = volume);
     throw new EditError(`Volume target "${target}" must be a clip id, audio clip id, media layer id, or "master"`);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Moments: effects and cuts placed at timeline times
+// ---------------------------------------------------------------------------
+
+/**
+ * Put a timed effect on the primary clips playing at the given timeline times. Effects with a
+ * `times` list (zoomPunch, impactShake, flashHits, vibrate) get each time converted to their
+ * clip's own time and merged with moments already there; effects with a `start` (smoothZoom,
+ * rackFocus) start at the first time that falls in each clip. Other params are merged in.
+ */
+export function placeMomentEffect(
+  p: Project,
+  effectType: string,
+  times: number[],
+  params: Record<string, unknown> = {},
+): { project: Project; placed: { clipId: string; times: number[] }[] } {
+  const def = getEffect(effectType);
+  if (!def) throw new EditError(`Unknown effect "${effectType}"`);
+  const shape = (def.params as unknown as { shape?: Record<string, unknown> }).shape ?? {};
+  const key = "times" in shape ? "times" : "start" in shape ? "start" : undefined;
+  if (!key) throw new EditError(`Effect "${effectType}" has no times or start to place; use add_effect instead`);
+  const timeline = computeTimeline(p);
+  const byClip = new Map<number, number[]>();
+  for (const t of [...times].sort((a, b) => a - b)) {
+    const tc = clipAtTime(timeline, t);
+    if (!tc) continue;
+    const list = byClip.get(tc.index) ?? [];
+    list.push(round3(t - tc.start));
+    byClip.set(tc.index, list);
+  }
+  if (!byClip.size) throw new EditError(`None of the times fall on a primary clip (video is ${timeline.primaryDuration}s)`);
+  const placed: { clipId: string; times: number[] }[] = [];
+  const project = edit(p, (d) => {
+    for (const [index, local] of byClip) {
+      const clip = d.clips[index]!;
+      const existing = clip.effects.find((e) => e.type === effectType);
+      const merged: Record<string, unknown> = { ...(existing?.params ?? {}), ...params };
+      if (key === "times") {
+        const before = Array.isArray(existing?.params?.times) ? (existing!.params!.times as number[]) : [];
+        merged.times = [...new Set([...before, ...local])].sort((a, b) => a - b).slice(0, 64);
+      } else merged.start = local[0];
+      const parsed = def.params.parse(merged) as Record<string, unknown>;
+      if (existing) existing.params = parsed;
+      else clip.effects.push(EffectSchema.parse({ type: effectType, params: parsed }));
+      placed.push({ clipId: clip.id, times: local });
+    }
+  });
+  return { project, placed };
+}
+
+/**
+ * Move each cut between primary clips to the nearest of the given timeline times (for example
+ * beats), by lengthening or shortening the clip before it. Clips stay at least `minClip` long
+ * and never run past the end of their source.
+ */
+export function snapCutsToTimes(
+  p: Project,
+  times: number[],
+  opts: { minClip?: number } = {},
+): { project: Project; moved: { clipId: string; from: number; to: number }[] } {
+  const minClip = opts.minClip ?? 0.4;
+  const sorted = [...times].sort((a, b) => a - b);
+  const moved: { clipId: string; from: number; to: number }[] = [];
+  let project = p;
+  for (let i = 0; i < project.clips.length - 1; i++) {
+    const tc = computeTimeline(project).clips[i]!;
+    const clip = tc.clip;
+    const asset = tc.asset;
+    const maxSource = asset.type === "video" && asset.duration !== undefined ? asset.duration - clip.in : Infinity;
+    const maxEnd = tc.start + maxSource / clip.speed;
+    let best: number | undefined;
+    for (const t of sorted) {
+      if (t < tc.start + minClip || t > maxEnd + 1e-6) continue;
+      if (best === undefined || Math.abs(t - tc.end) < Math.abs(best - tc.end)) best = t;
+    }
+    if (best === undefined || Math.abs(best - tc.end) < 0.01) continue;
+    const to = best;
+    project = edit(project, (d) => void (d.clips[i]!.duration = round3((to - tc.start) * clip.speed)));
+    moved.push({ clipId: clip.id, from: tc.end, to: round3(to) });
+  }
+  return { project, moved };
 }
 
 // ---------------------------------------------------------------------------

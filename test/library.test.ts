@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ANIMATIONS,
   AUDIO_EFFECTS,
+  SOUND_EFFECTS,
   atempoChain,
   audioEffectToFilter,
   COMPONENTS,
@@ -70,6 +71,15 @@ describe("audio effects", () => {
     expect(atempoChain(0.25)).toEqual(["atempo=0.5", "atempo=0.5"]);
     expect(atempoChain(1)).toEqual([]);
     expect(audioEffectToFilter({ type: "pitch", params: { semitones: 12 } })).toBe("aresample=48000,asetrate=96000,aresample=48000,atempo=0.5");
+  });
+});
+
+describe("sound effects", () => {
+  it.each(SOUND_EFFECTS.map((e) => [e.id, e]))("%s builds a graph ending in [sfx]", (_id, e) => {
+    const p = e.params.parse({});
+    expect(e.graph(p)).toMatch(/\[sfx\]$/);
+    expect(e.graph(p)).not.toMatch(/undefined|NaN/);
+    expect(e.duration(p)).toBeGreaterThan(0);
   });
 });
 
