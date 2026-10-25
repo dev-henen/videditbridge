@@ -85,8 +85,12 @@ async function detectPictureArea(imagePath: string, opts: FfmpegOptions): Promis
     while (b > a && !isPicture(line[b]!)) b--;
     return [a, b] as const;
   };
-  const [top, bottom] = span(rows);
-  const [left, right] = span(cols);
+  let [top, bottom] = span(rows);
+  let [left, right] = span(cols);
+  // Real letterbox/pillarbox bars come in matching pairs. A dark night sky on top only is picture.
+  const matched = (a: number, b: number, size: number) => a > size * 0.02 && b > size * 0.02 && Math.abs(a - b) <= size * 0.03;
+  if (!matched(top, H - 1 - bottom, H)) [top, bottom] = [0, H - 1];
+  if (!matched(left, W - 1 - right, W)) [left, right] = [0, W - 1];
   const w = right - left + 1;
   const h = bottom - top + 1;
   if (w < 16 || h < 16) return undefined;
