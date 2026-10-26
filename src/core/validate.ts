@@ -84,6 +84,9 @@ export function validateProject(input: unknown): ValidationResult {
     checkAnim(l.animationOut?.type, `layers.${i}.animationOut`, l.type === "media");
     if ("position" in l && (l.position.x < -0.5 || l.position.x > 1.5 || l.position.y < -0.5 || l.position.y > 1.5))
       warn(`layers.${i}.position`, "Layer is positioned far outside the frame");
+    for (const [prop, keys] of Object.entries(l.keyframes ?? {}))
+      if ((keys as { time: number }[] | undefined)?.some((k) => k.time > l.duration + 0.001))
+        warn(`layers.${i}.keyframes.${prop}`, `Keyframes after the layer ends (${l.duration}s): they never show`);
   });
 
   p.audio.forEach((a, i) => {

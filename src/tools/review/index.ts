@@ -77,13 +77,13 @@ export async function reviewEdit(project: Project, opts: ReviewOptions): Promise
       const dIn = l.animationIn && l.animationIn.type !== "none" ? l.animationIn.duration : 0;
       const dOut = l.animationOut && l.animationOut.type !== "none" ? l.animationOut.duration : 0;
       const time = l.start + Math.min(dIn, l.duration) + Math.max(0, l.duration - dIn - dOut) / 2;
-      samples.push({ time, measure: (f) => readability(f, l, textLayerBox(l, W, H), issues) });
+      samples.push({ time, measure: (f) => readability(f, l, textLayerBox(l, W, H, time - l.start), issues) });
     }
     const caps = captionBoxes(p, timeline);
     // Text over a face, readable or not: three moments of each text layer, and captions spread over the video.
     for (const l of p.layers) {
       if (l.type !== "text" || !l.text.trim()) continue;
-      for (const k of [0.25, 0.5, 0.75]) faceChecks.push({ time: l.start + l.duration * k, box: textLayerBox(l, W, H), target: l.id, start: l.start, end: l.start + l.duration, what: `Text "${l.text.length > 40 ? `${l.text.slice(0, 39)}…` : l.text}"` });
+      for (const k of [0.25, 0.5, 0.75]) faceChecks.push({ time: l.start + l.duration * k, box: textLayerBox(l, W, H, l.duration * k), target: l.id, start: l.start, end: l.start + l.duration, what: `Text "${l.text.length > 40 ? `${l.text.slice(0, 39)}…` : l.text}"` });
     }
     const spread = caps ? Math.min(8, caps.boxes.length) : 0;
     for (let k = 0; k < spread; k++) {

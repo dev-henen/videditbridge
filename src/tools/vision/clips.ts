@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Project } from "../../core/schema.js";
 import { computeTimeline, sourceToTimeline, type TimedClip } from "../../core/timeline.js";
 import { round3 } from "../../core/util.js";
+import { positionAt } from "../../core/keyframes.js";
 import { FaceDetector, sourceToFrame, trackFaces, type Box, type FaceFrame, type FaceTrack } from "./faces.js";
 
 export interface ClipFaceTrack extends FaceTrack {
@@ -13,6 +14,8 @@ export interface ClipFaceTrack extends FaceTrack {
   frameBox?: Box;
   /** Box holding the face at every sampled moment, in the edit's frame. */
   frameExtent?: Box;
+  /** Each sampled moment: timeline time and the face's box in the edit's frame (when not cropped out). */
+  path: { time: number; box: Box }[];
 }
 
 export interface ClipFaces {
@@ -67,11 +70,22 @@ export async function detectClipFaces(
   const range = asset.type === "video" ? { start: tc.clip.in, end: tc.clip.in + tc.sourceDuration } : undefined;
   const { width, height, frames } = await detectFacesCached(detector, file, range, opts.fps ?? 2);
   const out = project.settings;
+  const toTimeline = (s: number) => round3(asset.type === "video" ? sourceToTimeline(tc, s) : tc.start);
+  // With focus keyframes the crop moves, so each sample is mapped with the focus of its moment.
+  const focusKeys = tc.clip.keyframes?.focus;
+  const focusAt = (s: number) => (focusKeys?.length ? positionAt(focusKeys, toTimeline(s) - tc.start) : tc.clip.focus);
   const tracks = trackFaces(frames).map((t): ClipFaceTrack => {
-    const frameBox = sourceToFrame(t.box, { width, height }, out, tc.clip.fit, tc.clip.focus);
-    const frameExtent = sourceToFrame(t.extent, { width, height }, out, tc.clip.fit, tc.clip.focus);
-    const toTimeline = (s: number) => round3(asset.type === "video" ? sourceToTimeline(tc, s) : tc.start);
-    return { ...t, timelineStart: toTimeline(t.start), timelineEnd: asset.type === "video" ? toTimeline(t.end) : tc.end, ...(frameBox ? { frameBox } : {}), ...(frameExtent ? { frameExtent } : {}) };
+    const path = t.frames.flatMap((f) => {
+      const box = sourceToFrame(f.face, { width, height }, out, tc.clip.fit, focusAt(f.time));
+      return box ? [{ time: toTimeline(f.time), box }] : [];
+    });
+    const mapped = path.map((p) => p.box);
+    const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)]!;
+    const frameBox = mapped.length ? { x0: median(mapped.map((b) => b.x0)), y0: median(mapped.map((b) => b.y0)), x1: median(mapped.map((b) => b.x1)), y1: median(mapped.map((b) => b.y1)) } : undefined;
+    const frameExtent = mapped.length
+      ? { x0: Math.min(...mapped.map((b) => b.x0)), y0: Math.min(...mapped.map((b) => b.y0)), x1: Math.max(...mapped.map((b) => b.x1)), y1: Math.max(...mapped.map((b) => b.y1)) }
+      : undefined;
+    return { ...t, timelineStart: toTimeline(t.start), timelineEnd: asset.type === "video" ? toTimeline(t.end) : tc.end, path, ...(frameBox ? { frameBox } : {}), ...(frameExtent ? { frameExtent } : {}) };
   });
   tracks.sort((a, b) => b.frames.length * area(b.box) - a.frames.length * area(a.box));
   return { clip: tc, source: { width, height }, frames, tracks };

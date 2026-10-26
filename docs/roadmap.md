@@ -9,7 +9,7 @@ The biggest gap is that the editor does not know where people and objects are in
 | # | Item | Why it matters | Size |
 |---|---|---|---|
 | 1 | [Subject and face detection](#1-subject-and-face-detection) | Positions are guessed today; five features depend on it | Done, except crops and ellipses that move (needs #2) |
-| 2 | [Keyframes](#2-keyframes) | Nothing can move or change over time except preset animations | Large |
+| 2 | [Keyframes](#2-keyframes) | Nothing can move or change over time except preset animations | Layers and crops done; effects and speed ramps to come |
 | 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Done, except text over faces (needs #1) |
 | 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes several minutes, and every change re-renders all of it | Segment cache and hardware encoding done |
 | 5 | [Direct editing in the desktop app](#5-direct-editing-in-the-desktop-app) | The app is a chat box and a preview; nothing can be dragged or adjusted | Large |
@@ -47,6 +47,8 @@ Layers and effects are fixed for their whole duration, apart from entrance and e
 - clip speed (speed ramps: fast, then slow motion)
 
 With tracking data from #1, keyframes can be generated so graphics follow an object.
+
+**Status** (2026-10-26): layer keyframes (position, scale, rotation, opacity, with easing) and crop keyframes are done, with `animate_layer`, `follow_face` (a label that follows a person) and `reframe` `follow` (a crop that pans with them). See [Keyframes](guides/project-format.md#keyframes). Still to do: effect settings over time, and speed ramps, which change how source time maps to the timeline (captions and cuts depend on it).
 
 ## 3. Automatic quality check (`review_edit`)
 
@@ -116,6 +118,6 @@ Everything still goes through the same tools, so Claude and manual edits share u
 2. `review_edit` and `fix_transcript`: small, and they improve every edit right away. (Done.)
 3. Faster rendering (segment cache first): every later step is tested by rendering. (Segment cache and hardware encoding done.)
 4. Subject and face detection. (Done.)
-5. Keyframes, then tracking on top of detection.
+5. Keyframes, then tracking on top of detection. (Layers, crops and face tracking done; effect and speed ramps to come.)
 6. Direct editing in the desktop app.
 7. Templates updated to use everything above.

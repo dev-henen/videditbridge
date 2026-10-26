@@ -1,4 +1,5 @@
 import type { Animation, ShapeLayer, TextLayer } from "../../core/schema.js";
+import { isAnimated, layerStateAt, type LayerState } from "../../core/keyframes.js";
 import { parseColor } from "../../core/util.js";
 import { assEnterPhase, assExitPhase, type AssAnimContext } from "../../library/animations/index.js";
 import { AssDocument, escapeAssText, type AssStyle } from "../captions/ass.js";
@@ -16,6 +17,14 @@ interface PhasedEvent {
   text?: string;
   animIn?: Animation;
   animOut?: Animation;
+  /** Keyframed layers: the state at a time (seconds from the layer start), drawn frame by frame. */
+  state?: (t: number) => LayerState;
+  /** Alpha tags for an opacity multiplier (0..1), so each color keeps its own transparency. */
+  alphaTags?: (opacity: number) => string;
+  /** Offset in pixels added to the keyframed position (a shape's shadow sits below the shape). */
+  offset?: { x: number; y: number };
+  /** Frames per second for keyframed layers. */
+  fps?: number;
 }
 
 const cs = (s: number) => Math.round(s * 100) / 100;
@@ -37,6 +46,7 @@ function addPhased(doc: AssDocument, ev: PhasedEvent): void {
   const t1 = cs(ev.start + dIn);
   const t2 = cs(ev.end - dOut);
   const t3 = cs(ev.end);
+  if (ev.state) return addKeyframed(doc, ev, t0, t1, t2, t3);
   const ctx: AssAnimContext = { x: ev.x, y: ev.y, width: doc.width, height: doc.height, text: ev.text };
   if (t1 > t0 && ev.animIn) {
     const p = assEnterPhase({ ...ev.animIn, duration: t1 - t0 }, ctx);
@@ -50,6 +60,50 @@ function addPhased(doc: AssDocument, ev: PhasedEvent): void {
     doc.addEvent({ layer: ev.layer, start: t2, end: t3, style: ev.style, text: `{${ev.tags}${p.tags}}${ev.body}` });
   }
 }
+
+/**
+ * A keyframed layer: the entrance and exit animations play where the layer is at those moments,
+ * and in between one short event per frame carries its position, scale, rotation and opacity
+ * (ASS can only move in a straight line within one event). Identical neighbouring frames merge.
+ */
+function addKeyframed(doc: AssDocument, ev: PhasedEvent, t0: number, t1: number, t2: number, t3: number): void {
+  const state = (t: number) => ev.state!(t - ev.start);
+  const at = (s: LayerState) => ({ x: Math.round(s.position.x * doc.width + (ev.offset?.x ?? 0)), y: Math.round(s.position.y * doc.height + (ev.offset?.y ?? 0)) });
+  const look = (s: LayerState) => {
+    const scale = Math.round(s.scale * 100);
+    const rot = Math.round(s.rotation * 10) / 10;
+    // ASS turns counterclockwise for positive angles; keyframes use clockwise degrees.
+    return `${scale !== 100 ? `\\fscx${scale}\\fscy${scale}` : ""}${rot ? `\\frz${-rot}` : ""}${s.opacity < 1 && ev.alphaTags ? ev.alphaTags(s.opacity) : ""}`;
+  };
+  const ctxAt = (s: LayerState): AssAnimContext => ({ ...at(s), width: doc.width, height: doc.height, text: ev.text });
+  if (t1 > t0 && ev.animIn) {
+    const s = state(t0);
+    const p = assEnterPhase({ ...ev.animIn, duration: t1 - t0 }, ctxAt(s));
+    doc.addEvent({ layer: ev.layer, start: t0, end: t1, style: ev.style, text: `{${ev.tags}${look(s)}${p.tags}}${p.body ?? ev.body}` });
+  }
+  const step = 1 / (ev.fps ?? 30);
+  let last: { start: number; text: string } | undefined;
+  const flush = (end: number) => {
+    if (last && end > last.start) doc.addEvent({ layer: ev.layer, start: last.start, end, style: ev.style, text: last.text });
+  };
+  for (let t = t1; t < t2 - 1e-6; t = cs(t + step)) {
+    const s = state(t);
+    const { x, y } = at(s);
+    const text = `{${ev.tags}\\pos(${x},${y})${look(s)}}${ev.body}`;
+    if (last?.text === text) continue;
+    flush(t);
+    last = { start: t, text };
+  }
+  flush(t2);
+  if (t3 > t2 && ev.animOut) {
+    const s = state(t2);
+    const p = assExitPhase({ ...ev.animOut, duration: t3 - t2 }, ctxAt(s));
+    doc.addEvent({ layer: ev.layer, start: t2, end: t3, style: ev.style, text: `{${ev.tags}${look(s)}${p.tags}}${ev.body}` });
+  }
+}
+
+/** ASS alpha `&HAA&` for an opacity (0 = transparent). */
+const assAlpha = (opacity: number) => `&H${Math.round(255 * (1 - Math.min(1, Math.max(0, opacity)))).toString(16).padStart(2, "0").toUpperCase()}&`;
 
 export function textLayerStyle(layer: TextLayer, width: number): AssStyle {
   const s = layer.style;
@@ -74,10 +128,15 @@ export function textLayerStyle(layer: TextLayer, width: number): AssStyle {
   };
 }
 
-export function addTextLayer(doc: AssDocument, layer: TextLayer, z: number): void {
+export function addTextLayer(doc: AssDocument, layer: TextLayer, z: number, fps = 30): void {
   const style = doc.addStyle(textLayerStyle(layer, doc.width), "Text");
   const raw = layer.style.uppercase ? layer.text.toUpperCase() : layer.text;
+  const st = layer.style;
+  const [fill, edge, shade] = [parseColor(st.color).a, parseColor(st.background ?? st.outlineColor).a, parseColor(st.shadowColor).a];
   addPhased(doc, {
+    ...(isAnimated(layer)
+      ? { state: (t: number) => layerStateAt(layer, t), alphaTags: (o: number) => `\\1a${assAlpha(fill * o)}\\3a${assAlpha(edge * o)}\\4a${assAlpha(shade * o)}`, fps }
+      : {}),
     layer: z,
     start: layer.start,
     end: layer.start + layer.duration,
@@ -123,7 +182,7 @@ export function shapePath(shape: ShapeLayer["shape"], w: number, h: number, radi
   ].join(" ");
 }
 
-export function addShapeLayer(doc: AssDocument, layer: ShapeLayer, z: number): void {
+export function addShapeLayer(doc: AssDocument, layer: ShapeLayer, z: number, fps = 30): void {
   const color = parseColor(layer.color);
   const style = doc.addStyle(
     {
@@ -162,6 +221,7 @@ export function addShapeLayer(doc: AssDocument, layer: ShapeLayer, z: number): v
   const anim = {
     animIn: layer.animationIn?.type === "typewriter" ? { ...layer.animationIn, type: "fade" } : layer.animationIn,
     animOut: layer.animationOut,
+    ...(isAnimated(layer) ? { state: (t: number) => layerStateAt(layer, t), fps } : {}),
   };
   // The shadow is its own blurred, offset copy underneath: ASS blur on the shape itself would soften its edge.
   if (layer.shadow > 0) {
@@ -175,6 +235,8 @@ export function addShapeLayer(doc: AssDocument, layer: ShapeLayer, z: number): v
       tags: `\\1c&H000000&\\1a&H${hexAlpha(0.5 * layer.opacity)}&\\bord0\\blur${Math.max(2, Math.round(layer.shadow))}\\p1`,
       body: shapePath(layer.shape, w, h, layer.radius),
       ...anim,
+      offset: { x: 0, y: layer.shadow },
+      alphaTags: (o: number) => `\\1a${assAlpha(0.5 * layer.opacity * o)}`,
     });
   }
   addPhased(doc, {
@@ -187,5 +249,7 @@ export function addShapeLayer(doc: AssDocument, layer: ShapeLayer, z: number): v
     tags,
     body: shapePath(layer.shape, w, h, layer.radius),
     ...anim,
+    alphaTags: (o: number) =>
+      `\\1a${layer.fill ? assAlpha(color.a * layer.opacity * o) : "&HFF&"}${layer.strokeWidth > 0 ? `\\3a${assAlpha(stroke.a * layer.opacity * o)}` : ""}`,
   });
 }

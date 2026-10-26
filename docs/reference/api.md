@@ -19,6 +19,7 @@ The engine model. Pure, with no I/O.
 | `addLayer`, `updateLayer`, `removeLayer`, `reorderLayer` | Layers |
 | `addAudio`, `updateAudio`, `removeAudio` | Audio |
 | `setCaptions`, `updateSettings` | Captions, resolution, fps |
+| `numberAt`, `positionAt`, `layerStateAt`, `isAnimated`, `numberExpr`, `positionExpr`, `easeValue`, `easeExpr`, `smoothKeys`, `simplifyKeys` | Keyframes: values at a time, as FFmpeg expressions, and paths from tracking |
 | `cutTimelineRanges`, `cutSourceRanges`, `assembleFromRanges` | Cutting and reassembling |
 | `computeTimeline`, `clipAtTime`, `sourceToTimeline`, `timelineToSource` | Timeline math |
 | `validateProject` | `{ ok, issues }` |

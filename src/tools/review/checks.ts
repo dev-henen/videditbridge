@@ -5,6 +5,7 @@ import { buildCaptions, timelineWords } from "../captions/build.js";
 import { sizeScale } from "../captions/ass.js";
 import type { CaptionStyle } from "../../library/caption-styles/index.js";
 import { normalizeWord } from "../transcript/analyze.js";
+import { isAnimated, layerStateAt } from "../../core/keyframes.js";
 import type { Box } from "../vision/faces.js";
 
 export type ReviewCheck = "text" | "safe-zones" | "frames" | "speech" | "audio" | "key";
@@ -49,10 +50,13 @@ function measureText(
 }
 
 /** Estimated box of a text layer, following its alignment (ASS \pos is the left, center or right middle). */
-export function textLayerBox(layer: TextLayer, width: number, height: number): Box {
-  const { w, h } = measureText(layer.text.split(/\n|\\N/), layer.style, width);
-  const x = layer.position.x * width;
-  const y = layer.position.y * height;
+export function textLayerBox(layer: TextLayer, width: number, height: number, at?: number): Box {
+  // Keyframed layers: where the text is, and how big, `at` seconds after it starts.
+  const state = at !== undefined && isAnimated(layer) ? layerStateAt(layer, at) : { position: layer.position, scale: 1 };
+  const size = measureText(layer.text.split(/\n|\\N/), layer.style, width);
+  const [w, h] = [size.w * state.scale, size.h * state.scale];
+  const x = state.position.x * width;
+  const y = state.position.y * height;
   const left = layer.style.align === "left" ? x : layer.style.align === "right" ? x - w : x - w / 2;
   return { x0: left / width, y0: (y - h / 2) / height, x1: (left + w) / width, y1: (y + h / 2) / height };
 }

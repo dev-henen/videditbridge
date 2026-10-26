@@ -108,6 +108,29 @@ export const PositionSchema = z.object({
   y: z.number().describe("Vertical center, 0 = top edge, 1 = bottom edge"),
 });
 
+/** A value at a moment, reached from the previous keyframe with `easing`. */
+export const keyframe = <T extends z.ZodType>(value: T) =>
+  z.object({
+    time: z.number().min(0).describe("Seconds from the start of the layer or clip"),
+    value,
+    easing: EasingSchema.default("ease-in-out").describe("How the value moves into this keyframe from the previous one"),
+  });
+
+export const LayerKeyframesSchema = z
+  .object({
+    position: z.array(keyframe(PositionSchema)).optional().describe("Center over time (frame fractions); replaces position while set"),
+    scale: z.array(keyframe(z.number().positive().max(20))).optional().describe("Size multiplier over time (1 = the layer's own size)"),
+    rotation: z.array(keyframe(z.number().min(-3600).max(3600))).optional().describe("Degrees clockwise over time"),
+    opacity: z.array(keyframe(z.number().min(0).max(1))).optional().describe("Multiplies the layer's opacity over time"),
+  })
+  .describe("Properties that change over time. Before the first keyframe a property holds its first value, after the last its last value");
+
+export const ClipKeyframesSchema = z
+  .object({
+    focus: z.array(keyframe(PositionSchema)).optional().describe("Crop focus over time for fit cover, so the crop can follow a person"),
+  })
+  .describe("Clip properties that change over time (times from the clip's start on the timeline)");
+
 export const FitSchema = z
   .enum(["cover", "contain", "stretch", "blur"])
   .describe("cover = fill & crop, contain = letterbox, stretch = distort, blur = contain over blurred copy");
@@ -151,6 +174,7 @@ export const ClipSchema = z.object({
   transition: TransitionSchema.optional().describe("Transition INTO this clip from the previous clip"),
   fadeIn: z.number().min(0).optional().describe("Fade from black at clip start (seconds)"),
   fadeOut: z.number().min(0).optional().describe("Fade to black at clip end (seconds)"),
+  keyframes: ClipKeyframesSchema.optional(),
   label: z.string().optional(),
 });
 
@@ -160,6 +184,7 @@ const layerBase = {
   duration: z.number().positive(),
   animationIn: AnimationSchema.optional(),
   animationOut: AnimationSchema.optional(),
+  keyframes: LayerKeyframesSchema.optional(),
   label: z.string().optional(),
 };
 
@@ -306,6 +331,9 @@ export type Transition = z.infer<typeof TransitionSchema>;
 export type Animation = z.infer<typeof AnimationSchema>;
 export type Easing = z.infer<typeof EasingSchema>;
 export type Position = z.infer<typeof PositionSchema>;
+export type LayerKeyframes = z.infer<typeof LayerKeyframesSchema>;
+export type ClipKeyframes = z.infer<typeof ClipKeyframesSchema>;
+export type Keyframe<T> = { time: number; value: T; easing: Easing };
 export type Fit = z.infer<typeof FitSchema>;
 export type TextStyle = z.infer<typeof TextStyleSchema>;
 export type Clip = z.infer<typeof ClipSchema>;

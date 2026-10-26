@@ -1,5 +1,6 @@
 import path from "node:path";
-import type { Asset, Clip, Effect, Fit, MediaLayer, Project } from "../../core/schema.js";
+import type { Asset, Clip, Effect, Fit, Keyframe, MediaLayer, Position, Project } from "../../core/schema.js";
+import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
 import { effectsToFilter, escapeFilterPath, perClipGlobalEffects, usesPersonMask, type EffectContext } from "../../library/effects/index.js";
@@ -155,7 +156,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   };
 
   /** Scale/crop/pad to w×h. Returns label of the fitted stream. */
-  const fit = (input: string, fitMode: Fit, w: number, h: number, alpha: boolean, focus?: { x: number; y: number }): string => {
+  const fit = (input: string, fitMode: Fit, w: number, h: number, alpha: boolean, focus?: { x: number; y: number }, focusKeys?: Keyframe<Position>[]): string => {
     const out = g.label("fit");
     const padColor = alpha ? "black@0" : bg;
     switch (fitMode) {
@@ -164,7 +165,13 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
           // Keep the focus point in frame when the crop has to drop part of the source.
           const fx = round3(Math.min(1, Math.max(0, focus?.x ?? 0.5)));
           const fy = round3(Math.min(1, Math.max(0, focus?.y ?? 0.5)));
-          const pos = focus ? `:(iw-ow)*${fx}:(ih-oh)*${fy}` : "";
+          // Focus keyframes move the crop over time (t is seconds from the clip's start here).
+          const moving = focusKeys?.length ? positionExpr(focusKeys, "t") : undefined;
+          const pos = moving
+            ? `:'(iw-ow)*clip(${moving.x},0,1)':'(ih-oh)*clip(${moving.y},0,1)'`
+            : focus
+              ? `:(iw-ow)*${fx}:(ih-oh)*${fy}`
+              : "";
           g.add(`[${input}]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}${pos},setsar=1[${out}]`);
         }
         break;
@@ -226,14 +233,14 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const speed = asset.type === "video" ? clip.speed : 1;
       const timing = (input: string) => `[${input}]${chain(["setpts=PTS-STARTPTS", speed !== 1 && `setpts=PTS/${speed}`, `fps=${F}`])}`;
       g.add(`${timing(`${k}:v`)}[${raw}]`);
-      const fitted = fit(raw, clip.fit, W, H, false, clip.focus);
+      const fitted = fit(raw, clip.fit, W, H, false, clip.focus, clip.keyframes?.focus);
       // The person cutout goes through the same timing and fit as the picture, so it lines up.
       const maskUses = clip.effects.filter(usesPersonMask).length;
       const maskLabels: string[] = [];
       if (maskUses && opts.masks?.[clip.id]) {
         const mraw = g.label("mraw");
         g.add(`${timing(`${g.addInput(["-i", opts.masks[clip.id]!])}:v`)},format=gray[${mraw}]`);
-        const mfit = fit(mraw, clip.fit, W, H, true, clip.focus);
+        const mfit = fit(mraw, clip.fit, W, H, true, clip.focus, clip.keyframes?.focus);
         for (let n = 0; n < maskUses; n++) maskLabels.push(g.label("mask"));
         g.add(`[${mfit}]format=gray${maskUses > 1 ? `,split=${maskUses}` : ""}${maskLabels.map((l) => `[${l}]`).join("")}`);
       }
@@ -323,9 +330,12 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     const { v, a } = mediaLayerStream(layer, asset);
     const out = g.label("ov");
     const end = round3(layer.start + layer.duration);
+    // Position keyframes count from the layer's start; overlay's t is timeline time.
+    const keys = layer.keyframes?.position;
+    const moving = keys?.length ? positionExpr(keys, `(t-${layer.start})`) : undefined;
     const motion = overlayMotion(
-      `main_w*${layer.position.x}-overlay_w/2`,
-      `main_h*${layer.position.y}-overlay_h/2`,
+      `main_w*${moving ? `(${moving.x})` : layer.position.x}-overlay_w/2`,
+      `main_h*${moving ? `(${moving.y})` : layer.position.y}-overlay_h/2`,
       layer.start,
       end,
       layer.animationIn,
@@ -375,14 +385,20 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       styled = out;
     }
     const v = g.label("lv");
+    const { rotation: rotationKeys, scale: scaleKeys, opacity: opacityKeys } = layer.keyframes ?? {};
     const fadeIn = layer.animationIn && layer.animationIn.type !== "none" ? layer.animationIn.duration : 0;
     const fadeOut = layer.animationOut && layer.animationOut.type !== "none" ? layer.animationOut.duration : 0;
     g.add(
       `[${styled}]${chain([
         "format=yuva420p",
         layer.opacity < 1 && `colorchannelmixer=aa=${layer.opacity}`,
+        // Keyframes (t and T are seconds from the layer's start here). The per-frame scale comes
+        // last: it changes the frame size, and the other filters size their buffers only once.
+        rotationKeys?.length && `rotate=a='(${numberExpr(rotationKeys, "t")})*PI/180':ow='hypot(iw,ih)':oh=ow:c=none`,
+        opacityKeys?.length && `geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='alpha(X,Y)*clip(${numberExpr(opacityKeys, "T")},0,1)'`,
         fadeIn && `fade=t=in:st=0:d=${fadeIn}:alpha=1`,
         fadeOut && `fade=t=out:st=${round3(Math.max(0, layer.duration - fadeOut))}:d=${fadeOut}:alpha=1`,
+        scaleKeys?.length && `scale=w='max(2,2*trunc(iw*(${numberExpr(scaleKeys, "t")})/2))':h='max(2,2*trunc(ih*(${numberExpr(scaleKeys, "t")})/2))':eval=frame`,
         `setpts=PTS+${layer.start}/TB`,
       ])}[${v}]`,
     );
@@ -402,8 +418,8 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // -------------------------------------------------------------------------
   const ass = new AssDocument(project.settings.width, project.settings.height, 0);
   project.layers.forEach((layer, i) => {
-    if (layer.type === "text") addTextLayer(ass, layer, 10 + i);
-    else if (layer.type === "shape") addShapeLayer(ass, layer, 10 + i);
+    if (layer.type === "text") addTextLayer(ass, layer, 10 + i, F);
+    else if (layer.type === "shape") addShapeLayer(ass, layer, 10 + i, F);
   });
   const captions = buildCaptions(project, timeline);
   if (captions) {

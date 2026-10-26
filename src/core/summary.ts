@@ -63,7 +63,13 @@ export function summarizeProject(project: Project): string {
       const c = tc.clip;
       const tr = c.transition && tc.index > 0 ? ` transition ${c.transition.type} ${tc.transitionDuration}s` : "";
       const src = tc.asset.type === "video" ? ` src ${c.in}-${+(c.in + tc.sourceDuration).toFixed(3)}s` : "";
-      const extra = [c.speed !== 1 && `speed ${c.speed}x`, c.muted && "muted", c.volume !== 1 && `vol ${c.volume}`, c.fit !== "cover" && `fit ${c.fit}`]
+      const extra = [
+        c.speed !== 1 && `speed ${c.speed}x`,
+        c.muted && "muted",
+        c.volume !== 1 && `vol ${c.volume}`,
+        c.fit !== "cover" && `fit ${c.fit}`,
+        c.keyframes?.focus?.length ? `crop follows ${c.keyframes.focus.length} keyframes` : c.focus && `focus (${c.focus.x}, ${c.focus.y})`,
+      ]
         .filter(Boolean)
         .join(", ");
       lines.push(`  [${tc.index}] ${c.id} ${span(tc.start, tc.end)} ${c.assetId}${src}${tr}${extra ? ` (${extra})` : ""}${fx(c.effects)}${afx(c.audioEffects)}${c.label ? ` "${c.label}"` : ""}`);
@@ -74,7 +80,10 @@ export function summarizeProject(project: Project): string {
     lines.push("", `Layers (${project.layers.length}, bottom to top; text/shapes always draw above media):`);
     for (const l of project.layers) {
       const anim = [l.animationIn && `in:${l.animationIn.type}`, l.animationOut && `out:${l.animationOut.type}`].filter(Boolean).join(" ");
-      const pos = "position" in l ? ` @(${l.position.x},${l.position.y})` : "";
+      const moving = Object.entries(l.keyframes ?? {})
+        .filter(([, keys]) => (keys as unknown[] | undefined)?.length)
+        .map(([prop, keys]) => `${prop} ${(keys as unknown[]).length}`);
+      const pos = `${l.keyframes?.position?.length ? "" : ` @(${l.position.x},${l.position.y})`}${moving.length ? ` keyframes: ${moving.join(", ")}` : ""}`;
       const what =
         l.type === "text"
           ? `text "${l.text.length > 60 ? `${l.text.slice(0, 57)}...` : l.text}" ${l.style.fontFamily} ${l.style.fontSize}px ${l.style.color}`

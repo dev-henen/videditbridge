@@ -88,6 +88,29 @@ Layers are drawn on top of the primary track in array order (later entries are o
 
 **`shape`**: `shape` (`rect`, `roundedRect` or `ellipse`), `size: { width, height }`, `color`, `opacity`, `radius` (corner radius in pixels), `fill` (`false` draws only the outline), `strokeWidth`, `strokeColor`, `shadow` (pixels).
 
+### Keyframes
+
+Any layer can change over time with `keyframes`. Each property is a list of `{ time, value, easing }`, where `time` counts seconds from the layer's start, so the keyframes move with the layer. `easing` (`linear`, `ease-in`, `ease-out`, `ease-in-out`, the default) shapes the move into that keyframe from the previous one. Before the first keyframe a property holds its first value, and after the last its last.
+
+| Property | Value | |
+|---|---|---|
+| `position` | `{ x, y }` | Replaces `position` while set |
+| `scale` | number | Multiplies the layer's size (text: its font size) |
+| `rotation` | degrees | Clockwise |
+| `opacity` | 0..1 | Multiplies the layer's opacity |
+
+```json
+{ "type": "text", "id": "label", "text": "NEW", "start": 2, "duration": 3,
+  "keyframes": {
+    "position": [{ "time": 0, "value": { "x": 0.2, "y": 0.3 } }, { "time": 2, "value": { "x": 0.7, "y": 0.3 } }],
+    "scale": [{ "time": 0, "value": 0.8 }, { "time": 0.5, "value": 1, "easing": "ease-out" }]
+  } }
+```
+
+Entrance and exit animations still play, where the layer is at those moments. Text and shapes are drawn by libass, which can only move in a straight line within one subtitle event, so a keyframed text or shape layer is written as one short event per frame. Media overlays use FFmpeg expressions: overlay position, `rotate`, `geq` for opacity, and a per-frame `scale`.
+
+Clips take `keyframes.focus`, the crop focus over time for `fit: "cover"`, so a 9:16 crop of 16:9 footage can pan with a person (times from the clip's start on the timeline). `reframe` with `follow` makes these from the detected face.
+
 ## Audio
 
 | Field | Default | |

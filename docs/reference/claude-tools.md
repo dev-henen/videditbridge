@@ -2,7 +2,7 @@
 
 # Claude tools
 
-77 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+79 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [detect_faces](#detect_faces), [reframe](#reframe), [fix_transcript](#fix_transcript), [review_edit](#review_edit)
+- **Other**: [detect_faces](#detect_faces), [reframe](#reframe), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [review_edit](#review_edit)
 
 ## Inspect & project
 
@@ -914,11 +914,36 @@ _No parameters._
 
 ### reframe
 
-**edits**. Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip and sets the clip's focus so the main face stays in frame wherever it moves, or stays centered when it moves more than the crop can follow. The crop is fixed for the whole clip.
+**edits**. Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip. By default the crop is fixed: it keeps the main face's whole path in frame, or its usual spot when it moves more than the crop can show. With follow, the crop pans with the person like a camera operator (focus keyframes, smoothed).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `clipIds` | string[] |  |  | Clips to reframe (default: every cover-fit clip whose source shape differs) |
+| `follow` | boolean |  | `false` | Pan the crop with the person over time instead of a fixed crop |
+
+### animate_layer
+
+**edits**. Move, scale, turn or fade a layer over time with keyframes (text, shapes and media overlays): a label that slides along with a product, a logo that grows, a title that drifts. Give a list of keyframes per property; each has a time (timeline seconds, or seconds into the layer with relative), a value, and easing into it from the previous keyframe (default ease-in-out; linear for steady motion). Before the first keyframe a property holds its first value, after the last its last. Pass null to remove a property's keyframes. Entrance and exit animations still play. To follow a person, use follow_face.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `position` | { time, x, y, easing }[] \| null |  |  | Center of the layer (frame fractions) |
+| `scale` | { time, value, easing }[] \| null |  |  | Size multiplier (1 = its own size) |
+| `rotation` | { time, value, easing }[] \| null |  |  | Degrees clockwise |
+| `opacity` | { time, value, easing }[] \| null |  |  | Multiplies the layer's opacity |
+| `relative` | boolean |  | `false` | Times count from the layer's start instead of the timeline |
+
+### follow_face
+
+**edits**. Make a layer (a name label, a callout, an arrow, a sticker) follow a person on screen: it finds the main face in the clips under the layer and sets position keyframes beside it (above, below, left, right, or on it), smoothed so it glides rather than jitters. The layer stays inside the frame. Where no face is found it holds its last spot.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `clipId` | string |  |  | Clip to follow (default: the primary clips under the layer) |
+| `side` | "above" \| "below" \| "left" \| "right" \| "on" |  | `"above"` |  |
+| `gap` | number |  | `0.02` | Space between the face and the layer (frame fraction) (≥ 0, ≤ 0.3) |
 
 ### fix_transcript
 

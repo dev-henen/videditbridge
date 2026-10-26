@@ -355,6 +355,58 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     expect(cuts(await brightness(out("cache-edit.mp4")))).toEqual(expected);
   });
 
+  it("moves layers and pans crops along their keyframes", async () => {
+    const gray = async (file: string, w: number) => {
+      const raw = (await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", file, "-f", "rawvideo", "-pix_fmt", "gray", "-"], { binaryStdout: true })).stdoutBuffer!;
+      const h = raw.length / w;
+      return { at: (x: number, y: number) => raw[y * w + x]!, mean: () => raw.reduce((n, v) => n + v, 0) / raw.length, h };
+    };
+    // Where the white square's center is: the middle of its bright columns on row y.
+    const centerX = (g: Awaited<ReturnType<typeof gray>>, w: number, y: number) => {
+      const xs = Array.from({ length: w }, (_, x) => x).filter((x) => g.at(x, y) > 128);
+      return (xs[0]! + xs[xs.length - 1]!) / 2 / w;
+    };
+    const square = path.join(OUT_DIR, "kf-square.png");
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=white:s=40x40", "-frames:v", "1", square]);
+    const move = [{ time: 0, value: { x: 0.2, y: 0.5 }, easing: "linear" }, { time: 2, value: { x: 0.8, y: 0.5 }, easing: "linear" }];
+    const project = parseProject({
+      settings: { width: 320, height: 180, fps: 30 },
+      assets: [{ type: "color", id: "black", color: "#000000" }, { type: "image", id: "sq", src: square }],
+      clips: [{ id: "c", assetId: "black", duration: 2 }],
+      layers: [
+        { type: "shape", id: "ass", start: 0, duration: 2, size: { width: 0.1, height: 0.15 }, color: "#FFFFFF", keyframes: { position: move.map((k) => ({ ...k, value: { ...k.value, y: 0.25 } })) } },
+        { type: "media", id: "ov", assetId: "sq", start: 0, duration: 2, size: { width: 0.1 }, keyframes: { position: move.map((k) => ({ ...k, value: { ...k.value, y: 0.75 } })) } },
+      ],
+    });
+    for (const t of [0.5, 1.5]) {
+      const file = out(`kf-${t}.png`);
+      await renderFrame(project, t, { output: file });
+      const g = await gray(file, 320);
+      const expected = 0.2 + 0.6 * (t / 2);
+      // Text and shapes (libass) and media overlays (FFmpeg) follow the same path.
+      expect(centerX(g, 320, 45)).toBeCloseTo(expected, 1);
+      expect(centerX(g, 320, 135)).toBeCloseTo(expected, 1);
+    }
+
+    // A crop that pans from the dark left of a gradient to its bright right.
+    const ramp = path.join(OUT_DIR, "kf-ramp.png");
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=640x180,geq=lum='X*255/639':cb=128:cr=128", "-frames:v", "1", ramp]);
+    const pan = parseProject({
+      settings: { width: 180, height: 320, fps: 30 },
+      assets: [{ type: "image", id: "ramp", src: ramp }],
+      clips: [{ id: "c", assetId: "ramp", duration: 2, keyframes: { focus: [{ time: 0, value: { x: 0, y: 0.5 } }, { time: 2, value: { x: 1, y: 0.5 }, easing: "linear" }] } }],
+    });
+    const means: number[] = [];
+    for (const t of [0.1, 1, 1.9]) {
+      const file = out(`kf-pan-${t}.png`);
+      await renderFrame(pan, t, { output: file });
+      means.push((await gray(file, 180)).mean());
+    }
+    expect(means[0]).toBeLessThan(60);
+    expect(means[1]).toBeGreaterThan(100);
+    expect(means[2]).toBeGreaterThan(200);
+  });
+
   it("renders a still frame and a range directly", async () => {
     const session = new EditorSession();
     await executeTool(session, "import_media", { src: fx.talk, id: "talk" });

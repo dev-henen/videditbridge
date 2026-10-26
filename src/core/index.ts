@@ -6,3 +6,4 @@ export * from "./timeline.js";
 export * from "./operations.js";
 export * from "./validate.js";
 export * from "./summary.js";
+export * from "./keyframes.js";

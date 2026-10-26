@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import {
   AnimationSchema,
+  EasingSchema,
   EffectSchema,
   FitSchema,
   PositionSchema,
@@ -13,9 +14,10 @@ import {
 } from "../core/schema.js";
 import * as ops from "../core/operations.js";
 import { computeTimeline, sourceToTimeline } from "../core/timeline.js";
+import { isAnimated, simplifyKeys, smoothKeys } from "../core/keyframes.js";
 import { validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
-import { ASPECT_RATIOS, formatTime, newId, type AspectRatio } from "../core/util.js";
+import { ASPECT_RATIOS, formatTime, newId, round3, type AspectRatio } from "../core/util.js";
 import { ColorSettingsSchema, SubjectRegionSchema, describeColorSettings, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { getTransition, listTransitions } from "../library/transitions/index.js";
@@ -28,7 +30,7 @@ import { parseTranscript } from "../tools/transcript/parse.js";
 import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
 import { replaceWords, vocabularySuggestions } from "../tools/transcript/fix.js";
-import { REVIEW_CHECKS, reviewEdit } from "../tools/review/index.js";
+import { REVIEW_CHECKS, reviewEdit, textLayerBox } from "../tools/review/index.js";
 import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, personRegion, trackFaces, type ClipFaces } from "../tools/vision/index.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
@@ -745,8 +747,12 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "reframe",
     description:
-      "Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip and sets the clip's focus so the main face stays in frame wherever it moves, or stays centered when it moves more than the crop can follow. The crop is fixed for the whole clip.",
-    input: z.object({ clipIds: z.array(z.string()).optional().describe("Clips to reframe (default: every cover-fit clip whose source shape differs)") }),
+      "Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip. " +
+      "By default the crop is fixed: it keeps the main face's whole path in frame, or its usual spot when it moves more than the crop can show. With follow, the crop pans with the person like a camera operator (focus keyframes, smoothed).",
+    input: z.object({
+      clipIds: z.array(z.string()).optional().describe("Clips to reframe (default: every cover-fit clip whose source shape differs)"),
+      follow: z.boolean().default(false).describe("Pan the crop with the person over time instead of a fixed crop"),
+    }),
     mutates: true,
     run: async (s, i, activity) => {
       const out = s.project.settings;
@@ -772,8 +778,22 @@ export const TOOLS: ToolDefinition[] = [
         const k2 = Math.max(out.width / r.source.width, out.height / r.source.height);
         const fits = width * k2 <= out.width && height * k2 <= out.height;
         const focus = focusOn(fits ? main.extent : main.box, r.source, out);
-        p = ops.updateClip(p, id, { focus });
-        lines.push(`${id}: focus (${focus.x}, ${focus.y})${fits ? "" : ", centered on the face's usual spot (it moves more than the crop can follow)"}`);
+        const clip = p.clips.find((c) => c.id === id)!;
+        const { focus: _old, ...otherKeys } = clip.keyframes ?? {};
+        if (!i.follow || main.frames.length < 2) {
+          p = ops.updateClip(p, id, { focus, keyframes: Object.keys(otherKeys).length ? otherKeys : undefined });
+          lines.push(`${id}: focus (${focus.x}, ${focus.y})${fits ? "" : ", centered on the face's usual spot (it moves more than the crop can follow)"}`);
+          continue;
+        }
+        // A camera-like pan: the face's spot at each sample, smoothed, then reduced to a few moves.
+        const samples = main.frames.map((f) => ({
+          time: round3(Math.max(0, (r.clip.asset.type === "video" ? sourceToTimeline(r.clip, f.time) : r.clip.start) - r.clip.start)),
+          value: focusOn(f.face, r.source, out),
+          easing: "linear" as const,
+        }));
+        const keys = simplifyKeys(smoothKeys(samples, 2), 0.02);
+        p = ops.updateClip(p, id, { focus, keyframes: { ...otherKeys, focus: keys } });
+        lines.push(`${id}: the crop follows the face with ${keys.length} keyframes (focus x ${Math.min(...keys.map((k) => k.value.x)).toFixed(2)} to ${Math.max(...keys.map((k) => k.value.x)).toFixed(2)})`);
       }
       return commit(s, p, "reframe", i, `Reframed ${candidates.length} clip${candidates.length > 1 ? "s" : ""}:\n${lines.join("\n")}`);
     },
@@ -882,6 +902,119 @@ export const TOOLS: ToolDefinition[] = [
     input: z.object({ layerId: z.string() }),
     mutates: true,
     run: async (s, i) => commit(s, ops.removeLayer(s.project, i.layerId), "remove_layer", i, `Removed ${i.layerId}.`),
+  }),
+  tool({
+    name: "animate_layer",
+    description:
+      "Move, scale, turn or fade a layer over time with keyframes (text, shapes and media overlays): a label that slides along with a product, a logo that grows, a title that drifts. " +
+      "Give a list of keyframes per property; each has a time (timeline seconds, or seconds into the layer with relative), a value, and easing into it from the previous keyframe (default ease-in-out; linear for steady motion). " +
+      "Before the first keyframe a property holds its first value, after the last its last. Pass null to remove a property's keyframes. Entrance and exit animations still play. To follow a person, use follow_face.",
+    input: z.object({
+      layerId: z.string(),
+      position: z
+        .array(z.object({ time: z.number(), x: z.number(), y: z.number(), easing: EasingSchema.optional() }))
+        .min(1)
+        .nullable()
+        .optional()
+        .describe("Center of the layer (frame fractions)"),
+      scale: z.array(z.object({ time: z.number(), value: z.number().positive().max(20), easing: EasingSchema.optional() })).min(1).nullable().optional().describe("Size multiplier (1 = its own size)"),
+      rotation: z.array(z.object({ time: z.number(), value: z.number().min(-3600).max(3600), easing: EasingSchema.optional() })).min(1).nullable().optional().describe("Degrees clockwise"),
+      opacity: z.array(z.object({ time: z.number(), value: z.number().min(0).max(1), easing: EasingSchema.optional() })).min(1).nullable().optional().describe("Multiplies the layer's opacity"),
+      relative: z.boolean().default(false).describe("Times count from the layer's start instead of the timeline"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const layer = s.project.layers.find((l) => l.id === i.layerId);
+      if (!layer) return { text: `No layer "${i.layerId}".`, isError: true };
+      const keyframes: Record<string, unknown> = { ...(layer.keyframes ?? {}) };
+      const notes: string[] = [];
+      for (const prop of ["position", "scale", "rotation", "opacity"] as const) {
+        const given = i[prop];
+        if (given === undefined) continue;
+        if (given === null) {
+          delete keyframes[prop];
+          notes.push(`${prop} keyframes removed`);
+          continue;
+        }
+        const keys = given.map((k) => {
+          const time = round3(i.relative ? k.time : k.time - layer.start);
+          if (time < -0.001 || time > layer.duration + 0.001)
+            throw new Error(`A ${prop} keyframe at ${k.time}s is outside the layer (${i.relative ? `0-${layer.duration}s into it` : `${layer.start}-${round3(layer.start + layer.duration)}s on the timeline`}).`);
+          const value = "x" in k ? { x: k.x, y: k.y } : k.value;
+          return { time: Math.max(0, time), value, easing: k.easing ?? "ease-in-out" };
+        });
+        keyframes[prop] = keys.sort((a, b) => a.time - b.time);
+        notes.push(`${prop} ${keys.length} keyframe${keys.length > 1 ? "s" : ""} (${keys[0]!.time}-${keys[keys.length - 1]!.time}s into the layer)`);
+      }
+      if (!notes.length) return { text: "Give position, scale, rotation or opacity keyframes (or null to remove them).", isError: true };
+      const p = ops.updateLayer(s.project, i.layerId, { keyframes: Object.keys(keyframes).length ? keyframes : undefined });
+      return commit(s, p, "animate_layer", i, `Animated ${i.layerId}: ${notes.join("; ")}. Check it with render_frame at a few times.`);
+    },
+  }),
+  tool({
+    name: "follow_face",
+    description:
+      "Make a layer (a name label, a callout, an arrow, a sticker) follow a person on screen: it finds the main face in the clips under the layer and sets position keyframes beside it (above, below, left, right, or on it), smoothed so it glides rather than jitters. " +
+      "The layer stays inside the frame. Where no face is found it holds its last spot.",
+    input: z.object({
+      layerId: z.string(),
+      clipId: z.string().optional().describe("Clip to follow (default: the primary clips under the layer)"),
+      side: z.enum(["above", "below", "left", "right", "on"]).default("above"),
+      gap: z.number().min(0).max(0.3).default(0.02).describe("Space between the face and the layer (frame fraction)"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const layer = s.project.layers.find((l) => l.id === i.layerId);
+      if (!layer) return { text: `No layer "${i.layerId}".`, isError: true };
+      const { width: W, height: H } = s.project.settings;
+      const end = layer.start + layer.duration;
+      const clips = i.clipId ? [i.clipId] : computeTimeline(s.project).clips.filter((c) => c.start < end && c.end > layer.start && ["video", "image"].includes(c.asset.type)).map((c) => c.clip.id);
+      if (!clips.length) return { text: "No video clip plays under this layer.", isError: true };
+      // Half the layer's size, so it can sit beside the face and stay inside the frame.
+      let hw: number;
+      let hh: number;
+      if (layer.type === "text") {
+        const b = textLayerBox({ ...layer, keyframes: undefined }, W, H);
+        [hw, hh] = [(b.x1 - b.x0) / 2, (b.y1 - b.y0) / 2];
+      } else if (layer.type === "shape") [hw, hh] = [layer.size.width / 2, layer.size.height / 2];
+      else {
+        const a = s.project.assets.find((x) => x.id === layer.assetId);
+        const aspect = a && "width" in a && a.width && a.height ? a.height / a.width : 9 / 16;
+        [hw, hh] = [layer.size.width / 2, ((layer.size.height ?? (layer.size.width * W * aspect) / H) as number) / 2];
+      }
+      const points: { time: number; x: number; y: number }[] = [];
+      for (const id of clips) {
+        const main = (await clipFaces(s, id, activity)).tracks[0];
+        for (const { time, box: b } of main?.path ?? []) {
+          if (time < layer.start - 0.25 || time > end + 0.25) continue;
+          const [cx, cy] = [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2];
+          const spot =
+            i.side === "above" ? { x: cx, y: b.y0 - i.gap - hh } : i.side === "below" ? { x: cx, y: b.y1 + i.gap + hh } : i.side === "left" ? { x: b.x0 - i.gap - hw, y: cy } : i.side === "right" ? { x: b.x1 + i.gap + hw, y: cy } : { x: cx, y: cy };
+          const clamp = (v: number, half: number) => Math.min(1 - half - 0.02, Math.max(half + 0.02, v));
+          points.push({ time, x: round3(clamp(spot.x, hw)), y: round3(clamp(spot.y, hh)) });
+        }
+      }
+      if (!points.length) return { text: `No face found in ${clips.join(", ")} while ${i.layerId} is on screen.`, isError: true };
+      const samples = points.map((pt) => ({ time: round3(Math.min(layer.duration, Math.max(0, pt.time - layer.start))), value: { x: pt.x, y: pt.y }, easing: "linear" as const }));
+      const keys = simplifyKeys(smoothKeys(samples, 1), 0.008);
+      // A label over an empty frame looks lost: fade it in when the person appears late, out when they leave early.
+      const [first, last] = [keys[0]!.time, keys[keys.length - 1]!.time];
+      const fade = 0.3;
+      const opacity = [
+        ...(first > 0.5 ? [{ time: 0, value: 0, easing: "linear" as const }, { time: round3(Math.max(0, first - fade)), value: 0, easing: "linear" as const }, { time: first, value: 1, easing: "ease-out" as const }] : []),
+        ...(last < layer.duration - 0.5 ? [{ time: last, value: 1, easing: "linear" as const }, { time: round3(Math.min(layer.duration, last + fade)), value: 0, easing: "ease-in" as const }] : []),
+      ];
+      const notes = [first > 0.5 && `fades in at ${round3(layer.start + first)}s when the face appears`, last < layer.duration - 0.5 && `fades out at ${round3(layer.start + last)}s when it leaves`].filter(Boolean);
+      const { opacity: _old, ...others } = layer.keyframes ?? {};
+      const p = ops.updateLayer(s.project, i.layerId, { keyframes: { ...others, position: keys, ...(opacity.length ? { opacity } : {}) } });
+      return commit(
+        s,
+        p,
+        "follow_face",
+        i,
+        `${i.layerId} now follows the face ${i.side === "on" ? "" : `(${i.side} it) `}with ${keys.length} position keyframes from ${points.length} sightings${notes.length ? `; it ${notes.join(" and ")}` : ""}.`,
+      );
+    },
   }),
   tool({
     name: "reorder_layer",
@@ -1917,7 +2050,11 @@ export function describeToolCall(name: string, input: unknown): string {
     case "detect_faces":
       return "Finding faces";
     case "reframe":
-      return "Reframing clips around faces";
+      return i.follow ? "Panning crops to follow faces" : "Reframing clips around faces";
+    case "animate_layer":
+      return `Animating ${quote(i.layerId)}`;
+    case "follow_face":
+      return `Making ${quote(i.layerId)} follow a face`;
     case "generate_voiceover":
       return `Recording voice-over ${quote(i.text, 30)}`;
     case "render_frame":

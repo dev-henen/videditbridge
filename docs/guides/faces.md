@@ -19,7 +19,8 @@ YuNet was as accurate as UltraFace without its false detection, gives five landm
 | Tool | What it does |
 |---|---|
 | `detect_faces` | For each clip: when each person is on screen (timeline times), where the face sits in the edit's frame after the clip's crop, how far it moves, and whether the crop cuts it off. For an asset: the same in source time and source frame |
-| `reframe` | Sets each cover-fit clip's `focus` so the main face stays in frame, for 16:9 footage in a 9:16 video and the like. It keeps the face's whole path in frame when the crop is wide enough, and otherwise centers its usual spot |
+| `reframe` | Sets each cover-fit clip's `focus` so the main face stays in frame, for 16:9 footage in a 9:16 video and the like. It keeps the face's whole path in frame when the crop is wide enough, and otherwise centers its usual spot. With `follow`, the crop pans with the person instead (focus keyframes, smoothed and reduced to a few moves) |
+| `follow_face` | Makes a layer (a name label, a callout, an arrow) follow the main face: position keyframes above, below, beside or on it, kept inside the frame, fading out when the person leaves the shot |
 | `retouch` | `beauty.region: "face"` places the retouch ellipse on the detected face. `backgroundBlur.subject: "person"` and `replaceBackground` follow the person's outline on every frame (see below) |
 | `review_edit` | Reports text and captions over a face, found in the frames it renders without text |
 
@@ -65,7 +66,7 @@ const focus = focusOn(people[0].extent, { width, height }, { width: 1080, height
 
 ## Limits
 
-- The crop, retouch ellipse and blur ellipse are fixed for a clip. Following a moving face needs keyframes (roadmap #2).
+- The crop follows a face with `reframe` `follow`, but the retouch and blur ellipses are fixed for a clip (use the person cutout for blur).
 - Zooms and shakes from effects are not followed when mapping faces into the frame.
 - Faces smaller than about 10 pixels at the model's 640 px input (a person far away in 4K) can be missed, and faces seen from behind or mostly out of frame are not found.
 - The ellipse from `personRegion` is an estimate from the face; use the cutout when the person moves.
