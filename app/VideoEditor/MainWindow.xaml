@@ -336,7 +336,19 @@
 
     <!-- Ask Claude: one box holding the picked item, the request and the send (or stop) button -->
     <Grid Grid.Row="3" Margin="8,6,8,8">
-      <Border Background="{StaticResource Panel2}" CornerRadius="10" BorderThickness="1" BorderBrush="#2E2E2E" Padding="10,6,6,6">
+      <Border CornerRadius="10" BorderThickness="1" Padding="10,6,6,6">
+        <!-- No border until the box has focus; then a blue one -->
+        <Border.Style>
+          <Style TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource Panel}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Style.Triggers>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+              </Trigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
         <StackPanel>
           <!-- What the request is about: pills above the text for the item picked on the timeline and the spot clicked in the frame -->
           <StackPanel x:Name="Pills" Orientation="Horizontal" Margin="0,0,0,4" Visibility="Collapsed">
@@ -360,12 +372,12 @@
           </StackPanel>
           <DockPanel>
             <Button DockPanel.Dock="Right" Style="{StaticResource Primary}" Click="OnStopClaude" ToolTip="Stop Claude" AutomationProperties.Name="Stop Claude"
-                    Width="28" Height="28" Padding="0" Margin="6,0,0,0" VerticalAlignment="Bottom"
+                    Width="22" Height="22" MinWidth="0" MinHeight="0" Padding="0" Margin="6,0,0,2" VerticalAlignment="Bottom"
                     Visibility="{Binding AgentRunning, Converter={StaticResource BoolToVis}}">
-              <TextBlock Style="{StaticResource Icon}" Text="&#xE71A;" FontSize="11" Foreground="{StaticResource OnAccent}"/>
+              <TextBlock Style="{StaticResource Icon}" Text="&#xEE95;" FontSize="9" Foreground="{StaticResource OnAccent}"/>
             </Button>
             <Button DockPanel.Dock="Right" Click="OnAsk" IsEnabled="{Binding CanAsk}" ToolTip="Ask Claude" AutomationProperties.Name="Ask Claude"
-                    Width="28" Height="28" Padding="0" Margin="6,0,0,0" VerticalAlignment="Bottom">
+                    Width="22" Height="22" MinWidth="0" MinHeight="0" Padding="0" Margin="6,0,0,2" VerticalAlignment="Bottom">
               <Button.Style>
                 <Style TargetType="Button" BasedOn="{StaticResource Primary}">
                   <Style.Triggers>
@@ -375,7 +387,7 @@
                   </Style.Triggers>
                 </Style>
               </Button.Style>
-              <TextBlock Style="{StaticResource Icon}" Text="&#xE724;" FontSize="12" Foreground="{StaticResource OnAccent}"/>
+              <TextBlock Style="{StaticResource Icon}" Text="&#xF0AD;" FontSize="11" Foreground="{StaticResource OnAccent}"/>
             </Button>
             <Grid VerticalAlignment="Center">
               <TextBox x:Name="PromptBox" KeyDown="OnPromptKeyDown" IsEnabled="{Binding CanAsk}" Background="Transparent" Padding="0,4" MinHeight="26"/>
