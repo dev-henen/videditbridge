@@ -8,7 +8,7 @@ The biggest gap is that the editor does not know where people and objects are in
 
 | # | Item | Why it matters | Size |
 |---|---|---|---|
-| 1 | [Subject and face detection](#1-subject-and-face-detection) | Positions are guessed today; five features depend on it | Large |
+| 1 | [Subject and face detection](#1-subject-and-face-detection) | Positions are guessed today; five features depend on it | Face detection done; person cutout to come |
 | 2 | [Keyframes](#2-keyframes) | Nothing can move or change over time except preset animations | Large |
 | 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Done, except text over faces (needs #1) |
 | 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes several minutes, and every change re-renders all of it | Segment cache and hardware encoding done |
@@ -35,6 +35,8 @@ Today these positions are guessed from frames:
 | Tracking | Not possible | Graphics follow a moving object (with keyframes, #2) |
 
 Open question: which model is fast and accurate enough on a laptop CPU. Compare two or three before building.
+
+**Status** (2026-10-26): face detection and tracking are done with YuNet, chosen over UltraFace and YOLOS-tiny (see [Faces & reframing](guides/faces.md)). `detect_faces`, `reframe`, `retouch` with `"face"`, and the text-over-face check in `review_edit` use it. Still to do: a person cutout (segmentation) for a real background blur, and crops and ellipses that follow the face over time, which need keyframes (#2).
 
 ## 2. Keyframes
 
@@ -113,7 +115,7 @@ Everything still goes through the same tools, so Claude and manual edits share u
 1. Commit the current work. (Done.)
 2. `review_edit` and `fix_transcript`: small, and they improve every edit right away. (Done.)
 3. Faster rendering (segment cache first): every later step is tested by rendering. (Segment cache and hardware encoding done.)
-4. Subject and face detection.
+4. Subject and face detection. (Faces done; cutout next.)
 5. Keyframes, then tracking on top of detection.
 6. Direct editing in the desktop app.
 7. Templates updated to use everything above.

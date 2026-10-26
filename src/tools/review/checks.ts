@@ -5,6 +5,7 @@ import { buildCaptions, timelineWords } from "../captions/build.js";
 import { sizeScale } from "../captions/ass.js";
 import type { CaptionStyle } from "../../library/caption-styles/index.js";
 import { normalizeWord } from "../transcript/analyze.js";
+import type { Box } from "../vision/faces.js";
 
 export type ReviewCheck = "text" | "safe-zones" | "frames" | "speech" | "audio" | "key";
 
@@ -22,13 +23,7 @@ export interface ReviewIssue {
   message: string;
 }
 
-/** A rectangle in frame fractions (0..1). */
-export interface Box {
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-}
+export type { Box };
 
 const area = (b: Box) => Math.max(0, b.x1 - b.x0) * Math.max(0, b.y1 - b.y0);
 const intersect = (a: Box, b: Box): Box => ({ x0: Math.max(a.x0, b.x0), y0: Math.max(a.y0, b.y0), x1: Math.min(a.x1, b.x1), y1: Math.min(a.y1, b.y1) });

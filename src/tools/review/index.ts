@@ -10,6 +10,7 @@ import { ANALYSIS_RATE, analyzeSamples, decodeAudio } from "../audio/analyze.js"
 import { timelineWords } from "../captions/build.js";
 import { runFfmpeg, runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
 import { probeAssets, renderForAnalysis, type AnalysisFrame } from "../render/render.js";
+import { FaceDetector, type Face } from "../vision/faces.js";
 import {
   REVIEW_CHECKS,
   captionBoxes,
@@ -35,6 +36,8 @@ export interface ReviewOptions extends FfmpegOptions, StructuralOptions {
   cacheDir?: string;
   /** Folder for the measured audio files (the mix and its voice and music parts). */
   workDir: string;
+  /** Detector for the text-over-face check (default: the local one); false skips that check. */
+  faces?: FaceDetector | false;
   /** Integrated loudness to aim for, in LUFS (default -14, right for social video and YouTube). */
   loudnessTarget?: number;
   onProgress?: (progress: number) => void;
@@ -66,6 +69,8 @@ export async function reviewEdit(project: Project, opts: ReviewOptions): Promise
 
   // Frames to measure, rendered without text and captions so the backdrop behind them shows.
   const samples: { time: number; measure: (f: AnalysisFrame & { width: number; height: number }) => void }[] = [];
+  const faceChecks: { time: number; box: Box; target: string; start: number; end: number; what: string }[] = [];
+  const detector = opts.faces === false ? undefined : (opts.faces ?? new FaceDetector({ ffmpegPath: opts.ffmpegPath }));
   if (checks.has("text")) {
     for (const l of p.layers) {
       if (l.type !== "text" || !l.text.trim() || textBackdrop(l.style)) continue;
@@ -75,6 +80,16 @@ export async function reviewEdit(project: Project, opts: ReviewOptions): Promise
       samples.push({ time, measure: (f) => readability(f, l, textLayerBox(l, W, H), issues) });
     }
     const caps = captionBoxes(p, timeline);
+    // Text over a face, readable or not: three moments of each text layer, and captions spread over the video.
+    for (const l of p.layers) {
+      if (l.type !== "text" || !l.text.trim()) continue;
+      for (const k of [0.25, 0.5, 0.75]) faceChecks.push({ time: l.start + l.duration * k, box: textLayerBox(l, W, H), target: l.id, start: l.start, end: l.start + l.duration, what: `Text "${l.text.length > 40 ? `${l.text.slice(0, 39)}…` : l.text}"` });
+    }
+    const spread = caps ? Math.min(8, caps.boxes.length) : 0;
+    for (let k = 0; k < spread; k++) {
+      const c = caps!.boxes[Math.floor(((k + 0.5) * caps!.boxes.length) / spread)]!;
+      faceChecks.push({ time: (c.start + c.end) / 2, box: c.box, target: "captions", start: c.start, end: c.end, what: `The caption "${c.text}"` });
+    }
     if (caps && !textBackdrop(captionTextStyle(caps.style, W, H))) {
       const fill = colorLuminance(caps.style.color);
       const n = Math.min(6, caps.boxes.length);
@@ -112,12 +127,13 @@ export async function reviewEdit(project: Project, opts: ReviewOptions): Promise
   if ((checks.has("audio") || checks.has("speech")) && !audible) notes.push("The edit has no sound, so audio and caption sync were not checked.");
 
   let audioFiles: { mix: string; voice: string; music: string } | undefined;
-  if (samples.length || wantAudio) {
+  if (!detector) faceChecks.length = 0;
+  if (samples.length || faceChecks.length || wantAudio) {
     await mkdir(opts.workDir, { recursive: true });
     audioFiles = wantAudio ? { mix: path.join(opts.workDir, "review-mix.wav"), voice: path.join(opts.workDir, "review-voice.wav"), music: path.join(opts.workDir, "review-music.wav") } : undefined;
     const backdrop: Project = { ...p, layers: p.layers.filter((l) => l.type !== "text"), ...(p.captions ? { captions: { ...p.captions, enabled: false } } : {}) };
     const r = await renderForAnalysis(backdrop, {
-      framesAt: samples.map((s) => s.time),
+      framesAt: [...samples.map((s) => s.time), ...faceChecks.map((c) => c.time)],
       audio: audioFiles,
       scale: Math.min(1, 360 / Math.min(W, H)),
       probe: false,
@@ -127,9 +143,23 @@ export async function reviewEdit(project: Project, opts: ReviewOptions): Promise
       ffmpegPath: opts.ffmpegPath,
       onProgress: (x) => opts.onProgress?.(x * 0.6),
     });
+    const nearest = (time: number) => r.frames.reduce<AnalysisFrame | undefined>((best, f) => (!best || Math.abs(f.time - time) < Math.abs(best.time - time) ? f : best), undefined);
     for (const s of samples) {
-      const frame = r.frames.reduce<AnalysisFrame | undefined>((best, f) => (!best || Math.abs(f.time - s.time) < Math.abs(best.time - s.time) ? f : best), undefined);
+      const frame = nearest(s.time);
       if (frame) s.measure({ ...frame, width: r.width, height: r.height });
+    }
+    if (faceChecks.length && detector) {
+      try {
+        const found = new Map<AnalysisFrame, Face[]>();
+        for (const c of faceChecks) {
+          const frame = nearest(c.time);
+          if (!frame) continue;
+          if (!found.has(frame)) found.set(frame, await detector.detectRgb(frame.rgb, r.width, r.height));
+          textOverFaces(c, frame.time, found.get(frame)!, issues);
+        }
+      } catch (e) {
+        notes.push(`Text over faces was not checked: ${(e as Error).message}`);
+      }
     }
   }
 
@@ -143,7 +173,6 @@ export async function reviewEdit(project: Project, opts: ReviewOptions): Promise
   opts.onProgress?.(0.9);
   if (checks.has("key")) await keyChecks(p, timeline, opts, issues);
   opts.onProgress?.(1);
-  if (checks.has("text") && p.layers.some((l) => l.type === "text")) notes.push("Text over faces is not checked: there is no face detection yet. Look at the frames for that.");
   issues.sort((a, b) => a.start - b.start || (a.severity === b.severity ? 0 : a.severity === "problem" ? -1 : 1));
   return { issues, ...(loudness ? { loudness } : {}), notes };
 }
@@ -207,6 +236,21 @@ function readability(f: AnalysisFrame & { width: number; height: number }, l: Te
     end: l.start + l.duration,
     target: l.id,
     message: `Text "${text}" ${severity === "problem" ? "is hard to read" : "has low contrast"} at ${t(f.time)}: ${contrastFinding(r)}. Add an outline (style.outlineWidth 3+), a background box (style.background), a darker shape behind it, or change its color.`,
+  });
+}
+
+/** Report text or a caption covering a face (once per layer, and once for all captions). */
+function textOverFaces(c: { box: Box; target: string; start: number; end: number; what: string }, time: number, faces: Face[], issues: ReviewIssue[]): void {
+  const area = (b: Box) => Math.max(0, b.x1 - b.x0) * Math.max(0, b.y1 - b.y0);
+  const covered = Math.max(0, ...faces.map((f) => area({ x0: Math.max(f.x0, c.box.x0), y0: Math.max(f.y0, c.box.y0), x1: Math.min(f.x1, c.box.x1), y1: Math.min(f.y1, c.box.y1) }) / Math.max(area(f), 1e-9)));
+  if (covered < 0.08 || issues.some((i) => i.target === c.target && /covers|touches/.test(i.message))) return;
+  issues.push({
+    check: "text",
+    severity: covered >= 0.25 ? "problem" : "warning",
+    start: round3(c.start),
+    end: round3(c.end),
+    target: c.target,
+    message: `${c.what} ${covered >= 0.25 ? "covers" : "touches"} a face at ${t(time)} (${Math.round(covered * 100)}% of it). Move it into empty space: detect_faces shows where faces are.`,
   });
 }
 

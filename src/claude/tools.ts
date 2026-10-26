@@ -29,6 +29,7 @@ import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
 import { replaceWords, vocabularySuggestions } from "../tools/transcript/fix.js";
 import { REVIEW_CHECKS, reviewEdit } from "../tools/review/index.js";
+import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, personRegion, trackFaces, type ClipFaces } from "../tools/vision/index.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
@@ -258,6 +259,19 @@ async function transitionSounds(s: EditorSession, p: Project, clipIds: string[],
   }
   return { project, placed };
 }
+
+/** The local face detector, reporting the first-use model download on the activity. */
+function faceDetector(s: EditorSession, activity?: ActivityHandle): FaceDetector {
+  return new FaceDetector({ ffmpegPath: s.options.ffmpegPath, onDownload: (p) => activity?.progress(p * 0.2) });
+}
+
+/** Faces in a primary clip, mapped into the edit's frame (see detectClipFaces). */
+function clipFaces(s: EditorSession, clipId: string, activity?: ActivityHandle): Promise<ClipFaces> {
+  return detectClipFaces(s.project, clipId, faceDetector(s, activity), { baseDir: s.options.baseDir });
+}
+
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+const fmtBox = (b: { x0: number; y0: number; x1: number; y1: number }) => `x ${b.x0.toFixed(2)}-${b.x1.toFixed(2)}, y ${b.y0.toFixed(2)}-${b.y1.toFixed(2)}`;
 
 /** Sound that matches a moment effect, for add_moment_effect with sound: true. */
 const MOMENT_SOUNDS: Record<string, string> = { zoomPunch: "hit", impactShake: "impact", flashHits: "hit", smoothZoom: "whoosh" };
@@ -580,7 +594,8 @@ export const TOOLS: ToolDefinition[] = [
     name: "retouch",
     description:
       "Retouch people in a clip, a media layer, every clip, or the whole video. beauty: skin smoothing that keeps edges sharp, plus brighten and warmth, on the whole frame or only inside a face region. " +
-      "backgroundBlur: portrait mode, keeping an ellipse around the subject sharp and blurring the rest. There is no automatic subject detection, so look at the shot with render_frame first, set the region or subject ellipse (center x, y and width, height as frame fractions) around the person, then check the result with render_frame. " +
+      "backgroundBlur: portrait mode, keeping an ellipse around the subject sharp and blurring the rest. " +
+      'Pass region "face" or subject "face" to place the ellipse automatically from the faces found in each clip (covering where the face moves during the clip), or give an ellipse yourself (center x, y and width, height as frame fractions). The ellipse stays put for the whole clip, so check the result with render_frame. ' +
       "Settings merge into the target's existing retouch, so you can tweak one value at a time. Pass false to remove one.",
     input: z.object({
       target: z.string().describe('A clip id, a media layer id, "all-clips", or "global" (whole video)'),
@@ -591,7 +606,10 @@ export const TOOLS: ToolDefinition[] = [
             smooth: z.number().min(0).max(100).optional().describe("Skin smoothing 0-100 (default 50; 30 subtle, 70 strong)"),
             brighten: z.number().min(0).max(100).optional().describe("Brighten skin 0-100 (default 15)"),
             warmth: z.number().min(-100).max(100).optional().describe("Warmth -100..100 (default 10)"),
-            region: SubjectRegionSchema.nullable().optional().describe("Face ellipse to limit the retouch to; null for the whole frame"),
+            region: z
+              .union([SubjectRegionSchema, z.literal("face"), z.null()])
+              .optional()
+              .describe('Face ellipse to limit the retouch to; "face" to find it; null for the whole frame'),
           }),
         ])
         .optional(),
@@ -600,7 +618,10 @@ export const TOOLS: ToolDefinition[] = [
           z.literal(false),
           z.object({
             amount: z.number().min(1).max(100).optional().describe("Blur strength 1-100 (default 25)"),
-            subject: SubjectRegionSchema.optional().describe("Ellipse around the subject that stays sharp"),
+            subject: z
+              .union([SubjectRegionSchema, z.literal("face")])
+              .optional()
+              .describe('Ellipse around the subject that stays sharp; "face" to place it around the person found in the clip'),
             feather: z.number().min(0.02).max(1).optional().describe("Edge softness (default 0.35)"),
             dim: z.number().min(0).max(1).optional().describe("Darken the background 0-1 (default 0)"),
           }),
@@ -608,12 +629,24 @@ export const TOOLS: ToolDefinition[] = [
         .optional(),
     }),
     mutates: true,
-    run: async (s, i) => {
+    run: async (s, i, activity) => {
       if (i.beauty === undefined && i.backgroundBlur === undefined) return { text: "Give beauty and/or backgroundBlur settings.", isError: true };
       const targets = i.target === "all-clips" ? s.project.clips.map((c) => c.id) : [i.target];
       if (!targets.length) return { text: "There are no clips to retouch.", isError: true };
       let p = s.project;
       const done: string[] = [];
+      const notes: string[] = [];
+      // Ellipses placed from detected faces: the main person in each clip, wherever the face goes.
+      const auto = async (target: string, kind: "face" | "person") => {
+        if (!s.project.clips.some((c) => c.id === target)) throw new Error(`Automatic placement works on primary clips; "${target}" is not one. Give an ellipse instead.`);
+        const found = await clipFaces(s, target, activity);
+        const main = found.tracks[0];
+        const box = main?.frameExtent ?? main?.frameBox;
+        if (!box) return undefined;
+        const region = kind === "face" ? faceRegion(box) : personRegion(box);
+        notes.push(`${target}: ${kind} ellipse at (${region.x}, ${region.y}), ${region.width} x ${region.height}${found.tracks.length > 1 ? ` (main of ${found.tracks.length} faces)` : ""}`);
+        return region;
+      };
       for (const [type, settings] of [["beauty", i.beauty], ["backgroundBlur", i.backgroundBlur]] as const) {
         if (settings === undefined) continue;
         for (const target of targets) {
@@ -629,12 +662,101 @@ export const TOOLS: ToolDefinition[] = [
           }
           const merged: Record<string, unknown> = { ...(current ?? {}), ...settings };
           if (merged.region === null) delete merged.region;
+          for (const [key, kind] of [["region", "face"], ["subject", "person"]] as const) {
+            if (merged[key] !== "face") continue;
+            const region = await auto(target, kind);
+            if (region) merged[key] = region;
+            else {
+              notes.push(`${target}: no face found, so ${type} was left ${current ? "as it was" : "off"}`);
+              merged.skip = true;
+            }
+          }
+          if (merged.skip) continue;
           // Validate (and fill defaults) now so a bad value fails the call instead of the render.
           p = ops.setEffectParams(p, target, type, getEffect(type)!.params.parse(merged) as Record<string, unknown>);
         }
         done.push(settings === false ? `removed ${type}` : type);
       }
-      return commit(s, p, "retouch", i, `Retouch on ${i.target}: ${done.join(", ")}. Check it with render_frame.`);
+      return commit(s, p, "retouch", i, `Retouch on ${i.target}: ${done.join(", ")}.${notes.length ? `\n${notes.join("\n")}` : ""}\nCheck it with render_frame.`);
+    },
+  }),
+  tool({
+    name: "detect_faces",
+    description:
+      "Find and follow the faces in primary clips (or in a source asset), on this machine (a small model downloads once). For each person: when they are on screen (timeline times), where the face sits in the edit's frame after the clip's crop, and how far it moves. " +
+      "Use it to place titles and callouts away from faces, to check what a 9:16 crop keeps (then reframe), and for retouch with region or subject \"face\". Zooms and shakes from effects are not followed.",
+    input: z.object({
+      target: z.string().optional().describe("Clip id, asset id (source times and source frame), or omit for every primary clip"),
+      fps: z.number().min(0.5).max(10).default(2).describe("Frames checked per second"),
+    }),
+    mutates: false,
+    run: async (s, i, activity) => {
+      const asset = i.target ? s.project.assets.find((a) => a.id === i.target) : undefined;
+      if (asset) {
+        if (asset.type !== "video" && asset.type !== "image") return { text: `"${asset.id}" is ${asset.type === "audio" ? "audio" : `a ${asset.type}`}, which has no faces.`, isError: true };
+        const r = await detectFacesCached(faceDetector(s, activity), s.resolve(asset.src), undefined, i.fps);
+        const tracks = trackFaces(r.frames);
+        const lines = tracks.map((t) => `face ${t.id}: source ${formatTime(t.start)}-${formatTime(t.end)}, usually at ${fmtBox(t.box)} (${pct(t.box.x1 - t.box.x0)} of the width), moves within ${fmtBox(t.extent)}`);
+        return ok(`${asset.id} (${r.width}x${r.height}, source frame fractions): ${tracks.length ? `${tracks.length} face${tracks.length > 1 ? "s" : ""}\n${lines.join("\n")}` : "no faces found"}`, { ...r, tracks });
+      }
+      const ids = i.target ? [i.target] : s.project.clips.filter((c) => ["video", "image"].includes(s.project.assets.find((a) => a.id === c.assetId)?.type ?? "")).map((c) => c.id);
+      if (!ids.length) return { text: "There are no video or image clips to look at.", isError: true };
+      const lines: string[] = [];
+      const data: unknown[] = [];
+      for (const [k, id] of ids.entries()) {
+        const r = await clipFaces(s, id, activity);
+        activity?.progress(0.2 + (0.8 * (k + 1)) / ids.length);
+        data.push({ clipId: id, source: r.source, tracks: r.tracks });
+        const head = `${id} (timeline ${formatTime(r.clip.start)}-${formatTime(r.clip.end)})`;
+        if (!r.tracks.length) {
+          lines.push(`${head}: no faces`);
+          continue;
+        }
+        lines.push(`${head}: ${r.tracks.length} face${r.tracks.length > 1 ? "s" : ""}`);
+        for (const t of r.tracks) {
+          const where = t.frameBox ? `at ${fmtBox(t.frameBox)} of the frame (${pct(t.frameBox.x1 - t.frameBox.x0)} of the width)` : "cropped out of the frame";
+          const moves = t.frameExtent ? `, moves within ${fmtBox(t.frameExtent)}` : "";
+          const cut = t.frameExtent && (t.frameExtent.x0 < 0 || t.frameExtent.x1 > 1 || t.frameExtent.y0 < 0 || t.frameExtent.y1 > 1) ? ". Partly outside the crop: reframe it" : "";
+          lines.push(`  face ${t.id} ${formatTime(t.timelineStart)}-${formatTime(t.timelineEnd)} ${where}${moves}${cut}`);
+        }
+      }
+      return ok(`Faces in the edit's frame (fractions; x 0 left, y 0 top):\n${lines.join("\n")}`, data);
+    },
+  }),
+  tool({
+    name: "reframe",
+    description:
+      "Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip and sets the clip's focus so the main face stays in frame wherever it moves, or stays centered when it moves more than the crop can follow. The crop is fixed for the whole clip.",
+    input: z.object({ clipIds: z.array(z.string()).optional().describe("Clips to reframe (default: every cover-fit clip whose source shape differs)") }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const out = s.project.settings;
+      const ratio = out.width / out.height;
+      const candidates = i.clipIds ?? s.project.clips.filter((c) => {
+        const a = s.project.assets.find((x) => x.id === c.assetId);
+        return c.fit === "cover" && (a?.type === "video" || a?.type === "image") && (!a.width || !a.height || Math.abs(a.width / a.height - ratio) > 0.02);
+      }).map((c) => c.id);
+      if (!candidates.length) return ok("No clips need reframing: every cover-fit clip already has the video's shape.");
+      let p = s.project;
+      const lines: string[] = [];
+      for (const [k, id] of candidates.entries()) {
+        const r = await clipFaces(s, id, activity);
+        activity?.progress(0.2 + (0.8 * (k + 1)) / candidates.length);
+        const main = r.tracks[0];
+        if (!main) {
+          lines.push(`${id}: no face found, crop left as it was`);
+          continue;
+        }
+        // Keep the whole path of the face in frame when the crop is wide enough, else its usual spot.
+        const width = (main.extent.x1 - main.extent.x0) * r.source.width;
+        const height = (main.extent.y1 - main.extent.y0) * r.source.height;
+        const k2 = Math.max(out.width / r.source.width, out.height / r.source.height);
+        const fits = width * k2 <= out.width && height * k2 <= out.height;
+        const focus = focusOn(fits ? main.extent : main.box, r.source, out);
+        p = ops.updateClip(p, id, { focus });
+        lines.push(`${id}: focus (${focus.x}, ${focus.y})${fits ? "" : ", centered on the face's usual spot (it moves more than the crop can follow)"}`);
+      }
+      return commit(s, p, "reframe", i, `Reframed ${candidates.length} clip${candidates.length > 1 ? "s" : ""}:\n${lines.join("\n")}`);
     },
   }),
   tool({
@@ -1773,6 +1895,10 @@ export function describeToolCall(name: string, input: unknown): string {
       return "Correcting the transcript";
     case "review_edit":
       return "Checking the edit for problems";
+    case "detect_faces":
+      return "Finding faces";
+    case "reframe":
+      return "Reframing clips around faces";
     case "generate_voiceover":
       return `Recording voice-over ${quote(i.text, 30)}`;
     case "render_frame":

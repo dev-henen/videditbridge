@@ -24,7 +24,7 @@ Without a `region` the whole frame is retouched. That is usually fine for talkin
 { "type": "backgroundBlur", "params": { "amount": 30, "subject": { "x": 0.5, "y": 0.45, "width": 0.55, "height": 0.8 }, "feather": 0.35 } }
 ```
 
-There is no automatic face or person detection. You place the region, and it stays fixed for the clip. With Claude, the workflow is: `render_frame` to see where the person is, `retouch` with a region around them, then `render_frame` again to check. Split the clip if the subject moves a lot. `dim` darkens the background as well, which helps text and captions stand out.
+With the `retouch` tool, `region: "face"` and `subject: "face"` place the ellipses for you from the faces found in each clip (see [Faces & reframing](faces.md)): the face ellipse covers everywhere the main face goes during the clip, and the subject ellipse is estimated from the face down to the shoulders and the bottom of the frame. You can also give the ellipse yourself. Either way it stays fixed for the clip, so check with `render_frame`, and split the clip if the person moves a lot. `dim` darkens the background as well, which helps text and captions stand out.
 
 The `retouch` tool merges settings into what is already on the target, so `retouch({ target, beauty: { smooth: 30 } })` changes only the smoothing. Pass `false` to remove an effect, and `region: null` to go back to the whole frame. Target `"all-clips"` to retouch every clip at once.
 

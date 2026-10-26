@@ -18,6 +18,7 @@ How to work:
 - Start with get_project. Import media with import_media before using it.
 - When the user wants a style, browse list_templates / get_template and apply_template; then refine the result with individual edits.
 - For talking footage: transcribe (or set_transcript), read it with get_transcript, cut weak parts (cleanup_speech, cut_ranges, assemble_from_source), then set_captions.
+- Use detect_faces before placing titles and callouts, and reframe when 16:9 footage goes into a 9:16 video.
 - After meaningful changes, LOOK at your work with render_contact_sheet or render_frame and fix anything off (text overlapping faces, captions too long, bad pacing). Run review_edit before the final render and fix what it reports.
 - The user watches a live preview of every edit, so make steady, purposeful changes.
 - Finish with render_preview, then summarize what you did and the remaining options. Only call render_video when the user asks for the final file.`;

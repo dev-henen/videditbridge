@@ -2,7 +2,7 @@
 
 # Claude tools
 
-75 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+77 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [fix_transcript](#fix_transcript), [review_edit](#review_edit)
+- **Other**: [detect_faces](#detect_faces), [reframe](#reframe), [fix_transcript](#fix_transcript), [review_edit](#review_edit)
 
 ## Inspect & project
 
@@ -267,7 +267,7 @@ _No parameters._
 
 ### retouch
 
-**edits**. Retouch people in a clip, a media layer, every clip, or the whole video. beauty: skin smoothing that keeps edges sharp, plus brighten and warmth, on the whole frame or only inside a face region. backgroundBlur: portrait mode, keeping an ellipse around the subject sharp and blurring the rest. There is no automatic subject detection, so look at the shot with render_frame first, set the region or subject ellipse (center x, y and width, height as frame fractions) around the person, then check the result with render_frame. Settings merge into the target's existing retouch, so you can tweak one value at a time. Pass false to remove one.
+**edits**. Retouch people in a clip, a media layer, every clip, or the whole video. beauty: skin smoothing that keeps edges sharp, plus brighten and warmth, on the whole frame or only inside a face region. backgroundBlur: portrait mode, keeping an ellipse around the subject sharp and blurring the rest. Pass region "face" or subject "face" to place the ellipse automatically from the faces found in each clip (covering where the face moves during the clip), or give an ellipse yourself (center x, y and width, height as frame fractions). The ellipse stays put for the whole clip, so check the result with render_frame. Settings merge into the target's existing retouch, so you can tweak one value at a time. Pass false to remove one.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -901,6 +901,23 @@ _No parameters._
 | `output` | string | yes |  | Output path, e.g. out/final.mp4 |
 
 ## Other
+
+### detect_faces
+
+**read-only**. Find and follow the faces in primary clips (or in a source asset), on this machine (a small model downloads once). For each person: when they are on screen (timeline times), where the face sits in the edit's frame after the clip's crop, and how far it moves. Use it to place titles and callouts away from faces, to check what a 9:16 crop keeps (then reframe), and for retouch with region or subject "face". Zooms and shakes from effects are not followed.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string |  |  | Clip id, asset id (source times and source frame), or omit for every primary clip |
+| `fps` | number |  | `2` | Frames checked per second (≥ 0.5, ≤ 10) |
+
+### reframe
+
+**edits**. Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip and sets the clip's focus so the main face stays in frame wherever it moves, or stays centered when it moves more than the crop can follow. The crop is fixed for the whole clip.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipIds` | string[] |  |  | Clips to reframe (default: every cover-fit clip whose source shape differs) |
 
 ### fix_transcript
 

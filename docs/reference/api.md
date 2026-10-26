@@ -54,6 +54,7 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 | Video analysis | `detectScenes` |
 | Render | `render`, `renderFrame`, `renderContactSheet`, `renderForAnalysis`, `compileProject`, `renderSize`, `planSegments`, `pruneCache`, `detectHardwareEncoder`, `hardwareEncoderArgs`, `probe`, `probeAssets`, `runFfmpeg`, `resolveFfmpegPath` |
 | Review | `reviewEdit` (all checks), `structuralChecks` (project-only checks), `measureLoudness`, `scanFootage`, `keyResidue`, `backdropContrast`, `textLayerBox`, `captionBoxes` |
+| Vision | `FaceDetector` (`detectFile`, `detectRgb`), `trackFaces`, `detectClipFaces`, `detectFacesCached`, `decodeYunet`, `sourceToFrame`, `focusOn`, `faceRegion`, `personRegion` |
 | Preview | `startPreviewServer`, `previewState` |
 
 ## `ai-video-editor/claude`

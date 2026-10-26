@@ -7,3 +7,4 @@ export * from "./video/index.js";
 export * from "./render/index.js";
 export * from "./preview/index.js";
 export * from "./review/index.js";
+export * from "./vision/index.js";

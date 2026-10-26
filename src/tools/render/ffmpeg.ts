@@ -119,10 +119,14 @@ export function parseProbeOutput(stderr: string): ProbeResult {
   const isImageContainer = /Input #0, (png_pipe|image2|jpeg_pipe|webp_pipe|bmp_pipe|tiff_pipe|svg_pipe)/.test(stderr);
   const duration = dur ? Number(dur[1]) * 3600 + Number(dur[2]) * 60 + Number(dur[3]) : undefined;
   const isImage = isImageContainer || (imageCodec && (duration === undefined || duration <= 0.05) && !hasAudio);
+  // Phone video is often stored sideways with a rotation flag; ffmpeg turns it upright when
+  // decoding, so report the size as it is shown.
+  const turned = /displaymatrix: rotation of -?(90|270)(\.0+)? degrees/.test(stderr);
+  const [w, h] = size ? [Number(size[1]), Number(size[2])] : [undefined, undefined];
   return {
     duration: isImage ? undefined : duration,
-    width: size ? Number(size[1]) : undefined,
-    height: size ? Number(size[2]) : undefined,
+    width: turned ? h : w,
+    height: turned ? w : h,
     fps: fps ? Number(fps[1]) : undefined,
     hasVideo: !!videoLine && !isImage,
     hasAudio,
