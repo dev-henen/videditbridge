@@ -1,9 +1,9 @@
 import path from "node:path";
 import type { Asset, Clip, Effect, Fit, Keyframe, MediaLayer, Position, Project } from "../../core/schema.js";
 import { numberExpr, positionExpr } from "../../core/keyframes.js";
-import { computeTimeline, type Timeline, type TimedClip } from "../../core/timeline.js";
+import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
-import { effectsToFilter, escapeFilterPath, perClipGlobalEffects, usesPersonMask, type EffectContext } from "../../library/effects/index.js";
+import { effectStates, effectsToFilter, escapeFilterPath, perClipGlobalEffects, usesPersonMask, type EffectContext } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
 import { overlayMotion } from "../../library/animations/index.js";
@@ -49,6 +49,8 @@ export interface CompileOptions {
    * gray, upright, at the source's shape, in source time from the clip's in point.
    */
   masks?: Record<string, string>;
+  /** The FFmpeg build has the rubberband filter, used for speed ramps' sound (see rampTempo). */
+  rubberband?: boolean;
   /** Encode the video on the graphics card instead of with x264, at matching quality. */
   hardwareEncoder?: HardwareEncoder;
 }
@@ -78,6 +80,41 @@ export const SEGMENT_CODEC = ["-c:v", "libx264", "-preset", "ultrafast", "-crf",
 const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+
+/**
+ * A speed ramp as a setpts expression of the input time T (source seconds from the in point): the
+ * clip's time map in straight pieces, every 0.1 s of source (at most 150 pieces).
+ */
+function rampPts(map: SpeedMap, sourceDuration: number): string {
+  const n = Math.min(150, Math.max(8, Math.ceil(sourceDuration / 0.1)));
+  const u = (i: number) => (sourceDuration * i) / n;
+  const piece = (i: number) => {
+    const slope = (map.toTimeline(u(i + 1)) - map.toTimeline(u(i))) / (u(i + 1) - u(i));
+    return `${round3(map.toTimeline(u(i)))}+(T-${round3(u(i))})*${Math.round(slope * 1e5) / 1e5}`;
+  };
+  let expr = piece(n - 1);
+  for (let i = n - 2; i >= 0; i--) expr = `if(lt(T,${round3(u(i + 1))}),${piece(i)},${expr})`;
+  return expr;
+}
+
+/**
+ * Commands that change the tempo along a speed ramp (asendcmd file, source time), every 0.1 s.
+ * rubberband follows changing tempos closely; atempo loses a few milliseconds at each change (a
+ * ramp comes out about 2% short), and below 0.5x two of them share the change, each taking the square root.
+ */
+function rampTempo(map: SpeedMap, sourceDuration: number, name: string, rubberband: boolean): { filters: string[]; commands: string } {
+  if (rubberband) {
+    const lines: string[] = [];
+    for (let u = 0; u < sourceDuration; u = round3(u + 0.1)) lines.push(`${u} [enter] rubberband@${name} tempo ${round3(map.speedAt(u + 0.05))};`);
+    return { filters: [`rubberband@${name}=tempo=${round3(map.speedAt(0.05))}`], commands: lines.join("\n") };
+  }
+  const twice = map.speedAt(0) < 0.5 || Array.from({ length: 41 }, (_, i) => map.speedAt((sourceDuration * i) / 40)).some((v) => v < 0.5);
+  const tempo = (v: number) => round3(twice ? Math.sqrt(v) : v);
+  const targets = twice ? [`atempo@${name}a`, `atempo@${name}b`] : [`atempo@${name}a`];
+  const lines: string[] = [];
+  for (let u = 0; u < sourceDuration; u = round3(u + 0.1)) lines.push(`${u} [enter] ${targets.map((t) => `${t} tempo ${tempo(map.speedAt(u + 0.05))}`).join(", ")};`);
+  return { filters: targets.map((t) => `${t}=tempo=${tempo(map.speedAt(0.05))}`), commands: lines.join("\n") };
+}
 const previewScale = (scale?: number) => (scale && scale > 0 && scale !== 1 ? scale : 1);
 
 /** Frame size of a render at a preview scale (even numbers, as the encoder needs). */
@@ -116,6 +153,8 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   const { width: W, height: H } = renderSize(project, opts.scale);
   const bg = toFfmpegColor(project.settings.backgroundColor);
   const g = new GraphBuilder();
+  // Support files written next to the graph (subtitles, speed-ramp commands).
+  const files: CompiledRender["files"] = [];
   const baseDir = opts.baseDir ?? process.cwd();
   const resolveSrc = (src: string) => (/^[a-z]+:\/\//i.test(src) ? src : path.resolve(baseDir, src));
   const total = timeline.duration;
@@ -231,11 +270,14 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     } else {
       const raw = g.label("raw");
       const speed = asset.type === "video" ? clip.speed : 1;
-      const timing = (input: string) => `[${input}]${chain(["setpts=PTS-STARTPTS", speed !== 1 && `setpts=PTS/${speed}`, `fps=${F}`])}`;
+      // A speed ramp maps each frame's source time through the clip's time map.
+      const retime = tc.speedMap ? `setpts='(${rampPts(tc.speedMap, tc.sourceDuration)})/TB'` : speed !== 1 && `setpts=PTS/${speed}`;
+      const timing = (input: string) => `[${input}]${chain(["setpts=PTS-STARTPTS", retime, `fps=${F}`])}`;
       g.add(`${timing(`${k}:v`)}[${raw}]`);
       const fitted = fit(raw, clip.fit, W, H, false, clip.focus, clip.keyframes?.focus);
       // The person cutout goes through the same timing and fit as the picture, so it lines up.
-      const maskUses = clip.effects.filter(usesPersonMask).length;
+      // A ramped effect runs once per state, and each run takes its own copy of the cutout.
+      const maskUses = clip.effects.reduce((n, e) => n + (usesPersonMask(e) ? effectStates(e).length : 0), 0);
       const maskLabels: string[] = [];
       if (maskUses && opts.masks?.[clip.id]) {
         const mraw = g.label("mraw");
@@ -259,10 +301,18 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     }
     const a = g.label("a");
     if (hasAudio) {
+      // Speed ramps change the tempo as they go (pitch kept), driven by a command file.
+      let tempo = atempoChain(clip.speed);
+      if (tc.speedMap) {
+        const ramp = rampTempo(tc.speedMap, tc.sourceDuration, `ramp${tc.index}`, !!opts.rubberband);
+        const file = `ramp${tc.index}.cmd`;
+        files.push({ name: file, content: ramp.commands });
+        tempo = [`asendcmd=f=${file}`, ...ramp.filters];
+      }
       g.add(
         `[${k}:a]${chain([
           "asetpts=PTS-STARTPTS",
-          ...atempoChain(clip.speed),
+          ...tempo,
           ...audioEffectsToFilter(clip.audioEffects),
           clip.volume !== 1 && `volume=${clip.volume}`,
           clip.fadeIn && `afade=t=in:st=0:d=${clip.fadeIn}`,
@@ -432,7 +482,6 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       ev.text = ev.text.replace(/^\{/, "{\\q2");
     }
   }
-  const files: CompiledRender["files"] = [];
   if (!ass.isEmpty) {
     files.push({ name: ASS_FILE, content: ass.toString() });
     const out = g.label("txt");

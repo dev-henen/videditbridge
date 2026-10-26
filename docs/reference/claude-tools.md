@@ -2,7 +2,7 @@
 
 # Claude tools
 
-79 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+81 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [detect_faces](#detect_faces), [reframe](#reframe), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [review_edit](#review_edit)
+- **Other**: [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [review_edit](#review_edit)
 
 ## Inspect & project
 
@@ -173,7 +173,7 @@ _No parameters._
 | `transition.origin` | { x, y } |  |  | Where shape transitions such as circlereveal start (frame fractions; default center) |
 | `transition.origin.x` | number | yes |  | (≥ 0, ≤ 1) |
 | `transition.origin.y` | number | yes |  | (≥ 0, ≤ 1) |
-| `effects` | { type, params }[] |  |  |  |
+| `effects` | { type, params, keyframes }[] |  |  |  |
 
 ### update_clip
 
@@ -334,7 +334,7 @@ _No parameters._
 | `cornerRadius` | number |  |  | Rounded corners in pixels (phone screens, screenshots) (≥ 0) |
 | `shadow` | number |  |  | Drop shadow in pixels (≥ 0) |
 | `volume` | number |  |  |  |
-| `effects` | { type, params }[] |  |  |  |
+| `effects` | { type, params, keyframes }[] |  |  |  |
 | `animationIn` | { type, duration, easing } |  |  |  |
 | `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
 | `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
@@ -920,6 +920,26 @@ _No parameters._
 |---|---|---|---|---|
 | `clipIds` | string[] |  |  | Clips to reframe (default: every cover-fit clip whose source shape differs) |
 | `follow` | boolean |  | `false` | Pan the crop with the person over time instead of a fixed crop |
+
+### speed_ramp
+
+**edits**. Change a clip's speed over time: fast, then slow motion on the moment that matters, then back (a speed ramp). Keyframes give the speed at moments of the clip's FOOTAGE (seconds from its in point, as in its source), with easing into each; the speed holds before the first and after the last. Example, a 2x run-up into slow motion: [{time: 0, speed: 2}, {time: 1.5, speed: 2}, {time: 2, speed: 0.4}, {time: 3, speed: 0.4}, {time: 3.4, speed: 1}]. The clip keeps the same footage, so its length on the timeline changes and later clips move. Sound follows with its pitch kept; captions and cuts follow too. Pass null to go back to the clip's steady speed.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipId` | string | yes |  |  |
+| `keyframes` | { time, speed, easing }[] \| null | yes |  |  |
+
+### animate_effect
+
+**edits**. Change an effect's settings over time: a blur that ramps up into a transition, a grade that shifts from cold to warm, a vignette that closes in. The effect must already be on the target (add_effect, color_adjust, retouch). Each keyframe sets some of the effect's settings at a time (timeline seconds, or seconds into the clip or layer with relative), with easing into it; the settings hold before the first keyframe and after the last. Numbers move smoothly between keyframes; other settings switch half way. A ramp runs up to six copies of the effect, so it costs more to render. Pass null to remove the keyframes.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | Clip id, media layer id, or "global" |
+| `type` | string | yes |  | Effect type on the target, e.g. blur, color, vignette |
+| `keyframes` | { time, params, easing }[] \| null | yes |  |  |
+| `relative` | boolean |  | `false` | Times count from the clip's or layer's start instead of the timeline |
 
 ### animate_layer
 

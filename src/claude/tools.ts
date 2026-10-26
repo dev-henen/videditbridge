@@ -18,7 +18,7 @@ import { isAnimated, simplifyKeys, smoothKeys } from "../core/keyframes.js";
 import { validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, newId, round3, type AspectRatio } from "../core/util.js";
-import { ColorSettingsSchema, SubjectRegionSchema, describeColorSettings, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
+import { ColorSettingsSchema, SubjectRegionSchema, describeColorSettings, effectStates, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { getTransition, listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
@@ -799,6 +799,88 @@ export const TOOLS: ToolDefinition[] = [
     },
   }),
   tool({
+    name: "speed_ramp",
+    description:
+      "Change a clip's speed over time: fast, then slow motion on the moment that matters, then back (a speed ramp). Keyframes give the speed at moments of the clip's FOOTAGE (seconds from its in point, as in its source), with easing into each; the speed holds before the first and after the last. " +
+      "Example, a 2x run-up into slow motion: [{time: 0, speed: 2}, {time: 1.5, speed: 2}, {time: 2, speed: 0.4}, {time: 3, speed: 0.4}, {time: 3.4, speed: 1}]. " +
+      "The clip keeps the same footage, so its length on the timeline changes and later clips move. Sound follows with its pitch kept; captions and cuts follow too. Pass null to go back to the clip's steady speed.",
+    input: z.object({
+      clipId: z.string(),
+      keyframes: z
+        .array(z.object({ time: z.number().min(0).describe("Seconds of footage from the clip's in point"), speed: z.number().min(0.25).max(4), easing: EasingSchema.optional() }))
+        .min(1)
+        .nullable(),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const before = computeTimeline(s.project).clips.find((c) => c.clip.id === i.clipId);
+      if (!before) return { text: `No clip "${i.clipId}".`, isError: true };
+      if (before.asset.type !== "video") return { text: `Clip "${i.clipId}" shows a ${before.asset.type}; speed ramps need video.`, isError: true };
+      const { speed: _old, ...others } = before.clip.keyframes ?? {};
+      let keys: { time: number; value: number; easing: "linear" | "ease-in" | "ease-out" | "ease-in-out" }[] | undefined;
+      if (i.keyframes) {
+        const late = i.keyframes.find((k) => k.time > before.sourceDuration + 0.001);
+        if (late) return { text: `A keyframe at ${late.time}s is past the clip's footage (${before.sourceDuration}s).`, isError: true };
+        keys = i.keyframes.map((k) => ({ time: round3(k.time), value: k.speed, easing: k.easing ?? "ease-in-out" })).sort((a, b) => a.time - b.time);
+      }
+      const merged = keys ? { ...others, speed: keys } : others;
+      const p = ops.updateClip(s.project, i.clipId, { keyframes: Object.keys(merged).length ? merged : undefined });
+      const after = computeTimeline(p).clips.find((c) => c.clip.id === i.clipId)!;
+      const moments = (keys ?? []).map((k) => `${k.value}x at ${formatTime(sourceToTimeline(after, after.clip.in + k.time))}`).join(", ");
+      return commit(
+        s,
+        p,
+        "speed_ramp",
+        i,
+        keys
+          ? `Speed ramp on ${i.clipId}: ${moments} on the timeline. The clip now runs ${formatTime(after.start)}-${formatTime(after.end)} (${after.duration}s, was ${before.duration}s).`
+          : `Removed the speed ramp from ${i.clipId}; it plays at ${before.clip.speed}x (${after.duration}s).`,
+      );
+    },
+  }),
+  tool({
+    name: "animate_effect",
+    description:
+      "Change an effect's settings over time: a blur that ramps up into a transition, a grade that shifts from cold to warm, a vignette that closes in. The effect must already be on the target (add_effect, color_adjust, retouch). " +
+      "Each keyframe sets some of the effect's settings at a time (timeline seconds, or seconds into the clip or layer with relative), with easing into it; the settings hold before the first keyframe and after the last. " +
+      "Numbers move smoothly between keyframes; other settings switch half way. A ramp runs up to six copies of the effect, so it costs more to render. Pass null to remove the keyframes.",
+    input: z.object({
+      target: z.string().describe('Clip id, media layer id, or "global"'),
+      type: z.string().describe("Effect type on the target, e.g. blur, color, vignette"),
+      keyframes: z
+        .array(z.object({ time: z.number(), params: z.record(z.string(), z.unknown()), easing: EasingSchema.optional() }))
+        .min(1)
+        .nullable(),
+      relative: z.boolean().default(false).describe("Times count from the clip's or layer's start instead of the timeline"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const def = getEffect(i.type);
+      if (!def) return { text: `Unknown effect "${i.type}". Use list_effects.`, isError: true };
+      const base = ops.getEffectParams(s.project, i.target, i.type);
+      if (base === undefined) return { text: `"${i.target}" has no ${i.type} effect; add it first.`, isError: true };
+      if (!i.keyframes) return commit(s, ops.setEffectKeyframes(s.project, i.target, i.type, null), "animate_effect", i, `Removed the keyframes of ${i.type} on ${i.target}.`);
+      // Where the target starts and how long it lasts, to turn timeline times into its own.
+      const tc = computeTimeline(s.project).clips.find((c) => c.clip.id === i.target);
+      const layer = s.project.layers.find((l) => l.id === i.target);
+      const [start, length] = i.target === "global" ? [0, computeTimeline(s.project).duration] : tc ? [tc.start, tc.duration] : layer ? [layer.start, layer.duration] : [0, Infinity];
+      const known = Object.keys((def.params as unknown as { shape?: Record<string, unknown> }).shape ?? {});
+      const keys = [];
+      for (const k of i.keyframes) {
+        const unknown = Object.keys(k.params).filter((p) => known.length && !known.includes(p));
+        if (unknown.length) return { text: `${i.type} has no setting ${unknown.join(", ")}. Its settings: ${known.join(", ")}.`, isError: true };
+        const time = round3(i.relative ? k.time : k.time - start);
+        if (time < -0.001 || time > length + 0.001) return { text: `A keyframe at ${k.time}s is outside ${i.target} (${i.relative ? `0-${length}s into it` : `${start}-${round3(start + length)}s`}).`, isError: true };
+        // Fail now on a bad value rather than in the render.
+        def.params.parse({ ...base, ...k.params });
+        keys.push({ time: Math.max(0, time), params: k.params, easing: k.easing ?? "ease-in-out" });
+      }
+      const p = ops.setEffectKeyframes(s.project, i.target, i.type, keys);
+      const effect = (i.target === "global" ? p.effects : (p.clips.find((c) => c.id === i.target)?.effects ?? (p.layers.find((l) => l.id === i.target) as { effects?: typeof p.effects })?.effects ?? [])).find((e) => e.type === i.type)!;
+      return commit(s, p, "animate_effect", i, `${i.type} on ${i.target} now changes over ${keys.length} keyframes (${effectStates(effect).length} states rendered). Check it with render_frame at a few times.`);
+    },
+  }),
+  tool({
     name: "set_speed",
     description:
       "Speed up or slow down a primary clip or an audio clip (0.25-4; 0.5 = half speed slow motion, 2 = double speed). Audio keeps its pitch. The clip covers the same source footage, so it gets shorter or longer on the timeline and later clips move. Captions follow automatically.",
@@ -1219,8 +1301,8 @@ export const TOOLS: ToolDefinition[] = [
         const { map } = await analyzeSound(s, asset.src, { start: tc.clip.in, end: tc.clip.in + tc.sourceDuration });
         activity?.progress((tc.index + 1) / timeline.clips.length);
         const segs = map.segments.map((g) => {
-          const a = Math.round((tc.start + g.start / tc.clip.speed) * 1000) / 1000;
-          const b = Math.round((tc.start + g.end / tc.clip.speed) * 1000) / 1000;
+          const a = round3(sourceToTimeline(tc, tc.clip.in + g.start));
+          const b = round3(sourceToTimeline(tc, tc.clip.in + g.end));
           totals[g.kind] += b - a;
           return `${formatTime(a)}-${formatTime(b)} ${g.kind}${g.kind === "silence" ? "" : ` ${g.level} dB${g.confidence < 0.6 ? " (unsure)" : ""}`}`;
         });
@@ -2055,6 +2137,10 @@ export function describeToolCall(name: string, input: unknown): string {
       return `Animating ${quote(i.layerId)}`;
     case "follow_face":
       return `Making ${quote(i.layerId)} follow a face`;
+    case "speed_ramp":
+      return i.keyframes ? `Speed ramping ${quote(i.clipId)}` : `Removing the speed ramp from ${quote(i.clipId)}`;
+    case "animate_effect":
+      return `Animating ${quote(i.type)} on ${quote(i.target)}`;
     case "generate_voiceover":
       return `Recording voice-over ${quote(i.text, 30)}`;
     case "render_frame":

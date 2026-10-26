@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { clamp, round3 } from "../../core/util.js";
+import type { Easing } from "../../core/schema.js";
+import { easeExpr } from "../../core/keyframes.js";
 
 export interface EffectContext {
   width: number;
@@ -136,6 +138,33 @@ export function timedBlend(ctx: EffectContext, branch: string, amountAt: string)
     // The mask outlasts the clip; maskedmerge has no shortest option, so cut back to the clip length.
     `[${orig}][${done}][${mask}]maskedmerge,trim=duration=${round3(ctx.duration)}`,
   ].join(";");
+}
+
+/**
+ * An effect that changes over time: each state's filter runs on its own copy of the stream, and
+ * the copies are blended one into the next as `times` pass (with `easings`), through tiny
+ * time-varying masks scaled up, so the blend costs almost nothing beyond the copies themselves.
+ */
+export function rampFilter(ctx: EffectContext, chains: string[], times: number[], easings: Easing[]): string {
+  const label = labeler(ctx);
+  const fmt = ctx.alpha ? "yuva420p" : "yuv420p";
+  const ins = chains.map(() => label("frs"));
+  const outs = chains.map(() => label("frr"));
+  const parts = [`format=${fmt},split=${chains.length}${ins.map((l) => `[${l}]`).join("")}`];
+  chains.forEach((c, i) => parts.push(`[${ins[i]}]${c},format=${fmt}[${outs[i]}]`));
+  let acc = outs[0]!;
+  for (let i = 1; i < chains.length; i++) {
+    const span = Math.max(0.001, times[i]! - times[i - 1]!);
+    const e = `255*${easeExpr(`clip((T-${round3(times[i - 1]!)})/${round3(span)},0,1)`, easings[i]!)}`;
+    const [mask, next] = [label("frm"), label("fra")];
+    parts.push(
+      `nullsrc=s=16x16:r=${ctx.fps}:d=${round3(ctx.duration + 1)},format=${fmt},geq=lum='${e}':cb='${e}':cr='${e}'${ctx.alpha ? `:a='${e}'` : ""},scale=${ctx.width}:${ctx.height}:flags=neighbor[${mask}]`,
+    );
+    // The masks outlast the stream and maskedmerge has no shortest option, so cut back each time.
+    parts.push(`[${acc}][${outs[i]}][${mask}]maskedmerge,trim=duration=${round3(ctx.duration)}${i < chains.length - 1 ? `[${next}]` : ""}`);
+    acc = next;
+  }
+  return parts.join(";");
 }
 
 /**

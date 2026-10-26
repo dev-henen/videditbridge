@@ -75,9 +75,21 @@ export const AssetSchema = z.discriminatedUnion("type", [
 // Building blocks
 // ---------------------------------------------------------------------------
 
+export const EasingSchema = z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]);
+
 export const EffectSchema = z.object({
   type: z.string().min(1).describe("Effect id from the effects catalog, e.g. 'blur', 'kenBurns', 'cinematic'"),
   params: z.record(z.string(), z.unknown()).optional(),
+  keyframes: z
+    .array(
+      z.object({
+        time: z.number().min(0).describe("Seconds from the start of the clip or layer (timeline seconds for global effects)"),
+        params: z.record(z.string(), z.unknown()).describe("Settings that change, over the effect's params"),
+        easing: EasingSchema.default("ease-in-out"),
+      }),
+    )
+    .optional()
+    .describe("Settings over time (a blur that ramps up, a grade that shifts). Before the first keyframe its settings hold, after the last its last"),
 });
 
 const audioEffects = (what: string) =>
@@ -95,7 +107,6 @@ export const TransitionSchema = z.object({
     .describe("Where shape transitions such as circlereveal start (frame fractions; default center)"),
 });
 
-export const EasingSchema = z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]);
 
 export const AnimationSchema = z.object({
   type: z.string().min(1).describe("Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up'"),
@@ -128,6 +139,10 @@ export const LayerKeyframesSchema = z
 export const ClipKeyframesSchema = z
   .object({
     focus: z.array(keyframe(PositionSchema)).optional().describe("Crop focus over time for fit cover, so the crop can follow a person"),
+    speed: z
+      .array(keyframe(z.number().min(0.25).max(4)))
+      .optional()
+      .describe("Speed ramp: playback speed over the clip's footage. Times here are seconds of SOURCE footage from the clip's in point. Replaces speed while set"),
   })
   .describe("Clip properties that change over time (times from the clip's start on the timeline)");
 

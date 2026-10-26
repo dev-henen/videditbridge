@@ -89,6 +89,19 @@ export async function runFfmpegOrThrow(args: string[], opts: RunOptions = {}): P
   return res;
 }
 
+const filterLists = new Map<string, Promise<string>>();
+
+/** Whether this FFmpeg build has a filter (builds differ, e.g. in rubberband). Checked once per binary. */
+export async function hasFilter(name: string, opts: FfmpegOptions = {}): Promise<boolean> {
+  const bin = resolveFfmpegPath(opts);
+  let list = filterLists.get(bin);
+  if (!list) {
+    list = runFfmpeg(["-hide_banner", "-filters"], opts).then((r) => r.stdout, () => "");
+    filterLists.set(bin, list);
+  }
+  return new RegExp("^ \\S+ " + name + " ", "m").test(await list);
+}
+
 export interface ProbeResult {
   duration?: number;
   width?: number;

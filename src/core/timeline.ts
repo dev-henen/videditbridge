@@ -1,5 +1,62 @@
 import type { Asset, AudioClip, Clip, Project } from "./schema.js";
 import { round3 } from "./util.js";
+import { numberAt } from "./keyframes.js";
+
+/** How footage maps to the timeline in a clip whose speed changes over time (speed keyframes). */
+export interface SpeedMap {
+  /** Seconds on the timeline. */
+  duration: number;
+  /** Timeline seconds from the clip's start for `u` seconds of source from its in point. */
+  toTimeline(u: number): number;
+  /** The reverse. */
+  toSource(t: number): number;
+  /** Speed at `u` seconds of source from the in point. */
+  speedAt(u: number): number;
+}
+
+const speedMaps = new WeakMap<Clip, Map<number, SpeedMap>>();
+
+/**
+ * The time map of a speed-ramped clip: timeline time is the integral of 1/speed over the footage,
+ * tabulated finely (every 10 ms of source) and interpolated. Undefined without speed keyframes.
+ */
+export function speedMap(clip: Clip, sourceDuration: number): SpeedMap | undefined {
+  const keys = clip.keyframes?.speed;
+  if (!keys?.length) return undefined;
+  let byDuration = speedMaps.get(clip);
+  const cached = byDuration?.get(sourceDuration);
+  if (cached) return cached;
+  const speedAt = (u: number) => numberAt(keys, u);
+  const n = Math.max(16, Math.min(20000, Math.ceil(sourceDuration / 0.01)));
+  const h = sourceDuration / n;
+  const T = [0];
+  for (let i = 1; i <= n; i++) T.push(T[i - 1]! + h / speedAt((i - 0.5) * h));
+  const total = T[n]!;
+  const map: SpeedMap = {
+    duration: total,
+    speedAt,
+    toTimeline: (u) => {
+      if (u <= 0) return u / speedAt(0);
+      if (u >= sourceDuration) return total + (u - sourceDuration) / speedAt(sourceDuration);
+      const i = Math.min(n - 1, Math.floor(u / h));
+      return T[i]! + ((u - i * h) / h) * (T[i + 1]! - T[i]!);
+    },
+    toSource: (t) => {
+      if (t <= 0) return t * speedAt(0);
+      if (t >= total) return sourceDuration + (t - total) * speedAt(sourceDuration);
+      let [lo, hi] = [0, n];
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (T[mid]! <= t) lo = mid;
+        else hi = mid;
+      }
+      return (lo + (t - T[lo]!) / (T[lo + 1]! - T[lo]!)) * h;
+    },
+  };
+  if (!byDuration) speedMaps.set(clip, (byDuration = new Map()));
+  byDuration.set(sourceDuration, map);
+  return map;
+}
 
 export interface TimedClip {
   clip: Clip;
@@ -14,6 +71,8 @@ export interface TimedClip {
   end: number;
   /** Effective (clamped) incoming transition duration. */
   transitionDuration: number;
+  /** Speed-ramped clips: how footage maps to timeline time. */
+  speedMap?: SpeedMap;
 }
 
 export interface TimedAudio {
@@ -68,12 +127,13 @@ export function computeTimeline(project: Project): Timeline {
   project.clips.forEach((clip, index) => {
     const asset = getAsset(project, clip.assetId);
     const sourceDuration = clipSourceDuration(clip, asset);
-    const duration = round3(sourceDuration / clip.speed);
+    const map = asset.type === "video" ? speedMap(clip, sourceDuration) : undefined;
+    const duration = round3(map ? map.duration : sourceDuration / clip.speed);
     const prev = clips[index - 1];
     const transitionDuration =
       prev && clip.transition ? round3(Math.min(clip.transition.duration, maxTransition(prev.duration, duration))) : 0;
     const start = round3(cursor - transitionDuration);
-    clips.push({ clip, index, asset, sourceDuration, duration, start, end: round3(start + duration), transitionDuration });
+    clips.push({ clip, index, asset, sourceDuration, duration, start, end: round3(start + duration), transitionDuration, ...(map ? { speedMap: map } : {}) });
     cursor = round3(start + duration);
   });
   const primaryDuration = cursor;
@@ -109,10 +169,10 @@ export function clipAtTime(timeline: Timeline, t: number): TimedClip | undefined
 
 /** Map a source time inside a clip to a timeline time. */
 export function sourceToTimeline(tc: TimedClip, sourceTime: number): number {
-  return tc.start + (sourceTime - tc.clip.in) / tc.clip.speed;
+  return tc.start + (tc.speedMap ? tc.speedMap.toTimeline(sourceTime - tc.clip.in) : (sourceTime - tc.clip.in) / tc.clip.speed);
 }
 
 /** Map a timeline time inside a clip back to its source time. */
 export function timelineToSource(tc: TimedClip, t: number): number {
-  return tc.clip.in + (t - tc.start) * tc.clip.speed;
+  return tc.clip.in + (tc.speedMap ? tc.speedMap.toSource(t - tc.start) : (t - tc.start) * tc.clip.speed);
 }

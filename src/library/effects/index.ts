@@ -1,7 +1,8 @@
 import { z } from "zod";
-import type { Effect } from "../../core/schema.js";
+import type { Easing, Effect } from "../../core/schema.js";
+import { easeValue } from "../../core/keyframes.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
-import { define, maskedBlend, num, personBlend, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
+import { define, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
 import { motionEffects } from "./motion.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
 
@@ -460,7 +461,60 @@ export function resolveEffectParams(effect: Effect): Record<string, unknown> {
 export function effectToFilter(effect: Effect, ctx: EffectContext): string {
   const def = getEffect(effect.type);
   if (!def) throw new Error(`Unknown effect "${effect.type}"`);
-  return def.toFilter(def.params.parse(effect.params ?? {}), ctx);
+  const states = effectStates(effect);
+  if (states.length === 1) return def.toFilter(def.params.parse(states[0]!.params), ctx);
+  return rampFilter(
+    ctx,
+    states.map((s) => def.toFilter(def.params.parse(s.params), ctx)),
+    states.map((s) => s.time),
+    states.map((s) => s.easing),
+  );
+}
+
+/** Numbers move part way (`e`) from `a` to `b`, also inside nested settings; other values switch half way. */
+function lerpParams(a: unknown, b: unknown, e: number): unknown {
+  if (typeof a === "number" && typeof b === "number") return round3(a + (b - a) * e);
+  const plain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+  if (plain(a) && plain(b)) return Object.fromEntries([...new Set([...Object.keys(a), ...Object.keys(b)])].map((k) => [k, lerpParams(a[k], b[k], e)]));
+  return e < 0.5 ? a : b;
+}
+
+/** Up to this many copies of an effect run for a ramp. */
+const MAX_STATES = 6;
+
+/**
+ * The settings a keyframed effect moves through, with the time each is reached and the easing into
+ * it. Between keyframes whose numbers differ, in-between states are added (MAX_STATES in all), so
+ * a blur ramps through real blur amounts instead of dissolving from sharp to fully blurred.
+ */
+export function effectStates(effect: Effect): { time: number; params: Record<string, unknown>; easing: Easing }[] {
+  const base = effect.params ?? {};
+  const keys = [...(effect.keyframes ?? [])].sort((a, b) => a.time - b.time);
+  if (!keys.length) return [{ time: 0, params: base, easing: "linear" }];
+  const states = keys.map((k) => ({ time: k.time, params: { ...base, ...k.params }, easing: k.easing ?? "ease-in-out" }));
+  const per = states.length > 1 ? Math.max(1, Math.floor((MAX_STATES - 1) / (states.length - 1))) : 1;
+  const out = [states[0]!];
+  for (let i = 1; i < states.length; i++) {
+    const [a, b] = [states[i - 1]!, states[i]!];
+    if (per < 2 || !numbersDiffer(a.params, b.params)) {
+      out.push(b);
+      continue;
+    }
+    // The easing is spent in the values; between neighbouring states the blend is straight.
+    for (let j = 1; j < per; j++) {
+      const u = j / per;
+      out.push({ time: round3(a.time + (b.time - a.time) * u), params: lerpParams(a.params, b.params, easeValue(u, b.easing)) as Record<string, unknown>, easing: "linear" });
+    }
+    out.push({ ...b, easing: "linear" });
+  }
+  return out;
+}
+
+/** Whether any number differs between two settings, nested ones included. */
+function numbersDiffer(a: unknown, b: unknown): boolean {
+  if (typeof a === "number" && typeof b === "number") return a !== b;
+  const plain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+  return plain(a) && plain(b) && [...new Set([...Object.keys(a), ...Object.keys(b)])].some((k) => numbersDiffer(a[k], b[k]));
 }
 
 export function effectsToFilter(effects: Effect[], ctx: EffectContext): string[] {
@@ -477,6 +531,8 @@ export function usesPersonMask(effect: Effect): boolean {
 
 /** Whether an effect works frame by frame (see EffectDefinition.perFrame). Unknown effects are not. */
 export function isPerFrame(effect: Effect): boolean {
+  // Settings that change over time make the effect depend on time.
+  if (effect.keyframes?.length) return false;
   const def = byId.get(effect.type);
   if (!def?.perFrame) return false;
   if (typeof def.perFrame === "boolean") return true;

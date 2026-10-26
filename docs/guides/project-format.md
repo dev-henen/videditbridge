@@ -111,6 +111,19 @@ Entrance and exit animations still play, where the layer is at those moments. Te
 
 Clips take `keyframes.focus`, the crop focus over time for `fit: "cover"`, so a 9:16 crop of 16:9 footage can pan with a person (times from the clip's start on the timeline). `reframe` with `follow` makes these from the detected face.
 
+**Speed ramps.** `keyframes.speed` on a video clip changes its speed over time (fast, then slow motion, then back), replacing `speed` while set. Its times are seconds of **footage** from the clip's in point, because timeline time itself depends on the speed. The timeline length is the integral of 1/speed over the footage, tabulated every 10 ms (`speedMap`); `sourceToTimeline` and `timelineToSource` go through it, so captions, cuts, splits, beat sync and face tracking follow the ramp. The picture is retimed with a `setpts` expression and the sound with a tempo that changes every 0.1 s (pitch kept): `rubberband` when the FFmpeg build has it, otherwise `atempo`, which comes out about 2% short over a strong ramp. Splitting a ramped clip slices its keyframes so it plays the same.
+
+```json
+{ "id": "jump", "assetId": "skate", "in": 12, "duration": 4,
+  "keyframes": { "speed": [{ "time": 0, "value": 2 }, { "time": 1.5, "value": 2 }, { "time": 2, "value": 0.4 }, { "time": 3, "value": 0.4 }, { "time": 3.4, "value": 1 }] } }
+```
+
+**Effect settings over time.** Any effect takes `keyframes: [{ time, params, easing }]`: each keyframe sets some of its settings at a time from the start of the clip or layer (timeline seconds for global effects). The renderer runs one copy of the effect per state, adding in-between states where numbers change (six copies at most, so a blur ramps through real amounts), and blends one into the next with tiny time-varying masks. A ramped effect depends on time, so the render cache does not bake it into cached clips as a global effect.
+
+```json
+{ "type": "blur", "params": { "amount": 0 }, "keyframes": [{ "time": 3, "params": { "amount": 0 } }, { "time": 4, "params": { "amount": 30 }, "easing": "ease-in" }] }
+```
+
 ## Audio
 
 | Field | Default | |

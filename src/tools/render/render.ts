@@ -9,7 +9,7 @@ import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
 import { usesPersonMask } from "../../library/effects/index.js";
 import { PersonSegmenter, maskFile } from "../vision/segment.js";
-import { probe, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
+import { hasFilter, probe, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
 
 export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segments" | "segment" | "hardwareEncoder">, FfmpegOptions {
   /**
@@ -109,7 +109,9 @@ async function planMasks(p: Project, opts: Omit<RenderOptions, "output">): Promi
     if (tc.asset.type !== "video" || !tc.clip.effects.some(usesPersonMask)) continue;
     const src = /^[a-z]+:\/\//i.test(tc.asset.src) ? tc.asset.src : path.resolve(opts.baseDir ?? process.cwd(), tc.asset.src);
     // One mask frame per output frame, counted in source time.
-    const fps = Math.min(60, Math.max(1, Math.round(p.settings.fps * tc.clip.speed)));
+    // A speed ramp needs the rate of its fastest moment.
+    const fastest = tc.clip.keyframes?.speed?.length ? Math.max(...tc.clip.keyframes.speed.map((k) => k.value)) : tc.clip.speed;
+    const fps = Math.min(60, Math.max(1, Math.round(p.settings.fps * fastest)));
     const range = { start: tc.clip.in, end: tc.clip.in + tc.sourceDuration };
     jobs.set(tc.clip.id, { ...(await maskFile(dir, src, range, fps)), src, range, fps });
   }
@@ -135,7 +137,9 @@ async function prepare(p: Project, opts: Omit<RenderOptions, "output">, create: 
   const jobs = await planMasks(p, opts);
   const { segments, share } = await cachedSegments(p, opts, create, until, jobs);
   await makeMasks(jobs, p.clips.filter((c) => !segments?.[c.id]).map((c) => c.id), opts);
-  return { segments, share, masks: maskFiles(jobs) };
+  // Speed ramps sound best through rubberband, when this FFmpeg build has it.
+  const rubberband = p.clips.some((c) => c.keyframes?.speed?.length) && (await hasFilter("rubberband", opts));
+  return { segments, share, masks: maskFiles(jobs), rubberband };
 }
 
 /** Clips rendered into the cache at once. Filters already use several threads, so this stays small. */
@@ -200,17 +204,17 @@ const after = (opts: Omit<RenderOptions, "output">, share: number) => (opts.onPr
 /** Render a project to a video file. */
 export async function render(project: Project, opts: RenderOptions): Promise<RenderResult> {
   const p = opts.probe === false ? project : await probeAssets(project, opts);
-  const { segments, share, masks } = await prepare(p, opts, true, opts.range?.end);
+  const { segments, share, masks, rubberband } = await prepare(p, opts, true, opts.range?.end);
   const hardwareEncoder =
     opts.hardware !== false && wantsHardware(p.export.videoCodec, opts.preset ?? p.export.preset) ? await detectHardwareEncoder(opts) : undefined;
-  let compiled = compileProject(p, { ...opts, segments, masks, hardwareEncoder });
+  let compiled = compileProject(p, { ...opts, segments, masks, rubberband, hardwareEncoder });
   let workDir: string | undefined;
   try {
     ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
   } catch (e) {
     // A graphics driver can refuse a stream its test encode accepted (size limits, busy device).
     if (!hardwareEncoder || opts.signal?.aborted) throw e;
-    compiled = compileProject(p, { ...opts, segments, masks });
+    compiled = compileProject(p, { ...opts, segments, masks, rubberband });
     ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
   }
   opts.onProgress?.(1);
@@ -268,8 +272,8 @@ export async function renderForAnalysis(
   opts: Omit<RenderOptions, "output" | "range"> & { framesAt?: number[]; audio?: { mix: string; voice?: string; music?: string } },
 ): Promise<{ width: number; height: number; frames: AnalysisFrame[] }> {
   const p = opts.probe === false ? project : await probeAssets(project, opts);
-  const { segments, share, masks } = await prepare(p, opts, true);
-  const compiled = compileProject(p, { ...opts, segments, masks, output: "", analysis: { framesAt: opts.framesAt, audio: opts.audio } });
+  const { segments, share, masks, rubberband } = await prepare(p, opts, true);
+  const compiled = compileProject(p, { ...opts, segments, masks, rubberband, output: "", analysis: { framesAt: opts.framesAt, audio: opts.audio } });
   const audio = opts.audio ? [opts.audio.mix, opts.audio.voice, opts.audio.music].filter((f): f is string => !!f) : [];
   const { stdout } = await execute(compiled, { ...opts, ...after(opts, share), output: "" }, audio);
   opts.onProgress?.(1);

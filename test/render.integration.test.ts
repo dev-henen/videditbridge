@@ -3,9 +3,9 @@ import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AUDIO_EFFECTS, EFFECTS, TEMPLATES, applyTemplate } from "../src/library/index.js";
-import { probe, render, renderContactSheet, renderFrame, runFfmpegOrThrow, startPreviewServer } from "../src/tools/index.js";
+import { probe, render, renderContactSheet, renderFrame, runFfmpeg, runFfmpegOrThrow, startPreviewServer } from "../src/tools/index.js";
 import { EditorSession, executeTool } from "../src/claude/index.js";
-import { computeTimeline, parseProject, validateProject, type Transcript } from "../src/core/index.js";
+import { computeTimeline, parseProject, timelineToSource, validateProject, type Transcript } from "../src/core/index.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "./helpers/media.js";
 import { sampleInputs } from "./helpers/inputs.js";
 
@@ -405,6 +405,57 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     expect(means[0]).toBeLessThan(60);
     expect(means[1]).toBeGreaterThan(100);
     expect(means[2]).toBeGreaterThan(200);
+  });
+
+  it("plays speed ramps frame-accurately with continuous sound, and ramps effects", async () => {
+    // Brightness = frame number at 25 fps, with a tone throughout.
+    const src = out("ramp-src.mp4");
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=160x90:r=25:d=9,format=gray,geq=lum='16+N'", "-f", "lavfi", "-i", "sine=f=440:d=9", "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", src]);
+    const project = parseProject({
+      settings: { width: 160, height: 90, fps: 25 },
+      assets: [{ type: "video", id: "r", src }],
+      clips: [
+        {
+          id: "c",
+          assetId: "r",
+          in: 1,
+          duration: 6,
+          keyframes: { speed: [{ time: 0, value: 1 }, { time: 2, value: 0.4 }, { time: 4, value: 0.4, easing: "linear" }, { time: 5, value: 2.5 }] },
+          effects: [{ type: "blur", params: { amount: 0 }, keyframes: [{ time: 6, params: { amount: 0 } }, { time: 9, params: { amount: 40 } }] }],
+        },
+      ],
+    });
+    const tc = computeTimeline(project).clips[0]!;
+    const file = out("ramp-out.mp4");
+    await render(project, { output: file, preset: "ultrafast", extraOutputArgs: ["-qp", "0"] });
+    const lumas = async (f: string, vf = "scale=1:1:flags=area,format=gray") =>
+      [...((await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", f, "-vf", vf, "-f", "rawvideo", "-"], { binaryStdout: true })).stdoutBuffer ?? [])];
+    const source = await lumas(src);
+    const frameOf = (v: number) => source.reduce((best, l, i) => (Math.abs(l - v) < Math.abs(source[best]! - v) ? i : best), 0);
+    const got = (await lumas(file)).slice(0, Math.round(6 * 25)); // before the blur sets in
+    expect(got.length).toBe(150);
+    const errors = got.map((v, n) => frameOf(v) - Math.floor(timelineToSource(tc, n / 25) * 25 + 1e-6));
+    expect(Math.max(...errors.map(Math.abs))).toBeLessThanOrEqual(2);
+    // The sound runs to the end of the slowed clip: no silence padded on.
+    const { stderr } = await runFfmpeg(["-hide_banner", "-i", file, "-vn", "-af", "silencedetect=n=-40dB:d=0.15", "-f", "null", "-"]);
+    expect(stderr).not.toMatch(/silence_start/);
+    expect(tc.duration).toBeGreaterThan(9);
+
+    // An effect ramp: a blur that builds up over the clip, measured as edge energy on a test pattern.
+    const blurred = parseProject({
+      settings: { width: 320, height: 180, fps: 25 },
+      assets: [{ type: "video", id: "t", src: fx.talk }],
+      clips: [{ id: "c", assetId: "t", duration: 3, effects: [{ type: "blur", params: { amount: 0 }, keyframes: [{ time: 0.5, params: { amount: 0 } }, { time: 2.5, params: { amount: 30 } }] }] }],
+    });
+    const edges = async (t: number) => {
+      const f = out(`ramp-blur-${t}.png`);
+      await renderFrame(blurred, t, { output: f });
+      const px = await lumas(f, "format=gray");
+      return px.slice(1).reduce((n, v, i) => n + Math.abs(v - px[i]!), 0);
+    };
+    const [early, middle, late] = [await edges(0.2), await edges(1.5), await edges(2.8)];
+    expect(middle).toBeLessThan(early * 0.8);
+    expect(late).toBeLessThan(middle * 0.8);
   });
 
   it("renders a still frame and a range directly", async () => {

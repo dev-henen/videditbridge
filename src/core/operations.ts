@@ -3,6 +3,7 @@ import type {
   AudioClip,
   Clip,
   Effect,
+  Keyframe,
   Layer,
   Project,
   ProjectInput,
@@ -19,7 +20,8 @@ import {
   SettingsSchema,
   TransitionSchema,
 } from "./schema.js";
-import { clipAtTime, computeTimeline, getAsset, timelineToSource, type Timeline } from "./timeline.js";
+import { clipAtTime, computeTimeline, getAsset, sourceToTimeline, timelineToSource, type TimedClip, type Timeline } from "./timeline.js";
+import { numberAt, positionAt } from "./keyframes.js";
 import { getEffect } from "../library/effects/index.js";
 import { mergeRanges, type TimeRange } from "./ranges.js";
 import { ASPECT_RATIOS, deepClone, dimensionsFor, newId, round3, type AspectRatio } from "./util.js";
@@ -141,6 +143,42 @@ export function trimClip(p: Project, clipId: string, sourceIn: number, sourceOut
   return updateClip(p, clipId, { in: sourceIn, duration: round3(sourceOut - sourceIn) });
 }
 
+/**
+ * The keyframes of a piece of a clip that keeps `from`..`to` seconds of its source (counted from
+ * its in point). Speed keyframes count source time and crop keyframes timeline time, both from the
+ * piece's own start, so they shift; a keyframe at each end holds the value there.
+ */
+function sliceKeyframes(tc: TimedClip, from: number, to: number): Clip["keyframes"] {
+  const k = tc.clip.keyframes;
+  if (!k) return undefined;
+  const out: NonNullable<Clip["keyframes"]> = {};
+  // Whole segments keep their keyframes and easing. The part of an eased segment the cut falls in
+  // becomes short straight steps (every 0.1 s), so the curve, and so the clip's timing, stays the same.
+  const piece = <T>(keys: Keyframe<T>[], a: number, b: number, at: (t: number) => T): Keyframe<T>[] => {
+    const inner = keys.filter((x) => x.time > a && x.time < b);
+    const out: Keyframe<T>[] = [];
+    const steps = (from: number, to: number) => {
+      for (let t = from; t < to - 1e-6; t = round3(t + 0.1)) out.push({ time: round3(t - a), value: at(t), easing: "linear" });
+    };
+    steps(a, inner[0]?.time ?? b);
+    inner.forEach((x, i) => out.push({ ...x, time: round3(x.time - a), ...(i === 0 ? { easing: "linear" as const } : {}) }));
+    if (inner.length) steps(inner[inner.length - 1]!.time + 0.1, b);
+    out.push({ time: round3(b - a), value: at(b), easing: "linear" });
+    return out;
+  };
+  if (k.speed?.length) out.speed = piece(k.speed, from, to, (u) => round3(numberAt(k.speed!, u)));
+  if (k.focus?.length) {
+    // Crop keyframes count timeline time from the clip's start.
+    const a = sourceToTimeline(tc, tc.clip.in + from) - tc.start;
+    const b = sourceToTimeline(tc, tc.clip.in + to) - tc.start;
+    out.focus = piece(k.focus, a, b, (t) => {
+      const p = positionAt(k.focus!, t);
+      return { x: round3(p.x), y: round3(p.y) };
+    });
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 /** Split a primary clip at a timeline time into two clips. Returns the project and the new clip id. */
 export function splitClip(p: Project, clipId: string, timelineTime: number): { project: Project; newClipId: string } {
   const timeline = computeTimeline(p);
@@ -157,6 +195,8 @@ export function splitClip(p: Project, clipId: string, timelineTime: number): { p
     const second: Clip = { ...deepClone(c), id: newClipId, in: round3(srcSplit), duration: round3(tc.sourceDuration - firstDur) };
     delete second.transition;
     delete second.fadeIn;
+    second.keyframes = sliceKeyframes(tc, firstDur, tc.sourceDuration);
+    c.keyframes = sliceKeyframes(tc, 0, firstDur);
     c.duration = firstDur;
     delete c.fadeOut;
     d.clips.splice(tc.index + 1, 0, second);
@@ -212,6 +252,16 @@ export function setEffectParams(p: Project, target: string, effectType: string, 
       const keyed = list.reduce((last, e, k) => (KEYING_EFFECTS.has(e.type) ? k + 1 : last), 0);
       list.splice(keyed, 0, EffectSchema.parse({ type: effectType, params }));
     } else list.push(EffectSchema.parse({ type: effectType, params }));
+  });
+}
+
+/** Set or clear (`null`) the keyframes of an effect already on a target. */
+export function setEffectKeyframes(p: Project, target: string, effectType: string, keyframes: Effect["keyframes"] | null): Project {
+  return edit(p, (d) => {
+    const effect = effectList(d, target).find((e) => e.type === effectType);
+    if (!effect) throw new EditError(`"${target}" has no ${effectType} effect; add it first`);
+    if (keyframes?.length) effect.keyframes = [...keyframes].sort((a, b) => a.time - b.time);
+    else delete effect.keyframes;
   });
 }
 
@@ -293,7 +343,15 @@ export function setSpeed(p: Project, target: string, speed: number): Project {
   if (!(speed >= 0.25 && speed <= 4)) throw new EditError("Speed must be between 0.25 and 4");
   return edit(p, (d) => {
     const clip = d.clips.find((c) => c.id === target);
-    if (clip) return void (clip.speed = speed);
+    if (clip) {
+      // A steady speed replaces a speed ramp.
+      clip.speed = speed;
+      if (clip.keyframes?.speed) {
+        delete clip.keyframes.speed;
+        if (!Object.keys(clip.keyframes).length) delete clip.keyframes;
+      }
+      return;
+    }
     const audio = d.audio.find((a) => a.id === target);
     if (!audio) throw new EditError(`Speed target "${target}" must be a clip id or audio clip id`);
     // An explicit duration is timeline time; keep the same source range at the new speed.
@@ -398,7 +456,7 @@ export function snapCutsToTimes(
     const clip = tc.clip;
     const asset = tc.asset;
     const maxSource = asset.type === "video" && asset.duration !== undefined ? asset.duration - clip.in : Infinity;
-    const maxEnd = tc.start + maxSource / clip.speed;
+    const maxEnd = sourceToTimeline(tc, clip.in + maxSource);
     let best: number | undefined;
     for (const t of sorted) {
       if (t < tc.start + minClip || t > maxEnd + 1e-6) continue;
@@ -406,7 +464,7 @@ export function snapCutsToTimes(
     }
     if (best === undefined || Math.abs(best - tc.end) < 0.01) continue;
     const to = best;
-    project = edit(project, (d) => void (d.clips[i]!.duration = round3((to - tc.start) * clip.speed)));
+    project = edit(project, (d) => void (d.clips[i]!.duration = round3(timelineToSource(tc, to) - clip.in)));
     moved.push({ clipId: clip.id, from: tc.end, to: round3(to) });
   }
   return { project, moved };
@@ -525,12 +583,12 @@ function cutOne(p: Project, range: TimeRange): Project {
         newClips.push(c);
         continue;
       }
-      const headDur = round3((a - tc.start) * c.speed);
+      const headDur = round3(timelineToSource(tc, a) - tc.clip.in);
       const tailIn = round3(timelineToSource(tc, b));
       const tailDur = round3(c.in + tc.sourceDuration - tailIn);
-      if (headDur > 0.02) newClips.push({ ...c, duration: headDur, fadeOut: undefined });
+      if (headDur > 0.02) newClips.push({ ...c, duration: headDur, fadeOut: undefined, keyframes: sliceKeyframes(tc, 0, headDur) });
       if (tailDur > 0.02) {
-        const tail: Clip = { ...deepClone(c), id: headDur > 0.02 ? newId("clip") : c.id, in: tailIn, duration: tailDur };
+        const tail: Clip = { ...deepClone(c), id: headDur > 0.02 ? newId("clip") : c.id, in: tailIn, duration: tailDur, keyframes: sliceKeyframes(tc, tailIn - c.in, tc.sourceDuration) };
         if (headDur > 0.02) {
           delete tail.transition;
           delete tail.fadeIn;
@@ -576,7 +634,7 @@ export function cutSourceRanges(p: Project, assetId: string, sourceRanges: TimeR
     for (const r of sourceRanges) {
       const a = Math.max(r.start, tc.clip.in);
       const b = Math.min(r.end, srcEnd);
-      if (b > a) timelineRanges.push({ start: tc.start + (a - tc.clip.in) / tc.clip.speed, end: tc.start + (b - tc.clip.in) / tc.clip.speed });
+      if (b > a) timelineRanges.push({ start: sourceToTimeline(tc, a), end: sourceToTimeline(tc, b) });
     }
   }
   return cutTimelineRanges(p, timelineRanges);

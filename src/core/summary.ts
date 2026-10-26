@@ -13,6 +13,7 @@ const fx = (effects: Effect[]) =>
               ? `${e.type}(${JSON.stringify(e.params)})`
               : e.type,
         )
+        .map((s, k) => (effects[k]!.keyframes?.length ? `${s} ramped over ${effects[k]!.keyframes!.length} keyframes` : s))
         .join(", ")}]`
     : "";
 
@@ -64,7 +65,9 @@ export function summarizeProject(project: Project): string {
       const tr = c.transition && tc.index > 0 ? ` transition ${c.transition.type} ${tc.transitionDuration}s` : "";
       const src = tc.asset.type === "video" ? ` src ${c.in}-${+(c.in + tc.sourceDuration).toFixed(3)}s` : "";
       const extra = [
-        c.speed !== 1 && `speed ${c.speed}x`,
+        c.keyframes?.speed?.length
+          ? `speed ramp ${Math.min(...c.keyframes.speed.map((k) => k.value))}-${Math.max(...c.keyframes.speed.map((k) => k.value))}x`
+          : c.speed !== 1 && `speed ${c.speed}x`,
         c.muted && "muted",
         c.volume !== 1 && `vol ${c.volume}`,
         c.fit !== "cover" && `fit ${c.fit}`,
