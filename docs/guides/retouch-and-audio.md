@@ -24,7 +24,9 @@ Without a `region` the whole frame is retouched. That is usually fine for talkin
 { "type": "backgroundBlur", "params": { "amount": 30, "subject": { "x": 0.5, "y": 0.45, "width": 0.55, "height": 0.8 }, "feather": 0.35 } }
 ```
 
-With the `retouch` tool, `region: "face"` and `subject: "face"` place the ellipses for you from the faces found in each clip (see [Faces & reframing](faces.md)): the face ellipse covers everywhere the main face goes during the clip, and the subject ellipse is estimated from the face down to the shoulders and the bottom of the frame. You can also give the ellipse yourself. Either way it stays fixed for the clip, so check with `render_frame`, and split the clip if the person moves a lot. `dim` darkens the background as well, which helps text and captions stand out.
+For background blur, `subject: "person"` (the effect's `cutout: true`) is usually best: the person is cut out of every frame and the blur follows their outline. `replaceBackground` swaps the background for a solid color the same way. See [Faces, cutouts & reframing](faces.md).
+
+With the `retouch` tool, `region: "face"` and `subject: "face"` place ellipses for you from the faces found in each clip (see [Faces & reframing](faces.md)): the face ellipse covers everywhere the main face goes during the clip, and the subject ellipse is estimated from the face down to the shoulders and the bottom of the frame. You can also give the ellipse yourself. Either way it stays fixed for the clip, so check with `render_frame`, and split the clip if the person moves a lot. `dim` darkens the background as well, which helps text and captions stand out.
 
 The `retouch` tool merges settings into what is already on the target, so `retouch({ target, beauty: { smooth: 30 } })` changes only the smoothing. Pass `false` to remove an effect, and `region: null` to go back to the whole frame. Target `"all-clips"` to retouch every clip at once.
 

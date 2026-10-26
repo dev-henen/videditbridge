@@ -1,7 +1,32 @@
 import { existsSync } from "node:fs";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { FACE_INPUT, FaceDetector, decodeYunet, faceRegion, focusOn, parseProbeOutput, personRegion, sourceToFrame, trackFaces, type Face, type FaceFrame } from "../src/tools/index.js";
+import { parseProject } from "../src/core/index.js";
+import { usesPersonMask } from "../src/library/index.js";
+import {
+  FACE_INPUT,
+  FaceDetector,
+  PERSON_INPUT,
+  PersonSegmenter,
+  compileProject,
+  decodeYunet,
+  faceRegion,
+  focusOn,
+  parseProbeOutput,
+  personProbability,
+  personRegion,
+  planSegments,
+  renderFrame,
+  resizeMask,
+  runFfmpegOrThrow,
+  sourceToFrame,
+  stabilizeMask,
+  trackFaces,
+  type Face,
+  type FaceFrame,
+} from "../src/tools/index.js";
 
 /** YuNet outputs with one confident face at a grid cell of the coarsest scale. */
 function outputs(cells: { stride: number; row: number; col: number; w: number; h: number; score?: number }[]) {
@@ -139,5 +164,101 @@ describe.skipIf(!ready)("face detection on real footage", () => {
     const [track] = trackFaces(r.frames);
     expect(track!.box.x0).toBeGreaterThan(0.2);
     expect(track!.box.x1).toBeLessThan(0.45);
+  });
+});
+
+describe("person cutout", () => {
+  it("reads the person channel, resizes and steadies masks", () => {
+    const n = PERSON_INPUT * PERSON_INPUT;
+    const out = new Float32Array(2 * n);
+    out[n + 5] = 0.8;
+    expect(personProbability(out)[5]).toBeCloseTo(0.8);
+    const r = resizeMask(new Float32Array([0, 1, 0, 1]), 2, 2, 4, 2);
+    expect([...r]).toEqual([0, 0.25, 0.75, 1, 0, 0.25, 0.75, 1]);
+    const s = stabilizeMask(new Float32Array([1, 0]), new Float32Array([0, 1]));
+    expect(s[0]).toBeCloseTo(0.65);
+    expect(s[1]).toBeCloseTo(0.35);
+    expect([...stabilizeMask(new Float32Array([0.5]), undefined)]).toEqual([0.5]);
+  });
+
+  it("asks for a cutout only where an effect uses one", () => {
+    expect(usesPersonMask({ type: "backgroundBlur", params: { cutout: true } })).toBe(true);
+    expect(usesPersonMask({ type: "backgroundBlur" })).toBe(false);
+    expect(usesPersonMask({ type: "backgroundReplace" })).toBe(true);
+    expect(usesPersonMask({ type: "blur" })).toBe(false);
+  });
+
+  const project = parseProject({
+    settings: { width: 1080, height: 1920, fps: 30 },
+    assets: [{ type: "video", id: "v", src: "v.mp4", duration: 20, width: 1920, height: 1080 }],
+    clips: [
+      { id: "a", assetId: "v", in: 2, duration: 3, speed: 2, focus: { x: 0.3, y: 0.5 }, effects: [{ type: "backgroundBlur", params: { cutout: true } }, { type: "backgroundReplace" }] },
+      { id: "b", assetId: "v", in: 8, duration: 2, effects: [{ type: "backgroundBlur" }] },
+    ],
+  });
+
+  it("feeds the cutout through the clip's timing and crop to the effects that use it", () => {
+    const c = compileProject(project, { output: "o.mp4", masks: { a: "/m/a.mkv" } });
+    expect(c.args).toContain("/m/a.mkv");
+    const g = c.filterGraph;
+    // Same speed and crop focus as the picture, then one copy per effect.
+    expect(g).toMatch(/setpts=PTS-STARTPTS,setpts=PTS\/2,fps=30,format=gray\[mraw\d+\]/);
+    expect(g).toMatch(/crop=1080:1920:\(iw-ow\)\*0\.3:\(ih-oh\)\*0\.5/);
+    expect(g).toMatch(/format=gray,split=2\[mask\d+\]\[mask\d+\]/);
+    expect(g.match(/alphamerge/g)).toHaveLength(2);
+    expect(g).toMatch(/erosion/); // the backdrop pulls the edge in
+    // Clip b has no cutout, so it keeps the ellipse.
+    expect(g).toMatch(/geq=lum=/);
+    // Without a mask file the effects fall back to the ellipse instead of failing.
+    const none = compileProject(project, { output: "o.mp4" }).filterGraph;
+    expect(none).not.toMatch(/alphamerge/);
+  });
+
+  it("gives a cached clip a new key when its cutout or the effect code changes", async () => {
+    const cacheDir = path.join(tmpdir(), "ave-plan");
+    const [a1] = await planSegments(project, { cacheDir, masks: { a: "/m/a.mkv" } });
+    const [a2] = await planSegments(project, { cacheDir, masks: { a: "/m/other.mkv" } });
+    const [a3] = await planSegments({ ...project, clips: [{ ...project.clips[0]!, effects: [{ type: "backgroundReplace", params: { color: "#FF0000" } }] }] }, { cacheDir, masks: { a: "/m/a.mkv" } });
+    expect(new Set([a1!.file, a2!.file, a3!.file]).size).toBe(3);
+  });
+});
+
+const segmenter = new PersonSegmenter();
+const segReady = existsSync(footage) && (await segmenter.segmentSquare(new Uint8Array(PERSON_INPUT * PERSON_INPUT * 3)).then(() => true, () => false));
+
+describe.skipIf(!segReady)("person cutout on real footage", () => {
+  it("writes a mask video and replaces the background behind the person", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "ave-mask-"));
+    try {
+      const mask = path.join(dir, "mask.mkv");
+      await segmenter.writeMask(footage, mask, { start: 0, end: 2, fps: 10 });
+      const gray = (await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", mask, "-f", "rawvideo", "-pix_fmt", "gray", "-"], { binaryStdout: true })).stdoutBuffer!;
+      const frame = 320 * 180;
+      expect(gray.length).toBe(frame * 20);
+      // About a fifth of the frame is the person (she stands left of center), the right edge is wall.
+      const first = gray.subarray(0, frame);
+      const share = first.reduce((n, v) => n + (v > 128 ? 1 : 0), 0) / frame;
+      expect(share).toBeGreaterThan(0.08);
+      expect(share).toBeLessThan(0.4);
+      expect(first[90 * 320 + 315]).toBeLessThan(30);
+
+      const p = parseProject({
+        settings: { width: 640, height: 360, fps: 30 },
+        assets: [{ type: "video", id: "jog", src: footage }],
+        clips: [{ id: "a", assetId: "jog", in: 0, duration: 1, effects: [{ type: "backgroundReplace", params: { color: "#0000FF" } }] }],
+      });
+      const out = path.join(dir, "frame.png");
+      await renderFrame(p, 0.5, { output: out, cacheDir: dir });
+      const px = (await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", out, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { binaryStdout: true })).stdoutBuffer!;
+      const at = (x: number, y: number) => [...px.subarray((y * 640 + x) * 3, (y * 640 + x) * 3 + 3)];
+      const wall = at(620, 180); // replaced (blue, within YUV rounding)
+      expect(wall[0]).toBeLessThan(30);
+      expect(wall[1]).toBeLessThan(30);
+      expect(wall[2]).toBeGreaterThan(230);
+      expect(at(110, 300)[2]).toBeLessThan(200); // her shirt is not
+      expect((await readdir(path.join(dir, "masks"))).filter((f) => f.endsWith(".mkv"))).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -1,13 +1,12 @@
 import { createHash } from "node:crypto";
 import { readdir, rm, stat, utimes } from "node:fs/promises";
 import path from "node:path";
-import type { Project } from "../../core/schema.js";
+import type { Clip, Project } from "../../core/schema.js";
 import { computeTimeline, type TimedClip } from "../../core/timeline.js";
-import { perClipGlobalEffects } from "../../library/effects/index.js";
-import { renderSize } from "./compile.js";
+import { compileProject } from "./compile.js";
 
-/** Bump when the picture a cached clip holds would change for the same inputs (compile changes). */
-export const SEGMENT_VERSION = 3;
+/** Bump when cached clips made by older code must not be reused (the key already covers the compiled graph). */
+export const SEGMENT_VERSION = 4;
 
 /** Default size limit of a render cache folder. */
 export const DEFAULT_CACHE_BYTES = 4e9;
@@ -19,38 +18,33 @@ export interface SegmentPlan {
   exists: boolean;
 }
 
+/** The one-clip project a cached clip is rendered from: the clip alone, silent, without its transition. */
+export function segmentProject(project: Project, clip: Clip): Project {
+  return { ...project, clips: [{ ...clip, transition: undefined, muted: true }], layers: [], audio: [], captions: undefined, audioEffects: [] };
+}
+
 /**
- * The cache file of each primary clip's picture. The key covers everything that shapes it: the
- * source file (path, size, modified time), the clip's trim, speed, fit, effects and fades, the
- * output size and frame rate, and the global effects baked into clips. Any change gives a new file.
+ * The cache file of each primary clip's picture. The key is the FFmpeg graph and inputs that make
+ * it, plus the source file's size and modified time, so any change to the clip, the per-frame
+ * global effects, the output size, the person cutout, or the code that builds effects gives a new file.
  */
-export async function planSegments(project: Project, opts: { cacheDir: string; baseDir?: string; scale?: number }): Promise<SegmentPlan[]> {
+export async function planSegments(
+  project: Project,
+  opts: { cacheDir: string; baseDir?: string; fontsDir?: string; scale?: number; masks?: Record<string, string> },
+): Promise<SegmentPlan[]> {
   const timeline = computeTimeline(project);
-  const size = renderSize(project, opts.scale);
-  const global = perClipGlobalEffects(project.effects);
   const baseDir = opts.baseDir ?? process.cwd();
   return Promise.all(
     timeline.clips.map(async (tc) => {
       const { clip, asset } = tc;
       let source: unknown;
-      if ("src" in asset) {
-        const remote = /^[a-z]+:\/\//i.test(asset.src);
-        const file = remote ? asset.src : path.resolve(baseDir, asset.src);
-        const st = remote ? undefined : await stat(file).catch(() => undefined);
-        source = { type: asset.type, file, bytes: st?.size, mtime: st?.mtimeMs };
-      } else {
-        const { id: _id, label: _label, ...rest } = asset;
-        source = rest;
+      if ("src" in asset && !/^[a-z]+:\/\//i.test(asset.src)) {
+        const st = await stat(path.resolve(baseDir, asset.src)).catch(() => undefined);
+        source = { bytes: st?.size, mtime: st?.mtimeMs };
       }
-      const key = {
-        v: SEGMENT_VERSION,
-        size,
-        fps: project.settings.fps,
-        background: project.settings.backgroundColor,
-        source,
-        clip: { in: clip.in, sourceDuration: tc.sourceDuration, duration: tc.duration, speed: clip.speed, fit: clip.fit, focus: clip.focus, effects: clip.effects, fadeIn: clip.fadeIn, fadeOut: clip.fadeOut },
-        global,
-      };
+      const compiled = compileProject(segmentProject(project, clip), { output: "", scale: opts.scale, baseDir, fontsDir: opts.fontsDir, segment: true, masks: opts.masks });
+      // The last argument is the output path, which is not part of what the clip looks like.
+      const key = { v: SEGMENT_VERSION, source, args: compiled.args.slice(0, -1), graph: compiled.filterGraph };
       const hash = createHash("sha256").update(JSON.stringify(key)).digest("hex").slice(0, 32);
       const file = path.join(opts.cacheDir, `${hash}.mkv`);
       const exists = await stat(file).then((s) => s.size > 0, () => false);

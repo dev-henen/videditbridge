@@ -12,7 +12,7 @@
 | [Rendering & live preview](guides/rendering-and-preview.md) | FFmpeg setup, renders, frames, contact sheets, automatic review of an edit, the preview server |
 | [Color correction & grading](guides/color.md) | Exposure, white balance, tone, HSL, curves, color wheels, finishing, analysis and scopes |
 | [Voice-over](guides/voiceover.md) | Text-to-speech providers and narrated edits |
-| [Faces & reframing](guides/faces.md) | Local face detection and tracking, reframing 16:9 for 9:16, automatic retouch placement, text over faces |
+| [Faces, cutouts & reframing](guides/faces.md) | Local face detection and tracking, person cutout for background blur and replacement, reframing 16:9 for 9:16, text over faces |
 | [Retouch & audio](guides/retouch-and-audio.md) | Beauty retouch, background blur, voice cleanup, audio effects, speed and volume |
 | [Editing raw footage](guides/raw-footage.md) | Sound maps (speech, silence, music), silence removal, shot detection, beat sync, moment effects and sound effects |
 | [Roadmap](roadmap.md) | Suggested improvements, in priority order, and why each matters |

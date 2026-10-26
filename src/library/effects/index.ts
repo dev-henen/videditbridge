@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Effect } from "../../core/schema.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
-import { define, maskedBlend, num, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
+import { define, maskedBlend, num, personBlend, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
 import { motionEffects } from "./motion.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
 
@@ -189,17 +189,43 @@ export const EFFECTS: EffectDefinition[] = [
     category: "retouch",
     perFrame: true,
     description:
-      "Keep the subject sharp and blur everything around it, like a portrait-mode lens. There is no automatic subject detection: set the subject ellipse (x, y = its center, width, height as frame fractions) around the person, then check it with render_frame. A larger feather gives a softer, more natural falloff.",
+      "Keep the subject sharp and blur everything around it, like a portrait-mode lens. With cutout, the person's real outline is found on every frame (on primary clips) and followed as they move; otherwise an ellipse (x, y = its center, width, height as frame fractions) stays sharp. A larger feather gives a softer, more natural edge.",
     params: z.object({
       amount: num(25, 1, 100, "Background blur strength"),
+      cutout: z.boolean().default(false).describe("Follow the person's outline, found automatically on each frame (primary clips); the ellipse is used elsewhere"),
       subject: SubjectRegionSchema.default({ x: 0.5, y: 0.45, width: 0.6, height: 0.7 }).describe("Ellipse around the subject that stays sharp"),
-      feather: num(0.35, 0.02, 1, "Softness of the subject edge, as a fraction of its size"),
+      feather: num(0.35, 0.02, 1, "Softness of the subject edge"),
       dim: num(0, 0, 1, "Also darken the background (0 = no change)"),
     }),
+    usesPersonMask: (p) => p.cutout,
     toFilter: (p, ctx) => {
       const scale = Math.min(ctx.width, ctx.height) / 1080;
       const blurred = [`gblur=sigma=${round3(p.amount * 0.6 * scale)}`, p.dim > 0 && `eq=brightness=${round3(-0.25 * p.dim)}`].filter(Boolean).join(",");
+      const mask = p.cutout && !ctx.alpha ? ctx.personMask?.() : undefined;
+      if (mask) return personBlend(ctx, mask, blurred, p.feather);
       return maskedBlend(ctx, blurred, { region: p.subject, inside: false, feather: p.feather, strength: 1 });
+    },
+  }),
+  define({
+    id: "backgroundReplace",
+    name: "Replace Background",
+    category: "retouch",
+    perFrame: true,
+    description:
+      "Put a solid color behind the person, like a virtual backdrop: the person's outline is found on every frame of primary clips (no green screen needed). Elsewhere the ellipse is kept instead. Best on one or two people in front of a plain-ish scene.",
+    params: z.object({
+      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#101216").describe("Backdrop color, #RRGGBB"),
+      mix: num(1, 0, 1, "How much of the backdrop replaces the scene (0.7 leaves a hint of it)"),
+      subject: SubjectRegionSchema.default({ x: 0.5, y: 0.45, width: 0.6, height: 0.7 }).describe("Ellipse kept when there is no cutout"),
+      feather: num(0.25, 0.02, 1, "Softness of the person's edge"),
+    }),
+    usesPersonMask: () => true,
+    toFilter: (p, ctx) => {
+      // The backdrop is painted over the scene at `mix`, so below 1 a little of the room shows through.
+      const backdrop = `drawbox=x=0:y=0:w=iw:h=ih:color=${toFfmpegColor(p.color)}@${round3(p.mix)}:t=fill`;
+      const mask = !ctx.alpha ? ctx.personMask?.() : undefined;
+      if (mask) return personBlend(ctx, mask, backdrop, p.feather, true);
+      return maskedBlend(ctx, backdrop, { region: p.subject, inside: false, feather: p.feather, strength: 1 });
     },
   }),
 
@@ -439,6 +465,14 @@ export function effectToFilter(effect: Effect, ctx: EffectContext): string {
 
 export function effectsToFilter(effects: Effect[], ctx: EffectContext): string[] {
   return effects.map((e) => effectToFilter(e, ctx));
+}
+
+/** Whether an effect wants the clip's person cutout (see EffectDefinition.usesPersonMask). */
+export function usesPersonMask(effect: Effect): boolean {
+  const def = byId.get(effect.type);
+  if (!def?.usesPersonMask) return false;
+  const parsed = def.params.safeParse(effect.params ?? {});
+  return parsed.success && def.usesPersonMask(parsed.data);
 }
 
 /** Whether an effect works frame by frame (see EffectDefinition.perFrame). Unknown effects are not. */

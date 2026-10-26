@@ -11,6 +11,11 @@ export interface EffectContext {
   alpha?: boolean;
   /** Unique filter-graph label generator, for effects that branch the stream. */
   label?: (prefix: string) => string;
+  /**
+   * The person cutout of this clip, when the renderer prepared one: each call returns a new label of
+   * a gray stream (255 = person) with the same size and timing as the clip. Undefined otherwise.
+   */
+  personMask?: () => string | undefined;
 }
 
 export type EffectCategory = "light" | "color" | "grade" | "retouch" | "blur" | "stylize" | "motion" | "shake" | "distort" | "time";
@@ -27,6 +32,8 @@ export interface EffectDefinition<P extends z.ZodType = z.ZodType> {
    * clip or on the joined video, so the render cache can bake it into cached clips.
    */
   perFrame?: boolean | ((params: z.output<P>) => boolean);
+  /** The effect wants the clip's person cutout (EffectContext.personMask); the renderer then prepares one. */
+  usesPersonMask?: (params: z.output<P>) => boolean;
   /** Returns a comma-separated FFmpeg filter chain. */
   toFilter(params: z.output<P>, ctx: EffectContext): string;
 }
@@ -90,6 +97,24 @@ export function maskedBlend(
     `[${copy}]${branch}[${done}]`,
     `nullsrc=s=${ctx.width}x${ctx.height}:r=${ctx.fps},trim=end_frame=1,format=${fmt},geq=${planes}[${mask}]`,
     `[${orig}][${done}][${mask}]maskedmerge`,
+  ].join(";");
+}
+
+/**
+ * Keep the person sharp and run `background` on everything else, following the person's outline
+ * frame by frame through the cutout stream `mask`. `feather` (0..1) softens the edge, and
+ * `shrink` pulls the edge inward first, so a soft edge does not show the old scene around the person.
+ */
+export function personBlend(ctx: EffectContext, mask: string, background: string, feather: number, shrink = false): string {
+  const label = labeler(ctx);
+  const [orig, copy, bg, soft, person] = [label("fpo"), label("fpc"), label("fpb"), label("fpm"), label("fpp")];
+  const sigma = round3(Math.max(0.5, clamp(feather, 0, 1) * Math.min(ctx.width, ctx.height) * 0.02));
+  return [
+    `format=yuv420p,split=2[${orig}][${copy}]`,
+    `[${copy}]${background}[${bg}]`,
+    `[${mask}]format=gray,${shrink ? `${Array(Math.max(1, Math.round(Math.min(ctx.width, ctx.height) / 360))).fill("erosion").join(",")},` : ""}gblur=sigma=${sigma}[${soft}]`,
+    `[${orig}][${soft}]alphamerge[${person}]`,
+    `[${bg}][${person}]overlay=format=auto:shortest=1,format=yuv420p`,
   ].join(";");
 }
 

@@ -2,7 +2,7 @@
 
 # Effects
 
-79 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+80 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -16,7 +16,7 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
 - **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe)
 - **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs)
-- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur)
+- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace)
 - **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur)
 - **distort**: [mirror](#mirror), [chromaKey](#chromakey), [tilt](#tilt)
 - **motion**: [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat)
@@ -567,18 +567,34 @@ _No parameters._
 
 ### backgroundBlur
 
-**Background Blur / Portrait Mode**. Keep the subject sharp and blur everything around it, like a portrait-mode lens. There is no automatic subject detection: set the subject ellipse (x, y = its center, width, height as frame fractions) around the person, then check it with render_frame. A larger feather gives a softer, more natural falloff.
+**Background Blur / Portrait Mode**. Keep the subject sharp and blur everything around it, like a portrait-mode lens. With cutout, the person's real outline is found on every frame (on primary clips) and followed as they move; otherwise an ellipse (x, y = its center, width, height as frame fractions) stays sharp. A larger feather gives a softer, more natural edge.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `amount` | number |  | `25` | Background blur strength (≥ 1, ≤ 100) |
+| `cutout` | boolean |  | `false` | Follow the person's outline, found automatically on each frame (primary clips); the ellipse is used elsewhere |
 | `subject` | { x, y, width, height } |  | `{"x":0.5,"y":0.45,"width":0.6,"height":0.7}` | Ellipse around the subject that stays sharp |
 | `subject.x` | number | yes |  | Center x (0 = left edge, 1 = right edge) (≥ 0, ≤ 1) |
 | `subject.y` | number | yes |  | Center y (0 = top, 1 = bottom) (≥ 0, ≤ 1) |
 | `subject.width` | number | yes |  | Ellipse width as a fraction of frame width (> 0, ≤ 2) |
 | `subject.height` | number | yes |  | Ellipse height as a fraction of frame height (> 0, ≤ 2) |
-| `feather` | number |  | `0.35` | Softness of the subject edge, as a fraction of its size (≥ 0.02, ≤ 1) |
+| `feather` | number |  | `0.35` | Softness of the subject edge (≥ 0.02, ≤ 1) |
 | `dim` | number |  | `0` | Also darken the background (0 = no change) (≥ 0, ≤ 1) |
+
+### backgroundReplace
+
+**Replace Background**. Put a solid color behind the person, like a virtual backdrop: the person's outline is found on every frame of primary clips (no green screen needed). Elsewhere the ellipse is kept instead. Best on one or two people in front of a plain-ish scene.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `color` | string |  | `"#101216"` | Backdrop color, #RRGGBB |
+| `mix` | number |  | `1` | How much of the backdrop replaces the scene (0.7 leaves a hint of it) (≥ 0, ≤ 1) |
+| `subject` | { x, y, width, height } |  | `{"x":0.5,"y":0.45,"width":0.6,"height":0.7}` | Ellipse kept when there is no cutout |
+| `subject.x` | number | yes |  | Center x (0 = left edge, 1 = right edge) (≥ 0, ≤ 1) |
+| `subject.y` | number | yes |  | Center y (0 = top, 1 = bottom) (≥ 0, ≤ 1) |
+| `subject.width` | number | yes |  | Ellipse width as a fraction of frame width (> 0, ≤ 2) |
+| `subject.height` | number | yes |  | Ellipse height as a fraction of frame height (> 0, ≤ 2) |
+| `feather` | number |  | `0.25` | Softness of the person's edge (≥ 0.02, ≤ 1) |
 
 ## Blur
 

@@ -96,13 +96,14 @@ export function modelsDir(opts: { modelsDir?: string } = {}): string {
   return opts.modelsDir ?? process.env.AVE_MODELS_DIR ?? path.join(homedir(), ".cache", "ai-video-editor", "models");
 }
 
-async function ensureModel(opts: FaceDetectorOptions): Promise<string> {
-  const dir = path.join(modelsDir(opts), "yunet");
-  const file = path.join(dir, FACE_MODEL.file);
+/** A model file in the models folder, downloaded on first use. */
+export async function ensureModelFile(opts: { modelsDir?: string; onDownload?: (p: number) => void }, folder: string, model: { url: string; file: string }): Promise<string> {
+  const dir = path.join(modelsDir(opts), folder);
+  const file = path.join(dir, model.file);
   if (await stat(file).then((s) => s.size > 100_000, () => false)) return file;
   await mkdir(dir, { recursive: true });
-  const res = await fetch(FACE_MODEL.url);
-  if (!res.ok || !res.body) throw new Error(`Could not download the face model (${res.status}) from ${FACE_MODEL.url}`);
+  const res = await fetch(model.url);
+  if (!res.ok || !res.body) throw new Error(`Could not download the model (${res.status}) from ${model.url}`);
   const total = Number(res.headers.get("content-length") ?? 0);
   const chunks: Uint8Array[] = [];
   let got = 0;
@@ -120,8 +121,17 @@ async function ensureModel(opts: FaceDetectorOptions): Promise<string> {
   return file;
 }
 
-type OrtSession = { run(feeds: Record<string, unknown>): Promise<Record<string, { data: ArrayLike<number> }>> };
-type Ort = { InferenceSession: { create(file: string, opts?: object): Promise<OrtSession> }; Tensor: new (type: string, data: Float32Array, dims: number[]) => unknown };
+export type OrtSession = { run(feeds: Record<string, unknown>): Promise<Record<string, { data: ArrayLike<number> }>> };
+export type Ort = { InferenceSession: { create(file: string, opts?: object): Promise<OrtSession> }; Tensor: new (type: string, data: Float32Array, dims: number[]) => unknown };
+
+/** ONNX Runtime, an optional package. */
+export async function loadOrt(what: string): Promise<Ort> {
+  try {
+    return (await import("onnxruntime-node" as string)) as Ort;
+  } catch {
+    throw new Error(`${what} needs the optional package onnxruntime-node (it comes with @huggingface/transformers; npm install onnxruntime-node).`);
+  }
+}
 
 const sessions = new Map<string, Promise<{ ort: Ort; session: OrtSession }>>();
 
@@ -134,13 +144,8 @@ export class FaceDetector {
     let s = sessions.get(key);
     if (!s) {
       s = (async () => {
-        let ort: Ort;
-        try {
-          ort = (await import("onnxruntime-node" as string)) as Ort;
-        } catch {
-          throw new Error("Face detection needs the optional package onnxruntime-node (it comes with @huggingface/transformers; npm install onnxruntime-node).");
-        }
-        const file = await ensureModel(this.options);
+        const ort = await loadOrt("Face detection");
+        const file = await ensureModelFile(this.options, "yunet", FACE_MODEL);
         return { ort, session: await ort.InferenceSession.create(file, { logSeverityLevel: 3 }) };
       })();
       sessions.set(key, s);

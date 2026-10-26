@@ -2,7 +2,7 @@ import path from "node:path";
 import type { Asset, Clip, Effect, Fit, MediaLayer, Project } from "../../core/schema.js";
 import { computeTimeline, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
-import { effectsToFilter, escapeFilterPath, perClipGlobalEffects, type EffectContext } from "../../library/effects/index.js";
+import { effectsToFilter, escapeFilterPath, perClipGlobalEffects, usesPersonMask, type EffectContext } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
 import { overlayMotion } from "../../library/animations/index.js";
@@ -43,6 +43,11 @@ export interface CompileOptions {
   segments?: Record<string, string>;
   /** Compile the picture of the project's only clip for the render cache: video only, at the intermediate quality. */
   segment?: boolean;
+  /**
+   * Person cutout videos for clips whose effects use one (clip id to file, see PersonSegmenter.writeMask):
+   * gray, upright, at the source's shape, in source time from the clip's in point.
+   */
+  masks?: Record<string, string>;
   /** Encode the video on the graphics card instead of with x264, at matching quality. */
   hardwareEncoder?: HardwareEncoder;
 }
@@ -219,11 +224,25 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     } else {
       const raw = g.label("raw");
       const speed = asset.type === "video" ? clip.speed : 1;
-      g.add(`[${k}:v]${chain(["setpts=PTS-STARTPTS", speed !== 1 && `setpts=PTS/${speed}`, `fps=${F}`])}[${raw}]`);
+      const timing = (input: string) => `[${input}]${chain(["setpts=PTS-STARTPTS", speed !== 1 && `setpts=PTS/${speed}`, `fps=${F}`])}`;
+      g.add(`${timing(`${k}:v`)}[${raw}]`);
       const fitted = fit(raw, clip.fit, W, H, false, clip.focus);
+      // The person cutout goes through the same timing and fit as the picture, so it lines up.
+      const maskUses = clip.effects.filter(usesPersonMask).length;
+      const maskLabels: string[] = [];
+      if (maskUses && opts.masks?.[clip.id]) {
+        const mraw = g.label("mraw");
+        g.add(`${timing(`${g.addInput(["-i", opts.masks[clip.id]!])}:v`)},format=gray[${mraw}]`);
+        const mfit = fit(mraw, clip.fit, W, H, true, clip.focus);
+        for (let n = 0; n < maskUses; n++) maskLabels.push(g.label("mask"));
+        g.add(`[${mfit}]format=gray${maskUses > 1 ? `,split=${maskUses}` : ""}${maskLabels.map((l) => `[${l}]`).join("")}`);
+      }
+      const clipEffects = effectsToFilter(clip.effects, { ...effectCtx(tc.duration), ...(maskLabels.length ? { personMask: () => maskLabels.shift() } : {}) });
+      // Any cutout an effect did not take still has to be consumed.
+      for (const l of maskLabels) g.add(`[${l}]nullsink`);
       g.add(
         `[${fitted}]${chain([
-          ...effectsToFilter(clip.effects, effectCtx(tc.duration)),
+          ...clipEffects,
           clip.fadeIn && `fade=t=in:st=0:d=${clip.fadeIn}`,
           clip.fadeOut && `fade=t=out:st=${round3(Math.max(0, tc.duration - clip.fadeOut))}:d=${clip.fadeOut}`,
           ...effectsToFilter(perClip, effectCtx(tc.duration)),

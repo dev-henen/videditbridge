@@ -594,8 +594,9 @@ export const TOOLS: ToolDefinition[] = [
     name: "retouch",
     description:
       "Retouch people in a clip, a media layer, every clip, or the whole video. beauty: skin smoothing that keeps edges sharp, plus brighten and warmth, on the whole frame or only inside a face region. " +
-      "backgroundBlur: portrait mode, keeping an ellipse around the subject sharp and blurring the rest. " +
-      'Pass region "face" or subject "face" to place the ellipse automatically from the faces found in each clip (covering where the face moves during the clip), or give an ellipse yourself (center x, y and width, height as frame fractions). The ellipse stays put for the whole clip, so check the result with render_frame. ' +
+      "backgroundBlur: portrait mode, blurring everything but the subject. subject \"person\" follows the real outline of the person on every frame (cut out on this machine; primary video clips only), which is the best choice when people move. " +
+      "replaceBackground: a solid backdrop color behind the person, using the same cutout (no green screen needed). " +
+      'Ellipses instead: region "face" or subject "face" place one from the faces found in each clip (covering where the face moves), or give one yourself (center x, y and width, height as frame fractions); an ellipse stays put for the whole clip. Check the result with render_frame. ' +
       "Settings merge into the target's existing retouch, so you can tweak one value at a time. Pass false to remove one.",
     input: z.object({
       target: z.string().describe('A clip id, a media layer id, "all-clips", or "global" (whole video)'),
@@ -619,18 +620,28 @@ export const TOOLS: ToolDefinition[] = [
           z.object({
             amount: z.number().min(1).max(100).optional().describe("Blur strength 1-100 (default 25)"),
             subject: z
-              .union([SubjectRegionSchema, z.literal("face")])
+              .union([SubjectRegionSchema, z.literal("face"), z.literal("person")])
               .optional()
-              .describe('Ellipse around the subject that stays sharp; "face" to place it around the person found in the clip'),
+              .describe('"person" to follow the outline of the person frame by frame; "face" for an ellipse placed from the face; or an ellipse'),
             feather: z.number().min(0.02).max(1).optional().describe("Edge softness (default 0.35)"),
             dim: z.number().min(0).max(1).optional().describe("Darken the background 0-1 (default 0)"),
+          }),
+        ])
+        .optional(),
+      replaceBackground: z
+        .union([
+          z.literal(false),
+          z.object({
+            color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe("Backdrop color #RRGGBB (default #101216)"),
+            mix: z.number().min(0).max(1).optional().describe("1 replaces the scene fully; 0.7 leaves a hint of it"),
+            feather: z.number().min(0.02).max(1).optional().describe("Edge softness (default 0.25)"),
           }),
         ])
         .optional(),
     }),
     mutates: true,
     run: async (s, i, activity) => {
-      if (i.beauty === undefined && i.backgroundBlur === undefined) return { text: "Give beauty and/or backgroundBlur settings.", isError: true };
+      if (i.beauty === undefined && i.backgroundBlur === undefined && i.replaceBackground === undefined) return { text: "Give beauty, backgroundBlur or replaceBackground settings.", isError: true };
       const targets = i.target === "all-clips" ? s.project.clips.map((c) => c.id) : [i.target];
       if (!targets.length) return { text: "There are no clips to retouch.", isError: true };
       let p = s.project;
@@ -647,7 +658,8 @@ export const TOOLS: ToolDefinition[] = [
         notes.push(`${target}: ${kind} ellipse at (${region.x}, ${region.y}), ${region.width} x ${region.height}${found.tracks.length > 1 ? ` (main of ${found.tracks.length} faces)` : ""}`);
         return region;
       };
-      for (const [type, settings] of [["beauty", i.beauty], ["backgroundBlur", i.backgroundBlur]] as const) {
+      const cutoutTarget = (target: string) => s.project.clips.some((c) => c.id === target && s.project.assets.find((a) => a.id === c.assetId)?.type === "video");
+      for (const [type, settings] of [["beauty", i.beauty], ["backgroundBlur", i.backgroundBlur], ["backgroundReplace", i.replaceBackground]] as const) {
         if (settings === undefined) continue;
         for (const target of targets) {
           // Throws for an unknown target, so the removal below only skips a missing effect.
@@ -662,6 +674,13 @@ export const TOOLS: ToolDefinition[] = [
           }
           const merged: Record<string, unknown> = { ...(current ?? {}), ...settings };
           if (merged.region === null) delete merged.region;
+          // "person" follows the cutout; any ellipse (given or found) turns the cutout off.
+          if (type === "backgroundBlur" && "subject" in settings && settings.subject !== undefined) {
+            merged.cutout = settings.subject === "person";
+            if (settings.subject === "person") merged.subject = current?.subject;
+          }
+          if ((merged.cutout || type === "backgroundReplace") && !cutoutTarget(target))
+            notes.push(`${target}: the person cutout works on primary video clips, so a fixed ellipse is used here`);
           for (const [key, kind] of [["region", "face"], ["subject", "person"]] as const) {
             if (merged[key] !== "face") continue;
             const region = await auto(target, kind);

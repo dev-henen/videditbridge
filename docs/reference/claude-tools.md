@@ -267,13 +267,14 @@ _No parameters._
 
 ### retouch
 
-**edits**. Retouch people in a clip, a media layer, every clip, or the whole video. beauty: skin smoothing that keeps edges sharp, plus brighten and warmth, on the whole frame or only inside a face region. backgroundBlur: portrait mode, keeping an ellipse around the subject sharp and blurring the rest. Pass region "face" or subject "face" to place the ellipse automatically from the faces found in each clip (covering where the face moves during the clip), or give an ellipse yourself (center x, y and width, height as frame fractions). The ellipse stays put for the whole clip, so check the result with render_frame. Settings merge into the target's existing retouch, so you can tweak one value at a time. Pass false to remove one.
+**edits**. Retouch people in a clip, a media layer, every clip, or the whole video. beauty: skin smoothing that keeps edges sharp, plus brighten and warmth, on the whole frame or only inside a face region. backgroundBlur: portrait mode, blurring everything but the subject. subject "person" follows the real outline of the person on every frame (cut out on this machine; primary video clips only), which is the best choice when people move. replaceBackground: a solid backdrop color behind the person, using the same cutout (no green screen needed). Ellipses instead: region "face" or subject "face" place one from the faces found in each clip (covering where the face moves), or give one yourself (center x, y and width, height as frame fractions); an ellipse stays put for the whole clip. Check the result with render_frame. Settings merge into the target's existing retouch, so you can tweak one value at a time. Pass false to remove one.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `target` | string | yes |  | A clip id, a media layer id, "all-clips", or "global" (whole video) |
 | `beauty` | false \| { smooth, brighten, warmth, region } |  |  |  |
 | `backgroundBlur` | false \| { amount, subject, feather, dim } |  |  |  |
+| `replaceBackground` | false \| { color, mix, feather } |  |  |  |
 
 ## Layers
 

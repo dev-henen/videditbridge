@@ -1,4 +1,4 @@
-# Faces & reframing
+# Faces, cutouts & reframing
 
 The editor finds faces on this machine with OpenCV's YuNet model (MIT license, 230 KB), run by ONNX Runtime (the optional `onnxruntime-node` package, which also comes with `@huggingface/transformers`). The model downloads once to `~/.cache/ai-video-editor/models/yunet` (or `$AVE_MODELS_DIR`) and then works offline, with no account or key. Code is in [src/tools/vision](../../src/tools/vision).
 
@@ -20,10 +20,30 @@ YuNet was as accurate as UltraFace without its false detection, gives five landm
 |---|---|
 | `detect_faces` | For each clip: when each person is on screen (timeline times), where the face sits in the edit's frame after the clip's crop, how far it moves, and whether the crop cuts it off. For an asset: the same in source time and source frame |
 | `reframe` | Sets each cover-fit clip's `focus` so the main face stays in frame, for 16:9 footage in a 9:16 video and the like. It keeps the face's whole path in frame when the crop is wide enough, and otherwise centers its usual spot |
-| `retouch` | `beauty.region: "face"` and `backgroundBlur.subject: "face"` place the ellipses from the detected face |
+| `retouch` | `beauty.region: "face"` places the retouch ellipse on the detected face. `backgroundBlur.subject: "person"` and `replaceBackground` follow the person's outline on every frame (see below) |
 | `review_edit` | Reports text and captions over a face, found in the frames it renders without text |
 
 Video is sampled twice a second by default (`fps`), streamed through one FFmpeg process at the model's 640 px input, and faces in successive frames are linked into tracks, one per person. Results are cached per file version, range and rate, so asking again is instant. A 4 second 1080p clip takes about 2 seconds.
+
+## Person cutout
+
+`backgroundBlur` with `cutout: true` and `backgroundReplace` cut the person out of every frame instead of using a fixed ellipse, so the edge follows them as they move, including hands and whatever they hold. The cutout comes from PaddleSeg's PP-HumanSeg (Apache 2.0, 6 MB, from the OpenCV model zoo), also run locally and downloaded once.
+
+Three person-segmentation models were compared on the same frames:
+
+| Model | Time per frame | Edges |
+|---|---|---|
+| PP-HumanSeg (chosen) | 11 ms | Clean around hands, phones and seats |
+| MediaPipe selfie segmentation | 4 ms | Blocky around hands; a stray patch on a stadium roof |
+| MODNet | 790 ms | Finest hair, but too slow for every frame, and it dropped a hand |
+
+How it works:
+
+1. Before rendering, each video clip whose effects use the cutout gets a mask video: one frame per output frame of its source range, smoothed over time so the edge does not flicker, stored as small lossless gray video in the render cache's `masks` folder (or the system temp folder). It takes about 25 ms per frame on a laptop, once.
+2. The renderer feeds the mask through the same speed, frame rate and crop as the picture, so they line up, and gives it to the effects (`EffectContext.personMask`).
+3. The effect blurs or paints the background, then lays the person back on top, using the mask as transparency with a softened edge. `backgroundReplace` pulls the edge in a few pixels first, so the old scene does not show around the person.
+
+On media layers and global effects there is no cutout, and the effects use their ellipse instead. Cached clips are keyed on their compiled FFmpeg graph, so a new mask (for example after trimming) or a change in how an effect is built renders the clip again.
 
 ## In code
 
@@ -48,5 +68,6 @@ const focus = focusOn(people[0].extent, { width, height }, { width: 1080, height
 - The crop, retouch ellipse and blur ellipse are fixed for a clip. Following a moving face needs keyframes (roadmap #2).
 - Zooms and shakes from effects are not followed when mapping faces into the frame.
 - Faces smaller than about 10 pixels at the model's 640 px input (a person far away in 4K) can be missed, and faces seen from behind or mostly out of frame are not found.
-- The person around a face is an estimate; a real cutout (segmentation) is still to come.
+- The ellipse from `personRegion` is an estimate from the face; use the cutout when the person moves.
+- The cutout is for people. Hair edges and fast motion are softer than with a green screen, and objects people are not holding count as background.
 - Phone video stored sideways is read upright: `probe` now reports its upright size. Projects that imported such a clip earlier keep the old size until the clip is imported again.
