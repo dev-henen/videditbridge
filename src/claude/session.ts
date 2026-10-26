@@ -1,8 +1,10 @@
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { Project } from "../core/schema.js";
 import { createProject } from "../core/operations.js";
+import { defaultFontsDir } from "../tools/fonts/index.js";
 import type { TranscriptionProvider } from "../tools/transcript/providers.js";
 import type { TTSProvider } from "../tools/voiceover/providers.js";
 
@@ -178,8 +180,14 @@ export class EditorSession extends EventEmitter<SessionEvents> {
 
   /** Options every render of this session shares: media folder, ffmpeg, fonts and the render cache. */
   get renderOptions(): { baseDir: string; ffmpegPath?: string; fontsDir?: string; cacheDir?: string } {
-    const { baseDir, ffmpegPath, fontsDir, cacheDir } = this.options;
+    const { baseDir, ffmpegPath, cacheDir } = this.options;
+    const fontsDir = existsSync(this.fontsDir) ? this.fontsDir : undefined;
     return { baseDir, ffmpegPath, fontsDir, ...(cacheDir ? { cacheDir } : {}) };
+  }
+
+  /** Where extra fonts (installed Google Fonts, the icon font) live: the fontsDir option, else the shared fonts folder. */
+  get fontsDir(): string {
+    return path.resolve(this.options.fontsDir ?? defaultFontsDir());
   }
 
   get project(): Project {

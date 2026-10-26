@@ -2,7 +2,7 @@
 
 # Claude tools
 
-82 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+91 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [review_edit](#review_edit)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -178,7 +178,7 @@ _No parameters._
 
 ### update_clip
 
-**edits**. Change properties of a primary-track clip (in, duration, speed, volume, muted, fit, effects, audioEffects, transition, fadeIn, fadeOut).
+**edits**. Change properties of a primary-track clip (in, duration, speed, volume, muted, fit, effects, audioEffects, transition, fadeIn, fadeOut, audioLead, audioTail, reverse). reverse: true plays it backwards.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -696,11 +696,12 @@ _No parameters._
 
 ### list_voices
 
-**read-only**. List the narration voices: the local voices that run on this machine (with accent, gender and quality grade) and the session's own provider if it has one. Grades are the voice model's published ones; prefer A to C+ for narration.
+**read-only**. List the narration voices: the local voices that run on this machine (with language or accent, gender and quality grade) and the session's own provider if it has one. Grades are the voice model's published ones; prefer A to C+ for English narration. Besides English there are Spanish, French, Hindi, Italian and Brazilian Portuguese voices (they need the optional espeak-ng package); write the text in that language.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `all` | boolean |  | `false` | Include weaker voices (graded below C+) |
+| `language` | string |  |  | Only voices speaking this language, e.g. 'es', 'fr' or 'French' |
 
 ### preview_voice
 
@@ -723,11 +724,11 @@ _No parameters._
 
 ### generate_voiceover
 
-**edits**. Synthesize narration from text and add it as a voice-over with measured word timings for captions. Runs a neural voice on this machine unless the session has another provider (no API key; the model downloads once). Pick a voice with list_voices and audition it with preview_voice; the project's default voice (set_voice) is used when none is given. Write it the way people talk, in short sentences; one call per section lets you place each part on the timeline.
+**edits**. Synthesize narration from text and add it as a voice-over with measured word timings for captions. Runs a neural voice on this machine unless the session has another provider (no API key; the model downloads once). Pick a voice with list_voices and audition it with preview_voice; the project's default voice (set_voice) is used when none is given. Write it the way people talk, in short sentences; one call per section lets you place each part on the timeline. Pacing markup (local voice): [pause] (0.6s) or [pause 1.5] for a pause, [breath] for a short one, [slow]...[/slow] and [fast]...[/fast] for pace, *word* to set a word apart. The text is spoken in the voice's language (list_voices shows it).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `text` | string | yes |  |  |
+| `text` | string | yes |  | What to say, with optional pacing markup |
 | `start` | number |  | `0` | (≥ 0) |
 | `voice` | string |  |  | Voice id (see list_voices); default: the project's voice, else af_heart |
 | `speed` | number |  |  | 1 = normal, 1.1 a little brisker |
@@ -904,6 +905,35 @@ _No parameters._
 
 ## Other
 
+### clean_up_media
+
+**edits**. Tidy the project's media: assets that are the same file content (imported twice, or copies under other names) become one, and assets nothing in the edit uses are removed (pass keep for ones you still plan to use). deleteFiles also deletes files in the project's media folder that no asset uses any more (this cannot be undone; ask the user first).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `removeUnused` | boolean |  | `true` |  |
+| `keep` | string[] |  | `[]` | Asset ids to keep even if unused |
+| `deleteFiles` | boolean |  | `false` | Also delete unused files in <project>/media |
+
+### freeze_frame
+
+**edits**. Hold one frame of the video still for a few seconds (a freeze-frame, e.g. for a 'that's me' title or a dramatic beat). The frame at the given timeline time is held there and the rest of the clip continues after it, so the video gets longer by seconds. The still keeps the clip's fit, crop and effects. Add a title or effect on top afterwards.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `time` | number | yes |  | Timeline seconds of the frame to hold (≥ 0) |
+| `seconds` | number |  | `2` | (≥ 0.1, ≤ 30) |
+
+### split_edit
+
+**edits**. Make a J or L cut at the cut into a primary clip, so sound and picture change at different moments (standard in interviews and talking heads). 'j': the clip's sound starts early, heard under the end of the previous shot (we hear the next speaker before we see them). 'l': the previous clip's sound carries on under the start of this one (we keep hearing the speaker while cutting to a reaction or b-roll). The other clip's sound is muted where they overlap; captions follow the sound. seconds 0 removes it. Needs footage beyond the cut (trimmed-off source).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipId` | string | yes |  | The clip right after the cut |
+| `type` | "j" \| "l" | yes |  |  |
+| `seconds` | number | yes |  | How far the sound leads (j) or trails (l) the picture cut; 0.5-2 is typical (≥ 0, ≤ 10) |
+
 ### detect_faces
 
 **read-only**. Find and follow the faces in primary clips (or in a source asset), on this machine (a small model downloads once). For each person: when they are on screen (timeline times), where the face sits in the edit's frame after the clip's crop, and how far it moves. Use it to place titles and callouts away from faces, to check what a 9:16 crop keeps (then reframe), and for retouch with region or subject "face". Zooms and shakes from effects are not followed.
@@ -941,6 +971,59 @@ _No parameters._
 | `type` | string | yes |  | Effect type on the target, e.g. blur, color, vignette |
 | `keyframes` | { time, params, easing }[] \| null | yes |  |  |
 | `relative` | boolean |  | `false` | Times count from the clip's or layer's start instead of the timeline |
+
+### search_icons
+
+**read-only**. Find icons for feature callouts, lists and lower thirds (the Lucide set, about 1,600 line icons, free to use). Search by what it shows: 'battery', 'camera', 'arrow right', 'check'. Returns icon names for add_icon. The icon font downloads once on first use.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string | yes |  |  |
+| `limit` | integer |  | `30` | (≥ 1, ≤ 100) |
+
+### add_icon
+
+**edits**. Put an icon on screen (see search_icons for names), drawn sharp at any size like text, optionally on a round or rounded badge. Position is the icon center in 0-1 frame coordinates; size is its height as a fraction of the frame height. Animate it like text.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Icon name from search_icons, e.g. 'battery-charging' |
+| `start` | number | yes |  | (≥ 0) |
+| `duration` | number | yes |  | (> 0) |
+| `position` | { x, y } |  | `{"x":0.5,"y":0.5}` |  |
+| `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `size` | number |  | `0.1` | (≥ 0.02, ≤ 0.8) |
+| `color` | string |  | `"#FFFFFF"` |  |
+| `badge` | { color, shape } |  |  | A filled circle or rounded square behind the icon |
+| `badge.color` | string | yes |  |  |
+| `badge.shape` | "ellipse" \| "roundedRect" |  | `"ellipse"` |  |
+| `animationIn` | { type, duration, easing } |  |  |  |
+| `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationIn.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+| `animationOut` | { type, duration, easing } |  |  |  |
+| `animationOut.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationOut.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationOut.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+
+### list_fonts
+
+**read-only**. List the font families text can use: the ones installed on this computer and the ones added with install_font. Use the family name exactly as listed in a text style's fontFamily.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string |  |  | Filter by name, e.g. 'mono' or 'sans' |
+
+### install_font
+
+**read-only**. Add a font from Google Fonts (all open-licensed, free for video), e.g. 'Montserrat', 'Bebas Neue', 'Playfair Display', 'Inter', 'Anton'. It downloads once into the fonts folder and every render can use it as fontFamily.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `family` | string | yes |  | Family name as on fonts.google.com |
+| `weights` | integer[] |  |  | Weights to add, default [400, 700] |
+| `italic` | boolean |  | `false` |  |
 
 ### animate_layer
 
@@ -985,12 +1068,36 @@ _No parameters._
 | `question` | string | yes |  | What to choose, e.g. 'Which voice should narrate?' |
 | `options` | { label, description, audio, image }[] | yes |  |  |
 
+### match_color
+
+**edits**. Make clips look like a reference clip: their red, green and blue levels are measured against the reference's and matched with per-channel curves (exposure, contrast and color cast together), before any whole-video grade. Use when shots from different cameras or lighting cut together badly. The match is a curves effect at the end of each clip (re-running replaces it); check with render_frame, and lower strength if it overshoots.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipIds` | string[] | yes |  | Clips to change, or ["all-clips"] for every clip except the reference |
+| `referenceClipId` | string | yes |  | Clip whose look to match |
+| `strength` | number |  | `0.85` | (≥ 0, ≤ 1) |
+
 ### review_edit
 
-**read-only**. Check the edit for what a viewer notices, with timeline times, without changing anything. It renders sample frames and the audio mix in one pass and reports: text that is hard to read against the picture, runs off the frame, or collides with captions or other text (text); text and captions where TikTok, Reels and Shorts put their buttons and captions (safe-zones); black, frozen or repeated footage (frames); words cut off at an edit, doubled caption words, captions over silence, and speech the transcript skipped (speech); loudness off target, peaks, and music too loud under the voice (audio); screen color a chroma key left behind (key). It has no face detection, so check text over faces with render_frame. Run it before render_video and after big changes, fix what it finds, then run it again.
+**read-only**. Check the edit for what a viewer notices, with timeline times, without changing anything. It renders sample frames and the audio mix in one pass and reports: text that is hard to read against the picture, runs off the frame, or collides with captions or other text (text); text and captions where TikTok, Reels and Shorts put their buttons and captions (safe-zones); black, frozen or repeated footage (frames); words cut off at an edit, doubled caption words, captions over silence, and speech the transcript skipped (speech); loudness off target, peaks, and music too loud under the voice (audio); screen color a chroma key left behind (key). It also finds text and captions covering a face (local face detection). Run it before render_video and after big changes, fix what it finds, then run it again.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `checks` | "text" \| "safe-zones" \| "frames" \| "speech" \| "audio" \| "key"[] |  |  | Only these checks (default all) |
 | `platform` | "auto" \| "tiktok" \| "reels" \| "shorts" \| "vertical" \| "none" |  | `"auto"` | Safe zones to check: auto = all three vertical apps for a portrait video, none for landscape |
 | `loudnessTarget` | number |  | `-14` | Integrated loudness to aim for in LUFS: -14 social video and YouTube, -16 podcasts (≥ -30, ≤ -8) |
+
+### make_thumbnail
+
+**read-only**. Make a thumbnail image (YouTube style: a frame of the video, punchier color, a big bold title of 2-5 words). The frame comes from the edit at time (without its own titles and captions). The title goes on the side away from the faces in the frame (side auto), wrapped onto short lines. Saved as a 1280x720 JPEG for landscape projects (YouTube's size), else the project's size. Look at the result and try another time or title if it does not read at a glance.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `title` | string | yes |  | 2-5 words; wrapped automatically |
+| `subtitle` | string |  |  | Small line under the title, in a colored box |
+| `time` | number |  |  | Timeline time of the frame (default: the middle) (≥ 0) |
+| `side` | "auto" \| "left" \| "right" \| "top" \| "bottom" |  | `"auto"` |  |
+| `color` | string |  | `"#FFFFFF"` | Title color |
+| `accentColor` | string |  | `"#FFD000"` | Subtitle box color |
+| `punch` | number |  | `0.6` | How much to boost contrast and color (0 = frame as is) (≥ 0, ≤ 1) |

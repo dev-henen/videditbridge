@@ -49,6 +49,7 @@ import { invertRanges } from "../core/ranges.js";
 import { rm, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileHash, listFiles } from "../tools/media/files.js";
+import { ICON_FONT, closestIcons, iconGlyphs, installGoogleFont, listFontFamilies, searchIcons } from "../tools/fonts/index.js";
 import type { ActivityHandle, EditorSession } from "./session.js";
 
 export interface ToolResult {
@@ -1168,6 +1169,107 @@ export const TOOLS: ToolDefinition[] = [
     run: async (s, i) => {
       const id = newId("text");
       return commit(s, ops.addLayer(s.project, { type: "text", id, ...i } as ops.LayerInput), "add_text", i, `Added text layer ${id}.`);
+    },
+  }),
+  tool({
+    name: "search_icons",
+    description:
+      "Find icons for feature callouts, lists and lower thirds (the Lucide set, about 1,600 line icons, free to use). Search by what it shows: 'battery', 'camera', 'arrow right', 'check'. Returns icon names for add_icon. The icon font downloads once on first use.",
+    input: z.object({ query: z.string().min(1), limit: z.number().int().min(1).max(100).default(30) }),
+    mutates: false,
+    run: async (s, i) => {
+      const glyphs = await iconGlyphs(s.fontsDir);
+      const found = searchIcons(glyphs.keys(), i.query, i.limit);
+      const fuzzy = found.length ? [] : closestIcons(glyphs.keys(), i.query.toLowerCase().replace(/\s+/g, "-"));
+      if (fuzzy.length) return ok(`No exact match for "${i.query}". Close spellings: ${fuzzy.join(", ")}`, { icons: fuzzy });
+      return ok(found.length ? `Icons for "${i.query}": ${found.join(", ")}` : `No icon matches "${i.query}". Try a simpler word (e.g. 'phone' instead of 'smartphone screen').`, { icons: found });
+    },
+  }),
+  tool({
+    name: "add_icon",
+    description:
+      "Put an icon on screen (see search_icons for names), drawn sharp at any size like text, optionally on a round or rounded badge. Position is the icon center in 0-1 frame coordinates; size is its height as a fraction of the frame height. Animate it like text.",
+    input: z.object({
+      name: z.string().describe("Icon name from search_icons, e.g. 'battery-charging'"),
+      start: z.number().min(0),
+      duration: z.number().positive(),
+      position: PositionSchema.default({ x: 0.5, y: 0.5 }),
+      size: z.number().min(0.02).max(0.8).default(0.1),
+      color: z.string().regex(/^#[0-9a-fA-F]{6,8}$/).default("#FFFFFF"),
+      badge: z
+        .object({ color: z.string().regex(/^#[0-9a-fA-F]{6,8}$/), shape: z.enum(["ellipse", "roundedRect"]).default("ellipse") })
+        .optional()
+        .describe("A filled circle or rounded square behind the icon"),
+      animationIn: AnimationSchema.optional(),
+      animationOut: AnimationSchema.optional(),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const glyphs = await iconGlyphs(s.fontsDir);
+      const glyph = glyphs.get(i.name);
+      if (!glyph) {
+        const near = searchIcons(glyphs.keys(), i.name.replace(/-/g, " "), 8);
+        if (!near.length) near.push(...closestIcons(glyphs.keys(), i.name));
+        return { text: `No icon "${i.name}".${near.length ? ` Close: ${near.join(", ")}` : " Use search_icons."}`, isError: true };
+      }
+      const { width: W, height: H } = s.project.settings;
+      const px = Math.round(i.size * H);
+      let p = s.project;
+      const ids: string[] = [];
+      const anim = { ...(i.animationIn ? { animationIn: i.animationIn } : {}), ...(i.animationOut ? { animationOut: i.animationOut } : {}) };
+      if (i.badge) {
+        const d = px * 1.7;
+        const id = newId("shape");
+        p = ops.addLayer(p, { type: "shape", id, shape: i.badge.shape, start: i.start, duration: i.duration, position: i.position, size: { width: round3(d / W), height: round3(d / H) }, color: i.badge.color, radius: Math.round(d * 0.28), label: `icon badge ${i.name}`, ...anim });
+        ids.push(id);
+      }
+      const id = newId("icon");
+      p = ops.addLayer(p, {
+        type: "text",
+        id,
+        text: glyph,
+        start: i.start,
+        duration: i.duration,
+        position: i.position,
+        style: { fontFamily: ICON_FONT, fontSize: px, color: i.color, bold: false, outlineWidth: 0, shadow: i.badge ? 0 : Math.max(1, Math.round(px / 40)) },
+        label: `icon ${i.name}`,
+        ...anim,
+      } as ops.LayerInput);
+      ids.push(id);
+      return commit(s, p, "add_icon", i, `Added icon "${i.name}" (${ids.join(", ")}).`);
+    },
+  }),
+  tool({
+    name: "list_fonts",
+    description: "List the font families text can use: the ones installed on this computer and the ones added with install_font. Use the family name exactly as listed in a text style's fontFamily.",
+    input: z.object({ query: z.string().optional().describe("Filter by name, e.g. 'mono' or 'sans'") }),
+    mutates: false,
+    run: async (s, i) => {
+      const q = i.query?.toLowerCase();
+      const fams = (await listFontFamilies(s.fontsDir)).filter((f) => f.family !== ICON_FONT && (!q || f.family.toLowerCase().includes(q)));
+      const added = fams.filter((f) => f.source === "installed");
+      const system = fams.filter((f) => f.source === "system");
+      const fmt = (f: (typeof fams)[number]) => `${f.family} (${f.styles.join(", ")})`;
+      return ok(
+        `${added.length ? `Added fonts:\n${added.map(fmt).join("\n")}\n\n` : ""}System fonts (${system.length}):\n${system.map((f) => f.family).join(", ") || "none found"}${q && !fams.length ? `\nNo font matches "${i.query}"; install_font can add one from Google Fonts.` : ""}`,
+        { fonts: fams },
+      );
+    },
+  }),
+  tool({
+    name: "install_font",
+    description:
+      "Add a font from Google Fonts (all open-licensed, free for video), e.g. 'Montserrat', 'Bebas Neue', 'Playfair Display', 'Inter', 'Anton'. It downloads once into the fonts folder and every render can use it as fontFamily.",
+    input: z.object({
+      family: z.string().min(1).describe("Family name as on fonts.google.com"),
+      weights: z.array(z.number().int().min(100).max(900)).optional().describe("Weights to add, default [400, 700]"),
+      italic: z.boolean().default(false),
+    }),
+    mutates: false,
+    run: async (s, i) => {
+      const files = await installGoogleFont(i.family, { dir: s.fontsDir, weights: i.weights, italic: i.italic });
+      const fams = [...new Set(files.map((f) => f.family))];
+      return ok(`Installed ${fams.join(", ")} (${files.map((f) => f.style).join(", ")}). Use fontFamily "${fams[0]}" in text styles; bold picks the bold weight.`, { files });
     },
   }),
   tool({
@@ -2314,7 +2416,7 @@ export const TOOLS: ToolDefinition[] = [
       "text that is hard to read against the picture, runs off the frame, or collides with captions or other text (text); text and captions where TikTok, Reels and Shorts put their buttons and captions (safe-zones); " +
       "black, frozen or repeated footage (frames); words cut off at an edit, doubled caption words, captions over silence, and speech the transcript skipped (speech); " +
       "loudness off target, peaks, and music too loud under the voice (audio); screen color a chroma key left behind (key). " +
-      "It has no face detection, so check text over faces with render_frame. Run it before render_video and after big changes, fix what it finds, then run it again.",
+      "It also finds text and captions covering a face (local face detection). Run it before render_video and after big changes, fix what it finds, then run it again.",
     input: z.object({
       checks: z
         .array(z.enum(REVIEW_CHECKS as [string, ...string[]]))

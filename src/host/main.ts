@@ -170,7 +170,7 @@ async function scrub(time: number): Promise<{ path: string | null; time: number 
     const dir = path.join(s.options.outputDir, "scrub");
     await mkdir(dir, { recursive: true });
     const out = path.join(dir, `r${s.revision}-${time.toFixed(2)}.png`);
-    await renderFrame(s.project, time, { output: out, scale: 0.5, baseDir: s.options.baseDir });
+    await renderFrame(s.project, time, { output: out, scale: 0.5, ...s.renderOptions });
     if (scrubCache.size > 300) scrubCache.clear();
     scrubCache.set(key, out);
     return out;

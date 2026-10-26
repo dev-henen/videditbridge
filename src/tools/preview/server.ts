@@ -23,6 +23,8 @@ export interface PreviewSource {
   /** Live activities (tool calls, renders), oldest first. */
   readonly activities?: { id: string; kind: string; label: string; status: string; progress?: number; detail?: string; startedAt: string; endedAt?: string }[];
   readonly options: { baseDir: string; outputDir: string; ffmpegPath?: string; fontsDir?: string; cacheDir?: string | false };
+  /** Render options to use (fonts folder resolved); falls back to options. */
+  readonly renderOptions?: { fontsDir?: string };
   readonly canUndo?: boolean;
   readonly canRedo?: boolean;
   undo?(): unknown;
@@ -186,7 +188,7 @@ export async function startPreviewServer(source: PreviewSource, opts: PreviewSer
   const renderOpts = () => ({
     baseDir: source.options.baseDir,
     ffmpegPath: source.options.ffmpegPath,
-    fontsDir: source.options.fontsDir,
+    fontsDir: source.renderOptions ? source.renderOptions.fontsDir : source.options.fontsDir,
     cacheDir: source.options.cacheDir || undefined,
   });
   const frameCache = new Map<string, string>();

@@ -2,7 +2,7 @@
 
 # Effects
 
-80 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+82 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -16,10 +16,10 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
 - **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe)
 - **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs)
-- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace)
+- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [denoise](#denoise)
 - **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur)
+- **motion**: [stabilize](#stabilize), [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat)
 - **distort**: [mirror](#mirror), [chromaKey](#chromakey), [tilt](#tilt)
-- **motion**: [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat)
 - **shake**: [shake](#shake), [handheld](#handheld), [vibrate](#vibrate), [earthquake](#earthquake), [impactShake](#impactshake)
 - **time**: [fadeIn](#fadein), [fadeOut](#fadeout), [flash](#flash)
 
@@ -596,6 +596,14 @@ _No parameters._
 | `subject.height` | number | yes |  | Ellipse height as a fraction of frame height (> 0, ≤ 2) |
 | `feather` | number |  | `0.25` | Softness of the person's edge (≥ 0.02, ≤ 1) |
 
+### denoise
+
+**Denoise**. Remove grain and color noise from dim or phone footage, keeping edges. strength 0.3 is light, 0.6 cleans low-light video, 1 is heavy (skin and texture start to smear). Pair with the denoise audio effect for hiss.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `strength` | number |  | `0.5` | 0..1 (≥ 0, ≤ 1) |
+
 ## Blur
 
 ### blur
@@ -658,36 +666,16 @@ _No parameters._
 |---|---|---|---|---|
 | `frames` | integer |  | `3` | Frames blended together (≥ 2, ≤ 8) |
 
-## Distort
-
-### mirror
-
-**Flip**. Flip horizontally or vertically.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `direction` | "horizontal" \| "vertical" |  | `"horizontal"` |  |
-
-### chromaKey
-
-**Green Screen / Chroma Key**. Key out a green (or blue) screen: replace it with a solid color to draw a UI or label on (phone screens, monitors), or make it transparent on a media overlay so whatever is underneath shows through. Removes green spill from edges and fingers.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `color` | string |  | `"#00FF00"` | Screen color to remove, #RRGGBB. Measure it with sample_color: real screens are rarely pure green |
-| `similarity` | number |  | `0.1` | How far from the key color still counts as screen (raise slowly if green remains) (≥ 0.01, ≤ 0.6) |
-| `blend` | number |  | `0.04` | Edge softness (≥ 0, ≤ 0.5) |
-| `replace` | string |  | `"#111216"` | Color to fill the keyed area with, or "transparent" (media overlays only) |
-
-### tilt
-
-**Dutch Tilt / Rotate**. Rotate the frame by a fixed angle and zoom just enough to hide the corners. A tilted (dutch) angle adds unease or energy.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `degrees` | number |  | `6` | Rotation, positive = clockwise (≥ -45, ≤ 45) |
-
 ## Motion
+
+### stabilize
+
+**Stabilize**. Steady shaky handheld footage: camera shake is measured frame to frame and cancelled, and the picture is zoomed in slightly (zoom) so the moving edges stay out of frame. Best on small jitters; it does not straighten big pans. Put it on the clip (each clip is stabilized on its own).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `zoom` | number |  | `1.08` | Crop-in that hides the edges; raise it if borders show (≥ 1, ≤ 1.3) |
+| `range` | number |  | `48` | Largest shake corrected, in pixels (≥ 8, ≤ 64) |
 
 ### kenBurns
 
@@ -761,6 +749,35 @@ _No parameters._
 |---|---|---|---|---|
 | `bpm` | number |  | `70` | Heartbeats per minute (≥ 30, ≤ 180) |
 | `amount` | number |  | `0.05` | Zoom on each beat (≥ 0.01, ≤ 0.3) |
+
+## Distort
+
+### mirror
+
+**Flip**. Flip horizontally or vertically.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `direction` | "horizontal" \| "vertical" |  | `"horizontal"` |  |
+
+### chromaKey
+
+**Green Screen / Chroma Key**. Key out a green (or blue) screen: replace it with a solid color to draw a UI or label on (phone screens, monitors), or make it transparent on a media overlay so whatever is underneath shows through. Removes green spill from edges and fingers.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `color` | string |  | `"#00FF00"` | Screen color to remove, #RRGGBB. Measure it with sample_color: real screens are rarely pure green |
+| `similarity` | number |  | `0.1` | How far from the key color still counts as screen (raise slowly if green remains) (≥ 0.01, ≤ 0.6) |
+| `blend` | number |  | `0.04` | Edge softness (≥ 0, ≤ 0.5) |
+| `replace` | string |  | `"#111216"` | Color to fill the keyed area with, or "transparent" (media overlays only) |
+
+### tilt
+
+**Dutch Tilt / Rotate**. Rotate the frame by a fixed angle and zoom just enough to hide the corners. A tilted (dutch) angle adds unease or energy.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `degrees` | number |  | `6` | Rotation, positive = clockwise (≥ -45, ≤ 45) |
 
 ## Shake
 

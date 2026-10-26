@@ -99,7 +99,7 @@ Everything still goes through the same tools, so all changes share one undo hist
 | J and L cuts (done) | Audio starts before, or runs past, a picture cut | Standard for talking-head edits; not possible now |
 | Stabilize, denoise, freeze, reverse (done) | Basic footage repair and speed tricks | Common needs with phone footage |
 | `make_thumbnail` (done) | A still with a big title, for YouTube | The sample videos all need one |
-| Icon library and font management | Feature icons; fonts beyond those installed on Windows | The samples use icons; text is limited to system fonts |
+| Icon library and font management (done) | Feature icons; fonts beyond those installed on Windows | The samples use icons; text is limited to system fonts |
 | Script markup for narration (done) | `[pause]` and emphasis in the text given to `generate_voiceover` | Pacing can only be changed by rewriting sentences |
 | More voice languages (done) | The non-English Kokoro voices | Only English voices are listed |
 | Media cleanup (done) | Remove unused assets and duplicate files in `media/` | Duplicate imports needed manual cleanup |
@@ -112,6 +112,8 @@ Everything still goes through the same tools, so all changes share one undo hist
 - `make_thumbnail` renders a 1280x720 JPEG from a frame of the edit (without its own titles and captions), with punchier color and a big wrapped title on the side away from any faces.
 - Narration markup: `[pause]`, `[pause 1.5]`, `[breath]`, `[slow]...[/slow]`, `[fast]...[/fast]` and `*word*`. A 1.5 s pause measured 1.59 s between the words, against 0.52 s without it.
 - Voices in Spanish, French, Hindi, Italian and Brazilian Portuguese: the Spanish, French, Italian and Portuguese samples came back word for word through Whisper. They need the optional `espeak-ng` package, which is GPL-3.0, so it is not a dependency of this MIT library (`npm install espeak-ng` enables them). Japanese and Chinese voices need a different phonemizer and are not included.
+- Icons: `search_icons` and `add_icon` use the Lucide icon font (about 1,600 line icons, ISC license), downloaded once into the fonts folder. Icons draw like text (sharp at any size, any color, the usual animations), optionally on a round or rounded badge, and a misspelled name gets close suggestions.
+- Fonts: `install_font` adds a Google Fonts family (open licensed) as TTF files to a fonts folder (`~/.cache/ai-video-editor/fonts`, or the session's `fontsDir`) that every render, preview and app frame now uses. `list_fonts` lists the system's families and the added ones, read from the font files themselves.
 - `clean_up_media` merges assets that are the same file content and removes unused ones (`deleteFiles` also deletes unused files in `media/`). Importing a file whose content is already in `media/` reuses that copy, and `import_media` does not add the same file twice.
 
 ## Improvements to what exists
