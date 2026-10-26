@@ -257,6 +257,55 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     expect((await probe(r.output)).duration).toBeCloseTo(effects.length * 0.4, 0);
   });
 
+  it("reviews an edit for what a viewer would notice", async () => {
+    const base = ["-y", "-hide_banner", "-loglevel", "error"];
+    // 1 s black, 2.5 s frozen gray, then motion; a tone for 2 s, then silence.
+    const flawed = out("review-flawed.mp4");
+    await runFfmpegOrThrow([
+      ...base,
+      "-f", "lavfi", "-i", "color=c=black:s=640x360:r=30:d=1",
+      "-f", "lavfi", "-i", "color=c=0x808080:s=640x360:r=30:d=2.5",
+      "-f", "lavfi", "-i", "testsrc2=s=640x360:r=30:d=2.5",
+      "-f", "lavfi", "-i", "sine=f=300:d=2,volume=0.3,apad=whole_dur=6",
+      "-filter_complex", "[0][1][2]concat=n=3:v=1:a=0[v]", "-map", "[v]", "-map", "3:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-t", "6", flawed,
+    ]);
+    // A green screen, a third of it a darker green that a tight key misses.
+    const screen = out("review-screen.png");
+    await runFfmpegOrThrow([...base, "-f", "lavfi", "-i", "color=c=0x00FF00:s=300x200,drawbox=x=0:y=0:w=100:h=200:color=0x2E9B2E:t=fill", "-frames:v", "1", screen]);
+
+    const s = new EditorSession(undefined, { outputDir: out("review-session") });
+    const run = async (name: string, input: unknown) => {
+      const r = await executeTool(s, name, input);
+      expect(r.isError, `${name}: ${r.text}`).toBeFalsy();
+      return r;
+    };
+    await run("new_project", { aspectRatio: "9:16" });
+    await run("import_media", { src: flawed, id: "flawed" });
+    await run("import_media", { src: screen, id: "screen" });
+    await run("add_clip", { assetId: "flawed" });
+    await run("set_transcript", { assetId: "flawed", content: { words: [{ text: "first", start: 0.3, end: 1.2 }, { text: "late", start: 4, end: 4.5 }, { text: "words", start: 4.6, end: 5.2 }] } });
+    await run("set_captions", { style: "bold-pop" });
+    await run("add_text", { text: "Pale title", start: 1.5, duration: 1.5, position: { x: 0.5, y: 0.4 }, style: { color: "#9A9A9A", outlineWidth: 0, fontSize: 80 } });
+    await run("add_media_overlay", { assetId: "screen", start: 0, duration: 6, position: { x: 0.5, y: 0.15 }, size: { width: 0.5 }, effects: [{ type: "chromaKey", params: { similarity: 0.1 } }] });
+
+    const edits = s.history.length;
+    const r = await run("review_edit", {});
+    expect(s.history.length).toBe(edits); // read-only
+    const issues = (r.data as { issues: { check: string; severity: string; message: string; start: number }[] }).issues;
+    const has = (check: string, re: RegExp) => issues.some((i) => i.check === check && re.test(i.message));
+    expect(has("frames", /Black picture from 00:00.0 to 00:01.0/), r.text).toBe(true);
+    expect(has("frames", /frozen/), r.text).toBe(true);
+    expect(has("text", /"Pale title" is hard to read/), r.text).toBe(true);
+    expect(has("speech", /Captions show "late words".*nothing is heard/), r.text).toBe(true);
+    expect(has("audio", /Loudness is .* below the -14 LUFS target/), r.text).toBe(true);
+    expect(has("key", /chroma key on overlay_/), r.text).toBe(true);
+    expect((r.data as { loudness: { integrated: number } }).loudness.integrated).toBeLessThan(-16);
+
+    // Only the asked-for checks run.
+    const audioOnly = await run("review_edit", { checks: ["audio"] });
+    expect((audioOnly.data as { issues: { check: string }[] }).issues.every((i) => i.check === "audio")).toBe(true);
+  });
+
   it("renders a still frame and a range directly", async () => {
     const session = new EditorSession();
     await executeTool(session, "import_media", { src: fx.talk, id: "talk" });

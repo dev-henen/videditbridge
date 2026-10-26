@@ -10,11 +10,10 @@ The biggest gap is that the editor does not know where people and objects are in
 |---|---|---|---|
 | 1 | [Subject and face detection](#1-subject-and-face-detection) | Positions are guessed today; five features depend on it | Large |
 | 2 | [Keyframes](#2-keyframes) | Nothing can move or change over time except preset animations | Large |
-| 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Medium |
+| 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Done, except text over faces (needs #1) |
 | 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes about 4.5 minutes, and every change re-renders all of it | Medium |
 | 5 | [Direct editing in the desktop app](#5-direct-editing-in-the-desktop-app) | The app is a chat box and a preview; nothing can be dragged or adjusted | Large |
 
-For a quick first win, start with #3: it catches what a viewer notices first.
 
 ## 1. Subject and face detection
 
@@ -61,6 +60,8 @@ A read-only tool that renders sample frames and audio and reports problems with 
 
 Each of these was a real problem in this session, found only by looking: an unreadable title, a gray keyed screen, clipped words, doubled caption words, a render at -24.9 LUFS.
 
+**Status: done** (2026-10-26). `review_edit` covers every item above except text over a face, which waits for #1. It also reports text that runs off the frame or collides with captions, repeated footage, and speech the transcript skipped. See [Reviewing an edit](guides/rendering-and-preview.md#reviewing-an-edit).
+
 ## 4. Faster rendering
 
 The whole project is rendered as one FFmpeg graph every time. Improvements, in order of payoff:
@@ -85,7 +86,7 @@ Everything still goes through the same tools, so Claude and manual edits share u
 
 | Tool | What it does | Why |
 |---|---|---|
-| `fix_transcript` | Find and replace words ("cloud" to "Claude"), plus a vocabulary hint for names | Names were fixed by editing word positions by hand |
+| `fix_transcript` (done) | Find and replace words ("cloud" to "Claude"), plus a vocabulary hint for names | Names were fixed by editing word positions by hand |
 | `match_color` | Match one shot's color to a reference shot | Shots were matched by measuring and guessing per shot |
 | J and L cuts | Audio starts before, or runs past, a picture cut | Standard for talking-head edits; not possible now |
 | Stabilize, denoise, freeze, reverse | Basic footage repair and speed tricks | Common needs with phone footage |
@@ -101,12 +102,12 @@ Everything still goes through the same tools, so Claude and manual edits share u
 - **Saving.** A crash lost an import before autosave ran. Save right after each change, and write the file in a way that a crash cannot leave it half written.
 - **Sound map.** Sung vocals come out as "sound (unsure)". A small local speech, music and singing classifier would beat the current hand-tuned rules.
 - **Speech recognition.** The base Whisper model mishears names and skips some quiet speech; the larger model skipped a whole section in testing. Worth comparing other local models.
-- **Version control.** A large amount of recent work is uncommitted. Commit it in logical pieces.
+- **Version control.** Done: the recent work is committed.
 
 ## Suggested order
 
-1. Commit the current work.
-2. `review_edit` and `fix_transcript`: small, and they improve every edit right away.
+1. Commit the current work. (Done.)
+2. `review_edit` and `fix_transcript`: small, and they improve every edit right away. (Done.)
 3. Faster rendering (segment cache first): every later step is tested by rendering.
 4. Subject and face detection.
 5. Keyframes, then tracking on top of detection.

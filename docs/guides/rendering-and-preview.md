@@ -27,7 +27,24 @@ await renderContactSheet(project, { output: "sheet.png", columns: 4, rows: 3, th
 
 All of these call `probeAssets` first unless you pass `probe: false`. Probing fills in each asset's missing duration, size and audio flag.
 
-`compileProject(project, opts)` is pure. It returns `{ args, files, filterGraph, timeline, duration }` without touching disk, which helps for inspecting or testing the generated graph.
+## Reviewing an edit
+
+`reviewEdit(project, { workDir })` (the `review_edit` tool) checks an edit for what a viewer notices and reports each problem with timeline times. It changes nothing.
+
+| Check | What it looks for |
+|---|---|
+| `text` | Text that is hard to read against the picture behind it, runs off the frame, or overlaps captions or other text |
+| `safe-zones` | Text and captions where TikTok, Reels and Shorts draw their buttons and captions (portrait videos; pick one app with `platform`) |
+| `frames` | Black or frozen footage, and the same footage used twice |
+| `speech` | Words cut off at an edit, words shown twice in captions, captions over silence, and speech the transcript skipped |
+| `audio` | Integrated loudness away from the target (-14 LUFS by default), true peaks over -1 dBTP, a voice driven past full scale, music less than 10 dB under the voice |
+| `key` | Screen color a chroma key left behind |
+
+It costs one analysis render: `renderForAnalysis` runs the graph once at about 360 px, without text and captions, and writes raw frames at the sample times plus the audio mix and its voice and music parts as WAV files. Black and frozen footage is found by scanning the source clips. A 60 s edit takes about a minute and a half, against several minutes for a full render.
+
+Readability is judged from the text's estimated box (font size times length) and its fill color; text with its own outline, shadow or box counts as readable anywhere. Faces are not detected yet, so text over a face is not reported.
+
+`compileProject(project, opts)` is pure. It returns `{ args, files, filterGraph, timeline, duration, width, height }` without touching disk, which helps for inspecting or testing the generated graph.
 
 ## How a project becomes FFmpeg
 

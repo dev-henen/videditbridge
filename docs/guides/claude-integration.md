@@ -48,7 +48,7 @@ Put this in your system prompt (the example includes a version of it):
 2. For a known style: `list_templates`, then `get_template` (read its editing guidance), then `apply_template`.
 3. For speech: `transcribe` or `set_transcript`, then `get_transcript`, then `cleanup_speech` / `assemble_from_source` / `cut_ranges`, then `set_captions`.
 4. Refine with clips, effects, layers, components and audio.
-5. **Check the result** with `render_contact_sheet` (whole-video overview) and `render_frame` (detail), and fix what looks wrong.
+5. **Check the result** with `review_edit` (unreadable or misplaced text, safe zones, black or frozen footage, cut words, caption sync, loudness, music level, key residue), then `render_contact_sheet` (whole-video overview) and `render_frame` (detail). Fix what it finds and run `review_edit` again.
 6. `render_preview` for the user. Call `render_video` only when asked for the final file.
 
 `get_project` returns a compact text summary rather than raw JSON (pass `includeJson: true` if you need it), which keeps context use low.

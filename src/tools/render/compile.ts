@@ -29,6 +29,11 @@ export interface CompileOptions {
   frameAt?: number;
   /** Produce a single image: a grid of frames sampled evenly across the video. */
   contactSheet?: { columns: number; rows: number; thumbWidth: number };
+  /**
+   * Render for measurement instead of viewing: raw RGB frames at these timeline times on stdout,
+   * and/or the audio mix (plus the voice and music submixes) as WAV files. `output` is ignored.
+   */
+  analysis?: { framesAt?: number[]; audio?: { mix: string; voice?: string; music?: string } };
 }
 
 export interface CompiledRender {
@@ -40,6 +45,11 @@ export interface CompiledRender {
   timeline: Timeline;
   /** Output duration in seconds. */
   duration: number;
+  /** Rendered frame size (after preview scaling). */
+  width: number;
+  height: number;
+  /** Analysis renders: the timeline times of the frames written to stdout, in order. */
+  frameTimes?: number[];
 }
 
 export const FILTER_SCRIPT = "graph.txt";
@@ -367,6 +377,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // -------------------------------------------------------------------------
   const voice: string[] = [aCur, ...overlayAudio];
   const duckedMusic: string[] = [];
+  const plainMusic: string[] = [];
   const otherAudio: string[] = [];
   for (const ta of timeline.audio) {
     const { clip, asset } = ta;
@@ -390,7 +401,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       ])}[${label}]`,
     );
     if (clip.role === "voiceover") voice.push(label);
-    else if (clip.role === "music" && clip.duck !== false) duckedMusic.push(label);
+    else if (clip.role === "music") (clip.duck !== false ? duckedMusic : plainMusic).push(label);
     else otherAudio.push(label);
   }
 
@@ -401,25 +412,38 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     return out;
   };
 
+  const taps: { label: string; file: string }[] = [];
+  /** Analysis renders: copy a submix out to its own WAV file. */
+  const tap = (name: "voice" | "music", label: string): string => {
+    const file = opts.analysis?.audio?.[name];
+    if (!file) return label;
+    const [keep, out] = [g.label("tap"), g.label(`stem${name}`)];
+    g.add(`[${label}]asplit=2[${keep}][${out}]`);
+    taps.push({ label: out, file });
+    return keep;
+  };
+
   let voiceMix = mix(voice, "first");
   const finalInputs: string[] = [];
+  const music: string[] = [];
   const hasSpeech = voice.length > 1 || timeline.clips.some((c) => project.transcripts[c.clip.assetId] || (c.asset.type === "video" && c.asset.hasAudio !== false && !c.clip.muted));
   if (duckedMusic.length) {
-    const music = mix(duckedMusic, "longest");
+    const ducking = mix(duckedMusic, "longest");
     if (hasSpeech) {
       const main = g.label("vmain");
       const sc = g.label("vsc");
       const ducked = g.label("duck");
       g.add(`[${voiceMix}]asplit=2[${main}][${sc}]`);
-      g.add(`[${music}][${sc}]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=350:makeup=1[${ducked}]`);
+      g.add(`[${ducking}][${sc}]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=350:makeup=1[${ducked}]`);
       voiceMix = main;
-      finalInputs.push(voiceMix, ducked);
+      music.push(ducked);
     } else {
-      finalInputs.push(voiceMix, music);
+      music.push(ducking);
     }
-  } else {
-    finalInputs.push(voiceMix);
   }
+  music.push(...plainMusic);
+  finalInputs.push(tap("voice", voiceMix));
+  if (music.length) finalInputs.push(tap("music", mix(music, "longest")));
   finalInputs.push(...otherAudio);
   const aMixed = mix(finalInputs, "first");
   const aOut = "aout";
@@ -438,6 +462,32 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // -------------------------------------------------------------------------
   const vOut = "vout";
   const sheet = opts.contactSheet;
+  const analysis = opts.analysis;
+  if (analysis) {
+    // Snap each time to a frame so the select below picks exactly one frame for it.
+    const last = Math.max(0, Math.ceil(total * F) - 1);
+    const frames = [...new Set((analysis.framesAt ?? []).map((t) => Math.min(last, Math.max(0, Math.round(t * F)))))].sort((a, b) => a - b);
+    const frameTimes = frames.map((n) => round3(n / F));
+    if (!frameTimes.length && !analysis.audio) throw new Error("An analysis render needs frame times or audio outputs");
+    if (frameTimes.length) g.add(`[${vCur}]select='${frameTimes.map((t) => `lt(abs(t-${t}),${round3(0.5 / F)})`).join("+")}',format=rgb24[${vOut}]`);
+    else g.add(`[${vCur}]nullsink`);
+    if (!analysis.audio) g.add(`[${aOut}]anullsink`);
+    const filterGraph = g.lines.join(";\n");
+    files.push({ name: FILTER_SCRIPT, content: filterGraph });
+    const wav = (label: string, file: string) => ["-map", `[${label}]`, "-c:a", "pcm_s16le", "-ar", "48000", path.resolve(file)];
+    const args = [
+      "-y",
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      ...g.inputArgs,
+      "-filter_complex_script",
+      FILTER_SCRIPT,
+      ...(frameTimes.length ? ["-map", `[${vOut}]`, "-fps_mode", "passthrough", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"] : []),
+      ...(analysis.audio ? [...wav(aOut, analysis.audio.mix), ...taps.flatMap((t) => wav(t.label, t.file))] : []),
+    ];
+    return { args, files, filterGraph, timeline, duration: total, width: W, height: H, frameTimes };
+  }
   if (sheet) {
     const n = sheet.columns * sheet.rows;
     // Sample the middle of each of n equal slices.
@@ -500,7 +550,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   ];
   files.push({ name: FILTER_SCRIPT, content: filterGraph });
   const duration = still ? 0 : range ? round3(Math.min(range.end, total) - range.start) : total;
-  return { args, files, filterGraph, timeline, duration };
+  return { args, files, filterGraph, timeline, duration, width: W, height: H };
 }
 
 /** Effects attached to a clip, layer or the whole project (helper for tooling). */

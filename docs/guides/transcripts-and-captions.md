@@ -36,7 +36,11 @@ const t = await transcribeMedia("talk.mp4", new LocalWhisperTranscriber());
 
 Whisper's word timestamps are approximate: words are often stretched over the pause after them or start a little early. The local transcriber tightens them with the [sound map](raw-footage.md): each word is trimmed to the speech it overlaps, and a word found in silence moves to the nearest speech within a second. That keeps captions from showing words twice across a cut, or dropping them when silence was removed.
 
-Pick a model with `new LocalWhisperTranscriber({ model })`: `whisper-tiny_timestamped` is fastest, and `whisper-small_timestamped` is more accurate on clear speech but about 7 times slower, and in testing it skipped a stretch of quieter speech that base caught. Proper names are a common miss (here "Claude" came out as "cloud"), so read the transcript and fix words with `set_transcript` before captioning.
+Pick a model with `new LocalWhisperTranscriber({ model })`: `whisper-tiny_timestamped` is fastest, and `whisper-small_timestamped` is more accurate on clear speech but about 7 times slower, and in testing it skipped a stretch of quieter speech that base caught. Proper names are a common miss (here "Claude" came out as "cloud"), so read the transcript and correct it before captioning.
+
+**Correcting words.** `replaceWords(t, [{ find: "cloud code", replace: "Claude Code" }])` (the `fix_transcript` tool) replaces words and phrases. Matching ignores case and punctuation. The new words share the time span of the old ones, keep the punctuation around them, and take a capital letter at the start of a sentence. An empty `replace` removes words from the transcript without cutting the video.
+
+**Vocabulary.** `fix_transcript` with `vocabulary: ["Claude", "Kubernetes"]` saves the names and terms said in the video to `project.metadata.vocabulary`. `transcribe` passes them as a prompt to engines that accept one (the optional OpenAI one; the local model ignores it), and both tools list words that look like mishearings of them (`vocabularySuggestions`: "cloud" for "Claude", "cooper netties" for "Kubernetes", compared by spelling and rough sound), so each can be checked before it is replaced.
 
 The Claude `transcribe` tool and the desktop app always use the local model.
 

@@ -54,18 +54,19 @@ export async function probeAssets(project: Project, opts: FfmpegOptions & { base
   return out;
 }
 
-async function execute(compiled: CompiledRender, opts: RenderOptions): Promise<string | undefined> {
+async function execute(compiled: CompiledRender, opts: RenderOptions, outputs = [opts.output]): Promise<{ workDir?: string; stdout?: Buffer }> {
   const workDir = await mkdtemp(path.join(tmpdir(), "ave-render-"));
   try {
     for (const f of compiled.files) await writeFile(path.join(workDir, f.name), f.content, "utf8");
-    await mkdir(path.dirname(path.resolve(opts.output)), { recursive: true });
-    await runFfmpegOrThrow(compiled.args, {
+    for (const out of outputs) await mkdir(path.dirname(path.resolve(out)), { recursive: true });
+    const res = await runFfmpegOrThrow(compiled.args, {
       ffmpegPath: opts.ffmpegPath,
       cwd: workDir,
       signal: opts.signal,
+      binaryStdout: !!compiled.frameTimes?.length,
       onProgress: opts.onProgress && compiled.duration > 0 ? (s) => opts.onProgress!(Math.min(1, s / compiled.duration)) : undefined,
     });
-    return opts.keepWorkDir ? workDir : undefined;
+    return { workDir: opts.keepWorkDir ? workDir : undefined, stdout: res.stdoutBuffer };
   } finally {
     if (!opts.keepWorkDir) await rm(workDir, { recursive: true, force: true });
   }
@@ -75,7 +76,7 @@ async function execute(compiled: CompiledRender, opts: RenderOptions): Promise<s
 export async function render(project: Project, opts: RenderOptions): Promise<RenderResult> {
   const p = opts.probe === false ? project : await probeAssets(project, opts);
   const compiled = compileProject(p, opts);
-  const workDir = await execute(compiled, opts);
+  const { workDir } = await execute(compiled, opts);
   opts.onProgress?.(1);
   return { output: path.resolve(opts.output), duration: compiled.duration, workDir, args: compiled.args };
 }
@@ -107,4 +108,32 @@ export async function renderContactSheet(
   });
   await execute(compiled, opts);
   return path.resolve(opts.output);
+}
+
+export interface AnalysisFrame {
+  /** Timeline time of the frame (snapped to the frame grid). */
+  time: number;
+  /** Packed RGB24 pixels, width * height * 3 bytes. */
+  rgb: Buffer;
+}
+
+/**
+ * Render for measurement in one pass: raw frames at chosen timeline times and/or the audio mix
+ * with its voice and music submixes as WAV files. Use a small `scale`: the frames are only
+ * measured, and the video graph runs even when only the audio is wanted.
+ */
+export async function renderForAnalysis(
+  project: Project,
+  opts: Omit<RenderOptions, "output" | "range"> & { framesAt?: number[]; audio?: { mix: string; voice?: string; music?: string } },
+): Promise<{ width: number; height: number; frames: AnalysisFrame[] }> {
+  const p = opts.probe === false ? project : await probeAssets(project, opts);
+  const compiled = compileProject(p, { ...opts, output: "", analysis: { framesAt: opts.framesAt, audio: opts.audio } });
+  const audio = opts.audio ? [opts.audio.mix, opts.audio.voice, opts.audio.music].filter((f): f is string => !!f) : [];
+  const { stdout } = await execute(compiled, { ...opts, output: "" }, audio);
+  opts.onProgress?.(1);
+  const size = compiled.width * compiled.height * 3;
+  const times = compiled.frameTimes ?? [];
+  const frames: AnalysisFrame[] = [];
+  for (let i = 0; stdout && i < times.length && (i + 1) * size <= stdout.length; i++) frames.push({ time: times[i]!, rgb: stdout.subarray(i * size, (i + 1) * size) });
+  return { width: compiled.width, height: compiled.height, frames };
 }

@@ -27,6 +27,8 @@ import { formatTranscript, searchTranscript, transcriptStats } from "../tools/tr
 import { parseTranscript } from "../tools/transcript/parse.js";
 import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
+import { replaceWords, vocabularySuggestions } from "../tools/transcript/fix.js";
+import { REVIEW_CHECKS, reviewEdit } from "../tools/review/index.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
@@ -197,6 +199,21 @@ async function speak(s: EditorSession, text: string, opts: { voice?: string; spe
   const tts = s.options.tts ?? new LocalTTS({ ffmpegPath: s.options.ffmpegPath, onDownload: (p) => activity?.progress(p * 0.5) });
   const file = await s.outputPath(tts.name === "local-kokoro" ? "voiceover.wav" : "voiceover.mp3");
   return tts.synthesize(text, file, opts);
+}
+
+/** Names and terms said in the video (fix_transcript vocabulary), kept in project.metadata.vocabulary. */
+function projectVocabulary(p: Project): string[] {
+  const v = p.metadata.vocabulary;
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+}
+
+/** Likely mishearings of the project's vocabulary in a transcript, as lines to read. */
+function mishearings(p: Project, assetIds: string[]): string[] {
+  const vocab = projectVocabulary(p);
+  if (!vocab.length) return [];
+  return assetIds.flatMap((id) =>
+    vocabularySuggestions(p.transcripts[id] ?? { words: [] }, vocab).map((x) => `${id} ${x.start}-${x.end}s: "${x.heard}" may be "${x.term}"`),
+  );
 }
 
 /** The built-in on-device Whisper transcriber, reporting the first-use model download on the activity. */
@@ -1149,16 +1166,20 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "transcribe",
     description:
-      "Transcribe an asset's speech with word timings. Enables captions, transcript search and filler removal. Runs a Whisper model on this machine unless the session has another provider (no API key; the model downloads once, then works offline). Takes roughly real time on a CPU.",
+      "Transcribe an asset's speech with word timings. Enables captions, transcript search and filler removal. Runs a Whisper model on this machine unless the session has another provider (no API key; the model downloads once, then works offline). Takes roughly real time on a CPU. " +
+      "Names often come out wrong: save them first with fix_transcript vocabulary, and the result lists likely mishearings to correct.",
     input: z.object({ assetId: z.string(), language: z.string().optional().describe("Language code such as 'en' or 'fr'; omit to detect") }),
     mutates: true,
     run: async (s, i, activity) => {
       const asset = s.project.assets.find((a) => a.id === i.assetId);
       if (!asset || !("src" in asset)) return { text: `Asset "${i.assetId}" not found or has no file`, isError: true };
       const provider = s.options.transcriber ?? localTranscriber(s, activity);
-      const t = await transcribeMedia(s.resolve(asset.src), provider, { language: i.language, ffmpegPath: s.options.ffmpegPath });
+      // Recognizers that take a prompt (the OpenAI API) spell these names right; the local model ignores it.
+      const vocab = projectVocabulary(s.project);
+      const t = await transcribeMedia(s.resolve(asset.src), provider, { language: i.language, prompt: vocab.length ? vocab.join(", ") : undefined, ffmpegPath: s.options.ffmpegPath });
       const r = commit(s, ops.setTranscript(s.project, i.assetId, t), "transcribe", i, `Transcribed ${i.assetId}: ${t.words.length} words.`);
-      return { ...r, text: `${r.text}\n\n${formatTranscript(t)}` };
+      const suspects = mishearings(s.project, [i.assetId]);
+      return { ...r, text: `${r.text}\n\n${formatTranscript(t)}${suspects.length ? `\n\nPossible mishearings of the vocabulary (check, then fix_transcript):\n${suspects.join("\n")}` : ""}` };
     },
   }),
   tool({
@@ -1207,6 +1228,42 @@ export const TOOLS: ToolDefinition[] = [
         }
       }
       return ok(lines.join("\n") || `"${i.query}" not found.`);
+    },
+  }),
+  tool({
+    name: "fix_transcript",
+    description:
+      'Correct words the speech recognizer got wrong, keeping their timings: find and replace words or phrases ("cloud" to "Claude", "cooper netties" to "Kubernetes") in one transcript or all of them. Matching ignores case and punctuation; punctuation around a match is kept. ' +
+      "Captions, search and text-based cuts all use the corrected words. vocabulary saves the names and terms said in the video: transcribe passes them to recognizers that take hints, and this tool and transcribe list words that look like mishearings of them, so you can confirm each before replacing. " +
+      "An empty replace removes words from the transcript only (the video is not cut).",
+    input: z.object({
+      assetId: z.string().optional().describe("Transcript to fix (default: every transcript)"),
+      replace: z
+        .array(z.object({ find: z.string().min(1), replace: z.string() }))
+        .default([])
+        .describe("Applied in order"),
+      vocabulary: z.array(z.string().min(1)).optional().describe("Names and terms said in the video; replaces the saved list"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      if (i.assetId && !s.project.transcripts[i.assetId]) return { text: `No transcript for "${i.assetId}".`, isError: true };
+      const ids = i.assetId ? [i.assetId] : Object.keys(s.project.transcripts);
+      if (!ids.length && !i.vocabulary) return { text: "There are no transcripts. Run transcribe first.", isError: true };
+      let p = s.project;
+      const changes: string[] = [];
+      for (const id of ids) {
+        const r = replaceWords(p.transcripts[id]!, i.replace);
+        if (!r.changes.length) continue;
+        p = ops.setTranscript(p, id, r.transcript);
+        changes.push(...r.changes.map((c) => `${id} ${c.start}-${c.end}s: "${c.from}" to "${c.to || "(removed)"}"`));
+      }
+      if (i.vocabulary) p = { ...p, metadata: { ...p.metadata, vocabulary: i.vocabulary } };
+      const suspects = mishearings(p, ids);
+      const tail = suspects.length ? `\nPossible mishearings of the vocabulary (check each, then replace):\n${suspects.join("\n")}` : projectVocabulary(p).length ? "\nNo likely mishearings of the vocabulary left." : "";
+      if (!changes.length && !i.vocabulary) return ok(`${i.replace.length ? "Nothing matched." : "No replacements given."}${tail}`);
+      const head = [changes.length ? `Replaced ${changes.length}:\n${changes.join("\n")}` : i.replace.length ? "Nothing matched." : "", i.vocabulary ? `Vocabulary: ${i.vocabulary.join(", ")}.` : ""].filter(Boolean).join("\n");
+      const r = commit(s, p, "fix_transcript", i, head);
+      return { ...r, text: `${r.text}${tail}` };
     },
   }),
   tool({
@@ -1549,6 +1606,49 @@ export const TOOLS: ToolDefinition[] = [
   // Preview & render
   // -------------------------------------------------------------------------
   tool({
+    name: "review_edit",
+    description:
+      "Check the edit for what a viewer notices, with timeline times, without changing anything. It renders sample frames and the audio mix in one pass and reports: " +
+      "text that is hard to read against the picture, runs off the frame, or collides with captions or other text (text); text and captions where TikTok, Reels and Shorts put their buttons and captions (safe-zones); " +
+      "black, frozen or repeated footage (frames); words cut off at an edit, doubled caption words, captions over silence, and speech the transcript skipped (speech); " +
+      "loudness off target, peaks, and music too loud under the voice (audio); screen color a chroma key left behind (key). " +
+      "It has no face detection, so check text over faces with render_frame. Run it before render_video and after big changes, fix what it finds, then run it again.",
+    input: z.object({
+      checks: z
+        .array(z.enum(REVIEW_CHECKS as [string, ...string[]]))
+        .optional()
+        .describe("Only these checks (default all)"),
+      platform: z
+        .enum(["auto", "tiktok", "reels", "shorts", "vertical", "none"])
+        .default("auto")
+        .describe("Safe zones to check: auto = all three vertical apps for a portrait video, none for landscape"),
+      loudnessTarget: z.number().min(-30).max(-8).default(-14).describe("Integrated loudness to aim for in LUFS: -14 social video and YouTube, -16 podcasts"),
+    }),
+    mutates: false,
+    run: async (s, i, activity) => {
+      const r = await reviewEdit(s.project, {
+        checks: i.checks as never,
+        platform: i.platform,
+        loudnessTarget: i.loudnessTarget,
+        workDir: path.join(s.options.outputDir, "review"),
+        baseDir: s.options.baseDir,
+        ffmpegPath: s.options.ffmpegPath,
+        fontsDir: s.options.fontsDir,
+        onProgress: (x) => activity?.progress(x),
+      });
+      const duration = computeTimeline(s.project).duration;
+      const count = (sev: string) => r.issues.filter((x) => x.severity === sev).length;
+      const when = (x: { start: number; end: number }) => (x.start <= 0 && x.end >= duration ? "whole video" : `${formatTime(x.start)}-${formatTime(x.end)}`);
+      const lines = [
+        r.issues.length ? `Found ${count("problem")} problems and ${count("warning")} warnings:` : "No problems found.",
+        ...r.issues.map((x) => `${when(x)} ${x.severity} [${x.check}] ${x.message}`),
+        ...(r.loudness ? [`Loudness: ${r.loudness.integrated} LUFS (target ${r.loudness.target}), true peak ${r.loudness.truePeak} dBTP.`] : []),
+        ...r.notes,
+      ];
+      return ok(lines.join("\n"), r);
+    },
+  }),
+  tool({
     name: "render_frame",
     description: "Render one frame of the edit at a timeline time and look at it. Use to check layout, text, captions and effects.",
     input: z.object({ time: z.number().min(0), scale: z.number().min(0.1).max(1).default(0.5) }),
@@ -1671,6 +1771,10 @@ export function describeToolCall(name: string, input: unknown): string {
       return "Removing filler words and pauses";
     case "search_transcript":
       return `Searching speech for ${quote(i.query)}`;
+    case "fix_transcript":
+      return "Correcting the transcript";
+    case "review_edit":
+      return "Checking the edit for problems";
     case "generate_voiceover":
       return `Recording voice-over ${quote(i.text, 30)}`;
     case "render_frame":

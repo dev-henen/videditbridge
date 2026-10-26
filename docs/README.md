@@ -7,9 +7,9 @@
 | [Getting started](guides/getting-started.md) | Install, render your first video, build from a template |
 | [The project document](guides/project-format.md) | The JSON edit format: assets, clips, layers, audio, captions, timing rules |
 | [Claude integration](guides/claude-integration.md) | Sessions, tool execution, the agent loop, letting Claude see its work, the future MCP connector |
-| [Transcripts & captions](guides/transcripts-and-captions.md) | Importing and producing transcripts, speech search, filler/pause removal, caption styling and export |
+| [Transcripts & captions](guides/transcripts-and-captions.md) | Importing and producing transcripts, correcting names, speech search, filler/pause removal, caption styling and export |
 | [Templates](guides/templates.md) | How templates work and how to write your own (slots, scenes, placeholders) |
-| [Rendering & live preview](guides/rendering-and-preview.md) | FFmpeg setup, renders, frames, contact sheets, the preview server |
+| [Rendering & live preview](guides/rendering-and-preview.md) | FFmpeg setup, renders, frames, contact sheets, automatic review of an edit, the preview server |
 | [Color correction & grading](guides/color.md) | Exposure, white balance, tone, HSL, curves, color wheels, finishing, analysis and scopes |
 | [Voice-over](guides/voiceover.md) | Text-to-speech providers and narrated edits |
 | [Retouch & audio](guides/retouch-and-audio.md) | Beauty retouch, background blur, voice cleanup, audio effects, speed and volume |

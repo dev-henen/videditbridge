@@ -2,7 +2,7 @@
 
 # Claude tools
 
-73 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+75 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,6 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
+- **Other**: [fix_transcript](#fix_transcript), [review_edit](#review_edit)
 
 ## Inspect & project
 
@@ -582,7 +583,7 @@ _No parameters._
 
 ### transcribe
 
-**edits**. Transcribe an asset's speech with word timings. Enables captions, transcript search and filler removal. Runs a Whisper model on this machine unless the session has another provider (no API key; the model downloads once, then works offline). Takes roughly real time on a CPU.
+**edits**. Transcribe an asset's speech with word timings. Enables captions, transcript search and filler removal. Runs a Whisper model on this machine unless the session has another provider (no API key; the model downloads once, then works offline). Takes roughly real time on a CPU. Names often come out wrong: save them first with fix_transcript vocabulary, and the result lists likely mishearings to correct.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -898,3 +899,25 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `output` | string | yes |  | Output path, e.g. out/final.mp4 |
+
+## Other
+
+### fix_transcript
+
+**edits**. Correct words the speech recognizer got wrong, keeping their timings: find and replace words or phrases ("cloud" to "Claude", "cooper netties" to "Kubernetes") in one transcript or all of them. Matching ignores case and punctuation; punctuation around a match is kept. Captions, search and text-based cuts all use the corrected words. vocabulary saves the names and terms said in the video: transcribe passes them to recognizers that take hints, and this tool and transcribe list words that look like mishearings of them, so you can confirm each before replacing. An empty replace removes words from the transcript only (the video is not cut).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `assetId` | string |  |  | Transcript to fix (default: every transcript) |
+| `replace` | { find, replace }[] |  | `[]` | Applied in order |
+| `vocabulary` | string[] |  |  | Names and terms said in the video; replaces the saved list |
+
+### review_edit
+
+**read-only**. Check the edit for what a viewer notices, with timeline times, without changing anything. It renders sample frames and the audio mix in one pass and reports: text that is hard to read against the picture, runs off the frame, or collides with captions or other text (text); text and captions where TikTok, Reels and Shorts put their buttons and captions (safe-zones); black, frozen or repeated footage (frames); words cut off at an edit, doubled caption words, captions over silence, and speech the transcript skipped (speech); loudness off target, peaks, and music too loud under the voice (audio); screen color a chroma key left behind (key). It has no face detection, so check text over faces with render_frame. Run it before render_video and after big changes, fix what it finds, then run it again.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `checks` | "text" \| "safe-zones" \| "frames" \| "speech" \| "audio" \| "key"[] |  |  | Only these checks (default all) |
+| `platform` | "auto" \| "tiktok" \| "reels" \| "shorts" \| "vertical" \| "none" |  | `"auto"` | Safe zones to check: auto = all three vertical apps for a portrait video, none for landscape |
+| `loudnessTarget` | number |  | `-14` | Integrated loudness to aim for in LUFS: -14 social video and YouTube, -16 podcasts (≥ -30, ≤ -8) |
