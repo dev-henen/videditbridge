@@ -19,6 +19,21 @@ public sealed class MainViewModel : Observable, IDisposable
     public ObservableCollection<IssueItem> Issues { get; } = [];
     public ObservableCollection<HistoryItem> History { get; } = [];
     public ObservableCollection<ProjectEntry> Projects { get; } = [];
+    public ObservableCollection<FindingItem> Findings { get; } = [];
+
+    private string _reviewSummary = "Check the edit for what a viewer would notice";
+    public string ReviewSummary { get => _reviewSummary; private set => Set(ref _reviewSummary, value); }
+    private string? _reviewedRevision;
+    private readonly List<FindingItem> _reviewFindings = [];
+
+    /// <summary>The Review list: problems in the project document (always current), then what the last review found.</summary>
+    private void RebuildFindings()
+    {
+        Findings.Clear();
+        foreach (var i in Issues)
+            Findings.Add(new FindingItem(i.Level == "error" ? "problem" : "warning", "project", -1, -1, $"{i.Path}: {i.Message}"));
+        foreach (var f in _reviewFindings) Findings.Add(f);
+    }
 
     /// <summary>Raised on the UI thread whenever a new state snapshot arrives.</summary>
     public event Action<JsonNode>? StateUpdated;
@@ -177,6 +192,29 @@ public sealed class MainViewModel : Observable, IDisposable
     public Task RenderOverviewAsync() => Guard(() => Execute("render_contact_sheet", new { columns = 4, rows = 3 }));
     public Task ExportAsync(string output) => Guard(() => Execute("render_video", new { output }));
 
+    /// <summary>Run the automatic review and list what it found.</summary>
+    public Task ReviewAsync() => Guard(async () =>
+    {
+        ReviewSummary = "Checking the edit…";
+        var r = await Execute("review_edit", new { });
+        _reviewFindings.Clear();
+        foreach (var i in r?["data"]?["issues"]?.AsArray() ?? [])
+            if (i is not null)
+                _reviewFindings.Add(new FindingItem(i["severity"]!.GetValue<string>(), i["check"]!.GetValue<string>(), i["start"]!.GetValue<double>(), i["end"]!.GetValue<double>(), i["message"]!.GetValue<string>()));
+        _reviewedRevision = State?["revision"]?.ToString();
+        RebuildFindings();
+        var problems = _reviewFindings.Count(f => f.IsProblem);
+        var warnings = _reviewFindings.Count - problems;
+        var loud = r?["data"]?["loudness"]?["integrated"]?.GetValue<double>();
+        ReviewSummary = (_reviewFindings.Count == 0 ? "No problems found" : $"{problems} problem{(problems == 1 ? "" : "s")}, {warnings} warning{(warnings == 1 ? "" : "s")}")
+            + (loud is null ? "" : string.Create(CultureInfo.CurrentCulture, $" | loudness {loud:0.0} LUFS"));
+    });
+
+    /// <summary>Ask Claude to fix one finding.</summary>
+    public Task FixAsync(FindingItem f) => f.IsProjectCheck
+        ? AskClaudeAsync($"Fix this problem in the project: {f.Message}")
+        : AskClaudeAsync(string.Create(CultureInfo.InvariantCulture, $"Fix this problem the review found ({f.Check}, {f.Start:0.0#}s to {f.End:0.0#}s): {f.Message} Then check that part again."));
+
     private async Task<JsonNode?> Execute(string name, object input)
     {
         var result = await Engine.CallAsync("tools.execute", new { name, input });
@@ -200,18 +238,25 @@ public sealed class MainViewModel : Observable, IDisposable
     }
 
     /// <summary>
-    /// Ask Claude to edit. With an item picked on the timeline, the request is about it: a note
-    /// with its id and times leads the message, so "slow this down" knows what "this" is.
+    /// Ask Claude to edit. With an item picked on the timeline, or a spot clicked in the frame, the
+    /// request is about it: a note with its id, times or position leads the message, so "slow this
+    /// down" and "put the title here" know what "this" and "here" are.
     /// </summary>
-    public async Task AskClaudeAsync(string prompt, Controls.TimelineItem? about = null)
+    public async Task AskClaudeAsync(string prompt, Controls.TimelineItem? about = null, Spot? spot = null)
     {
         if (string.IsNullOrWhiteSpace(prompt) || !CanAsk) return;
         AgentRunning = true;
-        var aboutText = about is null ? "" : $" (about {about.Kind} \"{about.Label}\")";
+        var aboutParts = new List<string>();
+        if (about is not null) aboutParts.Add($"{about.Kind} \"{about.Label}\"");
+        if (spot is not null) aboutParts.Add("a spot in the frame");
+        var aboutText = aboutParts.Count == 0 ? "" : $" (about {string.Join(" and ", aboutParts)})";
         AgentText += (AgentText.Length > 0 ? "\n\n" : "") + $"You{aboutText}: {prompt.Trim()}\n\nClaude: ";
-        var message = about is null
-            ? prompt
-            : string.Create(CultureInfo.InvariantCulture, $"[About the {about.Kind} {about.Id} picked in the timeline, {about.Start:0.0#}s to {about.End:0.0#}s: \"{about.Label}\"] {prompt}");
+        var notes = new List<string>();
+        if (about is not null)
+            notes.Add(string.Create(CultureInfo.InvariantCulture, $"[About the {about.Kind} {about.Id} picked in the timeline, {about.Start:0.0#}s to {about.End:0.0#}s: \"{about.Label}\"]"));
+        if (spot is not null)
+            notes.Add(string.Create(CultureInfo.InvariantCulture, $"[Spot picked in the frame: x {spot.X:0.###}, y {spot.Y:0.###} (frame fractions, 0,0 is the top left) at {spot.Time:0.0#}s on the timeline]"));
+        var message = notes.Count == 0 ? prompt : $"{string.Join(" ", notes)} {prompt}";
         try
         {
             await Engine.CallAsync("agent.run", new { prompt = message });
@@ -325,11 +370,14 @@ public sealed class MainViewModel : Observable, IDisposable
         CanUndo = s["canUndo"]?.GetValue<bool>() ?? false;
         CanRedo = s["canRedo"]?.GetValue<bool>() ?? false;
         Summary = s["summary"]?.GetValue<string>() ?? "";
+        if (_reviewedRevision is not null && s["revision"]?.ToString() != _reviewedRevision && !ReviewSummary.EndsWith("check again"))
+            ReviewSummary += " | edited since, check again";
         Raise(nameof(CanAsk));
 
         Issues.Clear();
         foreach (var i in s["issues"]?.AsArray() ?? [])
             if (i is not null) Issues.Add(new IssueItem(i["level"]!.GetValue<string>(), i["path"]!.GetValue<string>(), i["message"]!.GetValue<string>()));
+        RebuildFindings();
 
         History.Clear();
         foreach (var h in s["history"]?.AsArray() ?? [])

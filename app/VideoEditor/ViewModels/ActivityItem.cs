@@ -73,4 +73,17 @@ public sealed record IssueItem(string Level, string Path, string Message)
 
 public sealed record HistoryItem(string Time, string Action);
 
+/// <summary>A problem review_edit found, with timeline times.</summary>
+public sealed record FindingItem(string Severity, string Check, double Start, double End, string Message)
+{
+    public bool IsProblem => Severity == "problem";
+    public string Glyph => IsProblem ? "" : "";
+    /// <summary>Problems in the project document itself (from validation), rather than in how the video plays.</summary>
+    public bool IsProjectCheck => Start < 0;
+    public string TimeText => IsProjectCheck ? "Project check" : $"{(int)Start / 60:00}:{Start % 60:00.0} to {(int)End / 60:00}:{End % 60:00.0} | {Check}";
+}
+
+/// <summary>A spot clicked in the frame: x and y as fractions of the frame (0,0 top left), at a timeline time.</summary>
+public sealed record Spot(double X, double Y, double Time);
+
 public sealed record ProjectEntry(string Name, string Dir, string Updated);

@@ -27,6 +27,9 @@ public partial class MainWindow : Window
     private string? _shownRevision;
     private bool _videoLoaded;
     private bool _playing;
+    // The viewer shows one frame of the edit (a frame or a video, not the overview grid), so a click can point at a spot.
+    private bool _pointable;
+    private Spot? _spot;
 
     private const string PlayGlyph = "";
     private const string PauseGlyph = "";
@@ -104,7 +107,7 @@ public partial class MainWindow : Window
                 ShowVideo(path, kind == "video" ? "Exported video" : "Preview video");
                 break;
             case "contact-sheet":
-                ShowImage(path, "Overview of the whole video");
+                ShowImage(path, "Overview of the whole video", pointable: false);
                 break;
             default:
                 var t = render["time"]?.GetValue<double>();
@@ -114,9 +117,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ShowImage(string path, string caption)
+    private void ShowImage(string path, string caption, bool pointable = true)
     {
         StopVideo();
+        _pointable = pointable;
         try
         {
             var bmp = new BitmapImage();
@@ -130,6 +134,7 @@ public partial class MainWindow : Window
             FrameImage.Visibility = Visibility.Visible;
             ViewerEmpty.Visibility = Visibility.Collapsed;
             ViewerCaption.Text = caption;
+            PlaceMarker();
         }
         catch (Exception e)
         {
@@ -142,6 +147,8 @@ public partial class MainWindow : Window
         FrameImage.Visibility = Visibility.Collapsed;
         ViewerEmpty.Visibility = Visibility.Collapsed;
         Player.Visibility = Visibility.Visible;
+        _pointable = true;
+        PlaceMarker();
         _videoLoaded = false;
         Player.Source = new Uri(path);
         Player.Play();
@@ -169,6 +176,8 @@ public partial class MainWindow : Window
         FrameImage.Visibility = Visibility.Collapsed;
         ViewerEmpty.Visibility = Visibility.Visible;
         ViewerEmpty.Text = message;
+        _pointable = false;
+        PlaceMarker();
     }
 
     private async Task ShowFrameAt(double time)
@@ -234,7 +243,11 @@ public partial class MainWindow : Window
 
     private static string Fmt(double s) => $"{(int)s / 60:00}:{s % 60:00.0}";
 
-    private void OnMediaOpened(object sender, RoutedEventArgs e) => _videoLoaded = true;
+    private void OnMediaOpened(object sender, RoutedEventArgs e)
+    {
+        _videoLoaded = true;
+        PlaceMarker();
+    }
 
     private void OnMediaEnded(object sender, RoutedEventArgs e)
     {
@@ -371,19 +384,91 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(prompt)) return;
         PromptBox.Clear();
         SetFollow(true);
-        await _vm.AskClaudeAsync(prompt, Timeline.Selected);
+        await _vm.AskClaudeAsync(prompt, Timeline.Selected, _spot);
     }
 
     /// <summary>Show what the next request is about, when something is picked on the timeline.</summary>
     private void OnPicked(Controls.TimelineItem? item)
     {
         PickChip.Visibility = item is null ? Visibility.Collapsed : Visibility.Visible;
+        UpdatePills();
         if (item is null) return;
         PickText.Text = $"{char.ToUpper(item.Kind[0])}{item.Kind[1..]}: {item.Label}";
         PickChip.ToolTip = $"Your request will be about this {item.Kind} ({item.Start:0.0}s to {item.End:0.0}s). Escape or the close button clears it.";
     }
 
     private void OnClearPick(object sender, RoutedEventArgs e) => Timeline.ClearSelection();
+
+    // ------------------------------------------------------------- review
+
+    private async void OnReview(object sender, RoutedEventArgs e)
+    {
+        SideTabs.SelectedItem = ReviewTab;
+        await _vm.ReviewAsync();
+    }
+
+    private async void OnFix(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is FindingItem f) await _vm.FixAsync(f);
+    }
+
+    /// <summary>Clicking a finding goes to where it happens.</summary>
+    private void OnFindingSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count > 0 && e.AddedItems[0] is FindingItem { IsProjectCheck: false } f) SetScrubber(f.Start, fromUser: true);
+    }
+
+    private void UpdatePills() =>
+        Pills.Visibility = PickChip.Visibility == Visibility.Visible || SpotChip.Visibility == Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
+
+    // ------------------------------------------------------------- pointing at a spot in the frame
+
+    /// <summary>Where the picture sits inside the viewer (it is letterboxed to keep its shape), or null when none is shown.</summary>
+    private Rect? PictureRect()
+    {
+        double w, h;
+        if (Player.Visibility == Visibility.Visible && Player.NaturalVideoWidth > 0) (w, h) = (Player.NaturalVideoWidth, Player.NaturalVideoHeight);
+        else if (FrameImage.Visibility == Visibility.Visible && FrameImage.Source is BitmapSource b) (w, h) = (b.PixelWidth, b.PixelHeight);
+        else return null;
+        var k = Math.Min(ViewerArea.ActualWidth / w, ViewerArea.ActualHeight / h);
+        return new Rect((ViewerArea.ActualWidth - w * k) / 2, (ViewerArea.ActualHeight - h * k) / 2, w * k, h * k);
+    }
+
+    private void OnViewerClick(object sender, MouseButtonEventArgs e)
+    {
+        if (!_pointable || PictureRect() is not { } r) return;
+        var p = e.GetPosition(ViewerArea);
+        if (!r.Contains(p)) return;
+        _spot = new Spot(Math.Round((p.X - r.Left) / r.Width, 3), Math.Round((p.Y - r.Top) / r.Height, 3), Math.Round(Scrubber.Value, 2));
+        SpotText.Text = $"Spot at {Fmt(_spot.Time)}";
+        SpotChip.ToolTip = $"Your request will be about this spot: x {_spot.X:0.00}, y {_spot.Y:0.00} of the frame, at {Fmt(_spot.Time)}. Say \"here\" or \"this\".";
+        SpotChip.Visibility = Visibility.Visible;
+        UpdatePills();
+        PlaceMarker();
+    }
+
+    private void OnClearSpot(object sender, RoutedEventArgs e)
+    {
+        _spot = null;
+        SpotChip.Visibility = Visibility.Collapsed;
+        UpdatePills();
+        PlaceMarker();
+    }
+
+    private void OnViewerResized(object sender, SizeChangedEventArgs e) => PlaceMarker();
+
+    /// <summary>Keep the marker on its spot in the picture (it moves with resizing and hides on the overview).</summary>
+    private void PlaceMarker()
+    {
+        if (_spot is null || !_pointable || PictureRect() is not { } r)
+        {
+            SpotMarker.Visibility = Visibility.Collapsed;
+            return;
+        }
+        Canvas.SetLeft(SpotMarker, r.Left + _spot.X * r.Width - SpotMarker.Width / 2);
+        Canvas.SetTop(SpotMarker, r.Top + _spot.Y * r.Height - SpotMarker.Height / 2);
+        SpotMarker.Visibility = Visibility.Visible;
+    }
 
     private void OnToggleTimeline(object sender, RoutedEventArgs e)
     {

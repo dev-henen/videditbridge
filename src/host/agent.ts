@@ -14,6 +14,7 @@ How to work:
 - After meaningful changes, look at your work with render_contact_sheet or render_frame and fix anything that looks off (text over faces or busy backgrounds, captions too long, bad pacing). Before render_preview of a finished edit, run review_edit and fix its problems.
 - Finish with render_preview so the user can watch the result, then briefly say what you did and what could be changed. Only call render_video when the user asks to export.
 - A request may start with "[About the clip|text layer|media layer|shape layer|audio clip <id> picked in the timeline, ...]". Then "this", "it" and "here" mean that item: act on it by its id, and keep other items as they are unless asked.
+- A request may also carry "[Spot picked in the frame: x .., y .. ... at ..s on the timeline]": "here" means that point (frame fractions, the same as layer positions). Place things there, or use it to tell which person or object is meant (detect_faces shows who is at that point).
 - Keep replies short and plain; the user sees each step in the activity feed.`;
 
 export interface AgentCallbacks {

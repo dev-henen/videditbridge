@@ -85,12 +85,19 @@
           </DockPanel>
 
           <Border Grid.Row="1" Background="Black" CornerRadius="6" ClipToBounds="True">
-            <Grid>
+            <!-- Click the picture to point Claude at a spot in the frame -->
+            <Grid x:Name="ViewerArea" Background="Transparent" MouseLeftButtonUp="OnViewerClick" SizeChanged="OnViewerResized" Cursor="Cross">
               <Image x:Name="FrameImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
               <MediaElement x:Name="Player" LoadedBehavior="Manual" UnloadedBehavior="Stop" Stretch="Uniform" Visibility="Collapsed"
                             MediaOpened="OnMediaOpened" MediaEnded="OnMediaEnded"/>
               <TextBlock x:Name="ViewerEmpty" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Faint}"
                          TextAlignment="Center" TextWrapping="Wrap" Margin="20" Text="Nothing to show yet"/>
+              <Canvas IsHitTestVisible="False">
+                <Grid x:Name="SpotMarker" Width="18" Height="18" Visibility="Collapsed">
+                  <Ellipse Stroke="{StaticResource Accent}" StrokeThickness="2" Fill="{StaticResource AccentSoft}"/>
+                  <Ellipse Width="4" Height="4" Fill="{StaticResource Accent}"/>
+                </Grid>
+              </Canvas>
             </Grid>
           </Border>
 
@@ -206,18 +213,44 @@
                 <TextBlock Text="{Binding AgentText}" TextWrapping="Wrap" LineHeight="18"/>
               </ScrollViewer>
             </TabItem>
-            <TabItem Header="Issues">
-              <ListBox ItemsSource="{Binding Issues}" Margin="0,4,0,0">
-                <ListBox.ItemTemplate>
-                  <DataTemplate>
-                    <DockPanel Margin="6,4">
-                      <TextBlock DockPanel.Dock="Left" Style="{StaticResource Icon}" Text="&#xE7BA;" FontSize="11" Width="18" VerticalAlignment="Top" Margin="0,2,0,0"
-                                 Foreground="{StaticResource Muted}"/>
-                      <TextBlock TextWrapping="Wrap" FontSize="11"><Run Text="{Binding Path, Mode=OneWay}" Foreground="#8C8C8C"/><Run Text="  "/><Run Text="{Binding Message, Mode=OneWay}"/></TextBlock>
-                    </DockPanel>
-                  </DataTemplate>
-                </ListBox.ItemTemplate>
-              </ListBox>
+            <TabItem x:Name="ReviewTab" Header="Review">
+              <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="6,6,2,4">
+                  <Button DockPanel.Dock="Right" Click="OnReview" IsEnabled="{Binding IsProjectOpen}" ToolTip="Check the edit for problems" AutomationProperties.Name="Check the edit for problems">
+                    <TextBlock Style="{StaticResource Icon}" Text="&#xE9D5;"/>
+                  </Button>
+                  <TextBlock Text="{Binding ReviewSummary}" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                </DockPanel>
+                <ListBox ItemsSource="{Binding Findings}" SelectionChanged="OnFindingSelected">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <DockPanel Margin="6,4">
+                        <Button DockPanel.Dock="Right" Click="OnFix" Tag="{Binding}" VerticalAlignment="Top" Margin="6,0,0,0" MinHeight="22" MinWidth="22" Padding="3"
+                                IsEnabled="{Binding DataContext.CanAsk, RelativeSource={RelativeSource AncestorType=Window}}"
+                                ToolTip="Ask Claude to fix this" AutomationProperties.Name="Ask Claude to fix this">
+                          <TextBlock Style="{StaticResource Icon}" Text="&#xE90F;" FontSize="11" Foreground="{StaticResource Accent}"/>
+                        </Button>
+                        <TextBlock DockPanel.Dock="Left" Text="{Binding Glyph}" FontSize="11" Width="18" VerticalAlignment="Top" Margin="0,2,0,0">
+                          <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource Icon}">
+                              <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsProblem}" Value="True">
+                                  <Setter Property="Foreground" Value="{StaticResource Text}"/>
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </TextBlock.Style>
+                        </TextBlock>
+                        <StackPanel>
+                          <TextBlock Text="{Binding TimeText}" FontSize="10" Foreground="{StaticResource Faint}"/>
+                          <TextBlock Text="{Binding Message}" FontSize="11" TextWrapping="Wrap"/>
+                        </StackPanel>
+                      </DockPanel>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </DockPanel>
             </TabItem>
             <TabItem Header="Summary">
               <TextBox Text="{Binding Summary, Mode=OneWay}" IsReadOnly="True" FontFamily="Cascadia Mono, Consolas" FontSize="10.5"
@@ -305,16 +338,26 @@
     <Grid Grid.Row="3" Margin="8,6,8,8">
       <Border Background="{StaticResource Panel2}" CornerRadius="10" BorderThickness="1" BorderBrush="#2E2E2E" Padding="10,6,6,6">
         <StackPanel>
-          <!-- What the request is about: a pill above the text, for the item picked on the timeline -->
-          <Border x:Name="PickChip" Visibility="Collapsed" HorizontalAlignment="Left" Background="{StaticResource AccentSoft}"
-                  CornerRadius="10" Padding="8,1,2,1" Margin="0,0,0,4" MaxWidth="300">
-            <StackPanel Orientation="Horizontal">
-              <TextBlock x:Name="PickText" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="250" Foreground="{StaticResource Text}"/>
-              <Button Click="OnClearPick" ToolTip="Clear" AutomationProperties.Name="Clear the picked item" MinHeight="18" MinWidth="18" Padding="0" Margin="4,0,0,0">
-                <TextBlock Style="{StaticResource Icon}" Text="&#xE711;" FontSize="8"/>
-              </Button>
-            </StackPanel>
-          </Border>
+          <!-- What the request is about: pills above the text for the item picked on the timeline and the spot clicked in the frame -->
+          <StackPanel x:Name="Pills" Orientation="Horizontal" Margin="0,0,0,4" Visibility="Collapsed">
+            <Border x:Name="PickChip" Visibility="Collapsed" Background="{StaticResource AccentSoft}" CornerRadius="10" Padding="8,1,2,1" Margin="0,0,6,0" MaxWidth="300">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="PickText" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="250" Foreground="{StaticResource Text}"/>
+                <Button Click="OnClearPick" ToolTip="Clear" AutomationProperties.Name="Clear the picked item" MinHeight="18" MinWidth="18" Padding="0" Margin="4,0,0,0">
+                  <TextBlock Style="{StaticResource Icon}" Text="&#xE711;" FontSize="8"/>
+                </Button>
+              </StackPanel>
+            </Border>
+            <Border x:Name="SpotChip" Visibility="Collapsed" Background="{StaticResource AccentSoft}" CornerRadius="10" Padding="8,1,2,1">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE707;" FontSize="10" Foreground="{StaticResource Accent}" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                <TextBlock x:Name="SpotText" FontSize="11" VerticalAlignment="Center" Foreground="{StaticResource Text}"/>
+                <Button Click="OnClearSpot" ToolTip="Clear" AutomationProperties.Name="Clear the spot" MinHeight="18" MinWidth="18" Padding="0" Margin="4,0,0,0">
+                  <TextBlock Style="{StaticResource Icon}" Text="&#xE711;" FontSize="8"/>
+                </Button>
+              </StackPanel>
+            </Border>
+          </StackPanel>
           <DockPanel>
             <Button DockPanel.Dock="Right" Style="{StaticResource Primary}" Click="OnStopClaude" ToolTip="Stop Claude" AutomationProperties.Name="Stop Claude"
                     Width="28" Height="28" Padding="0" Margin="6,0,0,0" VerticalAlignment="Bottom"
