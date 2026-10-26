@@ -21,7 +21,7 @@ Usage:
   ave template <id> [--json]               Show a template brief (or its JSON spec)
   ave validate <project.json>              Check a project for problems
   ave summary <project.json>               Human/AI-readable summary of an edit
-  ave render <project.json> <out.mp4>      Render a video  [--scale 0.5] [--preset ultrafast] [--start s --end s]
+  ave render <project.json> <out.mp4>      Render a video  [--scale 0.5] [--preset ultrafast] [--start s --end s] [--software]
   ave frame <project.json> <time> <out.png>  Render one frame [--scale 0.5]
   ave sheet <project.json> <out.png>       Render a contact sheet [--columns 4 --rows 3]
   ave captions <project.json> <out.srt|vtt|ass>  Export captions
@@ -30,7 +30,10 @@ Usage:
   ave tools                                Print Claude tool definitions (JSON)
   ave remote <method> [json]               Call the running desktop app, e.g. ave remote tools.execute {"name":"get_project"}
 
-Relative media paths in a project resolve against the project file's folder.`;
+Relative media paths in a project resolve against the project file's folder.
+render, frame and sheet take --cache <dir> to keep each clip's processed picture between runs, so
+re-renders after an edit only process changed clips. render encodes on the graphics card when one
+works (--software to use x264 only).`;
 
 async function loadProject(file: string): Promise<{ project: Project; baseDir: string }> {
   const raw = JSON.parse(await readFile(file, "utf8"));
@@ -52,6 +55,8 @@ async function main(argv: string[]): Promise<number> {
       json: { type: "boolean" },
       "no-open": { type: "boolean" },
       fonts: { type: "string" },
+      cache: { type: "string" },
+      software: { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -96,6 +101,8 @@ async function main(argv: string[]): Promise<number> {
         scale: num(values.scale),
         preset: values.preset,
         fontsDir: values.fonts,
+        cacheDir: values.cache,
+        hardware: !values.software,
         range: start !== undefined || end !== undefined ? { start: start ?? 0, end: end ?? Number.MAX_SAFE_INTEGER } : undefined,
         onProgress: (p) => {
           const pct = Math.floor(p * 100);
@@ -109,12 +116,12 @@ async function main(argv: string[]): Promise<number> {
     }
     case "frame": {
       const { project, baseDir } = await loadProject(args[0]!);
-      console.log(await renderFrame(project, Number(args[1]), { output: args[2]!, baseDir, scale: num(values.scale), fontsDir: values.fonts }));
+      console.log(await renderFrame(project, Number(args[1]), { output: args[2]!, baseDir, scale: num(values.scale), fontsDir: values.fonts, cacheDir: values.cache }));
       return 0;
     }
     case "sheet": {
       const { project, baseDir } = await loadProject(args[0]!);
-      console.log(await renderContactSheet(project, { output: args[1]!, baseDir, columns: num(values.columns), rows: num(values.rows), fontsDir: values.fonts }));
+      console.log(await renderContactSheet(project, { output: args[1]!, baseDir, columns: num(values.columns), rows: num(values.rows), fontsDir: values.fonts, cacheDir: values.cache }));
       return 0;
     }
     case "captions": {

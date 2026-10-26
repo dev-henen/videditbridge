@@ -54,6 +54,7 @@ export function motionEffects(): EffectDefinition[] {
       id: "bokeh",
       name: "Bokeh / Lens Blur",
       category: "blur",
+      perFrame: true,
       description:
         "Out-of-focus lens blur where points of light become soft discs (bokeh), unlike a plain blur. Use on night lights, city backgrounds or b-roll behind titles. Give a subject ellipse to keep a person sharp in front of a bokeh background.",
       params: z.object({
@@ -90,6 +91,7 @@ export function motionEffects(): EffectDefinition[] {
       id: "zoomBlur",
       name: "Zoom Blur",
       category: "blur",
+      perFrame: true,
       description: "Radial blur streaking out from a point, like zooming the lens during exposure. Pairs well with zoomPunch and whoosh sound effects for energetic moments.",
       params: z.object({
         amount: num(40, 1, 100, "Streak length"),
@@ -143,6 +145,7 @@ export function motionEffects(): EffectDefinition[] {
       id: "glow",
       name: "Glow / Bloom",
       category: "light",
+      perFrame: true,
       description: "Bright areas bloom with a soft glow (dreamy, cinematic, neon at night).",
       params: z.object({
         strength: num(0.8, 0, 1, "Glow opacity"),
@@ -413,6 +416,7 @@ export function motionEffects(): EffectDefinition[] {
       id: "vhs",
       name: "VHS / Retro Tape",
       category: "stylize",
+      perFrame: true,
       description: "Old videotape look: color bleed, soft picture, tape noise and scanlines.",
       params: z.object({ amount: num(50, 0, 100, "Strength") }),
       toFilter: (p, ctx) => {
@@ -431,6 +435,7 @@ export function motionEffects(): EffectDefinition[] {
       id: "tilt",
       name: "Dutch Tilt / Rotate",
       category: "distort",
+      perFrame: true,
       description: "Rotate the frame by a fixed angle and zoom just enough to hide the corners. A tilted (dutch) angle adds unease or energy.",
       params: z.object({ degrees: num(6, -45, 45, "Rotation, positive = clockwise") }),
       toFilter: (p, ctx) => {

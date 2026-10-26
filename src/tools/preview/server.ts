@@ -22,7 +22,7 @@ export interface PreviewSource {
   readonly log: { level: string; message: string; at: string }[];
   /** Live activities (tool calls, renders), oldest first. */
   readonly activities?: { id: string; kind: string; label: string; status: string; progress?: number; detail?: string; startedAt: string; endedAt?: string }[];
-  readonly options: { baseDir: string; outputDir: string; ffmpegPath?: string; fontsDir?: string };
+  readonly options: { baseDir: string; outputDir: string; ffmpegPath?: string; fontsDir?: string; cacheDir?: string | false };
   readonly canUndo?: boolean;
   readonly canRedo?: boolean;
   undo?(): unknown;
@@ -187,6 +187,7 @@ export async function startPreviewServer(source: PreviewSource, opts: PreviewSer
     baseDir: source.options.baseDir,
     ffmpegPath: source.options.ffmpegPath,
     fontsDir: source.options.fontsDir,
+    cacheDir: source.options.cacheDir || undefined,
   });
   const frameCache = new Map<string, string>();
 

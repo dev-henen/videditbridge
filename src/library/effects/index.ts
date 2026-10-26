@@ -54,6 +54,7 @@ const gradeEffects = Object.entries(GRADES).map(([id, g]) =>
     id,
     name: g.name,
     category: "grade",
+    perFrame: true,
     description: `Color grade: ${g.description}.`,
     params: z.object({}),
     toFilter: () => g.filter,
@@ -66,6 +67,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "adjust",
     name: "Adjust",
     category: "color",
+    perFrame: true,
     description: "Basic color correction: brightness, contrast, saturation, gamma.",
     params: z.object({
       brightness: num(0, -1, 1, "-1..1, 0 = unchanged"),
@@ -79,6 +81,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "temperature",
     name: "Temperature",
     category: "color",
+    perFrame: true,
     description: "White balance. Lower kelvin = warmer, higher = cooler.",
     params: z.object({ kelvin: num(6500, 1000, 40000, "Color temperature in kelvin (6500 = neutral)") }),
     toFilter: (p) => `colortemperature=temperature=${p.kelvin}`,
@@ -87,6 +90,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "grayscale",
     name: "Black & White",
     category: "color",
+    perFrame: true,
     description: "Remove all color.",
     params: z.object({}),
     toFilter: () => "hue=s=0",
@@ -95,6 +99,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "sepia",
     name: "Sepia",
     category: "color",
+    perFrame: true,
     description: "Old-photo brown tone.",
     params: z.object({}),
     toFilter: () => "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131",
@@ -103,6 +108,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "invert",
     name: "Invert",
     category: "color",
+    perFrame: true,
     description: "Negative image.",
     params: z.object({}),
     toFilter: () => "negate",
@@ -111,6 +117,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "hueShift",
     name: "Hue Shift",
     category: "color",
+    perFrame: true,
     description: "Rotate all hues.",
     params: z.object({ degrees: num(90, -180, 180, "Hue rotation in degrees") }),
     toFilter: (p) => `hue=h=${p.degrees}`,
@@ -119,6 +126,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "tint",
     name: "Tint",
     category: "color",
+    perFrame: true,
     description: "Wash the image with a color.",
     params: z.object({
       color: z.string().default("#FF8800").describe("Tint color #RRGGBB"),
@@ -136,6 +144,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "lut",
     name: "LUT",
     category: "grade",
+    perFrame: true,
     description: "Apply a 3D LUT file (.cube/.3dl) for a custom grade.",
     params: z.object({ file: z.string().describe("Path to a .cube or .3dl LUT file") }),
     toFilter: (p) => `lut3d=file='${escapeFilterPath(p.file)}'`,
@@ -148,6 +157,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "beauty",
     name: "Beauty / Skin Retouch",
     category: "retouch",
+    perFrame: true,
     description:
       "Portrait retouch: edge-preserving skin smoothing that keeps eyes, hair and outlines sharp, plus optional brightening and warmth. Applies to the whole frame, or only inside a face region (x, y, width, height as frame fractions; check placement with render_frame).",
     params: z.object({
@@ -177,6 +187,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "backgroundBlur",
     name: "Background Blur / Portrait Mode",
     category: "retouch",
+    perFrame: true,
     description:
       "Keep the subject sharp and blur everything around it, like a portrait-mode lens. There is no automatic subject detection: set the subject ellipse (x, y = its center, width, height as frame fractions) around the person, then check it with render_frame. A larger feather gives a softer, more natural falloff.",
     params: z.object({
@@ -197,6 +208,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "blur",
     name: "Blur",
     category: "blur",
+    perFrame: true,
     description: "Gaussian blur.",
     params: z.object({ amount: num(10, 0, 100, "Blur radius") }),
     toFilter: (p) => `gblur=sigma=${p.amount}`,
@@ -205,6 +217,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "sharpen",
     name: "Sharpen",
     category: "blur",
+    perFrame: true,
     description: "Increase detail.",
     params: z.object({ amount: num(1, 0, 3, "Sharpen strength") }),
     toFilter: (p) => `unsharp=5:5:${p.amount}:5:5:0`,
@@ -213,6 +226,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "vignette",
     name: "Vignette",
     category: "stylize",
+    perFrame: true,
     description: "Darken the edges to focus attention on the center.",
     params: z.object({ strength: num(0.5, 0, 1, "0..1") }),
     toFilter: (p) => `vignette=angle=${round3(0.2 + p.strength * 0.8)}`,
@@ -221,6 +235,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "grain",
     name: "Film Grain",
     category: "stylize",
+    perFrame: true,
     description: "Animated film grain noise.",
     params: z.object({ amount: num(12, 0, 60, "Noise strength") }),
     toFilter: (p) => `noise=alls=${p.amount}:allf=t+u`,
@@ -229,6 +244,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "pixelate",
     name: "Pixelate",
     category: "stylize",
+    perFrame: true,
     description: "Blocky low-resolution mosaic (censoring, retro).",
     params: z.object({ blockSize: num(20, 2, 200, "Pixel block size") }),
     toFilter: (p, ctx) => {
@@ -241,6 +257,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "chromaticAberration",
     name: "Chromatic Aberration / RGB Split",
     category: "stylize",
+    perFrame: true,
     description: "Offset red and blue channels for a glitchy or lens-distortion look.",
     params: z.object({ amount: num(6, 0, 50, "Channel offset in pixels") }),
     toFilter: (p) => `rgbashift=rh=-${Math.round(p.amount)}:bh=${Math.round(p.amount)}`,
@@ -249,6 +266,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "glitch",
     name: "Glitch",
     category: "stylize",
+    perFrame: true,
     description: "Digital glitch: jittering RGB split plus noise.",
     params: z.object({ amount: num(10, 1, 40, "Glitch intensity") }),
     toFilter: (p) => {
@@ -260,6 +278,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "letterbox",
     name: "Letterbox",
     category: "stylize",
+    perFrame: true,
     description: "Cinematic black bars top and bottom.",
     params: z.object({ ratio: num(2.39, 1, 4, "Target aspect ratio of the visible area, e.g. 2.39") }),
     toFilter: (p, ctx) => {
@@ -272,6 +291,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "mirror",
     name: "Flip",
     category: "distort",
+    perFrame: true,
     description: "Flip horizontally or vertically.",
     params: z.object({ direction: z.enum(["horizontal", "vertical"]).default("horizontal") }),
     toFilter: (p) => (p.direction === "horizontal" ? "hflip" : "vflip"),
@@ -305,6 +325,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "zoom",
     name: "Static Zoom / Crop In",
     category: "motion",
+    perFrame: true,
     description: "Punch into the frame by a fixed amount (reframe a shot).",
     params: z.object({
       scale: num(1.2, 1, 4, "Zoom factor"),
@@ -420,6 +441,24 @@ export function effectsToFilter(effects: Effect[], ctx: EffectContext): string[]
   return effects.map((e) => effectToFilter(e, ctx));
 }
 
+/** Whether an effect works frame by frame (see EffectDefinition.perFrame). Unknown effects are not. */
+export function isPerFrame(effect: Effect): boolean {
+  const def = byId.get(effect.type);
+  if (!def?.perFrame) return false;
+  if (typeof def.perFrame === "boolean") return true;
+  const parsed = def.params.safeParse(effect.params ?? {});
+  return parsed.success && def.perFrame(parsed.data);
+}
+
+/**
+ * The leading global effects that can run on each clip instead of the joined video. They stop at
+ * the first effect that is not per-frame, since later effects depend on its result.
+ */
+export function perClipGlobalEffects(effects: Effect[]): Effect[] {
+  const n = effects.findIndex((e) => !isPerFrame(e));
+  return n === -1 ? effects : effects.slice(0, n);
+}
+
 function rgbToHue(r: number, g: number, b: number): number {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
@@ -454,6 +493,7 @@ function colorEffects(): EffectDefinition[] {
       id,
       name,
       category,
+      perFrame: true,
       description,
       params: z.object({ value: ((shape[key] as z.ZodOptional<z.ZodNumber>).unwrap()).default(0) }),
       toFilter: (p) => colorFilter({ [key]: (p as { value: unknown }).value } as ColorSettings) || "null",
@@ -463,6 +503,8 @@ function colorEffects(): EffectDefinition[] {
       id: "color",
       name: "Color (all controls)",
       category: "color",
+      // Auto correct smooths levels over neighboring frames.
+      perFrame: (p) => !(p as ColorSettings).autoCorrect,
       description:
         "Full color panel in one effect: exposure, contrast, highlights/shadows/whites/blacks, brilliance, temperature/tint, saturation, vibrance, per-color HSL, tone curves, color wheels, fade, clarity, sharpen, vignette, grain, auto-correct. Use one per clip and tweak values together.",
       params: ColorSettingsSchema,
@@ -483,6 +525,7 @@ function colorEffects(): EffectDefinition[] {
       id: "whiteBalance",
       name: "White Balance",
       category: "color",
+      perFrame: true,
       description: "Relative white balance: temperature (- cooler, + warmer) and tint (- green, + magenta), each -100..100.",
       params: z.object({ temperature: z.number().min(-100).max(100).default(0), tint: z.number().min(-100).max(100).default(0) }),
       toFilter: (p) => colorFilter(p as ColorSettings) || "null",
@@ -491,6 +534,7 @@ function colorEffects(): EffectDefinition[] {
       id: "hsl",
       name: "HSL / Color Mixer",
       category: "color",
+      perFrame: true,
       description: "Adjust hue, saturation and luminance per color range: red, orange, yellow, green, aqua, blue, purple, magenta.",
       params: shape.hsl.unwrap(),
       toFilter: (p) => colorFilter({ hsl: p } as ColorSettings) || "null",
@@ -499,6 +543,7 @@ function colorEffects(): EffectDefinition[] {
       id: "curves",
       name: "Tone Curves",
       category: "grade",
+      perFrame: true,
       description: "Tone curve graphs: master and per-channel red/green/blue curves as [input, output] points in 0..1, or a preset shape.",
       params: shape.curves.unwrap(),
       toFilter: (p) => colorFilter({ curves: p } as ColorSettings) || "null",
@@ -507,6 +552,7 @@ function colorEffects(): EffectDefinition[] {
       id: "colorWheels",
       name: "Color Wheels",
       category: "grade",
+      perFrame: true,
       description: "Color grading wheels: tint shadows, midtones and highlights separately, each with a hue (0..360) and amount (0..100). Teal shadows + orange highlights is the classic film look.",
       params: shape.wheels.unwrap(),
       toFilter: (p) => colorFilter({ wheels: p } as ColorSettings) || "null",

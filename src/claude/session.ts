@@ -17,6 +17,8 @@ export interface SessionOptions {
   tts?: TTSProvider;
   /** Max undo steps kept. */
   historyLimit?: number;
+  /** Render cache folder (default <outputDir>/cache); false renders everything from the sources every time. */
+  cacheDir?: string | false;
 }
 
 export interface HistoryEntry {
@@ -134,6 +136,13 @@ export class EditorSession extends EventEmitter<SessionEvents> {
       outputDir: path.resolve(options.outputDir ?? path.join(baseDir, ".render")),
       historyLimit: options.historyLimit ?? 100,
     };
+    if (options.cacheDir !== false) this.options.cacheDir = path.resolve(options.cacheDir ?? path.join(this.options.outputDir, "cache"));
+  }
+
+  /** Options every render of this session shares: media folder, ffmpeg, fonts and the render cache. */
+  get renderOptions(): { baseDir: string; ffmpegPath?: string; fontsDir?: string; cacheDir?: string } {
+    const { baseDir, ffmpegPath, fontsDir, cacheDir } = this.options;
+    return { baseDir, ffmpegPath, fontsDir, ...(cacheDir ? { cacheDir } : {}) };
   }
 
   get project(): Project {

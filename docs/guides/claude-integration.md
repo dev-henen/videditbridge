@@ -62,6 +62,7 @@ new EditorSession(project, {
   // transcriber and tts default to the local engines (LocalWhisperTranscriber, LocalTTS).
   // Pass another engine only if you want one, e.g. the optional OpenAITranscriber.
   fontsDir: "./fonts",
+  cacheDir,                                // render cache (default <outputDir>/cache); false turns it off
 });
 ```
 

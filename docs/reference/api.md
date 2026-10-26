@@ -52,7 +52,7 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 | Voice-over | `LocalTTS`, `VOICES`, `RECOMMENDED_VOICES`, `LOCAL_VOICES`; optional external: `OpenAITTS`, `ElevenLabsTTS`, `alignmentToWords` |
 | Audio analysis | `decodeAudio`, `analyzeSamples` (sound map), `detectBeats`, `formatSoundMap`, `soundRanges`, `snapWordsToSpeech`, `renderSoundMapImage`, `renderSoundEffect` |
 | Video analysis | `detectScenes` |
-| Render | `render`, `renderFrame`, `renderContactSheet`, `renderForAnalysis`, `compileProject`, `probe`, `probeAssets`, `runFfmpeg`, `resolveFfmpegPath` |
+| Render | `render`, `renderFrame`, `renderContactSheet`, `renderForAnalysis`, `compileProject`, `renderSize`, `planSegments`, `pruneCache`, `detectHardwareEncoder`, `hardwareEncoderArgs`, `probe`, `probeAssets`, `runFfmpeg`, `resolveFfmpegPath` |
 | Review | `reviewEdit` (all checks), `structuralChecks` (project-only checks), `measureLoudness`, `scanFootage`, `keyResidue`, `backdropContrast`, `textLayerBox`, `captionBoxes` |
 | Preview | `startPreviewServer`, `previewState` |
 

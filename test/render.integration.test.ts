@@ -1,10 +1,11 @@
 import { existsSync } from "node:fs";
+import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AUDIO_EFFECTS, EFFECTS, TEMPLATES, applyTemplate } from "../src/library/index.js";
 import { probe, render, renderContactSheet, renderFrame, runFfmpegOrThrow, startPreviewServer } from "../src/tools/index.js";
 import { EditorSession, executeTool } from "../src/claude/index.js";
-import { computeTimeline, validateProject, type Transcript } from "../src/core/index.js";
+import { computeTimeline, parseProject, validateProject, type Transcript } from "../src/core/index.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "./helpers/media.js";
 import { sampleInputs } from "./helpers/inputs.js";
 
@@ -304,6 +305,54 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     // Only the asked-for checks run.
     const audioOnly = await run("review_edit", { checks: ["audio"] });
     expect((audioOnly.data as { issues: { check: string }[] }).issues.every((i) => i.check === "audio")).toBe(true);
+  });
+
+  it("caches clips and keeps every cut on its frame", async () => {
+    // A source whose brightness is its frame number, at 23.976 fps like much stock footage.
+    const ramp = out("cache-ramp.mp4");
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=24000/1001:d=9,format=gray,geq=lum='16+N'", "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p", ramp]);
+    const project = parseProject({
+      settings: { width: 320, height: 180, fps: 30 },
+      assets: [{ type: "video", id: "ramp", src: ramp }],
+      clips: [
+        { id: "a", assetId: "ramp", in: 0, duration: 2.3 },
+        { id: "b", assetId: "ramp", in: 6, duration: 2, effects: [{ type: "kenBurns" }] },
+        { id: "c", assetId: "ramp", in: 0.5, duration: 2.042 },
+        { id: "d", assetId: "ramp", in: 6, duration: 1.5 },
+      ],
+      // Glow's blend used to drop a frame per clip when run on each clip.
+      effects: [{ type: "glow" }],
+    });
+    const brightness = async (file: string) =>
+      [...((await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", file, "-vf", "crop=40:40:140:70,scale=1:1:flags=area,format=gray", "-f", "rawvideo", "-"], { binaryStdout: true })).stdoutBuffer ?? [])];
+    const cuts = (l: number[]) => l.map((v, i) => (i && Math.abs(v - l[i - 1]!) > 25 ? i : -1)).filter((i) => i > 0);
+    const expected = computeTimeline(project).clips.slice(1).map((c) => Math.ceil(c.start * 30 - 1e-6));
+    expect(expected).toEqual([69, 129, 191]);
+
+    const cacheDir = out("cache-dir");
+    await rm(cacheDir, { recursive: true, force: true });
+    const opts = { preset: "ultrafast", extraOutputArgs: ["-qp", "0"] };
+    await render(project, { output: out("cache-plain.mp4"), ...opts });
+    expect(cuts(await brightness(out("cache-plain.mp4")))).toEqual(expected);
+
+    await render(project, { output: out("cache-cold.mp4"), cacheDir, ...opts });
+    const entries = (await readdir(cacheDir)).filter((f) => f.endsWith(".mkv"));
+    expect(entries).toHaveLength(4);
+    const cold = await brightness(out("cache-cold.mp4"));
+    expect(cuts(cold)).toEqual(expected);
+
+    // A second render reuses every entry and gives the same picture.
+    await render(project, { output: out("cache-warm.mp4"), cacheDir, ...opts });
+    expect((await readdir(cacheDir)).filter((f) => f.endsWith(".mkv")).sort()).toEqual(entries.sort());
+    expect(await brightness(out("cache-warm.mp4"))).toEqual(cold);
+
+    // Editing one clip renders only that clip again; a frame render uses the cache without adding to it.
+    const edited = { ...project, clips: project.clips.map((c) => (c.id === "c" ? { ...c, effects: [{ type: "vignette" }] } : c)) };
+    await renderFrame(edited, 5, { output: out("cache-frame.png"), cacheDir });
+    expect((await readdir(cacheDir)).filter((f) => f.endsWith(".mkv"))).toHaveLength(4);
+    await render(edited, { output: out("cache-edit.mp4"), cacheDir, ...opts });
+    expect((await readdir(cacheDir)).filter((f) => f.endsWith(".mkv"))).toHaveLength(5);
+    expect(cuts(await brightness(out("cache-edit.mp4")))).toEqual(expected);
   });
 
   it("renders a still frame and a range directly", async () => {

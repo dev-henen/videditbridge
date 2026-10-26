@@ -31,6 +31,8 @@ export interface ReviewOptions extends FfmpegOptions, StructuralOptions {
   /** Directory relative asset paths resolve against. */
   baseDir?: string;
   fontsDir?: string;
+  /** Render cache folder (see RenderOptions.cacheDir). */
+  cacheDir?: string;
   /** Folder for the measured audio files (the mix and its voice and music parts). */
   workDir: string;
   /** Integrated loudness to aim for, in LUFS (default -14, right for social video and YouTube). */
@@ -121,6 +123,7 @@ export async function reviewEdit(project: Project, opts: ReviewOptions): Promise
       probe: false,
       baseDir: opts.baseDir,
       fontsDir: opts.fontsDir,
+      cacheDir: opts.cacheDir,
       ffmpegPath: opts.ffmpegPath,
       onProgress: (x) => opts.onProgress?.(x * 0.6),
     });

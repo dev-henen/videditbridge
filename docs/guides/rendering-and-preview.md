@@ -19,6 +19,8 @@ await render(project, {
   onProgress: (p) => console.log(Math.round(p * 100) + "%"),
   signal,                  // AbortSignal
   keepWorkDir: true,       // keep graph.txt + overlay.ass for debugging
+  cacheDir: ".render/cache", // reuse processed clips between renders (see below)
+  hardware: true,          // graphics card encoder for full-quality renders (default)
 });
 
 await renderFrame(project, 12.5, { output: "frame.png", scale: 0.5 });
@@ -57,6 +59,25 @@ Readability is judged from the text's estimated box (font size times length) and
 7. The output is H.264 + AAC with `+faststart`.
 
 The graph is passed through `-filter_complex_script`, which avoids Windows command-line length limits. FFmpeg runs in a temporary work directory.
+
+**Frame-exact clips.** Each clip gets exactly the frames whose times fall inside it on the timeline (`trim=end_frame`, padded with a copy of the last frame if a filter came up short). Without this, the fps filter rounded every clip up a frame, and cuts drifted from captions, overlays and sound over a long edit.
+
+## Render cache
+
+With `cacheDir` (Claude sessions set it to `<outputDir>/cache` by default), each primary clip's picture is rendered once to the cache and reused:
+
+- **What is cached:** the source decode, speed, fit, clip effects and fades, plus the global effects that work frame by frame (effects with `perFrame` in the catalog: color, grades, blur, sharpen, vignette, glow, bokeh, grain…). Global effects that change over time (shakes, flashes, light leaks, auto correct) stay on the joined video, after the first of them.
+- **The key** is the source file (path, size, modified time), the clip's trim, speed, fit, effects and fades, the output size and frame rate, and the baked global effects. Moving a clip, or editing another, keeps its entry.
+- **Format:** x264 ultrafast at CRF 12 in `.mkv`, visually lossless (SSIM 0.99) and quick to read back. About 6.5 MB per second at 1080p.
+- **When it fills:** `render`, `renderContactSheet` and `renderForAnalysis` (review) add missing clips, two or three at a time; `renderFrame` only uses what is there. Entries are written to a temporary name first, and the folder is kept under `cacheBytes` (4 GB by default) by deleting the least recently used.
+
+On a laptop (2-core i3), 12 s of a 62 s edit with graded, Ken Burns and glow clips took 112 s uncached, 108 s from an empty cache, 21 s on the next render, and 37 s after changing one clip's grade.
+
+Running a global per-frame effect on each clip instead of the joined video only differs during transitions, where each side is graded before the blend rather than after.
+
+## Hardware encoding
+
+`render` encodes on the graphics card when one works: NVENC, then Quick Sync, then AMF, each checked once per process with a tiny test encode. Quality follows `export.crf` (Quick Sync at quality 22 matched x264 CRF 20 in SSIM and size). It is only used when the x264 preset is slower than `veryfast`, because x264 `ultrafast` previews are already quicker, and a failed hardware encode falls back to x264. Pass `hardware: false` (CLI `--software`) to always use x264. On the same laptop Quick Sync encoded 1080p about 3.6 times faster than x264 `medium`.
 
 **Preview scaling.** With `scale`, the whole graph runs at reduced resolution, which is about 4× faster at 0.5. The ASS file keeps the full-size coordinate space, so text and captions land exactly where they will in the final render.
 

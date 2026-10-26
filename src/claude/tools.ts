@@ -1573,7 +1573,7 @@ export const TOOLS: ToolDefinition[] = [
     run: async (s, i) => {
       const time = i.time ?? computeTimeline(s.project).duration / 2;
       const frame = await s.outputPath(`analyze-${time.toFixed(2)}.png`);
-      await renderFrame(s.project, time, { output: frame, scale: 0.5, baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir });
+      await renderFrame(s.project, time, { output: frame, scale: 0.5, ...s.renderOptions });
       const st = await analyzeColor(frame, { ffmpegPath: s.options.ffmpegPath });
       const pct = (v: number) => `${Math.round(v * 100)}%`;
       return ok(
@@ -1593,7 +1593,7 @@ export const TOOLS: ToolDefinition[] = [
     run: async (s, i, activity) => {
       const time = i.time ?? computeTimeline(s.project).duration / 2;
       const frame = await s.outputPath(`scopes-frame-${time.toFixed(2)}.png`);
-      await renderFrame(s.project, time, { output: frame, scale: 0.5, baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir });
+      await renderFrame(s.project, time, { output: frame, scale: 0.5, ...s.renderOptions });
       activity?.progress(0.6);
       const out = await s.outputPath(`scopes-${time.toFixed(2)}.png`);
       await renderScopes(frame, out, i.scopes, { ffmpegPath: s.options.ffmpegPath });
@@ -1631,9 +1631,7 @@ export const TOOLS: ToolDefinition[] = [
         platform: i.platform,
         loudnessTarget: i.loudnessTarget,
         workDir: path.join(s.options.outputDir, "review"),
-        baseDir: s.options.baseDir,
-        ffmpegPath: s.options.ffmpegPath,
-        fontsDir: s.options.fontsDir,
+        ...s.renderOptions,
         onProgress: (x) => activity?.progress(x),
       });
       const duration = computeTimeline(s.project).duration;
@@ -1655,7 +1653,7 @@ export const TOOLS: ToolDefinition[] = [
     mutates: false,
     run: async (s, i) => {
       const out = await s.outputPath(`frame-${i.time.toFixed(2)}.png`);
-      await renderFrame(s.project, i.time, { output: out, scale: i.scale, baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir });
+      await renderFrame(s.project, i.time, { output: out, scale: i.scale, ...s.renderOptions });
       s.recordRender({ kind: "frame", path: out, time: i.time });
       return { text: `Frame at ${i.time}s: ${out}`, images: [{ path: out, mediaType: "image/png" }] };
     },
@@ -1667,7 +1665,7 @@ export const TOOLS: ToolDefinition[] = [
     mutates: false,
     run: async (s, i) => {
       const out = await s.outputPath("contact-sheet.png");
-      await renderContactSheet(s.project, { output: out, ...i, baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir });
+      await renderContactSheet(s.project, { output: out, ...i, ...s.renderOptions });
       s.recordRender({ kind: "contact-sheet", path: out });
       return { text: `Contact sheet (${i.columns}x${i.rows}, read left to right, top to bottom): ${out}`, images: [{ path: out, mediaType: "image/png" }] };
     },
@@ -1680,7 +1678,7 @@ export const TOOLS: ToolDefinition[] = [
     run: async (s, i, activity) => {
       const out = await s.outputPath("preview.mp4");
       const range = i.start !== undefined || i.end !== undefined ? { start: i.start ?? 0, end: i.end ?? Number.MAX_SAFE_INTEGER } : undefined;
-      const r = await render(s.project, { output: out, scale: i.scale, range, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir, onProgress: (p) => activity?.progress(p) });
+      const r = await render(s.project, { output: out, scale: i.scale, range, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
       s.recordRender({ kind: "preview", path: out });
       return ok(`Preview rendered (${r.duration}s): ${out}`);
     },
@@ -1692,7 +1690,7 @@ export const TOOLS: ToolDefinition[] = [
     mutates: false,
     run: async (s, i, activity) => {
       const out = s.resolve(i.output);
-      const r = await render(s.project, { output: out, baseDir: s.options.baseDir, ffmpegPath: s.options.ffmpegPath, fontsDir: s.options.fontsDir, onProgress: (p) => activity?.progress(p) });
+      const r = await render(s.project, { output: out, ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
       s.recordRender({ kind: "video", path: out });
       return ok(`Rendered ${r.duration}s video to ${out}`);
     },

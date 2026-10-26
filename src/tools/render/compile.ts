@@ -2,13 +2,14 @@ import path from "node:path";
 import type { Asset, Clip, Effect, Fit, MediaLayer, Project } from "../../core/schema.js";
 import { computeTimeline, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
-import { effectsToFilter, escapeFilterPath, type EffectContext } from "../../library/effects/index.js";
+import { effectsToFilter, escapeFilterPath, perClipGlobalEffects, type EffectContext } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
 import { overlayMotion } from "../../library/animations/index.js";
 import { AssDocument, addCaptionEvents } from "../captions/ass.js";
 import { buildCaptions } from "../captions/build.js";
 import { addShapeLayer, addTextLayer } from "./text.js";
+import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
 
 export interface CompileOptions {
   /** Output file path. */
@@ -34,6 +35,16 @@ export interface CompileOptions {
    * and/or the audio mix (plus the voice and music submixes) as WAV files. `output` is ignored.
    */
   analysis?: { framesAt?: number[]; audio?: { mix: string; voice?: string; music?: string } };
+  /**
+   * Cached clip pictures to use instead of reading and processing the source (clip id to file,
+   * from the render cache). Setting it, even empty, applies per-frame global effects to each clip
+   * rather than to the joined video, so cached and uncached clips look the same.
+   */
+  segments?: Record<string, string>;
+  /** Compile the picture of the project's only clip for the render cache: video only, at the intermediate quality. */
+  segment?: boolean;
+  /** Encode the video on the graphics card instead of with x264, at matching quality. */
+  hardwareEncoder?: HardwareEncoder;
 }
 
 export interface CompiledRender {
@@ -55,9 +66,19 @@ export interface CompiledRender {
 export const FILTER_SCRIPT = "graph.txt";
 export const ASS_FILE = "overlay.ass";
 
+/** Cached clips: fast to write and read back, and visually lossless (SSIM 0.99 on real footage). */
+export const SEGMENT_CODEC = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "12", "-pix_fmt", "yuv420p"];
+
 const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+const previewScale = (scale?: number) => (scale && scale > 0 && scale !== 1 ? scale : 1);
+
+/** Frame size of a render at a preview scale (even numbers, as the encoder needs). */
+export function renderSize(project: Project, scale?: number): { width: number; height: number } {
+  const k = previewScale(scale);
+  return { width: even(project.settings.width * k), height: even(project.settings.height * k) };
+}
 
 class GraphBuilder {
   readonly inputArgs: string[] = [];
@@ -85,15 +106,17 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   const { fps: F } = project.settings;
   // Previews render the whole graph at reduced size. Text keeps the full-size coordinate
   // space (ASS PlayRes) and libass scales it, so layout is identical to the final render.
-  const k = opts.scale && opts.scale > 0 && opts.scale !== 1 ? opts.scale : 1;
-  const W = even(project.settings.width * k);
-  const H = even(project.settings.height * k);
+  const k = previewScale(opts.scale);
+  const { width: W, height: H } = renderSize(project, opts.scale);
   const bg = toFfmpegColor(project.settings.backgroundColor);
   const g = new GraphBuilder();
   const baseDir = opts.baseDir ?? process.cwd();
   const resolveSrc = (src: string) => (/^[a-z]+:\/\//i.test(src) ? src : path.resolve(baseDir, src));
   const total = timeline.duration;
   if (total <= 0) throw new Error("Project is empty: add clips, layers or audio before rendering");
+  // With the render cache, per-frame global effects run on each clip so they can be baked into cached clips.
+  const perClip = opts.segments || opts.segment ? perClipGlobalEffects(project.effects) : [];
+  const joinedEffects = project.effects.slice(perClip.length);
 
   const sourceInput = (asset: Asset, seek: number, duration: number, loop = false): number => {
     switch (asset.type) {
@@ -178,26 +201,37 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // -------------------------------------------------------------------------
   const clipStream = (tc: TimedClip): { v: string; a: string } => {
     const { clip, asset } = tc;
-    const k = sourceInput(asset, clip.in, asset.type === "video" ? tc.sourceDuration : tc.duration);
-    const raw = g.label("raw");
-    const speed = asset.type === "video" ? clip.speed : 1;
-    g.add(`[${k}:v]${chain(["setpts=PTS-STARTPTS", speed !== 1 && `setpts=PTS/${speed}`, `fps=${F}`])}[${raw}]`);
-    const fitted = fit(raw, clip.fit, W, H, false, clip.focus);
-    const v = g.label("v");
-    g.add(
-      `[${fitted}]${chain([
-        ...effectsToFilter(clip.effects, effectCtx(tc.duration)),
-        clip.fadeIn && `fade=t=in:st=0:d=${clip.fadeIn}`,
-        clip.fadeOut && `fade=t=out:st=${round3(Math.max(0, tc.duration - clip.fadeOut))}:d=${clip.fadeOut}`,
-        `fps=${F}`,
-        "format=yuv420p",
-        "setsar=1",
-        // concat outputs AV_TIME_BASE; keep every segment on it so xfade inputs always match.
-        "settb=AVTB",
-      ])}[${v}]`,
-    );
-    const a = g.label("a");
     const hasAudio = asset.type === "video" && asset.hasAudio !== false && !clip.muted && clip.volume > 0;
+    const cached = opts.segments?.[clip.id];
+    // A cached clip brings its finished picture, so the source is only read for its sound.
+    const k = cached && !hasAudio ? -1 : sourceInput(asset, clip.in, asset.type === "video" ? tc.sourceDuration : tc.duration);
+    const v = g.label("v");
+    // Give the clip exactly the frames whose times fall inside it on the timeline. The fps filter
+    // alone rounds each clip up (a 2.3 s clip of 23.976 fps footage gave 70 frames, not 69), and
+    // filters such as blend can drop a last frame, so cuts drifted from captions and overlays.
+    // A cache entry keeps its natural frames, so it stays valid wherever the clip moves.
+    const frames = Math.max(1, Math.ceil(tc.end * F - 1e-6) - Math.ceil(tc.start * F - 1e-6));
+    const exact = opts.segment ? [] : ["tpad=stop_mode=clone:stop=-1", `trim=end_frame=${frames}`];
+    // concat outputs AV_TIME_BASE; keep every segment on it so xfade inputs always match.
+    const finish = [`fps=${F}`, "format=yuv420p", "setsar=1", ...exact, "settb=AVTB"];
+    if (cached) {
+      g.add(`[${g.addInput(["-i", cached])}:v]${chain(["setpts=PTS-STARTPTS", ...finish])}[${v}]`);
+    } else {
+      const raw = g.label("raw");
+      const speed = asset.type === "video" ? clip.speed : 1;
+      g.add(`[${k}:v]${chain(["setpts=PTS-STARTPTS", speed !== 1 && `setpts=PTS/${speed}`, `fps=${F}`])}[${raw}]`);
+      const fitted = fit(raw, clip.fit, W, H, false, clip.focus);
+      g.add(
+        `[${fitted}]${chain([
+          ...effectsToFilter(clip.effects, effectCtx(tc.duration)),
+          clip.fadeIn && `fade=t=in:st=0:d=${clip.fadeIn}`,
+          clip.fadeOut && `fade=t=out:st=${round3(Math.max(0, tc.duration - clip.fadeOut))}:d=${clip.fadeOut}`,
+          ...effectsToFilter(perClip, effectCtx(tc.duration)),
+          ...finish,
+        ])}[${v}]`,
+      );
+    }
+    const a = g.label("a");
     if (hasAudio) {
       g.add(
         `[${k}:a]${chain([
@@ -253,9 +287,9 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     g.add(`anullsrc=r=48000:cl=stereo,atrim=duration=${total},${AUDIO_FMT}[${aCur}]`);
   }
 
-  if (project.effects.length) {
+  if (joinedEffects.length && !opts.segment) {
     const out = g.label("graded");
-    g.add(`[${vCur}]${chain(effectsToFilter(project.effects, effectCtx(timeline.primaryDuration || total)))}[${out}]`);
+    g.add(`[${vCur}]${chain(effectsToFilter(joinedEffects, effectCtx(timeline.primaryDuration || total)))}[${out}]`);
     vCur = out;
   }
 
@@ -462,6 +496,24 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // -------------------------------------------------------------------------
   const vOut = "vout";
   const sheet = opts.contactSheet;
+  if (opts.segment) {
+    g.add(`[${vCur}]format=yuv420p[${vOut}]`);
+    g.add(`[${aOut}]anullsink`);
+    const filterGraph = g.lines.join(";\n");
+    files.push({ name: FILTER_SCRIPT, content: filterGraph });
+    const args = [
+      "-y", "-hide_banner", "-loglevel", "error", "-stats",
+      ...g.inputArgs,
+      "-filter_complex_script", FILTER_SCRIPT,
+      "-map", `[${vOut}]`,
+      ...SEGMENT_CODEC,
+      // Keep exactly the frames the clip's chain makes, as the uncached graph does: forcing a rate
+      // or length here drops or repeats a frame, and every later clip shifts by it.
+      "-fps_mode", "passthrough",
+      path.resolve(opts.output),
+    ];
+    return { args, files, filterGraph, timeline, duration: total, width: W, height: H };
+  }
   const analysis = opts.analysis;
   if (analysis) {
     // Snap each time to a frame so the select below picks exactly one frame for it.
@@ -513,14 +565,9 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     outputArgs.push(
       "-map",
       `[${aOut}]`,
-      "-c:v",
-      exp.videoCodec,
-      "-preset",
-      opts.preset ?? exp.preset,
-      "-crf",
-      String(exp.crf),
-      "-pix_fmt",
-      "yuv420p",
+      ...(opts.hardwareEncoder
+        ? hardwareEncoderArgs(opts.hardwareEncoder, exp.crf)
+        : ["-c:v", exp.videoCodec, "-preset", opts.preset ?? exp.preset, "-crf", String(exp.crf), "-pix_fmt", "yuv420p"]),
       "-r",
       String(F),
       "-c:a",

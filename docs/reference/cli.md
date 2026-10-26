@@ -10,9 +10,9 @@ Relative media paths in a project file resolve against the project file's folder
 | `ave template <id> [--json]` | Print a template brief, or its JSON spec with `--json` |
 | `ave validate <project.json>` | Validate a project. Exits 1 on errors |
 | `ave summary <project.json>` | Print the readable timeline summary |
-| `ave render <project.json> <out.mp4>` | Render a video. Options: `--scale 0.5`, `--preset ultrafast`, `--start s`, `--end s`, `--fonts dir` |
-| `ave frame <project.json> <time> <out.png>` | Render one frame. Options: `--scale`, `--fonts` |
-| `ave sheet <project.json> <out.png>` | Render a contact sheet. Options: `--columns 4`, `--rows 3`, `--fonts` |
+| `ave render <project.json> <out.mp4>` | Render a video. Options: `--scale 0.5`, `--preset ultrafast`, `--start s`, `--end s`, `--fonts dir`, `--cache dir` (reuse processed clips between runs), `--software` (x264 only, no graphics card encoder) |
+| `ave frame <project.json> <time> <out.png>` | Render one frame. Options: `--scale`, `--fonts`, `--cache dir` |
+| `ave sheet <project.json> <out.png>` | Render a contact sheet. Options: `--columns 4`, `--rows 3`, `--fonts`, `--cache dir` |
 | `ave captions <project.json> <out.srt\|vtt\|ass>` | Export captions; the format comes from the file extension |
 | `ave preview <project.json> [--port 4321]` | Start the live preview and reload whenever the file changes |
 | `ave probe <media>` | Print duration, size, fps and audio/video presence as JSON |

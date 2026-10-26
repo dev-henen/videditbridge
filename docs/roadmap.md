@@ -11,7 +11,7 @@ The biggest gap is that the editor does not know where people and objects are in
 | 1 | [Subject and face detection](#1-subject-and-face-detection) | Positions are guessed today; five features depend on it | Large |
 | 2 | [Keyframes](#2-keyframes) | Nothing can move or change over time except preset animations | Large |
 | 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Done, except text over faces (needs #1) |
-| 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes about 4.5 minutes, and every change re-renders all of it | Medium |
+| 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes several minutes, and every change re-renders all of it | Segment cache and hardware encoding done |
 | 5 | [Direct editing in the desktop app](#5-direct-editing-in-the-desktop-app) | The app is a chat box and a preview; nothing can be dragged or adjusted | Large |
 
 
@@ -66,10 +66,14 @@ Each of these was a real problem in this session, found only by looking: an unre
 
 The whole project is rendered as one FFmpeg graph every time. Improvements, in order of payoff:
 
-1. **Segment cache.** Render each clip with its effects once and reuse it until that clip changes.
+1. **Segment cache.** Render each clip with its effects once and reuse it until that clip changes. **Done** (2026-10-26): a re-render of an unchanged edit is about 5 times faster. See [Render cache](guides/rendering-and-preview.md#render-cache).
 2. **Proxy media.** Use small copies of the source footage for previews and frames.
-3. **Hardware encoding.** Use the graphics card's encoder (NVENC, Quick Sync, AMF) when one is present.
-4. **Parallel chunks.** Split long exports into pieces rendered at the same time, then join them.
+3. **Hardware encoding.** Use the graphics card's encoder (NVENC, Quick Sync, AMF) when one is present. **Done**: about 3.6 times faster encoding with Quick Sync.
+4. **Parallel chunks.** Split long exports into pieces rendered at the same time, then join them. Measured first: on a 2-core laptop, rendering three clips at once was only 1.2 times faster than one after another, because FFmpeg's filters already use every core. Worth it only on machines with many cores.
+
+Found on the way: the fps filter rounded every clip up a frame, so on a long edit the cuts drifted a few frames from captions, overlays and sound. Clips now get exactly their frames.
+
+Still slow on a cold render: Ken Burns upscales every frame to twice the size before `zoompan` (about 20 ms per 1080p frame), and `colorbalance` and `vibrance` convert each frame to RGB and back (about 15 to 30 ms each).
 
 ## 5. Direct editing in the desktop app
 
@@ -108,7 +112,7 @@ Everything still goes through the same tools, so Claude and manual edits share u
 
 1. Commit the current work. (Done.)
 2. `review_edit` and `fix_transcript`: small, and they improve every edit right away. (Done.)
-3. Faster rendering (segment cache first): every later step is tested by rendering.
+3. Faster rendering (segment cache first): every later step is tested by rendering. (Segment cache and hardware encoding done.)
 4. Subject and face detection.
 5. Keyframes, then tracking on top of detection.
 6. Direct editing in the desktop app.

@@ -21,6 +21,12 @@ export interface EffectDefinition<P extends z.ZodType = z.ZodType> {
   category: EffectCategory;
   description: string;
   params: P;
+  /**
+   * True when each output frame depends only on the same input frame: no time, motion, or
+   * smoothing across frames. Such a global effect gives the same picture whether it runs on each
+   * clip or on the joined video, so the render cache can bake it into cached clips.
+   */
+  perFrame?: boolean | ((params: z.output<P>) => boolean);
   /** Returns a comma-separated FFmpeg filter chain. */
   toFilter(params: z.output<P>, ctx: EffectContext): string;
 }
