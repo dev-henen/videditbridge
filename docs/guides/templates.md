@@ -56,6 +56,7 @@ Passing `transcript` on a media input enables the template's captions for that m
   "grade": [{ "type": "vibrant" }],         // global effects
   "music": { "slot": "music", "volume": 0.4, "duck": true },
   "voiceover": { "slot": "voiceover" },
+  "automation": { "transitionSounds": true },   // see "Automation" below
   "scenes": [ /* see below */ ]
 }
 ```
@@ -73,7 +74,8 @@ Scenes play in order. Each scene becomes one primary clip, plus the layers on to
   "optional": false,                          // skip when referenced inputs are empty
   "duration": 3,                              // default length
   "fitMedia": false,                          // use the background media's own length (capped by maxDuration)
-  "durationFrom": "{{item.seconds}}",         // or: a number / media with a known duration
+  "durationFrom": "{{item.seconds}}",         // or: a number / media with a known duration; "{{a}}|{{b}}" tries a, then b
+  "audio": { "media": "{{item.voice}}", "start": 0.3 },   // this scene's own narration (see below)
   "background": { "media": "{{item.media}}", "consume": false, "fit": "cover", "muted": false, "speed": 1 },
   // or { "color": "#000000" } / { "gradient": ["#FF006E", "#3A0CA3"], "direction": "diagonal" }
   "effects": [{ "type": "kenBurns" }],
@@ -87,6 +89,34 @@ Scenes play in order. Each scene becomes one primary clip, plus the layers on to
 - **`consume: true`** continues a single long media from where the previous scene stopped. The *viral talking head* uses it to make a 3s hook scene and then a body scene from one recording.
 - **Text presets** are `title`, `heading`, `subtitle`, `body`, `caption`, `kicker`, `big-number` and `footer`. They pick font, size, color and default animation from the theme. Override anything with `style`.
 - **Layer timing** is relative to the scene start. Layers default to running until the scene ends, and they are placed after transitions are resolved.
+- **Scene narration** (`audio`) plays as a voice-over starting `start` seconds into the scene. A narrated scene lasts as long as its line, plus a breath and the next transition, so each slide or list item is on screen exactly while it is talked about. Its transcript (if the input has one) feeds the captions.
+
+## Automation
+
+Some work needs the engines rather than the builder: speaking text, transcribing, finding retakes, detecting beats. A spec lists that work in `automation`, and the `apply_template` tool does it around the build, as one undo step. `automate: false` builds the bare template. `applyTemplate` and `buildFromTemplate` ignore it.
+
+```jsonc
+"automation": {
+  "transcribe": ["main"],                     // slots to transcribe when no transcript is given
+  "narrate": {
+    "script": { "from": "script", "into": "voiceover" },                   // speak a text slot into an audio slot
+    "items": { "list": "slides", "field": "narration", "into": "voice" }   // speak each item's line into item.voice
+  },
+  "cleanup": { "slot": "main", "retakes": true, "fillers": true, "maxPause": 0.6 },
+  "beatSync": { "action": "cuts", "every": 1, "downbeats": false, "sound": "hit" },   // or zoomPunch, impactShake, flashHits
+  "transitionSounds": true                    // swoosh, whoosh or glitch on each moving transition
+}
+```
+
+| Step | When | What it does |
+|---|---|---|
+| `narrate` | before the build | Speaks with the local voice (or the session's voice engine) in the project's voice, only where no recording was given. The text is remembered so `revoice` can redo it. Pair `items` with a scene `audio` of `{{item.<into>}}`. |
+| `transcribe` | before the build | Reuses a transcript already in the project for the same file, otherwise transcribes locally. |
+| `cleanup` | after the build | Removes retaken and abandoned sentences, then fillers, stutters and long pauses. Music is trimmed to the new length. |
+| `beatSync` | after the build | Uses the template's music: moves cuts onto the beat or puts an effect on it. Skipped, with a note, when there is no music or no steady beat. |
+| `transitionSounds` | after the build | Adds the sound that matches each transition (calm fades get none). |
+
+`get_template` and the [template reference](../reference/templates.md) list each template's automation, so Claude knows what not to do by hand.
 
 ### Placeholders
 

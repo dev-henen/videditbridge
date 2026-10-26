@@ -14,9 +14,9 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "9:16",
     idealDuration: [20, 60],
     aiGuidance:
-      "Open on the strongest claim in the first 3 seconds, use the transcript to find it and move it first if needed. Remove every filler word and pause longer than ~0.4s (cleanup_speech with maxPause 0.4). Keep sentences punchy; cut tangents. Hook text should be ≤7 words and create curiosity. Keep the music low (ducked). End with a clear CTA.",
+      "Open on the strongest claim in the first 3 seconds, use the transcript to find it and move it first if needed. Retakes, filler words and pauses longer than 0.4s are removed automatically. Keep sentences punchy; cut tangents. Hook text should be ≤7 words and create curiosity. Keep the music low (ducked). End with a clear CTA.",
     slots: [
-      { id: "main", kind: "video", description: "The talking-head recording (provide a transcript for captions)", required: true },
+      { id: "main", kind: "video", description: "The talking-head recording (transcribed automatically for captions)", required: true },
       { id: "hook", kind: "text", description: "Scroll-stopping hook shown for the first 3s, ≤7 words" },
       { id: "cta", kind: "text", description: "Closing call to action, e.g. 'Follow for part 2'" },
       handle,
@@ -26,6 +26,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     captions: { style: "bold-pop" },
     grade: [{ type: "vibrant" }],
     music: { slot: "music", volume: 0.12 },
+    automation: { transcribe: ["main"], cleanup: { slot: "main", maxPause: 0.4 } },
     scenes: [
       {
         id: "hook",
@@ -68,7 +69,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "9:16",
     idealDuration: [30, 90],
     aiGuidance:
-      "Pick a self-contained 30-90s moment with a clear point or a strong opinion (search the transcript for emotional or contrarian statements). Start mid-energy, not at a greeting. Trim dead air but keep natural conversational rhythm. The title should frame the takeaway as a question or bold claim.",
+      "Pick a self-contained 30-90s moment with a clear point or a strong opinion (search the transcript for emotional or contrarian statements). Start mid-energy, not at a greeting. Fillers and dead air over 0.8s are trimmed automatically, keeping the conversational rhythm. The title should frame the takeaway as a question or bold claim.",
     slots: [
       { id: "main", kind: "video", description: "Podcast recording (landscape is fine)", required: true },
       { id: "title", kind: "text", description: "Headline banner for the clip" },
@@ -78,6 +79,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     ],
     theme: { accentColor: "#00D1FF", backgroundColor: "#0B0B0F" },
     captions: { style: "karaoke", overrides: { position: 0.76 } },
+    automation: { transcribe: ["main"], cleanup: { slot: "main", retakes: false, maxPause: 0.8 } },
     scenes: [
       {
         id: "clip",
@@ -104,10 +106,10 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "9:16",
     idealDuration: [15, 45],
     aiGuidance:
-      "Order items so the best one is last (or first for impatient audiences). Each item 2.5-4s. Labels ≤4 words. Use energetic music; keep transitions consistent (slideup). If items have voice-over, fit scene length to the narration.",
+      "Order items so the best one is last (or first for impatient audiences). Each item 2.5-4s. Labels ≤4 words. Use energetic music; keep transitions consistent (slideup, with a swoosh added automatically). Write a line of narration per item to have it spoken; the item then lasts as long as its line.",
     slots: [
       { id: "title", kind: "text", description: "List title, e.g. '5 apps you need'", required: true },
-      { id: "items", kind: "list", description: "List items", required: true, fields: { media: "Video or image for the item", label: "Short label", seconds: "Optional scene length" } },
+      { id: "items", kind: "list", description: "List items", required: true, fields: { media: "Video or image for the item", label: "Short label", narration: "Optional line the narrator says (spoken with the local voice)", seconds: "Optional scene length" } },
       { id: "cta", kind: "text", description: "Closing CTA" },
       music,
     ],
@@ -115,6 +117,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     transition: { type: "slideup", duration: 0.35 },
     grade: [{ type: "vibrant" }],
     music: { slot: "music", volume: 0.5, duck: true },
+    automation: { narrate: { items: { list: "items", field: "narration", into: "voice" } }, transitionSounds: true },
     scenes: [
       {
         id: "intro",
@@ -131,6 +134,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
         repeat: "items",
         duration: 3,
         durationFrom: "{{item.seconds}}",
+        audio: { media: "{{item.voice}}", start: 0.2 },
         background: { media: "{{item.media}}", consume: false },
         effects: [{ type: "kenBurns", params: { zoomTo: 1.15 } }],
         components: [{ component: "number-badge", params: { number: "{{index}}", label: "{{item.label}}", badgeColor: "{{theme.accentColor}}" } }],
@@ -156,7 +160,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "9:16",
     idealDuration: [10, 60],
     aiGuidance:
-      "2.5-4s per photo; vary Ken Burns direction for rhythm. Order photos chronologically or by emotional arc. Captions short and lowercase-friendly. Match cuts to the music beat if a BPM is known.",
+      "2.5-4s per photo; vary Ken Burns direction for rhythm. Order photos chronologically or by emotional arc. Captions short and lowercase-friendly. Cuts move onto every other beat of the music automatically.",
     slots: [
       { id: "title", kind: "text", description: "Opening title (optional)" },
       { id: "photos", kind: "list", description: "Photos or clips", required: true, fields: { media: "Image or video", caption: "Optional caption" } },
@@ -166,6 +170,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     transition: { type: "fade", duration: 0.6 },
     grade: [{ type: "warm" }, { type: "vignette", params: { strength: 0.3 } }],
     music: { slot: "music", volume: 0.8, duck: false, fadeOut: 2 },
+    automation: { beatSync: { action: "cuts", every: 2 } },
     scenes: [
       {
         id: "photo",
@@ -241,6 +246,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     transition: { type: "whip", duration: 0.25 },
     grade: [{ type: "vibrant" }],
     music: { slot: "music", volume: 0.5 },
+    automation: { transitionSounds: true },
     scenes: [
       { id: "hook", name: "Hook", purpose: "Stop the scroll", duration: 2.5, background: { media: "{{hero}}" }, effects: [{ type: "zoom", params: { scale: 1.08 } }], components: [{ component: "hook-text", params: { text: "{{hook}}", highlight: "{{theme.accentColor}}" } }] },
       { id: "feature", name: "Feature", purpose: "One benefit", repeat: "features", duration: 2.5, background: { media: "{{item.media}}" }, components: [{ component: "label", params: { text: "{{item.label}}", y: 0.78, size: 56 } }] },
@@ -256,7 +262,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "Instagram Reels", "YouTube Shorts"],
     aspectRatio: "9:16",
     idealDuration: [15, 60],
-    aiGuidance: "1-2.5s per moment; cut on action. Labels like '6:00 AM' or 'coffee first'. Use the clip's natural audio sparingly (mute by default). Keep chronological order.",
+    aiGuidance: "1-2.5s per moment; cut on action (cuts then move onto the music's beat automatically). Labels like '6:00 AM' or 'coffee first'. Use the clip's natural audio sparingly (mute by default). Keep chronological order.",
     slots: [
       { id: "moments", kind: "list", description: "Clips in order", required: true, fields: { media: "Clip", label: "Time or caption" } },
       { id: "title", kind: "text", description: "Opening title, e.g. 'a day in my life as a nurse'" },
@@ -265,6 +271,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     theme: { fontFamily: "Arial" },
     grade: [{ type: "bright" }],
     music: { slot: "music", volume: 0.9, duck: false },
+    automation: { beatSync: { action: "cuts" } },
     scenes: [
       {
         id: "moment",
@@ -315,6 +322,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
       { id: "content", kind: "media", description: "The video you react to", required: true },
     ],
     captions: { style: "green-highlight", overrides: { position: 0.5, fontSize: 60 } },
+    automation: { transcribe: ["reaction"], cleanup: { slot: "reaction", retakes: false, maxPause: 0.8 } },
     scenes: [
       {
         id: "split",
@@ -335,10 +343,11 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "Instagram Reels", "YouTube Shorts"],
     aspectRatio: "9:16",
     idealDuration: [10, 30],
-    aiGuidance: "One idea per shot, ≤6 words, building to a climax line. Use a voice-over if available and fit shots to its sentences.",
+    aiGuidance: "One idea per shot, ≤6 words, building to a climax line. Give a recorded voiceover or write a script (spoken with the local voice); cuts move onto the music's bar starts automatically.",
     slots: [
       { id: "lines", kind: "list", description: "Shots with a line of text", required: true, fields: { media: "B-roll clip", text: "Line to show" } },
       { id: "voiceover", kind: "audio", description: "Optional narration" },
+      { id: "script", kind: "text", description: "Narration script, spoken with the local voice when no voiceover is given" },
       music,
     ],
     theme: { headingFont: "Impact", textColor: "#FFFFFF" },
@@ -346,6 +355,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     grade: [{ type: "moody" }, { type: "grain", params: { amount: 8 } }, { type: "vignette", params: { strength: 0.6 } }],
     music: { slot: "music", volume: 0.6 },
     voiceover: { slot: "voiceover" },
+    automation: { narrate: { script: { from: "script", into: "voiceover" } }, beatSync: { action: "cuts", downbeats: true } },
     scenes: [
       {
         id: "line",
@@ -386,7 +396,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "Instagram Reels", "YouTube Shorts"],
     aspectRatio: "9:16",
     idealDuration: [20, 60],
-    aiGuidance: "Each exercise 3-5s showing the full movement. Name + reps clearly visible. High-energy music.",
+    aiGuidance: "Each exercise 3-5s showing the full movement. Name + reps clearly visible. High-energy music: cuts move onto its bar starts and each slide gets a swoosh automatically.",
     slots: [
       { id: "title", kind: "text", description: "Routine title, e.g. '10-min ab burner'", required: true },
       { id: "exercises", kind: "list", description: "Exercises", required: true, fields: { media: "Demo clip", name: "Exercise name", reps: "e.g. '3 x 12'" } },
@@ -396,6 +406,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     transition: { type: "slideleft", duration: 0.3 },
     grade: [{ type: "adjust", params: { contrast: 1.15, saturation: 1.1 } }],
     music: { slot: "music", volume: 0.7 },
+    automation: { beatSync: { action: "cuts", downbeats: true }, transitionSounds: true },
     scenes: [
       { id: "intro", name: "Intro", purpose: "Title + countdown", duration: 3, background: { gradient: ["#FF4D00", "#1A1A1A"] }, texts: [{ text: "{{title}}", preset: "title", position: { x: 0.5, y: 0.3 }, style: { uppercase: true } }], components: [{ component: "countdown", params: { from: 3 }, start: 0.6, duration: 2.4 }] },
       { id: "exercise", name: "Exercise", purpose: "Demo one exercise", repeat: "exercises", duration: 4, background: { media: "{{item.media}}", muted: true }, components: [{ component: "number-badge", params: { number: "{{index}}", label: "{{item.name}}", badgeColor: "{{theme.accentColor}}", numberColor: "#FFFFFF" } }, { component: "label", params: { text: "{{item.reps}}", y: 0.85, size: 56, background: "#000000CC" }, start: 0.4 }] },
@@ -410,20 +421,21 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "Instagram Reels", "YouTube Shorts"],
     aspectRatio: "9:16",
     idealDuration: [20, 60],
-    aiGuidance: "Show the finished dish first (hook), then steps. Speed up long actions (stirring) with speed 1.5-3x. Step text = verb first ('Whisk eggs and sugar').",
+    aiGuidance: "Show the finished dish first (hook), then steps. Speed up long actions (stirring) with speed 1.5-3x. Step text = verb first ('Whisk eggs and sugar'). Write a narration line per step to have it spoken; the step then lasts as long as its line.",
     slots: [
       { id: "title", kind: "text", description: "Dish name", required: true },
       { id: "final", kind: "media", description: "Finished dish shot", required: true },
-      { id: "steps", kind: "list", description: "Recipe steps", required: true, fields: { media: "Clip of the step", text: "Instruction" } },
+      { id: "steps", kind: "list", description: "Recipe steps", required: true, fields: { media: "Clip of the step", text: "Instruction", narration: "Optional line the narrator says (spoken with the local voice)" } },
       music,
     ],
     theme: { accentColor: "#FFB703", headingFont: "Arial Black" },
     transition: { type: "fade", duration: 0.3 },
     grade: [{ type: "warm" }],
     music: { slot: "music", volume: 0.5 },
+    automation: { narrate: { items: { list: "steps", field: "narration", into: "voice" } } },
     scenes: [
       { id: "hook", name: "Dish reveal", purpose: "Make them hungry", duration: 2.5, background: { media: "{{final}}" }, effects: [{ type: "kenBurns", params: { zoomTo: 1.2 } }], components: [{ component: "hook-text", params: { text: "{{title}}", highlight: "{{theme.accentColor}}" } }] },
-      { id: "step", name: "Step", purpose: "One instruction", repeat: "steps", duration: 3.5, background: { media: "{{item.media}}" }, components: [{ component: "label", params: { text: "{{index}}. {{item.text}}", y: 0.84, size: 48, background: "#000000B3" } }] },
+      { id: "step", name: "Step", purpose: "One instruction", repeat: "steps", duration: 3.5, audio: { media: "{{item.voice}}", start: 0.2 }, background: { media: "{{item.media}}" }, components: [{ component: "label", params: { text: "{{index}}. {{item.text}}", y: 0.84, size: 48, background: "#000000B3" } }] },
       { id: "final", name: "Final plate", purpose: "Payoff", duration: 2.5, background: { media: "{{final}}" }, effects: [{ type: "kenBurns", params: { zoomFrom: 1.2, zoomTo: 1 } }], components: [{ component: "label", params: { text: "Enjoy!", y: 0.5, size: 80, background: "#00000000", animation: "zoom" } }] },
     ],
   },
@@ -436,7 +448,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["TikTok", "YouTube Shorts", "Twitch"],
     aspectRatio: "9:16",
     idealDuration: [15, 60],
-    aiGuidance: "Only the best moments, 2-6s each, cut right before the action. Put the best play last. Label each clip with a short hype caption.",
+    aiGuidance: "Only the best moments, 2-6s each, cut right before the action. Put the best play last. Label each clip with a short hype caption. Each glitch gets its sound and cuts move onto the beat automatically.",
     slots: [
       { id: "clips", kind: "list", description: "Gameplay clips (landscape is fine)", required: true, fields: { media: "Clip", label: "Hype caption, e.g. '1v4 CLUTCH'" } },
       { id: "title", kind: "text", description: "Montage title" },
@@ -447,6 +459,7 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     grade: [{ type: "vibrant" }],
     captions: { style: "word-by-word" },
     music: { slot: "music", volume: 0.7 },
+    automation: { beatSync: { action: "cuts" }, transitionSounds: true },
     scenes: [
       { id: "title", name: "Title", purpose: "Hype intro", optional: true, duration: 1.8, background: { gradient: ["#0F0C29", "#302B63"] }, effects: [{ type: "chromaticAberration", params: { amount: 8 } }], texts: [{ text: "{{title}}", preset: "title", style: { uppercase: true, color: "#00FFFF" } }] },
       { id: "clip", name: "Clip", purpose: "One highlight", repeat: "clips", duration: 4, fitMedia: true, maxDuration: 8, background: { media: "{{item.media}}", fit: "blur" }, effects: [{ type: "chromaticAberration", params: { amount: 3 } }], components: [{ component: "label", params: { text: "{{item.label}}", y: 0.2, size: 64, background: "#00000000", color: "#00FFFF" } }] },
@@ -464,11 +477,12 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     aiGuidance: "Lead with the headline fact. Neutral tone, no clickbait. Cite the source in the footer. Cut b-roll every 3-4s to illustrate.",
     slots: [
       { id: "headline", kind: "text", description: "Headline", required: true },
-      { id: "main", kind: "video", description: "Presenter or footage (transcript enables captions)", required: true },
+      { id: "main", kind: "video", description: "Presenter or footage (transcribed automatically for captions)", required: true },
       { id: "source", kind: "text", description: "Source credit" },
     ],
     theme: { accentColor: "#E10600", headingFont: "Arial Black" },
     captions: { style: "boxed" },
+    automation: { transcribe: ["main"], cleanup: { slot: "main", maxPause: 0.5 } },
     scenes: [
       {
         id: "story",
@@ -493,16 +507,18 @@ export const SOCIAL_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Everywhere"],
     aspectRatio: "9:16",
     idealDuration: [8, 30],
-    aiGuidance: "≤5 words per line. Vary emphasis: key words in accent color via separate lines. Time lines to the music beat or voice-over.",
+    aiGuidance: "≤5 words per line. Vary emphasis: key words in accent color via separate lines. Lines change on the music's beat automatically; with a voiceover or script, time lines to it instead (automate: false keeps your seconds).",
     slots: [
       { id: "lines", kind: "list", description: "Text beats", required: true, fields: { text: "Phrase", seconds: "Optional length" } },
       { id: "voiceover", kind: "audio", description: "Optional narration" },
+      { id: "script", kind: "text", description: "Narration script, spoken with the local voice when no voiceover is given" },
       music,
     ],
     theme: { headingFont: "Arial Black", accentColor: "#FFE600" },
     transition: { type: "slideup", duration: 0.3 },
     music: { slot: "music", volume: 0.7 },
     voiceover: { slot: "voiceover" },
+    automation: { narrate: { script: { from: "script", into: "voiceover" } }, beatSync: { action: "cuts" } },
     scenes: [
       {
         id: "line",

@@ -11,6 +11,7 @@ import {
   TransitionSchema,
   type Asset,
   type Project,
+  type Transcript,
 } from "../core/schema.js";
 import * as ops from "../core/operations.js";
 import { computeTimeline, sourceToTimeline } from "../core/timeline.js";
@@ -24,7 +25,7 @@ import { getTransition, listTransitions } from "../library/transitions/index.js"
 import { listAnimations } from "../library/animations/index.js";
 import { listCaptionStyles } from "../library/caption-styles/index.js";
 import { addComponent, listComponents } from "../library/components/index.js";
-import { applyTemplate, describeTemplate, getTemplate, listTemplates } from "../library/templates/index.js";
+import { applyTemplate, describeTemplate, getTemplate, listTemplates, type TemplateSpec } from "../library/templates/index.js";
 import { formatTranscript, searchTranscript, transcriptStats } from "../tools/transcript/analyze.js";
 import { parseTranscript } from "../tools/transcript/parse.js";
 import { cleanupSpeech } from "../tools/transcript/cleanup.js";
@@ -129,20 +130,20 @@ async function analyzeSound(s: EditorSession, src: string, range?: { start: numb
   return pending;
 }
 
-function mediaAsset(s: EditorSession, assetId: string): Extract<Asset, { type: "video" | "audio" }> {
-  const asset = s.project.assets.find((a) => a.id === assetId);
-  if (!asset) throw new Error(`Unknown asset "${assetId}". Assets: ${s.project.assets.map((a) => a.id).join(", ") || "(none)"}`);
+function mediaAsset(s: EditorSession, assetId: string, p: Project = s.project): Extract<Asset, { type: "video" | "audio" }> {
+  const asset = p.assets.find((a) => a.id === assetId);
+  if (!asset) throw new Error(`Unknown asset "${assetId}". Assets: ${p.assets.map((a) => a.id).join(", ") || "(none)"}`);
   if (asset.type !== "video" && asset.type !== "audio") throw new Error(`Asset "${assetId}" is ${asset.type === "image" ? "an image" : `a ${asset.type}`} and has no sound`);
   if (asset.type === "video" && asset.hasAudio === false) throw new Error(`Video "${assetId}" has no audio track`);
   return asset;
 }
 
 /** Beat times on the timeline, from an audio clip (following its start, trim, speed and loop) or a primary-track asset. */
-async function timelineBeats(s: EditorSession, source: string): Promise<{ beats: number[]; downbeats: number[]; bpm?: number; confidence: number }> {
-  const timeline = computeTimeline(s.project);
+async function timelineBeats(s: EditorSession, source: string, p: Project = s.project): Promise<{ beats: number[]; downbeats: number[]; bpm?: number; confidence: number }> {
+  const timeline = computeTimeline(p);
   const ta = timeline.audio.find((a) => a.clip.id === source);
   if (ta) {
-    const asset = mediaAsset(s, ta.clip.assetId);
+    const asset = mediaAsset(s, ta.clip.assetId, p);
     const { beats } = await analyzeSound(s, asset.src);
     if (!beats.bpm) return { beats: [], downbeats: [], confidence: beats.confidence };
     const srcLen = asset.duration ?? Infinity;
@@ -165,7 +166,7 @@ async function timelineBeats(s: EditorSession, source: string): Promise<{ beats:
   }
   const clips = timeline.clips.filter((c) => c.clip.assetId === source);
   if (!clips.length) throw new Error(`"${source}" is not an audio clip id or an asset on the primary track`);
-  const asset = mediaAsset(s, source);
+  const asset = mediaAsset(s, source, p);
   const { beats } = await analyzeSound(s, asset.src);
   const map = (list: number[]) =>
     clips.flatMap((tc) => list.filter((b) => b >= tc.clip.in && b < tc.clip.in + tc.sourceDuration).map((b) => Math.round(sourceToTimeline(tc, b) * 1000) / 1000));
@@ -260,6 +261,138 @@ async function transitionSounds(s: EditorSession, p: Project, clipIds: string[],
     placed.push(`${type} at ${start}s`);
   }
   return { project, placed };
+}
+
+type TemplateMedia = { src: string; duration?: number; transcript?: Transcript; [k: string]: unknown };
+
+const mediaSrc = (v: unknown): string | undefined =>
+  typeof v === "string" && v ? v : v && typeof v === "object" && typeof (v as { src?: unknown }).src === "string" ? (v as { src: string }).src : undefined;
+
+/**
+ * Template automation before the build: speak scripts that have no recording yet, and attach
+ * transcripts to the slots the template transcribes (reusing ones already in the project).
+ * Returns the filled inputs and the narration made, keyed by file.
+ */
+async function prepareTemplateInputs(
+  s: EditorSession,
+  tpl: TemplateSpec,
+  inputs: Record<string, unknown>,
+  activity?: ActivityHandle,
+): Promise<{ inputs: Record<string, unknown>; spoken: Map<string, NarrationInfo>; done: string[] }> {
+  const auto = tpl.automation;
+  const out = structuredClone(inputs);
+  const spoken = new Map<string, NarrationInfo>();
+  const done: string[] = [];
+  if (!auto) return { inputs: out, spoken, done };
+  const { voice, speed } = projectVoice(s);
+  const say = async (text: string): Promise<TemplateMedia> => {
+    const vo = await speak(s, text, { voice, speed }, activity);
+    spoken.set(vo.path, { text, voice, speed });
+    return { src: vo.path, duration: vo.duration, transcript: vo.transcript };
+  };
+  const script = auto.narrate?.script;
+  if (script && !mediaSrc(out[script.into]) && typeof out[script.from] === "string" && (out[script.from] as string).trim()) {
+    out[script.into] = await say(out[script.from] as string);
+    done.push(`spoke the ${script.from} into ${script.into}`);
+  }
+  const items = auto.narrate?.items;
+  if (items && Array.isArray(out[items.list])) {
+    let n = 0;
+    for (const item of out[items.list] as Record<string, unknown>[]) {
+      const line = item?.[items.field];
+      if (!item || mediaSrc(item[items.into]) || typeof line !== "string" || !line.trim()) continue;
+      item[items.into] = await say(line);
+      n++;
+    }
+    if (n) done.push(`spoke ${n} ${items.list} lines`);
+  }
+  for (const slot of auto.transcribe) {
+    const v = out[slot];
+    const src = mediaSrc(v);
+    if (!src || (typeof v === "object" && (v as TemplateMedia).transcript)) continue;
+    const prev = s.project.assets.find((a) => "src" in a && s.resolve(a.src) === s.resolve(src) && s.project.transcripts[a.id]);
+    let transcript = prev ? s.project.transcripts[prev.id] : undefined;
+    if (!transcript) {
+      const vocab = projectVocabulary(s.project);
+      transcript = await transcribeMedia(s.resolve(src), s.options.transcriber ?? localTranscriber(s, activity), { prompt: vocab.length ? vocab.join(", ") : undefined, ffmpegPath: s.options.ffmpegPath });
+      done.push(`transcribed ${slot}`);
+    }
+    out[slot] = { ...(typeof v === "object" ? (v as object) : { src }), transcript };
+  }
+  return { inputs: out, spoken, done };
+}
+
+/** Template automation after the build: retake and filler cleanup, beat sync and transition sounds. */
+async function finishTemplate(s: EditorSession, tpl: TemplateSpec, p: Project, inputs: Record<string, unknown>): Promise<{ project: Project; done: string[]; skipped: string[] }> {
+  const auto = tpl.automation;
+  const done: string[] = [];
+  const skipped: string[] = [];
+  if (!auto) return { project: p, done, skipped };
+  const assetFor = (slot: string) => {
+    const src = mediaSrc(inputs[slot]);
+    return src ? p.assets.find((a) => "src" in a && s.resolve(a.src) === s.resolve(src)) : undefined;
+  };
+
+  const clean = auto.cleanup;
+  if (clean) {
+    const asset = assetFor(clean.slot);
+    const t = asset && p.transcripts[asset.id];
+    if (!asset || !t) skipped.push(`cleanup (no transcript for ${clean.slot})`);
+    else {
+      const before = computeTimeline(p).duration;
+      if (clean.retakes) {
+        const r = findRetakes(t);
+        if (r.remove.length) p = ops.cutSourceRanges(p, asset.id, sentenceCutRanges(t, r.sentences, r.remove));
+        if (r.remove.length) done.push(`removed ${r.remove.length} retaken sentences`);
+      }
+      if (clean.fillers || clean.maxPause) {
+        const r = cleanupSpeech(p, asset.id, { fillers: clean.fillers, repetitions: clean.fillers, maxPause: clean.maxPause, keepPause: 0.2 });
+        p = r.project;
+        if (r.removed.length) done.push(`cut ${r.removed.length} fillers and pauses`);
+      }
+      const gone = round3(before - computeTimeline(p).duration);
+      if (gone > 0) done.push(`${gone}s shorter`);
+      // Music laid to the original length follows the edit.
+      const end = computeTimeline(p).duration;
+      p = { ...p, audio: p.audio.map((a) => (a.role === "music" && a.duration !== undefined && a.duration > end ? { ...a, duration: round3(end) } : a)) };
+    }
+  }
+
+  const sync = auto.beatSync;
+  const music = sync && p.audio.find((a) => a.role === "music");
+  if (sync && !music) skipped.push("beat sync (no music)");
+  if (sync && music) {
+    try {
+      const b = await timelineBeats(s, music.id, p);
+      const times = (sync.downbeats ? b.downbeats : b.beats).filter((_, k) => k % sync.every === 0);
+      if (!b.bpm || !times.length) skipped.push(`beat sync (no steady beat, confidence ${b.confidence})`);
+      else {
+        if (sync.action === "cuts") {
+          const r = ops.snapCutsToTimes(p, times, { minClip: 0.4 });
+          p = r.project;
+          done.push(`moved ${r.moved.length} cuts onto the beat (${b.bpm} BPM)`);
+        } else {
+          const r = ops.placeMomentEffect(p, sync.action, times.filter((t) => t < computeTimeline(p).primaryDuration));
+          p = r.project;
+          done.push(`${sync.action} on ${times.length} beats (${b.bpm} BPM)`);
+        }
+        if (sync.sound && getSoundEffect(sync.sound)) {
+          const sfx = await sfxAsset(s, p, sync.sound);
+          p = sfx.project;
+          for (const t of times.filter((t) => t < computeTimeline(p).duration)) p = ops.addAudio(p, { assetId: sfx.assetId, role: "sfx", start: t, volume: 0.7, label: sync.sound });
+        }
+      }
+    } catch (e) {
+      skipped.push(`beat sync (${(e as Error).message})`);
+    }
+  }
+
+  if (auto.transitionSounds) {
+    const r = await transitionSounds(s, p, p.clips.map((c) => c.id));
+    p = r.project;
+    if (r.placed.length) done.push(`${r.placed.length} transition sounds`);
+  }
+  return { project: p, done, skipped };
 }
 
 /** The local face detector, reporting the first-use model download on the activity. */
@@ -378,26 +511,43 @@ export const TOOLS: ToolDefinition[] = [
       inputs: z.record(z.string(), z.unknown()),
       aspectRatio: aspect.optional().describe("Override the template's aspect ratio"),
       theme: z.record(z.string(), z.string()).optional().describe("Theme overrides, e.g. {accentColor: '#FF0000'}"),
+      automate: z
+        .boolean()
+        .default(true)
+        .describe("Run the template's automation (narrating scripts, transcribing, removing retakes and fillers, beat sync, transition sounds). false builds the bare template"),
     }),
     mutates: true,
-    run: async (s, i) => {
-      const { project, warnings } = await applyTemplate(i.templateId, i.inputs as never, {
+    run: async (s, i, activity) => {
+      const tpl = getTemplate(i.templateId);
+      if (!tpl) return { text: `Unknown template "${i.templateId}". Use list_templates.`, isError: true };
+      const prep = i.automate ? await prepareTemplateInputs(s, tpl, i.inputs, activity) : { inputs: i.inputs, spoken: new Map<string, NarrationInfo>(), done: [] };
+      const built = await applyTemplate(tpl, prep.inputs as never, {
         aspectRatio: i.aspectRatio,
         theme: i.theme,
         probe: (src) => probe(s.resolve(src), { ffmpegPath: s.options.ffmpegPath }),
       });
+      let project = built.project;
+      const warnings = built.warnings.filter((w) => !(w.startsWith("Template uses captions") && tpl.captions));
       // Reuse transcripts from previously imported assets with the same source.
       for (const a of project.assets) {
         if (!("src" in a) || project.transcripts[a.id]) continue;
         const prev = s.project.assets.find((x) => "src" in x && s.resolve(x.src) === s.resolve(a.src) && s.project.transcripts[x.id]);
         if (prev) project.transcripts[a.id] = s.project.transcripts[prev.id]!;
       }
-      const tpl = getTemplate(i.templateId)!;
       if (tpl.captions && Object.keys(project.transcripts).length && !project.captions) {
         project.captions = { enabled: true, style: tpl.captions.style, ...(tpl.captions.overrides ? { overrides: tpl.captions.overrides } : {}) };
       }
-      const r = commit(s, project, "apply_template", i, `Applied template "${i.templateId}".`);
-      return { ...r, text: `${r.text}${warnings.length ? `\nWarnings:\n- ${warnings.join("\n- ")}` : ""}\n\n${summarizeProject(project)}` };
+      if (tpl.captions && !project.captions) warnings.push("Template uses captions but no transcript was provided, transcribe the main media to enable them");
+      for (const a of project.assets) {
+        const info = "src" in a ? prep.spoken.get(s.resolve(a.src)) ?? prep.spoken.get(a.src) : undefined;
+        if (info) project = rememberNarration(project, a.id, info);
+      }
+      const fin = i.automate ? await finishTemplate(s, tpl, project, prep.inputs) : { project, done: [], skipped: [] };
+      project = fin.project;
+      const done = [...prep.done, ...fin.done];
+      const r = commit(s, project, "apply_template", i, `Applied template "${i.templateId}".${done.length ? ` Automation: ${done.join(", ")}.` : ""}`);
+      const notes = [...warnings, ...fin.skipped.map((x) => `Skipped ${x}`)];
+      return { ...r, text: `${r.text}${notes.length ? `\nWarnings:\n- ${notes.join("\n- ")}` : ""}\n\n${summarizeProject(project)}` };
     },
   }),
   tool({

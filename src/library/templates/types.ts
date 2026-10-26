@@ -87,7 +87,17 @@ export const SceneSpecSchema = z.object({
   durationFrom: z
     .string()
     .optional()
-    .describe("Placeholder giving the scene length: a number ({{item.seconds}}) or media with a known duration ({{voiceover}})"),
+    .describe(
+      "Placeholder giving the scene length: a number ({{item.seconds}}) or media with a known duration ({{voiceover}}). Alternatives separated by | are tried in order ({{item.voice}}|{{item.seconds}})",
+    ),
+  audio: z
+    .object({
+      media: z.string().describe("Placeholder for an audio input, e.g. {{item.voice}}"),
+      volume: z.number().default(1),
+      start: z.number().min(0).default(0).describe("Seconds into the scene the narration starts"),
+    })
+    .optional()
+    .describe("Narration for this scene (per-item voice-over). The scene lasts at least as long as it, plus a short breath and the next transition"),
   background: SceneBackgroundSchema.default({ color: "{{theme.backgroundColor}}" }),
   effects: z.array(EffectSchema).default([]),
   transition: TransitionSchema.nullable().optional().describe("Transition into this scene; null = hard cut; omitted = template default"),
@@ -95,6 +105,50 @@ export const SceneSpecSchema = z.object({
   components: z.array(SceneComponentSchema).default([]),
   overlays: z.array(SceneOverlaySchema).default([]),
 });
+
+/**
+ * Steps an editing session carries out around building the template (apply_template does them,
+ * since they need speech recognition, the local voice and audio analysis).
+ */
+export const AutomationSchema = z.object({
+  transcribe: z.array(z.string()).default([]).describe("Media slots to transcribe when no transcript is given (enables captions and cleanup)"),
+  narrate: z
+    .object({
+      script: z
+        .object({ from: z.string().describe("Text slot with the script, e.g. script"), into: z.string().describe("Audio slot it fills, e.g. voiceover") })
+        .optional()
+        .describe("Speak a script with the local voice when no recording is given"),
+      items: z
+        .object({
+          list: z.string().describe("List slot"),
+          field: z.string().describe("Item field with the line to say, e.g. narration"),
+          into: z.string().describe("Item field that gets the spoken audio, e.g. voice"),
+        })
+        .optional()
+        .describe("Speak each item's line into its own audio, so each scene is narrated and lasts as long as its line"),
+    })
+    .optional(),
+  cleanup: z
+    .object({
+      slot: z.string().describe("Talking footage slot"),
+      retakes: z.boolean().default(true).describe("Remove lines said again and abandoned sentences"),
+      fillers: z.boolean().default(true).describe("Remove um, uh and stutters"),
+      maxPause: z.number().positive().default(0.6).describe("Shorten pauses longer than this"),
+    })
+    .optional(),
+  beatSync: z
+    .object({
+      action: z.enum(["cuts", "zoomPunch", "impactShake", "flashHits"]).default("cuts"),
+      every: z.number().int().min(1).default(1),
+      downbeats: z.boolean().default(false),
+      sound: z.string().optional().describe("Sound effect on the same beats"),
+    })
+    .optional()
+    .describe("Edit to the beat of the music slot"),
+  transitionSounds: z.boolean().default(false).describe("Add the matching sound to every transition (swoosh, whoosh, glitch)"),
+});
+
+export type Automation = z.infer<typeof AutomationSchema>;
 
 export const TemplateSpecSchema = z.object({
   id: z.string(),
@@ -116,6 +170,7 @@ export const TemplateSpecSchema = z.object({
     .object({ slot: z.string(), volume: z.number().default(0.25), fadeIn: z.number().default(0.5), fadeOut: z.number().default(1.5), duck: z.boolean().default(true) })
     .optional(),
   voiceover: z.object({ slot: z.string(), volume: z.number().default(1) }).optional(),
+  automation: AutomationSchema.optional(),
   scenes: z.array(SceneSpecSchema).min(1),
 });
 

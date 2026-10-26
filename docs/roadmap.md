@@ -106,7 +106,7 @@ Everything still goes through the same tools, so all changes share one undo hist
 
 ## Improvements to what exists
 
-- **Templates.** None of the 33 templates use the newer pieces yet: section cards, sound effects tied to transitions, local narration, retake removal, beat sync.
+- **Templates.** Done (2026-10-26): templates now declare `automation` that `apply_template` runs. 27 of the 33 use it (the rest are single text cards or have nothing to automate): talking-footage templates transcribe and remove retakes, fillers and pauses; essays, slide lessons, list videos, recipes and property tours narrate each item with the local voice and fit the scene to the line; montages cut on the beat; moving transitions get their sound. Video essays open each chapter with a section card. See [Templates](guides/templates.md#automation).
 - **Saving.** A crash lost an import before autosave ran. Save right after each change, and write the file in a way that a crash cannot leave it half written.
 - **Sound map.** Sung vocals come out as "sound (unsure)". A small local speech, music and singing classifier would beat the current hand-tuned rules.
 - **Speech recognition.** The base Whisper model mishears names and skips some quiet speech; the larger model skipped a whole section in testing. Worth comparing other local models.
@@ -120,4 +120,4 @@ Everything still goes through the same tools, so all changes share one undo hist
 4. Subject and face detection. (Done.)
 5. Keyframes, then tracking on top of detection. (Done.)
 6. The AI-first desktop app: pointing at things and spots, fixing review findings, choosing between Claude's options. (Done.)
-7. Templates updated to use everything above.
+7. Templates updated to use everything above. (Done.)

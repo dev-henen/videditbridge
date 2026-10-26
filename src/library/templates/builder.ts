@@ -160,7 +160,11 @@ export function buildFromTemplate(specInput: TemplateSpec, inputs: TemplateInput
 
       const bg = scene.background;
       let clip: Clip;
-      const sceneDuration = resolveDuration(scene, scope) ?? scene.duration;
+      // A narrated scene holds until its line ends, a breath later, before the next transition starts.
+      const narration = scene.audio ? toMedia(resolve(scene.audio.media, scope))?.duration : undefined;
+      const sceneDuration = narration
+        ? Math.max(resolveDuration(scene, scope) ?? 0, round3(scene.audio!.start + narration + 0.35 + (spec.transition?.duration ?? 0)))
+        : (resolveDuration(scene, scope) ?? scene.duration);
       const transition = clips.length === 0 ? undefined : scene.transition === null ? undefined : (scene.transition ?? spec.transition);
       const base = { id: newId("clip"), effects: scene.effects, transition, label: scene.name };
 
@@ -316,6 +320,16 @@ export function buildFromTemplate(specInput: TemplateSpec, inputs: TemplateInput
   project.layers = layers;
 
   // Audio
+  for (const { clipId, scene, scope } of pending) {
+    if (!scene.audio) continue;
+    const media = toMedia(resolve(scene.audio.media, scope));
+    if (!media) continue;
+    const tc = timeline.clips.find((c) => c.clip.id === clipId)!;
+    const asset = ensureMedia(media, scene.audio.media.replace(/[{}]/g, "").replace(/^item\./, `${scene.id}_`), "audio");
+    if (!project.assets.some((a) => a.id === asset.id)) project.assets.push(asset);
+    if (media.transcript) project.transcripts[asset.id] = media.transcript;
+    project.audio.push({ id: newId("audio"), assetId: asset.id, role: "voiceover", start: round3(tc.start + scene.audio.start), in: media.in ?? 0, speed: 1, volume: scene.audio.volume, audioEffects: [], fadeIn: 0, fadeOut: 0, loop: false, ...(media.duration ? { duration: media.duration } : {}) });
+  }
   if (spec.voiceover) {
     const vo = toMedia(inputs[spec.voiceover.slot]);
     if (vo) {
@@ -357,12 +371,15 @@ export function buildFromTemplate(specInput: TemplateSpec, inputs: TemplateInput
   return { project, warnings };
 }
 
-/** Duration from `durationFrom`: a number, or the known duration of a media input. */
+/** Duration from `durationFrom`: a number, or the known duration of a media input. Alternatives split by | are tried in order. */
 function resolveDuration(scene: SceneSpec, scope: Scope): number | undefined {
   if (!scene.durationFrom) return undefined;
-  const v = resolve(scene.durationFrom, scope);
-  const n = typeof v === "number" ? v : typeof v === "string" && /^d+(.d+)?$/.test(v) ? Number(v) : toMedia(v)?.duration;
-  return n && n > 0 ? Math.min(n, scene.maxDuration ?? Infinity) : undefined;
+  for (const alt of scene.durationFrom.split("|")) {
+    const v = resolve(alt, scope);
+    const n = typeof v === "number" ? v : typeof v === "string" && /^\d+(\.\d+)?$/.test(v.trim()) ? Number(v) : toMedia(v)?.duration;
+    if (n && n > 0) return Math.min(n, scene.maxDuration ?? Infinity);
+  }
+  return undefined;
 }
 
 function uniqueId(base: string, assets: Asset[]): string {

@@ -70,7 +70,26 @@ export function describeTemplate(t: TemplateSpec): string {
     ),
     `Look: captions ${t.captions?.style ?? "none"}; transition ${t.transition?.type ?? "cut"}; grade ${t.grade.map((g) => g.type).join("+") || "none"}; fonts ${t.theme.headingFont}/${t.theme.fontFamily}`,
   ];
+  const auto = describeAutomation(t);
+  if (auto.length) lines.push(`Automatic when applied (automate: false skips): ${auto.join("; ")}`);
   return lines.join("\n");
+}
+
+/** What apply_template does around the build, as short phrases. */
+export function describeAutomation(t: TemplateSpec): string[] {
+  const a = t.automation;
+  if (!a) return [];
+  const out: string[] = [];
+  if (a.narrate?.script) out.push(`speaks ${a.narrate.script.from} with the local voice when ${a.narrate.script.into} is not given`);
+  if (a.narrate?.items) out.push(`speaks each ${a.narrate.items.list} item's ${a.narrate.items.field} as that scene's narration (the scene lasts as long as the line)`);
+  if (a.transcribe.length) out.push(`transcribes ${a.transcribe.join(", ")}`);
+  if (a.cleanup) {
+    const parts = [a.cleanup.retakes && "retakes", a.cleanup.fillers && "fillers", `pauses over ${a.cleanup.maxPause}s`].filter(Boolean);
+    out.push(`removes ${parts.join(", ")} from ${a.cleanup.slot}`);
+  }
+  if (a.beatSync) out.push(a.beatSync.action === "cuts" ? `puts cuts on the ${a.beatSync.downbeats ? "downbeats" : "beat"}${a.beatSync.every > 1 ? ` (every ${a.beatSync.every})` : ""}` : `${a.beatSync.action} on the ${a.beatSync.downbeats ? "downbeats" : "beat"}${a.beatSync.every > 1 ? ` (every ${a.beatSync.every})` : ""}`);
+  if (a.transitionSounds) out.push("adds a sound to each transition");
+  return out;
 }
 
 export interface MediaInfo {

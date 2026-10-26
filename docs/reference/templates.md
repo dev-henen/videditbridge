@@ -56,14 +56,15 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions `bold-pop`, transition hard cut, grade `vibrant`, fonts Arial Black / Arial
 - **Tags:** talking head, tiktok, reels, shorts, hormozi, captions
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.4s from main
 
-**Editing guidance:** Open on the strongest claim in the first 3 seconds, use the transcript to find it and move it first if needed. Remove every filler word and pause longer than ~0.4s (cleanup_speech with maxPause 0.4). Keep sentences punchy; cut tangents. Hook text should be ≤7 words and create curiosity. Keep the music low (ducked). End with a clear CTA.
+**Editing guidance:** Open on the strongest claim in the first 3 seconds, use the transcript to find it and move it first if needed. Retakes, filler words and pauses longer than 0.4s are removed automatically. Keep sentences punchy; cut tangents. Hook text should be ≤7 words and create curiosity. Keep the music low (ducked). End with a clear CTA.
 
 **Inputs**
 
 | Slot | Kind | Required | Description |
 |---|---|---|---|
-| `main` | video | yes | The talking-head recording (provide a transcript for captions) |
+| `main` | video | yes | The talking-head recording (transcribed automatically for captions) |
 | `hook` | text |  | Scroll-stopping hook shown for the first 3s, ≤7 words |
 | `cta` | text |  | Closing call to action, e.g. 'Follow for part 2' |
 | `handle` | text |  | Creator handle, e.g. @yourname (optional) |
@@ -83,8 +84,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts, LinkedIn
 - **Look:** captions `karaoke`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** podcast, interview, clip, repurpose
+- **Automatic in apply_template:** transcribes main; removes fillers, pauses over 0.8s from main
 
-**Editing guidance:** Pick a self-contained 30-90s moment with a clear point or a strong opinion (search the transcript for emotional or contrarian statements). Start mid-energy, not at a greeting. Trim dead air but keep natural conversational rhythm. The title should frame the takeaway as a question or bold claim.
+**Editing guidance:** Pick a self-contained 30-90s moment with a clear point or a strong opinion (search the transcript for emotional or contrarian statements). Start mid-energy, not at a greeting. Fillers and dead air over 0.8s are trimmed automatically, keeping the conversational rhythm. The title should frame the takeaway as a question or bold claim.
 
 **Inputs**
 
@@ -108,22 +110,23 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions none, transition `slideup`, grade `vibrant`, fonts Arial Black / Arial
 - **Tags:** list, top 5, ranking, countdown, tips
+- **Automatic in apply_template:** speaks each items item's narration as that scene's narration (the scene lasts as long as the line); adds a sound to each transition
 
-**Editing guidance:** Order items so the best one is last (or first for impatient audiences). Each item 2.5-4s. Labels ≤4 words. Use energetic music; keep transitions consistent (slideup). If items have voice-over, fit scene length to the narration.
+**Editing guidance:** Order items so the best one is last (or first for impatient audiences). Each item 2.5-4s. Labels ≤4 words. Use energetic music; keep transitions consistent (slideup, with a swoosh added automatically). Write a line of narration per item to have it spoken; the item then lasts as long as its line.
 
 **Inputs**
 
 | Slot | Kind | Required | Description |
 |---|---|---|---|
 | `title` | text | yes | List title, e.g. '5 apps you need' |
-| `items` | list | yes | List items Fields: `media` (Video or image for the item), `label` (Short label), `seconds` (Optional scene length). |
+| `items` | list | yes | List items Fields: `media` (Video or image for the item), `label` (Short label), `narration` (Optional line the narrator says (spoken with the local voice)), `seconds` (Optional scene length). |
 | `cta` | text |  | Closing CTA |
 | `music` | audio |  | Background music track (optional) |
 
 **Scenes**
 
 1. **Title**: Promise the list. Length: 2.5s.
-2. **Item** (repeats for each `items`): Show one list item. Length: from {{item.seconds}}, else 3s.
+2. **Item** (repeats for each `items`): Show one list item. Length: from {{item.seconds}}, else 3s, or as long as its narration ({{item.voice}}).
 3. **CTA** _(optional)_: Convert viewers into followers. Length: 2.5s.
 
 ### quote-card
@@ -183,8 +186,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions none, transition `fadeblack`, grade `moody` + `grain` + `vignette`, fonts Impact / Arial
 - **Tags:** motivation, quotes, mindset, fitness, b-roll
+- **Automatic in apply_template:** speaks script with the local voice when voiceover is not given; puts cuts on the downbeats
 
-**Editing guidance:** One idea per shot, ≤6 words, building to a climax line. Use a voice-over if available and fit shots to its sentences.
+**Editing guidance:** One idea per shot, ≤6 words, building to a climax line. Give a recorded voiceover or write a script (spoken with the local voice); cuts move onto the music's bar starts automatically.
 
 **Inputs**
 
@@ -192,6 +196,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 |---|---|---|---|
 | `lines` | list | yes | Shots with a line of text Fields: `media` (B-roll clip), `text` (Line to show). |
 | `voiceover` | audio |  | Optional narration |
+| `script` | text |  | Narration script, spoken with the local voice when no voiceover is given |
 | `music` | audio |  | Background music track (optional) |
 
 **Scenes**
@@ -206,6 +211,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts, X
 - **Look:** captions `boxed`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** news, update, explainer, current events
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.5s from main
 
 **Editing guidance:** Lead with the headline fact. Neutral tone, no clickbait. Cite the source in the footer. Cut b-roll every 3-4s to illustrate.
 
@@ -214,7 +220,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 | Slot | Kind | Required | Description |
 |---|---|---|---|
 | `headline` | text | yes | Headline |
-| `main` | video | yes | Presenter or footage (transcript enables captions) |
+| `main` | video | yes | Presenter or footage (transcribed automatically for captions) |
 | `source` | text |  | Source credit |
 
 **Scenes**
@@ -229,14 +235,15 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** Instagram, LinkedIn, X, YouTube
 - **Look:** captions `karaoke`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** podcast, audiogram, audio, repurpose
+- **Automatic in apply_template:** transcribes audio
 
-**Editing guidance:** Pick a 30-90s quotable segment of the audio (use the transcript). Trim the audio input with in/duration.
+**Editing guidance:** Pick a 30-90s quotable segment of the audio (use the transcript). Trim the audio input with in/duration. It is transcribed automatically when no transcript is given.
 
 **Inputs**
 
 | Slot | Kind | Required | Description |
 |---|---|---|---|
-| `audio` | audio | yes | Podcast audio segment with transcript (as {src, in, duration, transcript}) |
+| `audio` | audio | yes | Podcast audio segment (as {src, in, duration}, optionally with its transcript) |
 | `cover` | image | yes | Cover art |
 | `title` | text |  | Episode title |
 
@@ -254,8 +261,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** Instagram Reels, TikTok, Facebook
 - **Look:** captions none, transition `fade`, grade `warm` + `vignette`, fonts Georgia / Georgia
 - **Tags:** slideshow, photos, memories, travel, story
+- **Automatic in apply_template:** puts cuts on the beat (every 2)
 
-**Editing guidance:** 2.5-4s per photo; vary Ken Burns direction for rhythm. Order photos chronologically or by emotional arc. Captions short and lowercase-friendly. Match cuts to the music beat if a BPM is known.
+**Editing guidance:** 2.5-4s per photo; vary Ken Burns direction for rhythm. Order photos chronologically or by emotional arc. Captions short and lowercase-friendly. Cuts move onto every other beat of the music automatically.
 
 **Inputs**
 
@@ -278,8 +286,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions none, transition hard cut, grade `bright`, fonts Arial Black / Arial
 - **Tags:** vlog, montage, routine, lifestyle
+- **Automatic in apply_template:** puts cuts on the beat
 
-**Editing guidance:** 1-2.5s per moment; cut on action. Labels like '6:00 AM' or 'coffee first'. Use the clip's natural audio sparingly (mute by default). Keep chronological order.
+**Editing guidance:** 1-2.5s per moment; cut on action (cuts then move onto the music's beat automatically). Labels like '6:00 AM' or 'coffee first'. Use the clip's natural audio sparingly (mute by default). Keep chronological order.
 
 **Inputs**
 
@@ -301,8 +310,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** Instagram, Facebook, YouTube, Private
 - **Look:** captions none, transition `fadewhite`, grade `faded` + `warm`, fonts Georgia / Georgia
 - **Tags:** wedding, anniversary, memories, family, romantic
+- **Automatic in apply_template:** puts cuts on the downbeats (every 2)
 
-**Editing guidance:** Slow pacing (4-6s shots), emotional arc: preparation, then ceremony, then celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available.
+**Editing guidance:** Slow pacing (4-6s shots), emotional arc: preparation, then ceremony, then celebration. Favor faces and genuine reactions. Use vows/speeches audio over b-roll if available. Cuts move onto every other bar of the music automatically.
 
 **Inputs**
 
@@ -326,8 +336,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** YouTube, Instagram, TikTok
 - **Look:** captions none, transition `smoothleft`, grade `tealOrange`, fonts Arial Black / Arial
 - **Tags:** travel, vlog, cinematic, destination, adventure
+- **Automatic in apply_template:** puts cuts on the downbeats; adds a sound to each transition
 
-**Editing guidance:** Establishing wide shot first, then details, then people. Speed ramps (speed 1.5-2) on movement shots. Title on the most iconic shot.
+**Editing guidance:** Establishing wide shot first, then details, then people. Speed ramps (speed_ramp) on movement shots. Title on the most iconic shot. Cuts land on the music's bar starts and each slide gets a whoosh automatically.
 
 **Inputs**
 
@@ -351,8 +362,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** WhatsApp, Instagram, Private
 - **Look:** captions none, transition `circleopen`, grade none, fonts Arial Black / Arial
 - **Tags:** birthday, celebration, greeting, party, family
+- **Automatic in apply_template:** puts cuts on the beat; adds a sound to each transition
 
-**Editing guidance:** Fun, upbeat. Photos 2s each, oldest to newest. Personal message at the end.
+**Editing guidance:** Fun, upbeat. Photos 2s each, oldest to newest, cut on the beat with a whoosh on each reveal (automatic). Personal message at the end.
 
 **Inputs**
 
@@ -379,6 +391,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, Instagram Reels, Facebook Ads
 - **Look:** captions none, transition `whip`, grade `vibrant`, fonts Arial Black / Arial
 - **Tags:** ecommerce, product, ad, ugc, shop
+- **Automatic in apply_template:** adds a sound to each transition
 
 **Editing guidance:** Problem, then product, then proof, then offer. First shot must show the product in use within 1s. Feature labels are benefits, not specs ("Charges in 10 min" not "65W"). Keep each feature 2-3s. End with price + urgency.
 
@@ -407,8 +420,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** Everywhere
 - **Look:** captions none, transition `slideup`, grade none, fonts Arial Black / Arial
 - **Tags:** text, typography, lyric, announcement, no footage
+- **Automatic in apply_template:** speaks script with the local voice when voiceover is not given; puts cuts on the beat
 
-**Editing guidance:** ≤5 words per line. Vary emphasis: key words in accent color via separate lines. Time lines to the music beat or voice-over.
+**Editing guidance:** ≤5 words per line. Vary emphasis: key words in accent color via separate lines. Lines change on the music's beat automatically; with a voiceover or script, time lines to it instead (automate: false keeps your seconds).
 
 **Inputs**
 
@@ -416,6 +430,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 |---|---|---|---|
 | `lines` | list | yes | Text beats Fields: `text` (Phrase), `seconds` (Optional length). |
 | `voiceover` | audio |  | Optional narration |
+| `script` | text |  | Narration script, spoken with the local voice when no voiceover is given |
 | `music` | audio |  | Background music track (optional) |
 
 **Scenes**
@@ -430,8 +445,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** YouTube, Social
 - **Look:** captions none, transition `fadeblack`, grade `tealOrange` + `letterbox`, fonts Georgia / Arial
 - **Tags:** trailer, teaser, cinematic, dramatic, launch
+- **Automatic in apply_template:** puts cuts on the downbeats
 
-**Editing guidance:** Three acts: setup (slow), then conflict (faster), then climax (rapid cuts, 0.5-1s), then title, then date. Text cards between shots carry the story. Sync cuts to music hits.
+**Editing guidance:** Three acts: setup (slow), then conflict (faster), then climax (rapid cuts, 0.5-1s), then title, then date. Text cards between shots carry the story. Cuts land on the music's bar starts automatically; add impactShake on the biggest hits.
 
 **Inputs**
 
@@ -484,6 +500,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, YouTube Shorts
 - **Look:** captions `green-highlight`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** reaction, duet, split screen, commentary
+- **Automatic in apply_template:** transcribes reaction; removes fillers, pauses over 0.8s from reaction
 
 **Editing guidance:** Sync the reaction with the content's key moment. Keep the content's audio low under your commentary; captions show your words.
 
@@ -529,8 +546,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, YouTube Shorts, Twitch
 - **Look:** captions `word-by-word`, transition `glitch`, grade `vibrant`, fonts Impact / Arial
 - **Tags:** gaming, highlights, montage, clips, esports
+- **Automatic in apply_template:** puts cuts on the beat; adds a sound to each transition
 
-**Editing guidance:** Only the best moments, 2-6s each, cut right before the action. Put the best play last. Label each clip with a short hype caption.
+**Editing guidance:** Only the best moments, 2-6s each, cut right before the action. Put the best play last. Label each clip with a short hype caption. Each glitch gets its sound and cuts move onto the beat automatically.
 
 **Inputs**
 
@@ -555,8 +573,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions none, transition `slideleft`, grade `adjust`, fonts Arial Black / Arial
 - **Tags:** fitness, workout, gym, routine, exercise
+- **Automatic in apply_template:** puts cuts on the downbeats; adds a sound to each transition
 
-**Editing guidance:** Each exercise 3-5s showing the full movement. Name + reps clearly visible. High-energy music.
+**Editing guidance:** Each exercise 3-5s showing the full movement. Name + reps clearly visible. High-energy music: cuts move onto its bar starts and each slide gets a swoosh automatically.
 
 **Inputs**
 
@@ -579,8 +598,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
 - **Look:** captions none, transition `fade`, grade `warm`, fonts Arial Black / Arial
 - **Tags:** recipe, cooking, food, how-to, steps
+- **Automatic in apply_template:** speaks each steps item's narration as that scene's narration (the scene lasts as long as the line)
 
-**Editing guidance:** Show the finished dish first (hook), then steps. Speed up long actions (stirring) with speed 1.5-3x. Step text = verb first ('Whisk eggs and sugar').
+**Editing guidance:** Show the finished dish first (hook), then steps. Speed up long actions (stirring) with speed 1.5-3x. Step text = verb first ('Whisk eggs and sugar'). Write a narration line per step to have it spoken; the step then lasts as long as its line.
 
 **Inputs**
 
@@ -588,13 +608,13 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 |---|---|---|---|
 | `title` | text | yes | Dish name |
 | `final` | media | yes | Finished dish shot |
-| `steps` | list | yes | Recipe steps Fields: `media` (Clip of the step), `text` (Instruction). |
+| `steps` | list | yes | Recipe steps Fields: `media` (Clip of the step), `text` (Instruction), `narration` (Optional line the narrator says (spoken with the local voice)). |
 | `music` | audio |  | Background music track (optional) |
 
 **Scenes**
 
 1. **Dish reveal**: Make them hungry. Length: 2.5s.
-2. **Step** (repeats for each `steps`): One instruction. Length: 3.5s.
+2. **Step** (repeats for each `steps`): One instruction. Length: 3.5s, or as long as its narration ({{item.voice}}).
 3. **Final plate**: Payoff. Length: 2.5s.
 
 ### youtube-tutorial
@@ -605,8 +625,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** YouTube
 - **Look:** captions `subtle-highlight`, transition `fade`, grade none, fonts Arial Black / Arial
 - **Tags:** tutorial, how-to, screen recording, course, explainer
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.8s from main
 
-**Editing guidance:** Tell viewers what they'll achieve in the first 15s. Remove dead air and mistakes (cleanup_speech maxPause 0.8). Add chapter-title components at topic changes found in the transcript. Zoom (effect 'zoom') into small UI details on screen recordings.
+**Editing guidance:** Tell viewers what they'll achieve in the first 15s. The recording is transcribed and its retakes, fillers and dead air are removed automatically. Add a section-card component at each topic change found in the transcript ('STEP 2', 'SETTINGS'). Zoom (effect 'zoom') into small UI details on screen recordings.
 
 **Inputs**
 
@@ -626,28 +647,29 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 ### slides-voiceover
 
-**Slides + Voice-over**: Course-style lesson: slide images with narration and captions; each slide lasts as long as its narration.
+**Slides + Voice-over**: Course-style lesson: slide images with narration and captions; each slide lasts as long as its narration. Write the narration per slide and it is spoken with the local voice.
 
 - **Format:** 16:9 at 30fps, ideally 60-900s
 - **Platforms:** YouTube, LMS, LinkedIn Learning
 - **Look:** captions `boxed`, transition `fade`, grade none, fonts Arial Black / Arial
 - **Tags:** course, lesson, slides, presentation, e-learning
+- **Automatic in apply_template:** speaks each slides item's narration as that scene's narration (the scene lasts as long as the line); transcribes voiceover
 
-**Editing guidance:** Set each slide's seconds from the narration timing (search the voice-over transcript for the first words of each slide's script). Avoid more than 30s on one slide-split or zoom into details.
+**Editing guidance:** Best: write each slide's narration; it is spoken with the local voice and the slide lasts as long as its line. With one recorded voiceover instead, set each slide's seconds from its transcript (search for the first words of each slide's script). Avoid more than 30s on one slide: split or zoom into details.
 
 **Inputs**
 
 | Slot | Kind | Required | Description |
 |---|---|---|---|
 | `title` | text | yes | Lesson title |
-| `slides` | list | yes | Slides Fields: `media` (Slide image), `seconds` (How long to show it). |
-| `voiceover` | audio |  | Narration (transcript enables captions) |
+| `slides` | list | yes | Slides Fields: `media` (Slide image), `narration` (What the narrator says over this slide), `seconds` (How long to show it (when not narrated)). |
+| `voiceover` | audio |  | One recorded narration for the whole lesson (transcript enables captions) |
 | `music` | audio |  | Background music track (optional) |
 
 **Scenes**
 
 1. **Title**: Lesson title. Length: 3s.
-2. **Slide** (repeats for each `slides`): One slide. Length: from {{item.seconds}}, else 8s.
+2. **Slide** (repeats for each `slides`): One slide. Length: from {{item.seconds}}, else 8s, or as long as its narration ({{item.voice}}).
 
 ## Youtube
 
@@ -683,22 +705,23 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** YouTube
 - **Look:** captions `cinematic`, transition `fadeblack`, grade `cinematic`, fonts Georgia / Georgia
 - **Tags:** essay, explainer, documentary, narration, chapters
+- **Automatic in apply_template:** speaks each sections item's narration as that scene's narration (the scene lasts as long as the line); transcribes voiceover
 
-**Editing guidance:** Structure: hook question, then context, then 3-5 sections, then conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4-8s. Fit section lengths to the voice-over sentences.
+**Editing guidance:** Structure: hook question, then context, then 3-5 sections, then conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4-8s. Either give one recorded voiceover and fit section seconds to its sentences, or write each section's narration: it is spoken with the local voice and the section lasts as long as its line.
 
 **Inputs**
 
 | Slot | Kind | Required | Description |
 |---|---|---|---|
 | `title` | text | yes | Essay title |
-| `sections` | list | yes | Sections Fields: `heading` (Chapter heading), `media` (B-roll), `seconds` (Section length). |
-| `voiceover` | audio |  | Narration (transcript enables captions) |
+| `sections` | list | yes | Sections Fields: `heading` (Chapter heading), `media` (B-roll), `seconds` (Section length (when not narrated)), `narration` (What the narrator says in this section (spoken with the local voice)). |
+| `voiceover` | audio |  | One recorded narration for the whole essay (transcript enables captions) |
 | `music` | audio |  | Background music track (optional) |
 
 **Scenes**
 
 1. **Title**: Hook. Length: 4s.
-2. **Section** (repeats for each `sections`): One chapter. Length: from {{item.seconds}}, else 12s.
+2. **Section** (repeats for each `sections`): One chapter, opened by a section card. Length: from {{item.seconds}}, else 12s, or as long as its narration ({{item.voice}}).
 
 ### documentary
 
@@ -732,8 +755,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** YouTube, LinkedIn
 - **Look:** captions `classic`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** interview, q&a, conversation
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.8s from main
 
-**Editing guidance:** Cut the interviewer's questions down to the essential words or replace with on-screen question text. Keep answers complete. Remove false starts.
+**Editing guidance:** Cut the interviewer's questions down to the essential words or replace with on-screen question text. Keep answers complete. False starts, fillers and long pauses are removed automatically; check the cuts with review_edit.
 
 **Inputs**
 
@@ -758,8 +782,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** LinkedIn, Website, Instagram
 - **Look:** captions `boxed-highlight`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** testimonial, review, case study, social proof
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.6s from main
 
-**Editing guidance:** Lead with the most specific result ('cut our costs 40%'). Remove hesitations. Pull that sentence into the headline slot.
+**Editing guidance:** Lead with the most specific result ('cut our costs 40%'). Retakes, hesitations and long pauses are removed automatically. Pull that sentence into the headline slot.
 
 **Inputs**
 
@@ -784,8 +809,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** Website, YouTube, Product Hunt, LinkedIn
 - **Look:** captions `subtle-highlight`, transition `fade`, grade none, fonts Arial Black / Arial
 - **Tags:** saas, demo, walkthrough, screen recording, launch
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 1s from main
 
-**Editing guidance:** Show the 'aha' moment in the first 20s. Speed up waiting/typing (speed 2x). Zoom into the UI element being discussed. One callout per feature.
+**Editing guidance:** Show the 'aha' moment in the first 20s. Retakes and fillers in the narration are removed automatically (pauses up to 1s stay, for clicks). Speed up waiting/typing (speed 2x). Zoom into the UI element being discussed. Open each feature with a section-card component in the theme color.
 
 **Inputs**
 
@@ -812,8 +838,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** Instagram, Facebook, YouTube, MLS
 - **Look:** captions none, transition `fade`, grade `bright`, fonts Georgia / Arial
 - **Tags:** real estate, property, listing, tour, home
+- **Automatic in apply_template:** speaks each rooms item's narration as that scene's narration (the scene lasts as long as the line)
 
-**Editing guidance:** Open with the best exterior or hero room. Flow through the house logically (entry, then living, then kitchen, then bedrooms, then outdoor). 3-4s per photo.
+**Editing guidance:** Open with the best exterior or hero room. Flow through the house logically (entry, then living, then kitchen, then bedrooms, then outdoor). 3-4s per photo. Write a short line per room to have it narrated with the local voice; the room then stays up as long as its line.
 
 **Inputs**
 
@@ -822,14 +849,14 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 | `address` | text | yes | Property address |
 | `price` | text |  | Price |
 | `details` | text |  | e.g. '4 bd · 3 ba · 2,400 sqft' |
-| `rooms` | list | yes | Rooms Fields: `media` (Photo or clip), `label` (Room name). |
+| `rooms` | list | yes | Rooms Fields: `media` (Photo or clip), `label` (Room name), `narration` (Optional line about the room (spoken with the local voice)). |
 | `agent` | text |  | Agent name and phone |
 | `music` | audio |  | Background music track (optional) |
 
 **Scenes**
 
 1. **Intro**: Address and price. Length: 4s.
-2. **Room** (repeats for each `rooms`): Show a room. Length: 3.5s.
+2. **Room** (repeats for each `rooms`): Show a room. Length: 3.5s, or as long as its narration ({{item.voice}}).
 3. **Agent** _(optional)_: Contact. Length: 4s.
 
 ### event-recap
@@ -840,8 +867,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** Instagram, LinkedIn, YouTube
 - **Look:** captions none, transition `zoomin`, grade `vibrant`, fonts Arial Black / Arial
 - **Tags:** event, conference, recap, highlights, aftermovie
+- **Automatic in apply_template:** puts cuts on the beat; adds a sound to each transition
 
-**Editing guidance:** Cut on the beat (1-2s per shot). Mix wide crowd shots with close-ups of reactions. Peak energy in the last third.
+**Editing guidance:** 1-2s per shot; cuts move onto the beat automatically. Mix wide crowd shots with close-ups of reactions. Peak energy in the last third.
 
 **Inputs**
 
@@ -866,8 +894,9 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 - **Platforms:** LinkedIn
 - **Look:** captions `boxed-highlight`, transition hard cut, grade none, fonts Arial Black / Arial
 - **Tags:** linkedin, talking head, b2b, founder, professional
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.6s from main
 
-**Editing guidance:** Insight first, story second, takeaway last. Remove filler aggressively but keep a calm pace (no jump-zooms). Banner = the takeaway in ≤8 words.
+**Editing guidance:** Insight first, story second, takeaway last. Fillers, retakes and pauses over 0.6s are removed automatically; keep a calm pace (no jump-zooms). Banner = the takeaway in ≤8 words.
 
 **Inputs**
 

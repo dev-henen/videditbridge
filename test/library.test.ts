@@ -14,6 +14,7 @@ import {
   assExitPhase,
   buildComponentLayers,
   buildFromTemplate,
+  describeAutomation,
   describeTemplate,
   effectToFilter,
   listTemplates,
@@ -21,7 +22,7 @@ import {
   resolveCaptionStyle,
   type TemplateSpecInput,
 } from "../src/library/index.js";
-import { createProject, validateProject } from "../src/core/index.js";
+import { computeTimeline, createProject, validateProject } from "../src/core/index.js";
 import { getTransition } from "../src/library/transitions/index.js";
 import { shapePath } from "../src/tools/render/text.js";
 import { sampleInputs } from "./helpers/inputs.js";
@@ -191,6 +192,58 @@ describe("templates", () => {
     const { project } = buildFromTemplate(t, { title: "Top 3", items: [{ media: "a.png", label: "A" }, { media: "b.png", label: "B" }, { media: "c.png", label: "C" }] });
     expect(project.clips).toHaveLength(4); // intro + 3 items, CTA skipped
     expect(project.layers.some((l) => l.type === "text" && l.text === "#3")).toBe(true);
+  });
+
+  it("holds narrated scenes for their line and places the narration", () => {
+    const t = TEMPLATES.find((x) => x.id === "slides-voiceover")!;
+    const { project } = buildFromTemplate(t, {
+      title: "Lesson",
+      slides: [
+        { media: "a.png", voice: { src: "a.wav", duration: 5, transcript: { words: [{ text: "Hi.", start: 0, end: 0.4 }] } } },
+        { media: "b.png", seconds: "2.5" },
+      ],
+    });
+    const [, first, second] = project.clips;
+    // 0.3s lead-in + 5s line + a breath + the 0.4s fade into the next slide.
+    expect(first!.duration).toBeCloseTo(6.05, 2);
+    expect(second!.duration).toBe(2.5); // seconds given as text
+    const tl = computeTimeline(project);
+    const vo = project.audio.filter((a) => a.role === "voiceover");
+    expect(vo).toHaveLength(1);
+    expect(vo[0]!.start).toBeCloseTo(tl.clips[1]!.start + 0.3, 3);
+    expect(project.transcripts[vo[0]!.assetId]).toBeDefined();
+    expect(project.captions?.enabled).toBe(true);
+  });
+
+  it("tries durationFrom alternatives in order", () => {
+    const t = TEMPLATES.find((x) => x.id === "kinetic-typography")!;
+    const spec = { ...t, scenes: [{ ...t.scenes[0]!, durationFrom: "{{item.voice}}|{{item.seconds}}" }] };
+    const { project } = buildFromTemplate(spec, { lines: [{ text: "a", voice: { src: "v.wav", duration: 3 } }, { text: "b", seconds: 2 }, { text: "c" }] });
+    expect(project.clips.map((c) => c.duration)).toEqual([3, 2, 1.6]);
+  });
+
+  it("automation in every template points at real slots and fields", () => {
+    for (const t of TEMPLATES) {
+      const a = t.automation;
+      if (!a) continue;
+      const slot = (id: string) => t.slots.find((s) => s.id === id);
+      for (const id of [...a.transcribe, ...(a.cleanup ? [a.cleanup.slot] : [])]) expect(slot(id), `${t.id}: ${id}`).toBeDefined();
+      if (a.narrate?.script) {
+        expect(slot(a.narrate.script.from)?.kind, t.id).toBe("text");
+        expect(slot(a.narrate.script.into)?.kind, t.id).toBe("audio");
+        expect(t.voiceover?.slot, t.id).toBe(a.narrate.script.into);
+      }
+      if (a.narrate?.items) {
+        const list = slot(a.narrate.items.list);
+        expect(list?.fields?.[a.narrate.items.field], t.id).toBeDefined();
+        const placeholder = `{{item.${a.narrate.items.into}}}`;
+        expect(t.scenes.some((s) => s.repeat === list!.id && s.audio?.media === placeholder), t.id).toBe(true);
+      }
+      if (a.beatSync) expect(t.music, t.id).toBeDefined();
+      expect(describeAutomation(t).length, t.id).toBeGreaterThan(0);
+    }
+    expect(TEMPLATES.filter((t) => t.automation).length).toBeGreaterThanOrEqual(25);
+    expect(TEMPLATES.some((t) => t.scenes.some((s) => s.components.some((c) => c.component === "section-card")))).toBe(true);
   });
 
   it("requires required slots", () => {

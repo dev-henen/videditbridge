@@ -43,7 +43,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "16:9",
     idealDuration: [120, 900],
     aiGuidance:
-      "Tell viewers what they'll achieve in the first 15s. Remove dead air and mistakes (cleanup_speech maxPause 0.8). Add chapter-title components at topic changes found in the transcript. Zoom (effect 'zoom') into small UI details on screen recordings.",
+      "Tell viewers what they'll achieve in the first 15s. The recording is transcribed and its retakes, fillers and dead air are removed automatically. Add a section-card component at each topic change found in the transcript ('STEP 2', 'SETTINGS'). Zoom (effect 'zoom') into small UI details on screen recordings.",
     slots: [
       { id: "main", kind: "video", description: "Tutorial recording (transcript enables captions)", required: true },
       { id: "title", kind: "text", description: "Video title", required: true },
@@ -55,6 +55,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     captions: { style: "subtle-highlight", overrides: { maxWordsPerLine: 8, maxCharsPerLine: 44, fontSize: 48, position: 0.88 } },
     transition: { type: "fade", duration: 0.4 },
     music: { slot: "music", volume: 0.06 },
+    automation: { transcribe: ["main"], cleanup: { slot: "main", maxPause: 0.8 } },
     scenes: [
       { id: "title", name: "Title card", purpose: "State the outcome", duration: 3, background: { gradient: ["#0E0E12", "#2B1B5A"], direction: "diagonal" }, components: [{ component: "title-card", params: { title: "{{title}}", subtitle: "{{subtitle}}" } }] },
       { id: "lesson", name: "Lesson", purpose: "The content", fitMedia: true, background: { media: "{{main}}", consume: true, fit: "contain" }, components: [{ component: "subscribe", params: { x: 0.85, y: 0.1 }, start: 20, duration: 4 }] },
@@ -71,11 +72,11 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     aspectRatio: "16:9",
     idealDuration: [180, 1200],
     aiGuidance:
-      "Structure: hook question, then context, then 3-5 sections, then conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4-8s. Fit section lengths to the voice-over sentences.",
+      "Structure: hook question, then context, then 3-5 sections, then conclusion. Each section's b-roll should literally illustrate the narration. Change shots every 4-8s. Either give one recorded voiceover and fit section seconds to its sentences, or write each section's narration: it is spoken with the local voice and the section lasts as long as its line.",
     slots: [
       { id: "title", kind: "text", description: "Essay title", required: true },
-      { id: "sections", kind: "list", description: "Sections", required: true, fields: { heading: "Chapter heading", media: "B-roll", seconds: "Section length" } },
-      { id: "voiceover", kind: "audio", description: "Narration (transcript enables captions)" },
+      { id: "sections", kind: "list", description: "Sections", required: true, fields: { heading: "Chapter heading", media: "B-roll", seconds: "Section length (when not narrated)", narration: "What the narrator says in this section (spoken with the local voice)" } },
+      { id: "voiceover", kind: "audio", description: "One recorded narration for the whole essay (transcript enables captions)" },
       music,
     ],
     theme: { headingFont: "Georgia", fontFamily: "Georgia", accentColor: "#E9C46A" },
@@ -84,9 +85,10 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     grade: [{ type: "cinematic" }],
     music: { slot: "music", volume: 0.15 },
     voiceover: { slot: "voiceover" },
+    automation: { transcribe: ["voiceover"], narrate: { items: { list: "sections", field: "narration", into: "voice" } } },
     scenes: [
       { id: "title", name: "Title", purpose: "Hook", duration: 4, background: { color: "#000000" }, texts: [{ text: "{{title}}", preset: "title", style: { bold: false, fontSize: 90 }, animationIn: { type: "blur", duration: 1.2 } }] },
-      { id: "section", name: "Section", purpose: "One chapter", repeat: "sections", duration: 12, durationFrom: "{{item.seconds}}", background: { media: "{{item.media}}" }, effects: [{ type: "kenBurns", params: { zoomTo: 1.08 } }], components: [{ component: "chapter-title", params: { kicker: "Chapter {{index}}", heading: "{{item.heading}}", accentColor: "{{theme.accentColor}}" }, duration: 3.5 }] },
+      { id: "section", name: "Section", purpose: "One chapter, opened by a section card", repeat: "sections", duration: 12, durationFrom: "{{item.seconds}}", audio: { media: "{{item.voice}}", start: 1.6 }, background: { media: "{{item.media}}" }, effects: [{ type: "kenBurns", params: { zoomTo: 1.08 } }], components: [{ component: "section-card", params: { title: "{{item.heading}}", subtitle: "Chapter {{index}}", color: "#1B1B1B", textColor: "{{theme.accentColor}}", motif: false }, duration: 2 }] },
     ],
   },
   {
@@ -123,7 +125,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["YouTube", "LinkedIn"],
     aspectRatio: "16:9",
     idealDuration: [60, 1800],
-    aiGuidance: "Cut the interviewer's questions down to the essential words or replace with on-screen question text. Keep answers complete. Remove false starts.",
+    aiGuidance: "Cut the interviewer's questions down to the essential words or replace with on-screen question text. Keep answers complete. False starts, fillers and long pauses are removed automatically; check the cuts with review_edit.",
     slots: [
       { id: "main", kind: "video", description: "Interview recording", required: true },
       { id: "name", kind: "text", description: "Guest name", required: true },
@@ -132,6 +134,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     ],
     theme: { accentColor: "#2EC4B6" },
     captions: { style: "classic" },
+    automation: { transcribe: ["main"], cleanup: { slot: "main", maxPause: 0.8 } },
     scenes: [
       {
         id: "interview",
@@ -155,7 +158,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["YouTube", "Social"],
     aspectRatio: "16:9",
     idealDuration: [30, 120],
-    aiGuidance: "Three acts: setup (slow), then conflict (faster), then climax (rapid cuts, 0.5-1s), then title, then date. Text cards between shots carry the story. Sync cuts to music hits.",
+    aiGuidance: "Three acts: setup (slow), then conflict (faster), then climax (rapid cuts, 0.5-1s), then title, then date. Text cards between shots carry the story. Cuts land on the music's bar starts automatically; add impactShake on the biggest hits.",
     slots: [
       { id: "beats", kind: "list", description: "Shots and text beats", required: true, fields: { media: "Shot", text: "Optional card text shown over the shot" } },
       { id: "title", kind: "text", description: "Title", required: true },
@@ -166,6 +169,7 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     transition: { type: "fadeblack", duration: 0.5 },
     grade: [{ type: "tealOrange" }, { type: "letterbox", params: { ratio: 2.39 } }],
     music: { slot: "music", volume: 1, duck: true },
+    automation: { beatSync: { action: "cuts", downbeats: true } },
     scenes: [
       { id: "beat", name: "Beat", purpose: "Story beat", repeat: "beats", duration: 2.5, background: { media: "{{item.media}}" }, texts: [{ text: "{{item.text}}", preset: "heading", style: { uppercase: true, letterSpacing: 10, bold: false, fontSize: 64, outlineWidth: 0 }, position: { x: 0.5, y: 0.5 }, animationIn: { type: "fade", duration: 0.5 } }] },
       { id: "title", name: "Title", purpose: "Reveal the title", duration: 4, background: { color: "#000000" }, effects: [{ type: "flash", params: { duration: 0.3 } }], texts: [{ text: "{{title}}", preset: "title", style: { uppercase: true, letterSpacing: 14, bold: false, fontSize: 110 }, animationIn: { type: "zoom", duration: 1.2 } }, { text: "{{date}}", preset: "subtitle", start: 1.5, style: { letterSpacing: 6, uppercase: true } }] },
@@ -180,15 +184,16 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Instagram", "LinkedIn", "X", "YouTube"],
     aspectRatio: "1:1",
     idealDuration: [30, 90],
-    aiGuidance: "Pick a 30-90s quotable segment of the audio (use the transcript). Trim the audio input with in/duration.",
+    aiGuidance: "Pick a 30-90s quotable segment of the audio (use the transcript). Trim the audio input with in/duration. It is transcribed automatically when no transcript is given.",
     slots: [
-      { id: "audio", kind: "audio", description: "Podcast audio segment with transcript (as {src, in, duration, transcript})", required: true },
+      { id: "audio", kind: "audio", description: "Podcast audio segment (as {src, in, duration}, optionally with its transcript)", required: true },
       { id: "cover", kind: "image", description: "Cover art", required: true },
       { id: "title", kind: "text", description: "Episode title" },
     ],
     theme: { accentColor: "#FFD54A" },
     captions: { style: "karaoke", overrides: { position: 0.8, highlightColor: "#FFD54A" } },
     voiceover: { slot: "audio" },
+    automation: { transcribe: ["audio"] },
     scenes: [
       {
         id: "audiogram",
@@ -205,17 +210,17 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
   {
     id: "slides-voiceover",
     name: "Slides + Voice-over",
-    description: "Course-style lesson: slide images with narration and captions; each slide lasts as long as its narration.",
+    description: "Course-style lesson: slide images with narration and captions; each slide lasts as long as its narration. Write the narration per slide and it is spoken with the local voice.",
     category: "education",
     tags: ["course", "lesson", "slides", "presentation", "e-learning"],
     platforms: ["YouTube", "LMS", "LinkedIn Learning"],
     aspectRatio: "16:9",
     idealDuration: [60, 900],
-    aiGuidance: "Set each slide's seconds from the narration timing (search the voice-over transcript for the first words of each slide's script). Avoid more than 30s on one slide-split or zoom into details.",
+    aiGuidance: "Best: write each slide's narration; it is spoken with the local voice and the slide lasts as long as its line. With one recorded voiceover instead, set each slide's seconds from its transcript (search for the first words of each slide's script). Avoid more than 30s on one slide: split or zoom into details.",
     slots: [
       { id: "title", kind: "text", description: "Lesson title", required: true },
-      { id: "slides", kind: "list", description: "Slides", required: true, fields: { media: "Slide image", seconds: "How long to show it" } },
-      { id: "voiceover", kind: "audio", description: "Narration (transcript enables captions)" },
+      { id: "slides", kind: "list", description: "Slides", required: true, fields: { media: "Slide image", narration: "What the narrator says over this slide", seconds: "How long to show it (when not narrated)" } },
+      { id: "voiceover", kind: "audio", description: "One recorded narration for the whole lesson (transcript enables captions)" },
       music,
     ],
     theme: { accentColor: "#3A86FF", backgroundColor: "#FFFFFF", textColor: "#111111" },
@@ -223,9 +228,10 @@ export const YOUTUBE_TEMPLATES: TemplateSpecInput[] = [
     transition: { type: "fade", duration: 0.4 },
     music: { slot: "music", volume: 0.05 },
     voiceover: { slot: "voiceover" },
+    automation: { transcribe: ["voiceover"], narrate: { items: { list: "slides", field: "narration", into: "voice" } } },
     scenes: [
       { id: "title", name: "Title", purpose: "Lesson title", duration: 3, background: { color: "#FFFFFF" }, texts: [{ text: "{{title}}", preset: "title", style: { color: "#111111", outlineWidth: 0, shadow: 0 } }] },
-      { id: "slide", name: "Slide", purpose: "One slide", repeat: "slides", duration: 8, durationFrom: "{{item.seconds}}", background: { media: "{{item.media}}", fit: "contain" } },
+      { id: "slide", name: "Slide", purpose: "One slide", repeat: "slides", duration: 8, durationFrom: "{{item.seconds}}", audio: { media: "{{item.voice}}", start: 0.3 }, background: { media: "{{item.media}}", fit: "contain" } },
     ],
   },
 ];

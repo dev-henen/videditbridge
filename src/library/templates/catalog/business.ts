@@ -13,7 +13,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["LinkedIn", "Website", "Instagram"],
     aspectRatio: "4:5",
     idealDuration: [20, 60],
-    aiGuidance: "Lead with the most specific result ('cut our costs 40%'). Remove hesitations. Pull that sentence into the headline slot.",
+    aiGuidance: "Lead with the most specific result ('cut our costs 40%'). Retakes, hesitations and long pauses are removed automatically. Pull that sentence into the headline slot.",
     slots: [
       { id: "main", kind: "video", description: "Customer recording", required: true },
       { id: "name", kind: "text", description: "Customer name", required: true },
@@ -25,6 +25,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     theme: { accentColor: "#6C47FF" },
     captions: { style: "boxed-highlight" },
     music: { slot: "music", volume: 0.08 },
+    automation: { transcribe: ["main"], cleanup: { slot: "main", maxPause: 0.6 } },
     scenes: [
       {
         id: "testimonial",
@@ -49,7 +50,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Website", "YouTube", "Product Hunt", "LinkedIn"],
     aspectRatio: "16:9",
     idealDuration: [30, 180],
-    aiGuidance: "Show the 'aha' moment in the first 20s. Speed up waiting/typing (speed 2x). Zoom into the UI element being discussed. One callout per feature.",
+    aiGuidance: "Show the 'aha' moment in the first 20s. Retakes and fillers in the narration are removed automatically (pauses up to 1s stay, for clicks). Speed up waiting/typing (speed 2x). Zoom into the UI element being discussed. Open each feature with a section-card component in the theme color.",
     slots: [
       { id: "title", kind: "text", description: "Product name / headline", required: true },
       { id: "tagline", kind: "text", description: "One-line value proposition" },
@@ -62,6 +63,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     captions: { style: "subtle-highlight", overrides: { fontSize: 46, position: 0.9 } },
     transition: { type: "fade", duration: 0.5 },
     music: { slot: "music", volume: 0.12 },
+    automation: { transcribe: ["main"], cleanup: { slot: "main", maxPause: 1 } },
     scenes: [
       { id: "title", name: "Title", purpose: "Value prop", duration: 3.5, background: { gradient: ["#0B1020", "#123B5C"], direction: "diagonal" }, components: [{ component: "title-card", params: { title: "{{title}}", subtitle: "{{tagline}}" } }, { component: "logo", params: { assetId: "{{logo}}", corner: "top-left" } }] },
       { id: "demo", name: "Demo", purpose: "Walkthrough", fitMedia: true, background: { media: "{{main}}", consume: true, fit: "contain" } },
@@ -77,22 +79,23 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Instagram", "Facebook", "YouTube", "MLS"],
     aspectRatio: "16:9",
     idealDuration: [30, 90],
-    aiGuidance: "Open with the best exterior or hero room. Flow through the house logically (entry, then living, then kitchen, then bedrooms, then outdoor). 3-4s per photo.",
+    aiGuidance: "Open with the best exterior or hero room. Flow through the house logically (entry, then living, then kitchen, then bedrooms, then outdoor). 3-4s per photo. Write a short line per room to have it narrated with the local voice; the room then stays up as long as its line.",
     slots: [
       { id: "address", kind: "text", description: "Property address", required: true },
       { id: "price", kind: "text", description: "Price" },
       { id: "details", kind: "text", description: "e.g. '4 bd · 3 ba · 2,400 sqft'" },
-      { id: "rooms", kind: "list", description: "Rooms", required: true, fields: { media: "Photo or clip", label: "Room name" } },
+      { id: "rooms", kind: "list", description: "Rooms", required: true, fields: { media: "Photo or clip", label: "Room name", narration: "Optional line about the room (spoken with the local voice)" } },
       { id: "agent", kind: "text", description: "Agent name and phone" },
       music,
     ],
     theme: { headingFont: "Georgia", fontFamily: "Arial", accentColor: "#C9A227", backgroundColor: "#111111" },
     transition: { type: "fade", duration: 0.7 },
     grade: [{ type: "bright" }],
-    music: { slot: "music", volume: 0.6, duck: false },
+    music: { slot: "music", volume: 0.6, duck: true },
+    automation: { narrate: { items: { list: "rooms", field: "narration", into: "voice" } } },
     scenes: [
       { id: "intro", name: "Intro", purpose: "Address and price", duration: 4, background: { media: "{{rooms.0.media}}" }, effects: [{ type: "kenBurns", params: { zoomTo: 1.15 } }, { type: "adjust", params: { brightness: -0.12 } }], components: [{ component: "title-card", params: { title: "{{address}}", subtitle: "{{details}}", fontFamily: "Georgia", animation: "fade" } }, { component: "label", params: { text: "{{price}}", y: 0.7, size: 56, background: "#C9A227E6", color: "#111111" }, start: 1 }] },
-      { id: "room", name: "Room", purpose: "Show a room", repeat: "rooms", duration: 3.5, background: { media: "{{item.media}}" }, effects: [{ type: "kenBurns", params: { zoomFrom: 1.05, zoomTo: 1.15, pan: "right" } }], components: [{ component: "label", params: { text: "{{item.label}}", x: 0.15, y: 0.9, size: 38, animation: "slide-right" }, start: 0.4 }] },
+      { id: "room", name: "Room", purpose: "Show a room", repeat: "rooms", duration: 3.5, audio: { media: "{{item.voice}}", start: 0.3 }, background: { media: "{{item.media}}" }, effects: [{ type: "kenBurns", params: { zoomFrom: 1.05, zoomTo: 1.15, pan: "right" } }], components: [{ component: "label", params: { text: "{{item.label}}", x: 0.15, y: 0.9, size: 38, animation: "slide-right" }, start: 0.4 }] },
       { id: "agent", name: "Agent", purpose: "Contact", optional: true, duration: 4, background: { color: "#111111" }, components: [{ component: "title-card", params: { title: "Schedule a viewing", subtitle: "{{agent}}", fontFamily: "Georgia", animation: "fade" } }] },
     ],
   },
@@ -105,7 +108,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["Instagram", "LinkedIn", "YouTube"],
     aspectRatio: "16:9",
     idealDuration: [30, 120],
-    aiGuidance: "Cut on the beat (1-2s per shot). Mix wide crowd shots with close-ups of reactions. Peak energy in the last third.",
+    aiGuidance: "1-2s per shot; cuts move onto the beat automatically. Mix wide crowd shots with close-ups of reactions. Peak energy in the last third.",
     slots: [
       { id: "event", kind: "text", description: "Event name", required: true },
       { id: "date", kind: "text", description: "Date / location" },
@@ -116,6 +119,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     transition: { type: "zoomin", duration: 0.3 },
     grade: [{ type: "vibrant" }],
     music: { slot: "music", volume: 0.9, duck: false },
+    automation: { beatSync: { action: "cuts" }, transitionSounds: true },
     scenes: [
       { id: "title", name: "Title", purpose: "Event name", duration: 2.5, background: { media: "{{clips.0.media}}", muted: true }, effects: [{ type: "blur", params: { amount: 8 } }], components: [{ component: "title-card", params: { title: "{{event}}", subtitle: "{{date}}" } }] },
       { id: "clip", name: "Clip", purpose: "Highlight", repeat: "clips", duration: 1.6, background: { media: "{{item.media}}", muted: true }, transition: null, effects: [{ type: "pulse", params: { bpm: 120 } }] },
@@ -169,7 +173,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     platforms: ["LinkedIn"],
     aspectRatio: "1:1",
     idealDuration: [30, 90],
-    aiGuidance: "Insight first, story second, takeaway last. Remove filler aggressively but keep a calm pace (no jump-zooms). Banner = the takeaway in ≤8 words.",
+    aiGuidance: "Insight first, story second, takeaway last. Fillers, retakes and pauses over 0.6s are removed automatically; keep a calm pace (no jump-zooms). Banner = the takeaway in ≤8 words.",
     slots: [
       { id: "main", kind: "video", description: "Recording", required: true },
       { id: "topic", kind: "text", description: "Topic banner" },
@@ -178,6 +182,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
     ],
     theme: { accentColor: "#0A66C2" },
     captions: { style: "boxed-highlight", overrides: { highlightColor: "#0A66C2", position: 0.82 } },
+    automation: { transcribe: ["main"], cleanup: { slot: "main", maxPause: 0.6 } },
     scenes: [
       {
         id: "talk",

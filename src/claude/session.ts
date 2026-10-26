@@ -253,11 +253,16 @@ export class EditorSession extends EventEmitter<SessionEvents> {
     this.emit("log", entry);
   }
 
-  /** A fresh path inside the output directory. */
+  private lastStamp = "";
+  private stampSeq = 0;
+
+  /** A fresh path inside the output directory (unique even for calls in the same millisecond). */
   async outputPath(name: string): Promise<string> {
     await mkdir(this.options.outputDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    return path.join(this.options.outputDir, `${stamp}-${name}`);
+    this.stampSeq = stamp === this.lastStamp ? this.stampSeq + 1 : 0;
+    this.lastStamp = stamp;
+    return path.join(this.options.outputDir, `${stamp}${this.stampSeq ? `-${this.stampSeq}` : ""}-${name}`);
   }
 
   resolve(src: string): string {

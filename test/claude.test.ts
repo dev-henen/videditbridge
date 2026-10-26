@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { LocalTTS } from "../src/tools/voiceover/local.js";
 import { EditorSession, TOOLS, executeTool, toAnthropicTools } from "../src/claude/index.js";
-import { parseProject } from "../src/core/index.js";
+import { computeTimeline, parseProject } from "../src/core/index.js";
 
 function session() {
   return new EditorSession(
@@ -127,6 +127,41 @@ describe("session + tools", () => {
     expect(r.isError).toBeFalsy();
     expect(s.project.metadata.template).toBe("quote-card");
     expect(r.text).toContain("Primary track");
+  });
+
+  it("runs template automation: narration per item, cleanup, one undo step", async () => {
+    const spokenLines: string[] = [];
+    const tts = {
+      name: "fake",
+      async synthesize(text: string, outPath: string) {
+        spokenLines.push(text);
+        return { path: outPath, duration: 2, transcript: { words: text.split(" ").map((w, k) => ({ text: w, start: k * 0.3, end: k * 0.3 + 0.25 })) } };
+      },
+    };
+    const s = new EditorSession(undefined, { baseDir: process.cwd(), tts });
+    const r = await executeTool(s, "apply_template", {
+      templateId: "slides-voiceover",
+      inputs: { title: "Lesson", slides: [{ media: "a.png", narration: "First we open it." }, { media: "b.png", narration: "Then we close it." }] },
+    });
+    expect(r.isError, r.text).toBeFalsy();
+    expect(r.text).toMatch(/Automation: spoke 2 slides lines/);
+    expect(spokenLines).toEqual(["First we open it.", "Then we close it."]);
+    const vo = s.project.audio.filter((a) => a.role === "voiceover");
+    expect(vo).toHaveLength(2);
+    expect(s.project.captions?.enabled).toBe(true);
+    expect(Object.values(s.project.metadata.narration as object).map((n: { text: string }) => n.text)).toEqual(["First we open it.", "Then we close it."]);
+    await executeTool(s, "undo", {});
+    expect(s.project.clips).toHaveLength(0);
+
+    // Talking footage: fillers and pauses come out, unless automation is off.
+    const talk = session();
+    const main = { src: "talk.mp4", duration: 10, hasAudio: true, transcript: talk.project.transcripts.talk };
+    await executeTool(talk, "apply_template", { templateId: "viral-talking-head", inputs: { main }, automate: false });
+    const bare = computeTimeline(talk.project).duration;
+    const auto = await executeTool(talk, "apply_template", { templateId: "viral-talking-head", inputs: { main } });
+    expect(auto.isError, auto.text).toBeFalsy();
+    expect(auto.text).toMatch(/cut \d+ fillers and pauses/);
+    expect(computeTimeline(talk.project).duration).toBeLessThan(bare - 1.5);
   });
 
   it("reports invalid input and failures as errors instead of throwing", async () => {

@@ -97,6 +97,7 @@ _No parameters._
 | `inputs` | object | yes |  |  |
 | `aspectRatio` | "9:16" \| "16:9" \| "1:1" \| "4:5" \| "21:9" |  |  | Override the template's aspect ratio |
 | `theme` | object |  |  | Theme overrides, e.g. {accentColor: '#FF0000'} |
+| `automate` | boolean |  | `true` | Run the template's automation (narrating scripts, transcribing, removing retakes and fillers, beat sync, transition sounds). false builds the bare template |
 
 ### list_effects
 
