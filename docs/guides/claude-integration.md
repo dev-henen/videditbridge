@@ -53,6 +53,12 @@ Put this in your system prompt (the example includes a version of it):
 
 `get_project` returns a compact text summary rather than raw JSON (pass `includeJson: true` if you need it), which keeps context use low.
 
+## Letting the user choose
+
+Some decisions are taste: the narration voice, the music, a title style. Claude makes the options (`preview_voice` for voices, `render_frame` for looks), calls `offer_choices` with a question and two to six options (a label, and optionally an `audio` file to play or an `image` to look at), and ends its turn. The session keeps them in `session.pendingChoices` and emits a `choices` event.
+
+Your app shows the options, and sends the pick back as the next message, for example `[Choice: Which voice should narrate?] I pick "Heart".` Call `session.clearChoices()` when the user picks, types something else, or closes them. The desktop app shows them as cards in its Claude tab, with play buttons and thumbnails.
+
 ## Providers
 
 ```ts

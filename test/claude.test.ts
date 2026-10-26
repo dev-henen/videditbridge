@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { LocalTTS } from "../src/tools/voiceover/local.js";
 import { EditorSession, TOOLS, executeTool, toAnthropicTools } from "../src/claude/index.js";
@@ -43,6 +46,40 @@ describe("tool definitions", () => {
 });
 
 describe("session + tools", () => {
+  it("offers choices to the user and clears them", async () => {
+    const s = session();
+    const seen: (string | null)[] = [];
+    s.on("choices", (c) => seen.push(c ? c.question : null));
+    const dir = await mkdtemp(path.join(tmpdir(), "ave-choice-"));
+    try {
+      const a = path.join(dir, "a.wav");
+      const b = path.join(dir, "b.png");
+      await writeFile(a, "x");
+      await writeFile(b, "x");
+      const r = await executeTool(s, "offer_choices", {
+        question: "Which voice?",
+        options: [
+          { label: "Heart", audio: a, description: "warm" },
+          { label: "A look", image: b },
+        ],
+      });
+      expect(r.isError, r.text).toBeFalsy();
+      expect(r.text).toMatch(/End your turn/);
+      expect(s.pendingChoices).toMatchObject({ question: "Which voice?", options: [{ label: "Heart", audio: a }, { label: "A look", image: b }] });
+      // Missing files are refused, and the offer on screen stays as it was.
+      const bad = await executeTool(s, "offer_choices", { question: "Which?", options: [{ label: "x", audio: "nope.wav" }, { label: "y" }] });
+      expect(bad.text).toMatch(/do not exist: nope\.wav/);
+      expect(s.pendingChoices?.question).toBe("Which voice?");
+      expect((await executeTool(s, "offer_choices", { question: "Only one?", options: [{ label: "x" }] })).isError).toBe(true);
+      s.clearChoices();
+      s.clearChoices();
+      expect(s.pendingChoices).toBeUndefined();
+      expect(seen).toEqual(["Which voice?", null]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("edits through tools with undo/redo and change events", async () => {
     const s = session();
     const events: string[] = [];

@@ -2,7 +2,7 @@
 
 # Claude tools
 
-81 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+82 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [review_edit](#review_edit)
+- **Other**: [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [review_edit](#review_edit)
 
 ## Inspect & project
 
@@ -974,6 +974,15 @@ _No parameters._
 | `assetId` | string |  |  | Transcript to fix (default: every transcript) |
 | `replace` | { find, replace }[] |  | `[]` | Applied in order |
 | `vocabulary` | string[] |  |  | Names and terms said in the video; replaces the saved list |
+
+### offer_choices
+
+**read-only**. Let the user choose when taste decides, instead of deciding for them: a narration voice (play the files preview_voice made), a music track, a sound effect, or a look (show frames you rendered with each option, e.g. render_frame after each title style, then undo). The app shows the options as cards they can play or view and pick. Offer 2 to 6, each with a short label. End your turn right after calling it: their pick arrives as their next message, and then you apply it.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `question` | string | yes |  | What to choose, e.g. 'Which voice should narrate?' |
+| `options` | { label, description, audio, image }[] | yes |  |  |
 
 ### review_edit
 

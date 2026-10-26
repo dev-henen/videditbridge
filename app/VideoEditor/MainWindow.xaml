@@ -208,10 +208,54 @@
                 </ListBox.ItemTemplate>
               </ListBox>
             </TabItem>
-            <TabItem Header="Claude">
-              <ScrollViewer x:Name="AgentScroll" VerticalScrollBarVisibility="Auto" Padding="8">
-                <TextBlock Text="{Binding AgentText}" TextWrapping="Wrap" LineHeight="18"/>
-              </ScrollViewer>
+            <TabItem x:Name="ClaudeTab" Header="Claude">
+              <DockPanel>
+                <!-- Options Claude offered: play or look, then pick -->
+                <Border DockPanel.Dock="Top" Margin="4,6,4,2" Padding="8,6" CornerRadius="8" Background="{StaticResource Panel2}"
+                        Visibility="{Binding HasChoices, Converter={StaticResource BoolToVis}}">
+                  <StackPanel>
+                    <DockPanel Margin="0,0,0,4">
+                      <Button DockPanel.Dock="Right" Click="OnDismissChoices" ToolTip="Close without picking" AutomationProperties.Name="Close the options"
+                              MinHeight="20" MinWidth="20" Padding="2">
+                        <TextBlock Style="{StaticResource Icon}" Text="&#xE711;" FontSize="9"/>
+                      </Button>
+                      <TextBlock Text="{Binding ChoiceQuestion}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto">
+                      <ItemsControl ItemsSource="{Binding Choices}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Border Margin="0,3" Padding="6" CornerRadius="6" Background="{StaticResource Panel}">
+                              <DockPanel>
+                                <Button DockPanel.Dock="Right" Style="{StaticResource Primary}" Click="OnPickChoice" Tag="{Binding}" Width="22" Height="22" MinWidth="0" MinHeight="0" Padding="0"
+                                        Margin="6,0,0,0" VerticalAlignment="Center" ToolTip="Pick this" AutomationProperties.Name="Pick this"
+                                        IsEnabled="{Binding DataContext.CanAsk, RelativeSource={RelativeSource AncestorType=Window}}">
+                                  <TextBlock Style="{StaticResource Icon}" Text="&#xE73E;" FontSize="11" Foreground="{StaticResource OnAccent}"/>
+                                </Button>
+                                <Button DockPanel.Dock="Left" Click="OnPlayChoice" Tag="{Binding}" MinHeight="22" MinWidth="22" Padding="2" Margin="0,0,6,0" VerticalAlignment="Center"
+                                        ToolTip="{Binding PlayHint}" AutomationProperties.Name="Play this option" Visibility="{Binding HasAudio, Converter={StaticResource BoolToVis}}">
+                                  <TextBlock Style="{StaticResource Icon}" Text="{Binding PlayGlyph}" FontSize="11" Foreground="{StaticResource Accent}"/>
+                                </Button>
+                                <Border DockPanel.Dock="Left" CornerRadius="4" ClipToBounds="True" Margin="0,0,8,0" Visibility="{Binding HasImage, Converter={StaticResource BoolToVis}}">
+                                  <Image Source="{Binding Image}" Height="54" MaxWidth="96" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center">
+                                  <TextBlock Text="{Binding Label}" TextWrapping="Wrap"/>
+                                  <TextBlock Text="{Binding Description}" FontSize="10" Foreground="{StaticResource Muted}" TextWrapping="Wrap"
+                                             Visibility="{Binding HasDescription, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                              </DockPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </ScrollViewer>
+                  </StackPanel>
+                </Border>
+                <ScrollViewer x:Name="AgentScroll" VerticalScrollBarVisibility="Auto" Padding="8">
+                  <TextBlock Text="{Binding AgentText}" TextWrapping="Wrap" LineHeight="18"/>
+                </ScrollViewer>
+              </DockPanel>
             </TabItem>
             <TabItem x:Name="ReviewTab" Header="Review">
               <DockPanel>

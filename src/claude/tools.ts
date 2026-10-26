@@ -1791,7 +1791,46 @@ export const TOOLS: ToolDefinition[] = [
         const info = VOICES.find((v) => v.id === voice)!;
         lines.push(`${voice} (${info.name}, ${info.accent} ${info.gender}, grade ${info.grade}): ${vo.duration}s ${file}`);
       }
-      return ok(`Voice previews of "${i.text}":\n${lines.join("\n")}\nListen to them, then use set_voice or pass voice to generate_voiceover.`);
+      return ok(`Voice previews of "${i.text}":\n${lines.join("\n")}\nLet the user pick with offer_choices (one option per file), then use set_voice or pass voice to generate_voiceover.`);
+    },
+  }),
+  tool({
+    name: "offer_choices",
+    description:
+      "Let the user choose when taste decides, instead of deciding for them: a narration voice (play the files preview_voice made), a music track, a sound effect, or a look (show frames you rendered with each option, e.g. render_frame after each title style, then undo). " +
+      "The app shows the options as cards they can play or view and pick. Offer 2 to 6, each with a short label. End your turn right after calling it: their pick arrives as their next message, and then you apply it.",
+    input: z.object({
+      question: z.string().describe("What to choose, e.g. 'Which voice should narrate?'"),
+      options: z
+        .array(
+          z.object({
+            label: z.string(),
+            description: z.string().optional().describe("One line on how it differs"),
+            audio: z.string().optional().describe("Audio file to play (path)"),
+            image: z.string().optional().describe("Image to show (path), such as a rendered frame"),
+          }),
+        )
+        .min(2)
+        .max(6),
+    }),
+    mutates: false,
+    run: async (s, i) => {
+      const missing: string[] = [];
+      const options = await Promise.all(
+        i.options.map(async (o) => {
+          const out = { ...o };
+          for (const key of ["audio", "image"] as const) {
+            if (!o[key]) continue;
+            const file = s.resolve(o[key]!);
+            if (await stat(file).then(() => true, () => false)) out[key] = file;
+            else missing.push(o[key]!);
+          }
+          return out;
+        }),
+      );
+      if (missing.length) return { text: `These files do not exist: ${missing.join(", ")}`, isError: true };
+      s.offerChoices(i.question, options);
+      return ok(`Shown to the user as ${options.length} options. End your turn now; their pick arrives as their next message.`);
     },
   }),
   tool({
@@ -2139,6 +2178,8 @@ export function describeToolCall(name: string, input: unknown): string {
       return `Making ${quote(i.layerId)} follow a face`;
     case "speed_ramp":
       return i.keyframes ? `Speed ramping ${quote(i.clipId)}` : `Removing the speed ramp from ${quote(i.clipId)}`;
+    case "offer_choices":
+      return `Offering ${Array.isArray(i.options) ? i.options.length : ""} options to choose from`;
     case "animate_effect":
       return `Animating ${quote(i.type)} on ${quote(i.target)}`;
     case "generate_voiceover":

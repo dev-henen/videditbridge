@@ -70,8 +70,14 @@ const handlers: Record<string, Handler> = {
   "session.undo": () => requireSession().undo() ?? null,
   "session.redo": () => requireSession().redo() ?? null,
   "render.scrub": (p) => scrub(Number(p.time ?? 0)),
+  "choices.dismiss": () => {
+    requireSession().clearChoices();
+    return null;
+  },
   "agent.run": async (p) => {
     const s = requireSession();
+    // A new request answers (or moves past) any options still on screen.
+    s.clearChoices();
     agent ??= new EditorAgent(s);
     const result = await agent.run(String(p.prompt ?? ""), { onText: (delta) => rpc.notify("agent.text", { delta }) });
     rpc.notify("agent.end", result);
@@ -101,7 +107,7 @@ function requireSession(): EditorSession {
 function snapshot() {
   if (!session || !projectDir) return null;
   // The app reads files directly, so media "URLs" are absolute paths.
-  return { ...previewState(session, { mediaUrl: (p) => p }), projectDir, agentRunning: !!agent?.running };
+  return { ...previewState(session, { mediaUrl: (p) => p }), projectDir, agentRunning: !!agent?.running, choices: session.pendingChoices ?? null };
 }
 
 /** Make `s` the active session: autosave edits and stream state to the app. */
@@ -137,12 +143,14 @@ function attach(s: EditorSession, dir: string) {
   s.on("render", pushState);
   s.on("activity", onActivity);
   s.on("log", onLog);
+  s.on("choices", pushState);
   s.startActivity("file", `Opened "${s.project.name}"`).done();
   detach = () => {
     s.off("change", onChange);
     s.off("render", pushState);
     s.off("activity", onActivity);
     s.off("log", onLog);
+    s.off("choices", pushState);
     clearTimeout(stateTimer);
   };
   return snapshot();

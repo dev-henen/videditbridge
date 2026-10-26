@@ -12,7 +12,7 @@ The biggest gap is that the editor does not know where people and objects are in
 | 2 | [Keyframes](#2-keyframes) | Nothing can move or change over time except preset animations | Done |
 | 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Done, except text over faces (needs #1) |
 | 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes several minutes, and every change re-renders all of it | Segment cache and hardware encoding done |
-| 5 | [An AI-first desktop app](#5-an-ai-first-desktop-app) | People can only type; they cannot point at things or pick between options | Medium |
+| 5 | [An AI-first desktop app](#5-an-ai-first-desktop-app) | People can only type; they cannot point at things or pick between options | Done |
 
 
 ## 1. Subject and face detection
@@ -85,7 +85,7 @@ The app is for people who edit by asking Claude, not a manual editor: it does no
 
 - **Point at things.** Pick a clip, layer or sound on the timeline, and the next request is about it ("slow this down", "move this title off her face"). **Done** (2026-10-26): a blue chip by the request box shows what is picked.
 - **Point at a spot in the frame.** Click the viewer to say "here" (where a title goes, which person to follow). **Done**: a blue marker shows the spot and a pill above the request box says it is included.
-- **Choose between options.** When Claude offers choices (voices from `preview_voice`, music, a few title styles), show them as cards that play or preview, and send the pick back.
+- **Choose between options.** When Claude offers choices (voices from `preview_voice`, music, a few title styles), show them as cards that play or preview, and send the pick back. **Done**: `offer_choices` puts them on cards in the Claude tab, with play buttons for audio and thumbnails for images.
 - **Fix what the review finds.** Show `review_edit` problems in the app, each with a button that asks Claude to fix it. **Done**: the Review tab lists them with their times (and the project validation problems that used to have their own tab); clicking one goes there, and Fix asks Claude.
 
 Everything still goes through the same tools, so all changes share one undo history.
@@ -119,5 +119,5 @@ Everything still goes through the same tools, so all changes share one undo hist
 3. Faster rendering (segment cache first): every later step is tested by rendering. (Segment cache and hardware encoding done.)
 4. Subject and face detection. (Done.)
 5. Keyframes, then tracking on top of detection. (Done.)
-6. The AI-first desktop app: pointing at things, at spots in the frame, and fixing review findings (done); choosing between Claude's options (next).
+6. The AI-first desktop app: pointing at things and spots, fixing review findings, choosing between Claude's options. (Done.)
 7. Templates updated to use everything above.

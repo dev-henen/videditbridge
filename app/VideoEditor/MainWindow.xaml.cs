@@ -43,6 +43,8 @@ public partial class MainWindow : Window
         _vm.PropertyChanged += OnViewModelChanged;
         Timeline.Seek += t => SetScrubber(t, fromUser: true);
         Timeline.SelectionChanged += OnPicked;
+        _vm.ChoicesOffered += OnChoicesOffered;
+        _audition.MediaEnded += (_, _) => StopAudition();
         _scrubDebounce.Tick += async (_, _) =>
         {
             _scrubDebounce.Stop();
@@ -398,6 +400,51 @@ public partial class MainWindow : Window
     }
 
     private void OnClearPick(object sender, RoutedEventArgs e) => Timeline.ClearSelection();
+
+    // ------------------------------------------------------------- options Claude offers
+
+    private readonly MediaPlayer _audition = new();
+    private ChoiceCard? _auditioning;
+
+    private void OnChoicesOffered()
+    {
+        StopAudition();
+        SideTabs.SelectedItem = ClaudeTab;
+    }
+
+    /// <summary>Play an option's audio; one plays at a time, and pressing again stops it.</summary>
+    private void OnPlayChoice(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not ChoiceCard card || card.Audio is null) return;
+        var again = ReferenceEquals(card, _auditioning);
+        StopAudition();
+        if (again) return;
+        _auditioning = card;
+        card.IsPlaying = true;
+        _audition.Open(new Uri(card.Audio));
+        _audition.Play();
+    }
+
+    private void StopAudition()
+    {
+        _audition.Stop();
+        _audition.Close();
+        if (_auditioning is not null) _auditioning.IsPlaying = false;
+        _auditioning = null;
+    }
+
+    private async void OnPickChoice(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not ChoiceCard card) return;
+        StopAudition();
+        await _vm.PickChoiceAsync(card);
+    }
+
+    private async void OnDismissChoices(object sender, RoutedEventArgs e)
+    {
+        StopAudition();
+        await _vm.DismissChoicesAsync();
+    }
 
     // ------------------------------------------------------------- review
 

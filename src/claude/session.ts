@@ -60,11 +60,31 @@ export interface ActivityHandle {
   fail(message: string): void;
 }
 
+/** One option Claude offers the user (offer_choices): something to hear or see, then pick. */
+export interface ChoiceOption {
+  label: string;
+  description?: string;
+  /** An audio file to play (a voice preview, a music track, a sound effect). */
+  audio?: string;
+  /** An image to look at (a frame rendered with each look). */
+  image?: string;
+}
+
+/** Options waiting for the user to pick one; the pick arrives as their next message. */
+export interface ChoiceRequest {
+  id: string;
+  question: string;
+  options: ChoiceOption[];
+  at: string;
+}
+
 export interface SessionEvents {
   change: [{ project: Project; action: string; revision: number }];
   render: [RenderArtifact];
   log: [{ level: "info" | "error"; message: string; at: string }];
   activity: [Activity];
+  /** Options were offered (or cleared, with null). */
+  choices: [ChoiceRequest | null];
 }
 
 /**
@@ -81,6 +101,9 @@ export class EditorSession extends EventEmitter<SessionEvents> {
   /** Recent activities, oldest first. */
   readonly activities: Activity[] = [];
   private activityCount = 0;
+  private choiceCount = 0;
+  /** Options Claude offered and the user has not answered yet. */
+  pendingChoices?: ChoiceRequest;
   readonly options: Required<Pick<SessionOptions, "baseDir" | "outputDir" | "historyLimit">> & SessionOptions;
 
   /** Activities still in progress. */
@@ -111,6 +134,20 @@ export class EditorSession extends EventEmitter<SessionEvents> {
       done: (detail) => finish("done", detail),
       fail: (message) => finish("error", message),
     };
+  }
+
+  /** Show the user options to pick from (offer_choices). Replaces any still waiting. */
+  offerChoices(question: string, options: ChoiceOption[]): ChoiceRequest {
+    this.pendingChoices = { id: `choice${++this.choiceCount}`, question, options, at: new Date().toISOString() };
+    this.emit("choices", this.pendingChoices);
+    return this.pendingChoices;
+  }
+
+  /** The user picked, typed something else, or dismissed the options. */
+  clearChoices(): void {
+    if (!this.pendingChoices) return;
+    this.pendingChoices = undefined;
+    this.emit("choices", null);
   }
 
   /** Run `fn` as a tracked activity. */

@@ -41,6 +41,15 @@ public sealed class MainViewModel : Observable, IDisposable
     /// <summary>Raised when a different project becomes active (also when switched remotely).</summary>
     public event Action? ProjectChanged;
 
+    /// <summary>Raised when Claude offers new options to pick from.</summary>
+    public event Action? ChoicesOffered;
+
+    public ObservableCollection<ChoiceCard> Choices { get; } = [];
+    private string _choiceQuestion = "";
+    public string ChoiceQuestion { get => _choiceQuestion; private set => Set(ref _choiceQuestion, value); }
+    public bool HasChoices => Choices.Count > 0;
+    private string? _choiceId;
+
     public JsonNode? State { get; private set; }
 
     public MainViewModel()
@@ -242,7 +251,7 @@ public sealed class MainViewModel : Observable, IDisposable
     /// request is about it: a note with its id, times or position leads the message, so "slow this
     /// down" and "put the title here" know what "this" and "here" are.
     /// </summary>
-    public async Task AskClaudeAsync(string prompt, Controls.TimelineItem? about = null, Spot? spot = null)
+    public async Task AskClaudeAsync(string prompt, Controls.TimelineItem? about = null, Spot? spot = null, string? note = null)
     {
         if (string.IsNullOrWhiteSpace(prompt) || !CanAsk) return;
         AgentRunning = true;
@@ -252,6 +261,7 @@ public sealed class MainViewModel : Observable, IDisposable
         var aboutText = aboutParts.Count == 0 ? "" : $" (about {string.Join(" and ", aboutParts)})";
         AgentText += (AgentText.Length > 0 ? "\n\n" : "") + $"You{aboutText}: {prompt.Trim()}\n\nClaude: ";
         var notes = new List<string>();
+        if (note is not null) notes.Add(note);
         if (about is not null)
             notes.Add(string.Create(CultureInfo.InvariantCulture, $"[About the {about.Kind} {about.Id} picked in the timeline, {about.Start:0.0#}s to {about.End:0.0#}s: \"{about.Label}\"]"));
         if (spot is not null)
@@ -272,6 +282,28 @@ public sealed class MainViewModel : Observable, IDisposable
     }
 
     public Task CancelClaudeAsync() => Guard(() => Engine.CallAsync("agent.cancel"));
+
+    /// <summary>Answer Claude's options: the pick goes back as the next message.</summary>
+    public Task PickChoiceAsync(ChoiceCard card) =>
+        AskClaudeAsync($"I pick \"{card.Label}\".", note: $"[Choice: {ChoiceQuestion}]");
+
+    /// <summary>Close the options without picking.</summary>
+    public Task DismissChoicesAsync() => Guard(() => Engine.CallAsync("choices.dismiss"));
+
+    private void ApplyChoices(JsonNode? c)
+    {
+        var id = c?["id"]?.GetValue<string>();
+        if (id == _choiceId) return;
+        _choiceId = id;
+        Choices.Clear();
+        ChoiceQuestion = c?["question"]?.GetValue<string>() ?? "";
+        var i = 0;
+        foreach (var o in c?["options"]?.AsArray() ?? [])
+            if (o is not null)
+                Choices.Add(new ChoiceCard(i++, o["label"]!.GetValue<string>(), o["description"]?.GetValue<string>(), o["audio"]?.GetValue<string>(), o["image"]?.GetValue<string>()));
+        Raise(nameof(HasChoices));
+        if (Choices.Count > 0) ChoicesOffered?.Invoke();
+    }
 
     private async Task Guard(Func<Task> action)
     {
@@ -370,6 +402,7 @@ public sealed class MainViewModel : Observable, IDisposable
         CanUndo = s["canUndo"]?.GetValue<bool>() ?? false;
         CanRedo = s["canRedo"]?.GetValue<bool>() ?? false;
         Summary = s["summary"]?.GetValue<string>() ?? "";
+        ApplyChoices(s["choices"]);
         if (_reviewedRevision is not null && s["revision"]?.ToString() != _reviewedRevision && !ReviewSummary.EndsWith("check again"))
             ReviewSummary += " | edited since, check again";
         Raise(nameof(CanAsk));

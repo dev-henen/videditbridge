@@ -80,6 +80,13 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     expect(methods.has("activity")).toBe(true);
     expect(methods.has("state")).toBe(true);
 
+    // Options Claude offers reach the app in its state, and dismissing them clears it.
+    await host.call("tools.execute", { name: "offer_choices", input: { question: "Which look?", options: [{ label: "Warm", image: frame.path }, { label: "Cool" }] } });
+    const offered = await host.call<{ choices: { question: string; options: { label: string; image?: string }[] } | null }>("state.get");
+    expect(offered.choices).toMatchObject({ question: "Which look?", options: [{ label: "Warm", image: frame.path }, { label: "Cool" }] });
+    await host.call("choices.dismiss");
+    expect((await host.call<{ choices: unknown }>("state.get")).choices).toBeNull();
+
     await new Promise((r) => setTimeout(r, 600)); // autosave debounce
     const saved = JSON.parse(await readFile(path.join(created.projectDir, "project.json"), "utf8")) as { clips: unknown[] };
     expect(saved.clips).toHaveLength(1);

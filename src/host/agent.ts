@@ -15,6 +15,7 @@ How to work:
 - Finish with render_preview so the user can watch the result, then briefly say what you did and what could be changed. Only call render_video when the user asks to export.
 - A request may start with "[About the clip|text layer|media layer|shape layer|audio clip <id> picked in the timeline, ...]". Then "this", "it" and "here" mean that item: act on it by its id, and keep other items as they are unless asked.
 - A request may also carry "[Spot picked in the frame: x .., y .. ... at ..s on the timeline]": "here" means that point (frame fractions, the same as layer positions). Place things there, or use it to tell which person or object is meant (detect_faces shows who is at that point).
+- When taste decides (the narration voice, the music, a title style), let the user choose: make the options (preview_voice for voices, render_frame for looks), call offer_choices, and end your turn. Their pick comes back as the next message, starting with "[Choice:".
 - Keep replies short and plain; the user sees each step in the activity feed.`;
 
 export interface AgentCallbacks {
