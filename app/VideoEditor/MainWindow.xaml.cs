@@ -39,6 +39,7 @@ public partial class MainWindow : Window
         _vm.StateUpdated += OnState;
         _vm.PropertyChanged += OnViewModelChanged;
         Timeline.Seek += t => SetScrubber(t, fromUser: true);
+        Timeline.SelectionChanged += OnPicked;
         _scrubDebounce.Tick += async (_, _) =>
         {
             _scrubDebounce.Stop();
@@ -370,8 +371,19 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(prompt)) return;
         PromptBox.Clear();
         SetFollow(true);
-        await _vm.AskClaudeAsync(prompt);
+        await _vm.AskClaudeAsync(prompt, Timeline.Selected);
     }
+
+    /// <summary>Show what the next request is about, when something is picked on the timeline.</summary>
+    private void OnPicked(Controls.TimelineItem? item)
+    {
+        PickChip.Visibility = item is null ? Visibility.Collapsed : Visibility.Visible;
+        if (item is null) return;
+        PickText.Text = $"{char.ToUpper(item.Kind[0])}{item.Kind[1..]}: {item.Label}";
+        PickChip.ToolTip = $"Your request will be about this {item.Kind} ({item.Start:0.0}s to {item.End:0.0}s). Escape or the close button clears it.";
+    }
+
+    private void OnClearPick(object sender, RoutedEventArgs e) => Timeline.ClearSelection();
 
     private void OnToggleTimeline(object sender, RoutedEventArgs e)
     {

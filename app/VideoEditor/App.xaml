@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
   <Application.Resources>
-    <!-- Monochrome palette -->
+    <!-- Dark neutral palette with a blue primary color -->
     <SolidColorBrush x:Key="Bg" Color="#121212"/>
     <SolidColorBrush x:Key="Panel" Color="#181818"/>
     <SolidColorBrush x:Key="Panel2" Color="#222222"/>
@@ -12,8 +12,11 @@
     <SolidColorBrush x:Key="Text" Color="#EDEDED"/>
     <SolidColorBrush x:Key="Muted" Color="#8C8C8C"/>
     <SolidColorBrush x:Key="Faint" Color="#5C5C5C"/>
-    <SolidColorBrush x:Key="Accent" Color="#EDEDED"/>
-    <SolidColorBrush x:Key="OnAccent" Color="#121212"/>
+    <!-- Blue is the primary color: the main action, selection, progress and the playhead. -->
+    <SolidColorBrush x:Key="Accent" Color="#3B82F6"/>
+    <SolidColorBrush x:Key="AccentHover" Color="#5B9BFF"/>
+    <SolidColorBrush x:Key="AccentSoft" Color="#263B82F6"/>
+    <SolidColorBrush x:Key="OnAccent" Color="#FFFFFF"/>
     <FontFamily x:Key="Icons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
@@ -65,7 +68,7 @@
       </Setter>
     </Style>
 
-    <!-- The one emphasized action: light on dark -->
+    <!-- The one emphasized action: blue -->
     <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
       <Setter Property="Background" Value="{StaticResource Accent}"/>
       <Setter Property="Foreground" Value="{StaticResource OnAccent}"/>
@@ -78,7 +81,7 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="b" Property="Background" Value="#FFFFFF"/>
+                <Setter TargetName="b" Property="Background" Value="{StaticResource AccentHover}"/>
               </Trigger>
               <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="b" Property="Opacity" Value="0.3"/>
@@ -114,7 +117,7 @@
       <Setter Property="Height" Value="3"/>
     </Style>
 
-    <!-- Slim scrubber: grey track, white progress, small round thumb -->
+    <!-- Slim scrubber: grey track, blue progress, small round thumb -->
     <Style TargetType="Slider">
       <Setter Property="Foreground" Value="{StaticResource Accent}"/>
       <Setter Property="Template">
@@ -127,7 +130,7 @@
                   <RepeatButton Command="Slider.DecreaseLarge" Focusable="False">
                     <RepeatButton.Template>
                       <ControlTemplate TargetType="RepeatButton">
-                        <Border Height="3" CornerRadius="1.5" Background="#D8D8D8" VerticalAlignment="Center"/>
+                        <Border Height="3" CornerRadius="1.5" Background="{StaticResource Accent}" VerticalAlignment="Center"/>
                       </ControlTemplate>
                     </RepeatButton.Template>
                   </RepeatButton>

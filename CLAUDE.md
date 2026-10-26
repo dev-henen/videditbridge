@@ -19,9 +19,10 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 ## Desktop app (app/VideoEditor, C# WPF)
 - It talks to `src/host/main.ts` over stdio JSON-RPC. stdout carries protocol messages only; the host routes `console.log` to stderr. To add a host method, define it in `main.ts` and call it from `MainViewModel`.
 - Projects live in `projects/<slug>/` (gitignored app storage), and the host autosaves them.
+- The app is AI-first: people edit by asking Claude. It is not a manual editor (not competing with CapCut or Premiere), so direct interaction serves the conversation (pointing Claude at a clip, reviewing what it offers, undo) rather than drag-to-trim editing.
 - UI rules from the user:
   - compact default window (960x460)
-  - monochrome palette, no purple or other color accents
+  - dark neutral palette with blue as the primary color (buttons, selection, playhead, focus); no purple or other accents
   - icon glyphs from Segoe Fluent Icons
   - no emoji, no em or en dashes in any text
   - the timeline is a compact preview strip by default

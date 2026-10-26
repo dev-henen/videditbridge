@@ -118,7 +118,7 @@
                     <Setter Property="Fill" Value="{StaticResource Faint}"/>
                     <Style.Triggers>
                       <DataTrigger Binding="{Binding IsBusy}" Value="True">
-                        <Setter Property="Fill" Value="{StaticResource Text}"/>
+                        <Setter Property="Fill" Value="{StaticResource Accent}"/>
                         <DataTrigger.EnterActions>
                           <BeginStoryboard x:Name="Pulse">
                             <Storyboard RepeatBehavior="Forever" AutoReverse="True">
@@ -157,7 +157,7 @@
                                    Visibility="{Binding IsDone, Converter={StaticResource BoolToVis}}"/>
                         <TextBlock Style="{StaticResource Icon}" Text="&#xE783;" FontSize="11" Foreground="{StaticResource Text}"
                                    Visibility="{Binding IsError, Converter={StaticResource BoolToVis}}"/>
-                        <TextBlock Style="{StaticResource Icon}" Text="&#xE895;" FontSize="11" Foreground="{StaticResource Text}"
+                        <TextBlock Style="{StaticResource Icon}" Text="&#xE895;" FontSize="11" Foreground="{StaticResource Accent}"
                                    RenderTransformOrigin="0.5,0.5" Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
                           <TextBlock.RenderTransform>
                             <RotateTransform x:Name="Spin"/>
@@ -301,20 +301,88 @@
       </DockPanel>
     </Border>
 
-    <!-- Ask Claude -->
-    <DockPanel Grid.Row="3" Margin="8,6,8,8">
-      <Button DockPanel.Dock="Right" Click="OnStopClaude" ToolTip="Stop Claude" AutomationProperties.Name="Stop Claude" Visibility="{Binding AgentRunning, Converter={StaticResource BoolToVis}}">
-        <TextBlock Style="{StaticResource Icon}" Text="&#xE71A;"/>
-      </Button>
-      <Button DockPanel.Dock="Right" Style="{StaticResource Primary}" Click="OnAsk" IsEnabled="{Binding CanAsk}" ToolTip="Ask Claude" AutomationProperties.Name="Ask Claude" Margin="6,0,0,0" MinWidth="34">
-        <TextBlock Style="{StaticResource Icon}" Text="&#xE724;" FontSize="13"/>
-      </Button>
-      <Grid>
-        <TextBox x:Name="PromptBox" KeyDown="OnPromptKeyDown" IsEnabled="{Binding CanAsk}" MinHeight="30" Padding="30,5,8,5"/>
-        <TextBlock Style="{StaticResource Icon}" Text="&#xE99A;" Foreground="{StaticResource Muted}" HorizontalAlignment="Left" Margin="10,0,0,0" IsHitTestVisible="False"/>
-        <TextBlock x:Name="PromptHint" Text="{Binding AskHint}" Foreground="{StaticResource Faint}" Margin="32,0,8,0" VerticalAlignment="Center"
-                   IsHitTestVisible="False" TextTrimming="CharacterEllipsis"/>
-      </Grid>
-    </DockPanel>
+    <!-- Ask Claude: one box holding the picked item, the request and the send (or stop) button -->
+    <Grid Grid.Row="3" Margin="8,6,8,8">
+      <Border Background="{StaticResource Panel2}" CornerRadius="10" BorderThickness="1" BorderBrush="#2E2E2E" Padding="10,6,6,6">
+        <StackPanel>
+          <!-- What the request is about: a pill above the text, for the item picked on the timeline -->
+          <Border x:Name="PickChip" Visibility="Collapsed" HorizontalAlignment="Left" Background="{StaticResource AccentSoft}"
+                  CornerRadius="10" Padding="8,1,2,1" Margin="0,0,0,4" MaxWidth="300">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock x:Name="PickText" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="250" Foreground="{StaticResource Text}"/>
+              <Button Click="OnClearPick" ToolTip="Clear" AutomationProperties.Name="Clear the picked item" MinHeight="18" MinWidth="18" Padding="0" Margin="4,0,0,0">
+                <TextBlock Style="{StaticResource Icon}" Text="&#xE711;" FontSize="8"/>
+              </Button>
+            </StackPanel>
+          </Border>
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Style="{StaticResource Primary}" Click="OnStopClaude" ToolTip="Stop Claude" AutomationProperties.Name="Stop Claude"
+                    Width="28" Height="28" Padding="0" Margin="6,0,0,0" VerticalAlignment="Bottom"
+                    Visibility="{Binding AgentRunning, Converter={StaticResource BoolToVis}}">
+              <TextBlock Style="{StaticResource Icon}" Text="&#xE71A;" FontSize="11" Foreground="{StaticResource OnAccent}"/>
+            </Button>
+            <Button DockPanel.Dock="Right" Click="OnAsk" IsEnabled="{Binding CanAsk}" ToolTip="Ask Claude" AutomationProperties.Name="Ask Claude"
+                    Width="28" Height="28" Padding="0" Margin="6,0,0,0" VerticalAlignment="Bottom">
+              <Button.Style>
+                <Style TargetType="Button" BasedOn="{StaticResource Primary}">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding AgentRunning}" Value="True">
+                      <Setter Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Button.Style>
+              <TextBlock Style="{StaticResource Icon}" Text="&#xE724;" FontSize="12" Foreground="{StaticResource OnAccent}"/>
+            </Button>
+            <Grid VerticalAlignment="Center">
+              <TextBox x:Name="PromptBox" KeyDown="OnPromptKeyDown" IsEnabled="{Binding CanAsk}" Background="Transparent" Padding="0,4" MinHeight="26"/>
+              <TextBlock x:Name="PromptHint" Text="{Binding AskHint}" Foreground="{StaticResource Faint}" Margin="2,0,8,0" VerticalAlignment="Center"
+                         IsHitTestVisible="False" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+          </DockPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- Activity glow: while anything runs, a light travels around the box and it softly glows -->
+      <Border CornerRadius="10" BorderThickness="1.5" IsHitTestVisible="False" Opacity="0">
+        <Border.BorderBrush>
+          <LinearGradientBrush StartPoint="0,0.5" EndPoint="1,0.5">
+            <LinearGradientBrush.RelativeTransform>
+              <RotateTransform CenterX="0.5" CenterY="0.5"/>
+            </LinearGradientBrush.RelativeTransform>
+            <GradientStop Color="#1D4ED8" Offset="0"/>
+            <GradientStop Color="#3B82F6" Offset="0.35"/>
+            <GradientStop Color="#BFDBFE" Offset="0.5"/>
+            <GradientStop Color="#3B82F6" Offset="0.65"/>
+            <GradientStop Color="#1D4ED8" Offset="1"/>
+          </LinearGradientBrush>
+        </Border.BorderBrush>
+        <Border.Effect>
+          <DropShadowEffect Color="#3B82F6" BlurRadius="16" ShadowDepth="0" Opacity="0.75"/>
+        </Border.Effect>
+        <Border.Style>
+          <Style TargetType="Border">
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                <DataTrigger.EnterActions>
+                  <BeginStoryboard x:Name="Glow">
+                    <Storyboard>
+                      <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1" Duration="0:0:0.35"/>
+                      <DoubleAnimation Storyboard.TargetProperty="(Border.BorderBrush).(Brush.RelativeTransform).(RotateTransform.Angle)"
+                                       From="0" To="360" Duration="0:0:2.4" RepeatBehavior="Forever"/>
+                      <DoubleAnimation Storyboard.TargetProperty="(Border.Effect).(DropShadowEffect.Opacity)"
+                                       From="0.35" To="0.85" Duration="0:0:1.2" AutoReverse="True" RepeatBehavior="Forever"/>
+                    </Storyboard>
+                  </BeginStoryboard>
+                </DataTrigger.EnterActions>
+                <DataTrigger.ExitActions>
+                  <StopStoryboard BeginStoryboardName="Glow"/>
+                </DataTrigger.ExitActions>
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+      </Border>
+    </Grid>
   </Grid>
 </Window>

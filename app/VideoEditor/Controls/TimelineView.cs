@@ -6,15 +6,19 @@ using System.Windows.Media;
 
 namespace VideoEditor.Controls;
 
+/// <summary>A clip, layer or sound picked on the timeline, so a request to Claude can be about it.</summary>
+public sealed record TimelineItem(string Kind, string Id, string Label, double Start, double End);
+
 /// <summary>
-/// Monochrome timeline. Compact (default): a slim strip of clips with hairline marks for overlays
-/// and audio, enough to see structure and scrub. Expanded: ruler plus one lane per track.
-/// Click or drag to seek.
+/// The timeline. Compact (default): a slim strip of clips with hairline marks for overlays and
+/// audio, enough to see structure and scrub. Expanded: ruler plus one lane per track.
+/// The app is AI-first, so the timeline does not edit: click an item to point Claude at it (and
+/// seek there), click empty space or drag to seek, Escape to clear the pick.
 /// </summary>
 public sealed class TimelineView : FrameworkElement
 {
     private enum Kind { Clip, Text, Media, Shape, Audio, Caption }
-    private sealed record Block(double Start, double End, string Label, Kind Kind, double TransitionIn = 0);
+    private sealed record Block(double Start, double End, string Label, Kind Kind, double TransitionIn = 0, string? Id = null);
     private sealed record Lane(string Name, List<Block> Blocks);
 
     private readonly List<Block> _clips = [];
@@ -22,9 +26,12 @@ public sealed class TimelineView : FrameworkElement
     private readonly List<Block> _audio = [];
     private readonly List<Block> _captions = [];
     private readonly List<Lane> _lanes = [];
+    private readonly List<(Rect Rect, Block Block)> _hits = [];
     private double _duration;
     private double _playhead;
     private bool _compact = true;
+    private string? _selectedId;
+    private Block? _hover;
 
     private const double RulerHeight = 16;
     private const double LaneHeight = 20;
@@ -40,11 +47,24 @@ public sealed class TimelineView : FrameworkElement
     private static readonly Brush DarkText = Freeze(new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x14)));
     private static readonly Brush Muted = Freeze(new SolidColorBrush(Color.FromRgb(0x6E, 0x6E, 0x6E)));
     private static readonly Brush Hatch = Freeze(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)));
+    // Blue is the app's primary color: the playhead and the picked item.
+    private static readonly Brush Blue = Freeze(new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6)));
+    private static readonly Brush BlueSoft = Freeze(new SolidColorBrush(Color.FromArgb(0x40, 0x3B, 0x82, 0xF6)));
     private static readonly Pen LinePen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromRgb(0x24, 0x24, 0x24))), 1));
-    private static readonly Pen PlayheadPen = Freeze(new Pen(Brushes.White, 1.5));
+    private static readonly Pen PlayheadPen = Freeze(new Pen(Blue, 1.5));
+    private static readonly Pen SelectPen = Freeze(new Pen(Blue, 1.5));
     private static readonly Typeface Face = new("Segoe UI");
 
     public event Action<double>? Seek;
+
+    /// <summary>The picked item changed (null when cleared or when it left the edit).</summary>
+    public event Action<TimelineItem?>? SelectionChanged;
+
+    public TimelineView()
+    {
+        Focusable = true;
+        FocusVisualStyle = null;
+    }
 
     public bool Compact
     {
@@ -57,6 +77,19 @@ public sealed class TimelineView : FrameworkElement
         get => _playhead;
         set { _playhead = value; InvalidateVisual(); }
     }
+
+    /// <summary>The picked item, while it still exists in the edit.</summary>
+    public TimelineItem? Selected
+    {
+        get
+        {
+            var b = _clips.Concat(_layers).Concat(_audio).FirstOrDefault(x => x.Id is not null && x.Id == _selectedId);
+            return b is null ? null : new TimelineItem(KindName(b.Kind), b.Id!, b.Label, b.Start, b.End);
+        }
+    }
+
+    /// <summary>Clear the picked item.</summary>
+    public void ClearSelection() => Select(null);
 
     private double LabelWidth => _compact ? 0 : 64;
 
@@ -73,20 +106,26 @@ public sealed class TimelineView : FrameworkElement
             {
                 if (c is null) continue;
                 var label = c["label"]?.GetValue<string>() ?? c["assetId"]?.GetValue<string>() ?? "";
-                _clips.Add(new Block(c["start"]!.GetValue<double>(), c["end"]!.GetValue<double>(), label, Kind.Clip, c["transition"]?["duration"]?.GetValue<double>() ?? 0));
+                _clips.Add(new Block(c["start"]!.GetValue<double>(), c["end"]!.GetValue<double>(), label, Kind.Clip, c["transition"]?["duration"]?.GetValue<double>() ?? 0, c["id"]?.GetValue<string>()));
             }
             foreach (var l in state["layers"]?.AsArray() ?? [])
             {
                 if (l is null) continue;
                 var kind = l["type"]?.GetValue<string>() switch { "text" => Kind.Text, "media" => Kind.Media, _ => Kind.Shape };
-                _layers.Add(new Block(l["start"]!.GetValue<double>(), l["end"]!.GetValue<double>(), l["label"]?.GetValue<string>() ?? "", kind));
+                _layers.Add(new Block(l["start"]!.GetValue<double>(), l["end"]!.GetValue<double>(), l["label"]?.GetValue<string>() ?? "", kind, 0, l["id"]?.GetValue<string>()));
             }
             foreach (var a in state["audio"]?.AsArray() ?? [])
                 if (a is not null)
-                    _audio.Add(new Block(a["start"]!.GetValue<double>(), a["end"]!.GetValue<double>(), $"{a["role"]?.GetValue<string>()} · {a["assetId"]?.GetValue<string>()}", Kind.Audio));
+                    _audio.Add(new Block(a["start"]!.GetValue<double>(), a["end"]!.GetValue<double>(), $"{a["role"]?.GetValue<string>()}: {a["assetId"]?.GetValue<string>()}", Kind.Audio, 0, a["id"]?.GetValue<string>()));
             foreach (var c in state["captions"]?.AsArray() ?? [])
                 if (c is not null)
                     _captions.Add(new Block(c["start"]!.GetValue<double>(), c["end"]!.GetValue<double>(), c["text"]?.GetValue<string>() ?? "", Kind.Caption));
+        }
+        // Keep the pick while the item exists; tell listeners when it is gone or has moved.
+        if (_selectedId is not null)
+        {
+            if (Selected is null) _selectedId = null;
+            SelectionChanged?.Invoke(Selected);
         }
         Rebuild();
     }
@@ -129,6 +168,7 @@ public sealed class TimelineView : FrameworkElement
     protected override void OnRender(DrawingContext dc)
     {
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, ActualWidth, ActualHeight));
+        _hits.Clear();
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         if (_duration <= 0)
         {
@@ -145,11 +185,12 @@ public sealed class TimelineView : FrameworkElement
     private void RenderCompact(DrawingContext dc, double dpi)
     {
         for (var i = 0; i < _clips.Count; i++)
-            DrawBlock(dc, dpi, _clips[i], 0, CompactClip, i % 2 == 0 ? ClipFill : ClipFillAlt, withLabel: true);
+            Hit(dc, DrawBlock(dc, dpi, _clips[i], 0, CompactClip, i % 2 == 0 ? ClipFill : ClipFillAlt, withLabel: true), _clips[i]);
+        // The hairline marks get a taller click area than they are drawn.
         var y = CompactClip + CompactGap;
-        foreach (var b in _layers) DrawBlock(dc, dpi, b, y, CompactMark, FillFor(b.Kind), withLabel: false);
+        foreach (var b in _layers) Hit(dc, DrawBlock(dc, dpi, b, y, CompactMark, FillFor(b.Kind), withLabel: false), b, grow: 2);
         y += CompactMark + CompactGap;
-        foreach (var b in _audio) DrawBlock(dc, dpi, b, y, CompactMark, MediaFill, withLabel: false);
+        foreach (var b in _audio) Hit(dc, DrawBlock(dc, dpi, b, y, CompactMark, MediaFill, withLabel: false), b, grow: 2);
     }
 
     private void RenderLanes(DrawingContext dc, double dpi)
@@ -171,12 +212,22 @@ public sealed class TimelineView : FrameworkElement
             }
             var alt = 0;
             foreach (var b in lane.Blocks)
-                DrawBlock(dc, dpi, b, y + 2, LaneHeight - 4, b.Kind == Kind.Clip ? (alt++ % 2 == 0 ? ClipFill : ClipFillAlt) : FillFor(b.Kind), withLabel: true);
+                Hit(dc, DrawBlock(dc, dpi, b, y + 2, LaneHeight - 4, b.Kind == Kind.Clip ? (alt++ % 2 == 0 ? ClipFill : ClipFillAlt) : FillFor(b.Kind), withLabel: true), b);
             dc.DrawLine(LinePen, new Point(LabelWidth, y + LaneHeight), new Point(ActualWidth, y + LaneHeight));
         }
     }
 
-    private void DrawBlock(DrawingContext dc, double dpi, Block b, double y, double h, Brush fill, bool withLabel)
+    /// <summary>Remember where an item is drawn for clicks, and mark it when it is the picked one.</summary>
+    private void Hit(DrawingContext dc, Rect rect, Block b, double grow = 0)
+    {
+        if (b.Id is null) return;
+        _hits.Add((grow > 0 ? new Rect(rect.Left, rect.Top - grow, rect.Width, rect.Height + 2 * grow) : rect, b));
+        if (b.Id != _selectedId) return;
+        var r = Math.Min(3, rect.Height / 2);
+        dc.DrawRoundedRectangle(BlueSoft, SelectPen, rect, r, r);
+    }
+
+    private Rect DrawBlock(DrawingContext dc, double dpi, Block b, double y, double h, Brush fill, bool withLabel)
     {
         var x0 = TimeToX(b.Start);
         var w = Math.Max(1.5, TimeToX(b.End) - x0 - 1);
@@ -184,7 +235,7 @@ public sealed class TimelineView : FrameworkElement
         dc.DrawRoundedRectangle(fill, null, rect, Math.Min(3, h / 2), Math.Min(3, h / 2));
         if (b.TransitionIn > 0)
             dc.DrawRectangle(Hatch, null, new Rect(x0, y, Math.Min(w, TimeToX(b.Start + b.TransitionIn) - x0), h));
-        if (!withLabel || w < 28 || h < 12) return;
+        if (!withLabel || w < 28 || h < 12) return rect;
         var ft = Text(b.Label, 10, b.Kind == Kind.Text ? DarkText : LabelText, dpi);
         ft.MaxTextWidth = Math.Max(1, w - 8);
         ft.MaxLineCount = 1;
@@ -192,6 +243,7 @@ public sealed class TimelineView : FrameworkElement
         dc.PushClip(new RectangleGeometry(rect));
         dc.DrawText(ft, new Point(x0 + 4, y + (h - ft.Height) / 2));
         dc.Pop();
+        return rect;
     }
 
     private static Brush FillFor(Kind k) => k switch
@@ -207,18 +259,60 @@ public sealed class TimelineView : FrameworkElement
     private static FormattedText Text(string s, double size, Brush brush, double dpi) =>
         new(s, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, Face, size, brush, dpi);
 
+    private static string KindName(Kind k) => k switch
+    {
+        Kind.Clip => "clip",
+        Kind.Text => "text layer",
+        Kind.Media => "media layer",
+        Kind.Shape => "shape layer",
+        Kind.Audio => "audio clip",
+        _ => "caption",
+    };
+
+    private static string Clock(double t) => $"{(int)t / 60:00}:{t % 60:00.0}";
+
+    private Block? HitTest(Point p) => _hits.LastOrDefault(h => h.Rect.Contains(p)).Block;
+
+    private void Select(string? id)
+    {
+        if (id == _selectedId) return;
+        _selectedId = id;
+        InvalidateVisual();
+        SelectionChanged?.Invoke(Selected);
+    }
+
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
+        Focus();
+        var p = e.GetPosition(this);
+        Select(HitTest(p)?.Id);
         CaptureMouse();
-        SeekTo(e.GetPosition(this).X);
+        SeekTo(p.X);
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
-        if (IsMouseCaptured) SeekTo(e.GetPosition(this).X);
+        var p = e.GetPosition(this);
+        if (IsMouseCaptured)
+        {
+            SeekTo(p.X);
+            return;
+        }
+        var b = HitTest(p);
+        if (ReferenceEquals(b, _hover)) return;
+        _hover = b;
+        var name = b is null ? "" : KindName(b.Kind);
+        ToolTip = b is null ? null : $"{char.ToUpper(name[0])}{name[1..]}: {b.Label}\n{Clock(b.Start)} to {Clock(b.End)}\nClick to ask Claude about it";
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) => ReleaseMouseCapture();
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || _selectedId is null) return;
+        Select(null);
+        e.Handled = true;
+    }
 
     private void SeekTo(double x)
     {

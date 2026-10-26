@@ -12,7 +12,7 @@ The biggest gap is that the editor does not know where people and objects are in
 | 2 | [Keyframes](#2-keyframes) | Nothing can move or change over time except preset animations | Done |
 | 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Done, except text over faces (needs #1) |
 | 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes several minutes, and every change re-renders all of it | Segment cache and hardware encoding done |
-| 5 | [Direct editing in the desktop app](#5-direct-editing-in-the-desktop-app) | The app is a chat box and a preview; nothing can be dragged or adjusted | Large |
+| 5 | [An AI-first desktop app](#5-an-ai-first-desktop-app) | People can only type; they cannot point at things or pick between options | Medium |
 
 
 ## 1. Subject and face detection
@@ -79,16 +79,16 @@ Found on the way: the fps filter rounded every clip up a frame, so on a long edi
 
 Still slow on a cold render: Ken Burns upscales every frame to twice the size before `zoompan` (about 20 ms per 1080p frame), and `colorbalance` and `vibrance` convert each frame to RGB and back (about 15 to 30 ms each).
 
-## 5. Direct editing in the desktop app
+## 5. An AI-first desktop app
 
-The app is a chat box plus a preview. Add:
+The app is for people who edit by asking Claude, not a manual editor: it does not try to be CapCut or Premiere, so it gets no drag-and-trim timeline or panels of sliders. What it needs is ways to talk about the video without describing everything in words:
 
-- a timeline where clips, layers and audio can be dragged, trimmed and reordered
-- a voice picker that plays the previews from `preview_voice`
-- panels with sliders for color (`color_adjust`) and effect settings
-- a list of sound effects and transitions to audition
+- **Point at things.** Pick a clip, layer or sound on the timeline, and the next request is about it ("slow this down", "move this title off her face"). **Done** (2026-10-26): a blue chip by the request box shows what is picked.
+- **Point at a spot in the frame.** Click the viewer to say "here" (where a title goes, which person to follow).
+- **Choose between options.** When Claude offers choices (voices from `preview_voice`, music, a few title styles), show them as cards that play or preview, and send the pick back.
+- **Fix what the review finds.** Show `review_edit` problems in the app, each with a button that asks Claude to fix it.
 
-Everything still goes through the same tools, so Claude and manual edits share undo history.
+Everything still goes through the same tools, so all changes share one undo history.
 
 ## Smaller tools to add
 
@@ -119,5 +119,5 @@ Everything still goes through the same tools, so Claude and manual edits share u
 3. Faster rendering (segment cache first): every later step is tested by rendering. (Segment cache and hardware encoding done.)
 4. Subject and face detection. (Done.)
 5. Keyframes, then tracking on top of detection. (Done.)
-6. Direct editing in the desktop app.
+6. The AI-first desktop app: pointing at things (done), at spots in the frame, choosing between Claude's options, fixing review findings.
 7. Templates updated to use everything above.

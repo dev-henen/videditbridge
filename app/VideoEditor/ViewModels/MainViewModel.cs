@@ -199,14 +199,22 @@ public sealed class MainViewModel : Observable, IDisposable
         }
     }
 
-    public async Task AskClaudeAsync(string prompt)
+    /// <summary>
+    /// Ask Claude to edit. With an item picked on the timeline, the request is about it: a note
+    /// with its id and times leads the message, so "slow this down" knows what "this" is.
+    /// </summary>
+    public async Task AskClaudeAsync(string prompt, Controls.TimelineItem? about = null)
     {
         if (string.IsNullOrWhiteSpace(prompt) || !CanAsk) return;
         AgentRunning = true;
-        AgentText += (AgentText.Length > 0 ? "\n\n" : "") + $"You: {prompt.Trim()}\n\nClaude: ";
+        var aboutText = about is null ? "" : $" (about {about.Kind} \"{about.Label}\")";
+        AgentText += (AgentText.Length > 0 ? "\n\n" : "") + $"You{aboutText}: {prompt.Trim()}\n\nClaude: ";
+        var message = about is null
+            ? prompt
+            : string.Create(CultureInfo.InvariantCulture, $"[About the {about.Kind} {about.Id} picked in the timeline, {about.Start:0.0#}s to {about.End:0.0#}s: \"{about.Label}\"] {prompt}");
         try
         {
-            await Engine.CallAsync("agent.run", new { prompt });
+            await Engine.CallAsync("agent.run", new { prompt = message });
         }
         catch (Exception e)
         {
