@@ -180,9 +180,20 @@ export const ClipSchema = z.object({
     .optional()
     .describe("Source duration to use (seconds). Required for image/color/gradient assets; defaults to rest of source for video"),
   speed: z.number().min(0.25).max(4).default(1),
+  reverse: z.boolean().optional().describe("Play the clip backwards (picture and sound; no captions for it). Keep reversed clips short, under ~20s"),
   volume: z.number().min(0).max(4).default(1),
   muted: z.boolean().default(false),
   audioEffects: audioEffects("this clip's audio"),
+  audioLead: z
+    .number()
+    .min(0)
+    .optional()
+    .describe("J cut: this clip's sound starts this many seconds before its picture, under the end of the previous clip (whose sound is muted there)"),
+  audioTail: z
+    .number()
+    .min(0)
+    .optional()
+    .describe("L cut: this clip's sound carries on this many seconds past its picture, under the start of the next clip (whose sound is muted there)"),
   fit: FitSchema.default("cover"),
   focus: PositionSchema.optional().describe("With fit cover: where to crop when the source does not fit (x: 0 keeps the left edge, 1 the right edge; y: 0 top, 1 bottom; default center). Use it to keep the subject when reframing 16:9 to 9:16"),
   effects: z.array(EffectSchema).default([]),

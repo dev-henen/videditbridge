@@ -241,6 +241,35 @@ export const EFFECTS: EffectDefinition[] = [
     toFilter: (p) => `gblur=sigma=${p.amount}`,
   }),
   define({
+    id: "denoise",
+    name: "Denoise",
+    category: "retouch",
+    perFrame: true,
+    description:
+      "Remove grain and color noise from dim or phone footage, keeping edges. strength 0.3 is light, 0.6 cleans low-light video, 1 is heavy (skin and texture start to smear). Pair with the denoise audio effect for hiss.",
+    params: z.object({ strength: num(0.5, 0, 1, "0..1") }),
+    toFilter: (p) => {
+      const s = 1 + p.strength * 7;
+      return `hqdn3d=luma_spatial=${round3(s)}:chroma_spatial=${round3(s * 1.4)}:luma_tmp=${round3(s * 1.5)}:chroma_tmp=${round3(s * 2)}`;
+    },
+  }),
+  define({
+    id: "stabilize",
+    name: "Stabilize",
+    category: "motion",
+    perFrame: true,
+    description:
+      "Steady shaky handheld footage: camera shake is measured frame to frame and cancelled, and the picture is zoomed in slightly (zoom) so the moving edges stay out of frame. Best on small jitters; it does not straighten big pans. Put it on the clip (each clip is stabilized on its own).",
+    params: z.object({
+      zoom: num(1.08, 1, 1.3, "Crop-in that hides the edges; raise it if borders show"),
+      range: num(48, 8, 64, "Largest shake corrected, in pixels"),
+    }),
+    toFilter: (p, ctx) => {
+      const r = Math.round(p.range / 2) * 2;
+      return `deshake=rx=${r}:ry=${r}:edge=mirror,scale=${Math.round((ctx.width * p.zoom) / 2) * 2}:${Math.round((ctx.height * p.zoom) / 2) * 2},crop=${ctx.width}:${ctx.height}`;
+    },
+  }),
+  define({
     id: "sharpen",
     name: "Sharpen",
     category: "blur",

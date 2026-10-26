@@ -14,7 +14,7 @@ import {
   type Transcript,
 } from "../core/schema.js";
 import * as ops from "../core/operations.js";
-import { computeTimeline, sourceToTimeline } from "../core/timeline.js";
+import { computeTimeline, sourceToTimeline, timelineToSource } from "../core/timeline.js";
 import { isAnimated, simplifyKeys, smoothKeys } from "../core/keyframes.js";
 import { validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
@@ -39,14 +39,16 @@ import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voi
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
-import { analyzeColor, renderScopes } from "../tools/render/color-analysis.js";
+import { analyzeColor, channelLevels, matchingCurves, renderScopes } from "../tools/render/color-analysis.js";
 import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
 import { renderSoundMapImage } from "../tools/audio/image.js";
 import { renderSoundEffect } from "../tools/audio/sfx.js";
 import { detectScenes } from "../tools/video/scenes.js";
 import { getSoundEffect, listSoundEffects } from "../library/sound-effects/index.js";
 import { invertRanges } from "../core/ranges.js";
-import { stat } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { fileHash, listFiles } from "../tools/media/files.js";
 import type { ActivityHandle, EditorSession } from "./session.js";
 
 export interface ToolResult {
@@ -628,6 +630,8 @@ export const TOOLS: ToolDefinition[] = [
     input: z.object({ src: z.string().describe("File path or URL"), id: z.string().optional(), label: z.string().optional() }),
     mutates: true,
     run: async (s, i) => {
+      const same = s.project.assets.find((a) => "src" in a && s.resolve(a.src) === s.resolve(i.src));
+      if (same && (!i.id || i.id === same.id)) return ok(`Already imported as "${same.id}".`);
       const info = await probe(s.resolve(i.src), { ffmpegPath: s.options.ffmpegPath });
       const id = i.id ?? assetIdFromSrc(s.project, i.src);
       const asset: Asset = info.isImage
@@ -636,6 +640,53 @@ export const TOOLS: ToolDefinition[] = [
           ? { type: "video", id, src: i.src, duration: info.duration, width: info.width, height: info.height, hasAudio: info.hasAudio, label: i.label }
           : { type: "audio", id, src: i.src, duration: info.duration, label: i.label };
       return commit(s, ops.addAsset(s.project, asset), "import_media", i, `Imported "${id}" (${asset.type}${info.duration ? `, ${info.duration}s` : ""}${info.width ? `, ${info.width}x${info.height}` : ""}${asset.type === "video" ? `, ${info.hasAudio ? "with" : "no"} audio` : ""}).`);
+    },
+  }),
+  tool({
+    name: "clean_up_media",
+    description:
+      "Tidy the project's media: assets that are the same file content (imported twice, or copies under other names) become one, and assets nothing in the edit uses are removed (pass keep for ones you still plan to use). " +
+      "deleteFiles also deletes files in the project's media folder that no asset uses any more (this cannot be undone; ask the user first).",
+    input: z.object({
+      removeUnused: z.boolean().default(true),
+      keep: z.array(z.string()).default([]).describe("Asset ids to keep even if unused"),
+      deleteFiles: z.boolean().default(false).describe("Also delete unused files in <project>/media"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      let p = s.project;
+      const lines: string[] = [];
+      // Duplicates: same bytes, compared by size first, then hash.
+      const files = p.assets.filter((a): a is Extract<Asset, { src: string }> => "src" in a && !/^[a-z]+:\/\//i.test(a.src) && existsSync(s.resolve(a.src)));
+      const byKey = new Map<string, string>();
+      for (const a of files) {
+        const key = `${a.type}:${(await stat(s.resolve(a.src))).size}:${await fileHash(s.resolve(a.src))}`;
+        const first = byKey.get(key);
+        if (!first) byKey.set(key, a.id);
+        else {
+          p = ops.mergeAsset(p, a.id, first);
+          lines.push(`"${a.id}" is the same file as "${first}"; merged into it`);
+        }
+      }
+      if (i.removeUnused) {
+        for (const id of ops.unusedAssetIds(p).filter((x) => !i.keep.includes(x))) {
+          p = ops.removeAsset(p, id);
+          lines.push(`removed unused "${id}"`);
+        }
+      }
+      const deleted: string[] = [];
+      if (i.deleteFiles) {
+        const mediaDir = path.join(s.options.baseDir, "media");
+        const used = new Set(p.assets.flatMap((a) => ("src" in a ? [s.resolve(a.src)] : [])));
+        for (const f of await listFiles(mediaDir)) {
+          if (used.has(path.resolve(f))) continue;
+          await rm(f, { force: true });
+          deleted.push(path.basename(f));
+        }
+      }
+      if (deleted.length) lines.push(`deleted ${deleted.length} files from media: ${deleted.join(", ")}`);
+      if (p === s.project) return ok(`Nothing to clean up.${deleted.length ? ` ${lines.join("; ")}.` : ""}`);
+      return commit(s, p, "clean_up_media", i, `Cleaned up media: ${lines.join("; ")}.`);
     },
   }),
   tool({
@@ -664,10 +715,69 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "update_clip",
-    description: "Change properties of a primary-track clip (in, duration, speed, volume, muted, fit, effects, audioEffects, transition, fadeIn, fadeOut).",
+    description: "Change properties of a primary-track clip (in, duration, speed, volume, muted, fit, effects, audioEffects, transition, fadeIn, fadeOut, audioLead, audioTail, reverse). reverse: true plays it backwards.",
     input: z.object({ clipId: z.string(), patch: z.record(z.string(), z.unknown()) }),
     mutates: true,
     run: async (s, i) => commit(s, ops.updateClip(s.project, i.clipId, i.patch as never), "update_clip", i, `Updated ${i.clipId}.`),
+  }),
+  tool({
+    name: "freeze_frame",
+    description:
+      "Hold one frame of the video still for a few seconds (a freeze-frame, e.g. for a 'that's me' title or a dramatic beat). The frame at the given timeline time is held there and the rest of the clip continues after it, so the video gets longer by seconds. The still keeps the clip's fit, crop and effects. Add a title or effect on top afterwards.",
+    input: z.object({
+      time: z.number().min(0).describe("Timeline seconds of the frame to hold"),
+      seconds: z.number().min(0.1).max(30).default(2),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const timeline = computeTimeline(s.project);
+      const tc = timeline.clips.find((c) => i.time >= c.start && i.time < c.end) ?? timeline.clips.at(-1);
+      if (!tc) return { text: "There are no clips to freeze.", isError: true };
+      if (tc.asset.type !== "video" && tc.asset.type !== "image") return { text: `Clip ${tc.clip.id} is a ${tc.asset.type} background; a freeze-frame needs footage.`, isError: true };
+      const at = Math.min(Math.max(i.time, tc.start), tc.end - 0.001);
+      let p = s.project;
+      let index = tc.index + 1;
+      let assetId = tc.asset.id;
+      if (tc.asset.type === "video") {
+        const src = timelineToSource(tc, at);
+        const reversed = tc.clip.reverse ? tc.clip.in + tc.sourceDuration - (src - tc.clip.in) : src;
+        const still = await s.outputPath(`freeze-${tc.clip.id}.png`);
+        await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-ss", String(round3(Math.max(0, reversed))), "-i", s.resolve(tc.asset.src), "-frames:v", "1", still], { ffmpegPath: s.options.ffmpegPath });
+        assetId = assetIdFromSrc(p, `freeze-${tc.clip.id}`);
+        p = ops.addAsset(p, { type: "image", id: assetId, src: still, width: tc.asset.width, height: tc.asset.height, label: `frame ${round3(src)}s of ${tc.asset.id}` });
+        if (at > tc.start + 0.05 && at < tc.end - 0.05) p = ops.splitClip(p, tc.clip.id, at).project;
+        else if (at <= tc.start + 0.05) index = tc.index;
+      } else index = tc.index + 1;
+      const { id: _id, transition: _t, keyframes: _k, in: _in, speed: _sp, audioLead: _l, audioTail: _a, reverse: _r, fadeIn: _fi, fadeOut: _fo, ...look } = tc.clip;
+      p = ops.addClip(p, { ...look, assetId, in: 0, duration: i.seconds, label: "freeze-frame" }, index);
+      return commit(s, p, "freeze_frame", i, `Froze the frame at ${round3(at)}s for ${i.seconds}s (clip ${p.clips[index]!.id}).`);
+    },
+  }),
+  tool({
+    name: "split_edit",
+    description:
+      "Make a J or L cut at the cut into a primary clip, so sound and picture change at different moments (standard in interviews and talking heads). " +
+      "'j': the clip's sound starts early, heard under the end of the previous shot (we hear the next speaker before we see them). " +
+      "'l': the previous clip's sound carries on under the start of this one (we keep hearing the speaker while cutting to a reaction or b-roll). " +
+      "The other clip's sound is muted where they overlap; captions follow the sound. seconds 0 removes it. Needs footage beyond the cut (trimmed-off source).",
+    input: z.object({
+      clipId: z.string().describe("The clip right after the cut"),
+      type: z.enum(["j", "l"]),
+      seconds: z.number().min(0).max(10).describe("How far the sound leads (j) or trails (l) the picture cut; 0.5-2 is typical"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const k = s.project.clips.findIndex((c) => c.id === i.clipId);
+      if (k < 0) return { text: `No clip with id "${i.clipId}". Clip ids: ${s.project.clips.map((c) => c.id).join(", ")}`, isError: true };
+      if (k === 0) return { text: `"${i.clipId}" is the first clip; there is no cut into it.`, isError: true };
+      const target = i.type === "j" ? s.project.clips[k]! : s.project.clips[k - 1]!;
+      const p = ops.updateClip(s.project, target.id, i.type === "j" ? { audioLead: i.seconds || undefined } : { audioTail: i.seconds || undefined });
+      const tc = computeTimeline(p).clips.find((c) => c.clip.id === target.id)!;
+      const got = (i.type === "j" ? tc.audioLead : tc.audioTail) ?? 0;
+      const note = i.seconds && got < i.seconds - 0.01 ? ` Only ${got}s is possible (limited by the footage ${i.type === "j" ? "before" : "after"} ${target.id}, the neighbor's length, or the clip having no sound).` : "";
+      const what = i.seconds ? `${i.type === "j" ? "J" : "L"} cut into ${i.clipId}: ${target.id}'s sound ${i.type === "j" ? "starts" : "runs"} ${got}s ${i.type === "j" ? "before" : "past"} the cut.` : `Removed the ${i.type.toUpperCase()} cut at ${i.clipId}.`;
+      return commit(s, p, "split_edit", i, `${what}${note}`);
+    },
   }),
   tool({
     name: "remove_clip",
@@ -1883,9 +1993,10 @@ export const TOOLS: ToolDefinition[] = [
     name: "generate_voiceover",
     description:
       "Synthesize narration from text and add it as a voice-over with measured word timings for captions. Runs a neural voice on this machine unless the session has another provider (no API key; the model downloads once). " +
-      "Pick a voice with list_voices and audition it with preview_voice; the project's default voice (set_voice) is used when none is given. Write it the way people talk, in short sentences; one call per section lets you place each part on the timeline.",
+      "Pick a voice with list_voices and audition it with preview_voice; the project's default voice (set_voice) is used when none is given. Write it the way people talk, in short sentences; one call per section lets you place each part on the timeline. " +
+      "Pacing markup (local voice): [pause] (0.6s) or [pause 1.5] for a pause, [breath] for a short one, [slow]...[/slow] and [fast]...[/fast] for pace, *word* to set a word apart. The text is spoken in the voice's language (list_voices shows it).",
     input: z.object({
-      text: z.string(),
+      text: z.string().describe("What to say, with optional pacing markup"),
       start: z.number().min(0).default(0),
       voice: z.string().optional().describe("Voice id (see list_voices); default: the project's voice, else af_heart"),
       speed: z.number().optional().describe("1 = normal, 1.1 a little brisker"),
@@ -1908,14 +2019,20 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "list_voices",
     description:
-      "List the narration voices: the local voices that run on this machine (with accent, gender and quality grade) and the session's own provider if it has one. Grades are the voice model's published ones; prefer A to C+ for narration.",
-    input: z.object({ all: z.boolean().default(false).describe("Include weaker voices (graded below C+)") }),
+      "List the narration voices: the local voices that run on this machine (with language or accent, gender and quality grade) and the session's own provider if it has one. Grades are the voice model's published ones; prefer A to C+ for English narration. " +
+      "Besides English there are Spanish, French, Hindi, Italian and Brazilian Portuguese voices (they need the optional espeak-ng package); write the text in that language.",
+    input: z.object({
+      all: z.boolean().default(false).describe("Include weaker voices (graded below C+)"),
+      language: z.string().optional().describe("Only voices speaking this language, e.g. 'es', 'fr' or 'French'"),
+    }),
     mutates: false,
     run: async (s, i) => {
       const current = projectVoice(s);
-      const rows = VOICES.filter((v) => i.all || RECOMMENDED_VOICES.includes(v.id)).map(
+      const want = i.language?.toLowerCase();
+      const rows = VOICES.filter((v) => (i.all || RECOMMENDED_VOICES.includes(v.id)) && (!want || v.languageCode === want || v.language.toLowerCase() === want)).map(
         (v) => `${v.id}: ${v.name}, ${v.accent} ${v.gender}, grade ${v.grade}${v.id === (current.voice ?? "af_heart") ? " (project voice)" : ""}`,
       );
+      if (!rows.length) return ok(`No local voices for "${i.language}". Languages: ${[...new Set(VOICES.map((v) => `${v.language} (${v.languageCode})`))].join(", ")}.`);
       const provider = externalVoice(s) ? `This session uses another voice engine (${s.options.tts!.name}) with its own voice names; the local voices below are the built-in ones.\n` : "";
       return ok(`${provider}Local voices${i.all ? "" : " (recommended; all=true lists every voice)"}:\n${rows.join("\n")}`, { voices: VOICES, recommended: RECOMMENDED_VOICES });
     },
@@ -2063,6 +2180,46 @@ export const TOOLS: ToolDefinition[] = [
     },
   }),
   tool({
+    name: "match_color",
+    description:
+      "Make clips look like a reference clip: their red, green and blue levels are measured against the reference's and matched with per-channel curves (exposure, contrast and color cast together), before any whole-video grade. " +
+      "Use when shots from different cameras or lighting cut together badly. The match is a curves effect at the end of each clip (re-running replaces it); check with render_frame, and lower strength if it overshoots.",
+    input: z.object({
+      clipIds: z.array(z.string()).min(1).describe('Clips to change, or ["all-clips"] for every clip except the reference'),
+      referenceClipId: z.string().describe("Clip whose look to match"),
+      strength: z.number().min(0).max(1).default(0.85),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const tl = computeTimeline(s.project);
+      const ref = tl.clips.find((c) => c.clip.id === i.referenceClipId);
+      if (!ref) return { text: `No clip with id "${i.referenceClipId}".`, isError: true };
+      const ids = i.clipIds.includes("all-clips") ? tl.clips.map((c) => c.clip.id).filter((id) => id !== ref.clip.id) : i.clipIds;
+      const missing = ids.filter((id) => !tl.clips.some((c) => c.clip.id === id));
+      if (missing.length) return { text: `No clip with id ${missing.map((m) => `"${m}"`).join(", ")}.`, isError: true };
+      // Compare the shots as they come out of their clips, before the whole-video grade and any earlier match.
+      const ungraded: Project = { ...s.project, effects: [], clips: s.project.clips.map((c) => (ids.includes(c.id) ? { ...c, effects: c.effects.filter((e) => e.type !== "curves") } : c)) };
+      const frameOf = async (tc: (typeof tl.clips)[number]) => {
+        const out = await s.outputPath(`match-${tc.clip.id}.png`);
+        await renderFrame(ungraded, round3(tc.start + tc.duration / 2), { output: out, scale: 0.4, ...s.renderOptions });
+        return channelLevels(out, { ffmpegPath: s.options.ffmpegPath });
+      };
+      const reference = await frameOf(ref);
+      let p = s.project;
+      const done: string[] = [];
+      for (const [k, id] of ids.entries()) {
+        const tc = tl.clips.find((c) => c.clip.id === id)!;
+        const curves = matchingCurves(await frameOf(tc), reference, i.strength);
+        // Its own curves effect, last on the clip, so it corrects what the clip's other effects produce.
+        if (tc.clip.effects.some((e) => e.type === "curves")) p = ops.removeEffect(p, id, "curves");
+        p = ops.addEffect(p, id, { type: "curves", params: curves });
+        done.push(id);
+        activity?.progress((k + 1) / ids.length);
+      }
+      return commit(s, p, "match_color", i, `Matched ${done.join(", ")} to ${ref.clip.id} (strength ${i.strength}).`);
+    },
+  }),
+  tool({
     name: "get_color",
     description: "Read the current color settings of a target (\"global\", a clip id, or a media layer id).",
     input: z.object({ target: z.string().default("global") }),
@@ -2189,6 +2346,94 @@ export const TOOLS: ToolDefinition[] = [
         ...r.notes,
       ];
       return ok(lines.join("\n"), r);
+    },
+  }),
+  tool({
+    name: "make_thumbnail",
+    description:
+      "Make a thumbnail image (YouTube style: a frame of the video, punchier color, a big bold title of 2-5 words). The frame comes from the edit at time (without its own titles and captions). " +
+      "The title goes on the side away from the faces in the frame (side auto), wrapped onto short lines. Saved as a 1280x720 JPEG for landscape projects (YouTube's size), else the project's size. Look at the result and try another time or title if it does not read at a glance.",
+    input: z.object({
+      title: z.string().min(1).describe("2-5 words; wrapped automatically"),
+      subtitle: z.string().optional().describe("Small line under the title, in a colored box"),
+      time: z.number().min(0).optional().describe("Timeline time of the frame (default: the middle)"),
+      side: z.enum(["auto", "left", "right", "top", "bottom"]).default("auto"),
+      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#FFFFFF").describe("Title color"),
+      accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#FFD000").describe("Subtitle box color"),
+      punch: z.number().min(0).max(1).default(0.6).describe("How much to boost contrast and color (0 = frame as is)"),
+    }),
+    mutates: false,
+    run: async (s, i, activity) => {
+      const tl = computeTimeline(s.project);
+      if (tl.duration <= 0) return { text: "The project is empty; there is no frame to use.", isError: true };
+      const time = Math.min(i.time ?? tl.duration / 2, Math.max(0, tl.duration - 0.05));
+      // The bare frame: the edit's picture without its own text and captions.
+      const bare: Project = { ...s.project, layers: s.project.layers.filter((l) => l.type !== "text"), captions: undefined };
+      const frame = await s.outputPath(`thumb-frame-${time.toFixed(2)}.png`);
+      await renderFrame(bare, time, { output: frame, ...s.renderOptions });
+      activity?.progress(0.4);
+      let faces: { x0: number; y0: number; x1: number; y1: number }[] = [];
+      try {
+        faces = (await faceDetector(s, activity).detectFile(frame)).frames[0]?.faces ?? [];
+      } catch {
+        faces = [];
+      }
+      const landscape = s.project.settings.width > s.project.settings.height;
+      const W = landscape ? 1280 : s.project.settings.width;
+      const H = landscape ? 720 : s.project.settings.height;
+      let side = i.side;
+      if (side === "auto") {
+        const cx = faces.length ? faces.reduce((m, f) => m + (f.x0 + f.x1) / 2, 0) / faces.length : 0.5;
+        const cy = faces.length ? faces.reduce((m, f) => m + (f.y0 + f.y1) / 2, 0) / faces.length : 0.5;
+        side = landscape ? (cx < 0.5 ? "right" : "left") : cy < 0.5 ? "bottom" : "top";
+      }
+      // Short lines, sized to fill the text area.
+      const words = i.title.trim().split(/\s+/);
+      const across = side === "left" || side === "right" ? 0.5 : 0.9;
+      const perLine = side === "left" || side === "right" ? 12 : landscape ? 22 : 12;
+      const lines: string[] = [];
+      for (const w of words) {
+        const last = lines[lines.length - 1];
+        if (last && `${last} ${w}`.length <= perLine) lines[lines.length - 1] = `${last} ${w}`;
+        else lines.push(w);
+      }
+      const longest = Math.max(...lines.map((l) => l.length));
+      const fontSize = Math.round(Math.min(H * 0.2, (W * across) / (longest * 0.62), (H * 0.62) / lines.length / 1.15));
+      const pos = side === "left" ? { x: 0.27, y: 0.47 } : side === "right" ? { x: 0.73, y: 0.47 } : side === "top" ? { x: 0.5, y: 0.25 } : { x: 0.5, y: 0.72 };
+      const k = Math.min(W, H) / 720;
+      let p = ops.createProject({ name: "thumbnail", settings: { width: W, height: H, fps: 30 } });
+      p = ops.addAsset(p, { type: "image", id: "frame", src: frame });
+      const punch = i.punch;
+      p = ops.addClip(p, {
+        assetId: "frame",
+        duration: 1,
+        fit: "cover",
+        effects: punch > 0 ? [{ type: "color", params: { contrast: Math.round(punch * 25), vibrance: Math.round(punch * 40), clarity: Math.round(punch * 30) } }, { type: "vignette", params: { strength: round3(punch * 0.6) } }] : [],
+      });
+      const textH = (fontSize * 1.15 * lines.length) / H;
+      p = ops.addLayer(p, {
+        type: "text",
+        text: lines.join("\n"),
+        start: 0,
+        duration: 1,
+        position: pos,
+        style: { fontFamily: "Arial Black", fontSize, color: i.color, bold: true, uppercase: true, outlineWidth: Math.round(7 * k), outlineColor: "#000000", shadow: Math.round(6 * k), shadowColor: "#000000B0" },
+      });
+      if (i.subtitle) {
+        p = ops.addLayer(p, {
+          type: "text",
+          text: i.subtitle,
+          start: 0,
+          duration: 1,
+          position: { x: pos.x, y: Math.min(0.94, pos.y + textH / 2 + 0.07) },
+          style: { fontFamily: "Arial Black", fontSize: Math.round(fontSize * 0.36), color: "#111111", bold: true, uppercase: true, outlineWidth: Math.round(12 * k), background: i.accentColor },
+        });
+      }
+      const out = await s.outputPath("thumbnail.jpg");
+      await renderFrame(p, 0.5, { output: out, ...s.renderOptions });
+      s.recordRender({ kind: "frame", path: out, time });
+      const where = faces.length ? `${faces.length} face${faces.length > 1 ? "s" : ""} found, title on the ${side}` : `no faces found, title on the ${side}`;
+      return { text: `Thumbnail ${W}x${H} from ${time.toFixed(1)}s (${where}): ${out}`, images: [{ path: out, mediaType: "image/jpeg" }] };
     },
   }),
   tool({

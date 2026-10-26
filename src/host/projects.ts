@@ -1,9 +1,10 @@
-import { copyFile, mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, open, readFile, readdir, rename, rm, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { parseProject, type Project } from "../core/schema.js";
 import { createProject } from "../core/operations.js";
 import type { AspectRatio } from "../core/util.js";
+import { findDuplicate, listFiles } from "../tools/media/files.js";
 
 /**
  * On-disk project storage used by the app:
@@ -29,6 +30,27 @@ const slugify = (s: string) =>
     .trim()
     .replace(/[\s_]+/g, "-")
     .slice(0, 60) || "project";
+
+let tmpSeq = 0;
+
+/** Write, flush to disk, keep the old file as .bak, then swap the new file in. */
+async function writeDurably(file: string, text: string): Promise<void> {
+  const tmp = `${file}.${process.pid}.${tmpSeq++}.tmp`;
+  const h = await open(tmp, "w");
+  try {
+    await h.writeFile(text, "utf8");
+    await h.sync();
+  } finally {
+    await h.close();
+  }
+  try {
+    if (existsSync(file)) await copyFile(file, `${file}.bak`);
+    await rename(tmp, file);
+  } catch (e) {
+    await rm(tmp, { force: true });
+    throw e;
+  }
+}
 
 export class ProjectStore {
   constructor(readonly root: string) {}
@@ -61,22 +83,50 @@ export class ProjectStore {
     return { dir, project };
   }
 
-  /** Accepts a project folder or a project.json path. */
-  async load(target: string): Promise<{ dir: string; project: Project }> {
+  /**
+   * Accepts a project folder or a project.json path. If the file is missing or unreadable, the
+   * previous save (project.json.bak) is used, so a damaged file never loses the project.
+   */
+  async load(target: string): Promise<{ dir: string; project: Project; recovered?: boolean }> {
     const file = target.endsWith(".json") ? target : path.join(target, PROJECT_FILE);
-    const project = parseProject(JSON.parse(await readFile(file, "utf8")));
-    return { dir: path.dirname(path.resolve(file)), project };
+    const dir = path.dirname(path.resolve(file));
+    try {
+      return { dir, project: parseProject(JSON.parse(await readFile(file, "utf8"))) };
+    } catch (e) {
+      const bak = `${file}.bak`;
+      if (!existsSync(bak)) throw e;
+      return { dir, project: parseProject(JSON.parse(await readFile(bak, "utf8"))), recovered: true };
+    }
   }
 
-  /** Atomic write so a crash never leaves a half-written project. */
-  async save(dir: string, project: Project): Promise<void> {
-    const file = path.join(dir, PROJECT_FILE);
-    const tmp = `${file}.tmp`;
-    await writeFile(tmp, `${JSON.stringify(project, null, 2)}\n`, "utf8");
-    await rename(tmp, file);
+  private saving = new Map<string, Promise<void>>();
+
+  /**
+   * Crash-safe write: the new file is written and flushed to disk under a unique temporary name,
+   * the current file is kept as project.json.bak, and then the new one takes its place. Saves to
+   * one folder run one at a time, in order.
+   */
+  save(dir: string, project: Project): Promise<void> {
+    const text = `${JSON.stringify(project, null, 2)}\n`;
+    const prev = this.saving.get(dir) ?? Promise.resolve();
+    const next = prev.catch(() => undefined).then(() => writeDurably(path.join(dir, PROJECT_FILE), text));
+    this.saving.set(dir, next);
+    next.then(
+      () => this.saving.get(dir) === next && this.saving.delete(dir),
+      () => this.saving.get(dir) === next && this.saving.delete(dir),
+    );
+    return next;
   }
 
-  /** Copy files into the project's media folder. Returns paths relative to the project. */
+  /** Wait for every pending save. */
+  async flush(): Promise<void> {
+    await Promise.allSettled([...this.saving.values()]);
+  }
+
+  /**
+   * Copy files into the project's media folder. A file whose content is already there is not
+   * copied again; its existing copy is used. Returns paths relative to the project.
+   */
   async importMedia(dir: string, sources: string[]): Promise<string[]> {
     const mediaDir = path.join(dir, "media");
     await mkdir(mediaDir, { recursive: true });
@@ -85,6 +135,11 @@ export class ProjectStore {
       const abs = path.resolve(src);
       if (abs.startsWith(mediaDir + path.sep)) {
         out.push(path.relative(dir, abs).split(path.sep).join("/"));
+        continue;
+      }
+      const same = await findDuplicate(abs, await listFiles(mediaDir));
+      if (same) {
+        out.push(`media/${path.basename(same)}`);
         continue;
       }
       const ext = path.extname(abs);

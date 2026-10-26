@@ -78,6 +78,8 @@ export const ASS_FILE = "overlay.ass";
 export const SEGMENT_CODEC = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "12", "-pix_fmt", "yuv420p"];
 
 const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
+/** Seconds of crossfade where a J or L cut hands the sound from one clip to the other (no click). */
+const SPLIT_FADE = 0.03;
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
@@ -272,7 +274,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const speed = asset.type === "video" ? clip.speed : 1;
       // A speed ramp maps each frame's source time through the clip's time map.
       const retime = tc.speedMap ? `setpts='(${rampPts(tc.speedMap, tc.sourceDuration)})/TB'` : speed !== 1 && `setpts=PTS/${speed}`;
-      const timing = (input: string) => `[${input}]${chain(["setpts=PTS-STARTPTS", retime, `fps=${F}`])}`;
+      const timing = (input: string) => `[${input}]${chain([clip.reverse && "reverse", "setpts=PTS-STARTPTS", retime, `fps=${F}`])}`;
       g.add(`${timing(`${k}:v`)}[${raw}]`);
       const fitted = fit(raw, clip.fit, W, H, false, clip.focus, clip.keyframes?.focus);
       // The person cutout goes through the same timing and fit as the picture, so it lines up.
@@ -300,6 +302,9 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       );
     }
     const a = g.label("a");
+    // J and L cuts: a neighbor's sound plays over this clip's head or tail, so this one is silent there.
+    const muteHead = timeline.clips[tc.index - 1]?.audioTail ?? 0;
+    const muteTail = timeline.clips[tc.index + 1]?.audioLead ?? 0;
     if (hasAudio) {
       // Speed ramps change the tempo as they go (pitch kept), driven by a command file.
       let tempo = atempoChain(clip.speed);
@@ -311,12 +316,15 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       }
       g.add(
         `[${k}:a]${chain([
+          clip.reverse && "areverse",
           "asetpts=PTS-STARTPTS",
           ...tempo,
           ...audioEffectsToFilter(clip.audioEffects),
           clip.volume !== 1 && `volume=${clip.volume}`,
           clip.fadeIn && `afade=t=in:st=0:d=${clip.fadeIn}`,
           clip.fadeOut && `afade=t=out:st=${round3(Math.max(0, tc.duration - clip.fadeOut))}:d=${clip.fadeOut}`,
+          muteHead && `afade=t=in:st=${round3(muteHead)}:d=${SPLIT_FADE}`,
+          muteTail && `afade=t=out:st=${round3(Math.max(0, tc.duration - muteTail - SPLIT_FADE))}:d=${SPLIT_FADE}`,
           AUDIO_FMT,
           "apad",
           `atrim=duration=${tc.duration}`,
@@ -361,6 +369,37 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     aCur = g.label("abase");
     g.add(`color=c=${bg}:s=${W}x${H}:r=${F}:d=${total},format=yuv420p,setsar=1[${vCur}]`);
     g.add(`anullsrc=r=48000:cl=stereo,atrim=duration=${total},${AUDIO_FMT}[${aCur}]`);
+  }
+
+  // J and L cuts: the extra sound from just before (lead) or after (tail) each clip's source range.
+  const splitAudio: string[] = [];
+  if (!opts.segment) {
+    for (const tc of timeline.clips) {
+      const { clip, asset } = tc;
+      const parts = [
+        tc.audioLead && { from: clip.in - tc.audioLead * clip.speed, seconds: tc.audioLead, at: tc.start - tc.audioLead, fade: `afade=t=in:st=0:d=${SPLIT_FADE}` },
+        tc.audioTail && { from: clip.in + tc.sourceDuration, seconds: tc.audioTail, at: tc.end, fade: `afade=t=out:st=${round3(Math.max(0, tc.audioTail - SPLIT_FADE))}:d=${SPLIT_FADE}` },
+      ];
+      for (const part of parts) {
+        if (!part) continue;
+        const k = sourceInput(asset, round3(Math.max(0, part.from)), round3(part.seconds * clip.speed));
+        const out = g.label("split");
+        const ms = Math.round(part.at * 1000);
+        g.add(
+          `[${k}:a]${chain([
+            "asetpts=PTS-STARTPTS",
+            ...atempoChain(clip.speed),
+            ...audioEffectsToFilter(clip.audioEffects),
+            clip.volume !== 1 && `volume=${clip.volume}`,
+            AUDIO_FMT,
+            `atrim=duration=${round3(part.seconds)}`,
+            part.fade,
+            `adelay=${ms}|${ms}`,
+          ])}[${out}]`,
+        );
+        splitAudio.push(out);
+      }
+    }
   }
 
   if (joinedEffects.length && !opts.segment) {
@@ -493,7 +532,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // -------------------------------------------------------------------------
   // Audio tracks: voice, ducked music, sfx
   // -------------------------------------------------------------------------
-  const voice: string[] = [aCur, ...overlayAudio];
+  const voice: string[] = [aCur, ...splitAudio, ...overlayAudio];
   const duckedMusic: string[] = [];
   const plainMusic: string[] = [];
   const otherAudio: string[] = [];

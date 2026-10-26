@@ -92,6 +92,35 @@ export function removeAsset(p: Project, assetId: string): Project {
   });
 }
 
+/** Ids of assets nothing in the edit uses (no clip, media layer or audio clip). */
+export function unusedAssetIds(p: Project): string[] {
+  const used = new Set([...p.clips.map((c) => c.assetId), ...p.layers.flatMap((l) => (l.type === "media" ? [l.assetId] : [])), ...p.audio.map((a) => a.assetId)]);
+  return p.assets.filter((a) => !used.has(a.id)).map((a) => a.id);
+}
+
+/**
+ * Point everything that uses asset `from` at asset `into`, then drop `from`. Its transcript and
+ * narration notes move over when `into` has none.
+ */
+export function mergeAsset(p: Project, from: string, into: string): Project {
+  getAsset(p, from);
+  getAsset(p, into);
+  if (from === into) return p;
+  return edit(p, (d) => {
+    for (const c of d.clips) if (c.assetId === from) c.assetId = into;
+    for (const l of d.layers) if (l.type === "media" && l.assetId === from) l.assetId = into;
+    for (const a of d.audio) if (a.assetId === from) a.assetId = into;
+    if (d.transcripts[from] && !d.transcripts[into]) d.transcripts[into] = d.transcripts[from]!;
+    delete d.transcripts[from];
+    const narration = d.metadata.narration as Record<string, unknown> | undefined;
+    if (narration?.[from] !== undefined) {
+      narration[into] ??= narration[from];
+      delete narration[from];
+    }
+    d.assets = d.assets.filter((a) => a.id !== from);
+  });
+}
+
 export function setTranscript(p: Project, assetId: string, transcript: Transcript): Project {
   getAsset(p, assetId);
   return edit(p, (d) => void (d.transcripts[assetId] = transcript));
@@ -195,10 +224,12 @@ export function splitClip(p: Project, clipId: string, timelineTime: number): { p
     const second: Clip = { ...deepClone(c), id: newClipId, in: round3(srcSplit), duration: round3(tc.sourceDuration - firstDur) };
     delete second.transition;
     delete second.fadeIn;
+    delete second.audioLead; // a J cut stays at the clip's start, an L cut moves to its new end
     second.keyframes = sliceKeyframes(tc, firstDur, tc.sourceDuration);
     c.keyframes = sliceKeyframes(tc, 0, firstDur);
     c.duration = firstDur;
     delete c.fadeOut;
+    delete c.audioTail;
     d.clips.splice(tc.index + 1, 0, second);
   });
   return { project, newClipId };

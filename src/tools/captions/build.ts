@@ -14,13 +14,22 @@ export function timelineWords(project: Project, timeline: Timeline = computeTime
   const words: Word[] = [];
   for (const tc of timeline.clips) {
     const transcript = project.transcripts[tc.clip.assetId];
-    if (!transcript || tc.clip.muted || tc.clip.volume === 0) continue;
+    if (!transcript || tc.clip.muted || tc.clip.volume === 0 || tc.clip.reverse) continue;
+    const prev = timeline.clips[tc.index - 1];
     const next = timeline.clips[tc.index + 1];
-    // During a transition, words belong to whichever clip is more visible.
-    const visStart = tc.start + tc.transitionDuration / 2;
-    const visEnd = tc.end - (next ? next.transitionDuration / 2 : 0);
-    const srcStart = tc.clip.in;
-    const srcEnd = tc.clip.in + tc.sourceDuration;
+    // During a transition, words belong to whichever clip is more visible. With J and L cuts they
+    // follow the sound instead: a lead or tail adds words, a neighbor's lead or tail takes them.
+    const lead = tc.audioLead ?? 0;
+    const tail = tc.audioTail ?? 0;
+    const visStart = lead ? tc.start - lead : prev?.audioTail ? tc.start + prev.audioTail : tc.start + tc.transitionDuration / 2;
+    const visEnd = tail ? tc.end + tail : next?.audioLead ? tc.end - next.audioLead : tc.end - (next ? next.transitionDuration / 2 : 0);
+    const inStart = tc.clip.in;
+    const inEnd = tc.clip.in + tc.sourceDuration;
+    const srcStart = inStart - lead * tc.clip.speed;
+    const srcEnd = inEnd + tail * tc.clip.speed;
+    // Source time to timeline time, including the sound just outside the clip.
+    const toTimeline = (s: number) =>
+      s < inStart ? tc.start - (inStart - s) / tc.clip.speed : s > inEnd ? tc.end + (s - inEnd) / tc.clip.speed : sourceToTimeline(tc, s);
     const overlap = (c: (typeof timeline.clips)[number], w: Word) => Math.min(w.end, c.clip.in + c.sourceDuration) - Math.max(w.start, c.clip.in);
     const siblings = timeline.clips.filter((c) => c !== tc && c.clip.assetId === tc.clip.assetId);
     for (const w of transcript.words) {
@@ -29,8 +38,8 @@ export function timelineWords(project: Project, timeline: Timeline = computeTime
       // show in both clips; it belongs to the one holding most of it.
       const mine = overlap(tc, w);
       if (mine < w.end - w.start - 1e-6 && siblings.some((c) => overlap(c, w) > mine + 1e-6)) continue;
-      const start = sourceToTimeline(tc, Math.max(w.start, srcStart));
-      const end = sourceToTimeline(tc, Math.min(w.end, srcEnd));
+      const start = toTimeline(Math.max(w.start, srcStart));
+      const end = toTimeline(Math.min(w.end, srcEnd));
       const mid = (start + end) / 2;
       if (mid < visStart || mid >= visEnd) continue;
       words.push({ ...w, start: round3(start), end: round3(end) });

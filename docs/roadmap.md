@@ -10,7 +10,7 @@ The biggest gap is that the editor does not know where people and objects are in
 |---|---|---|---|
 | 1 | [Subject and face detection](#1-subject-and-face-detection) | Positions are guessed today; five features depend on it | Done, except crops and ellipses that move (needs #2) |
 | 2 | [Keyframes](#2-keyframes) | Nothing can move or change over time except preset animations | Done |
-| 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Done, except text over faces (needs #1) |
+| 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Done (text over faces came with #1) |
 | 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes several minutes, and every change re-renders all of it | Segment cache and hardware encoding done |
 | 5 | [An AI-first desktop app](#5-an-ai-first-desktop-app) | People can only type; they cannot point at things or pick between options | Done |
 
@@ -95,19 +95,29 @@ Everything still goes through the same tools, so all changes share one undo hist
 | Tool | What it does | Why |
 |---|---|---|
 | `fix_transcript` (done) | Find and replace words ("cloud" to "Claude"), plus a vocabulary hint for names | Names were fixed by editing word positions by hand |
-| `match_color` | Match one shot's color to a reference shot | Shots were matched by measuring and guessing per shot |
-| J and L cuts | Audio starts before, or runs past, a picture cut | Standard for talking-head edits; not possible now |
-| Stabilize, denoise, freeze, reverse | Basic footage repair and speed tricks | Common needs with phone footage |
-| `make_thumbnail` | A still with a big title, for YouTube | The sample videos all need one |
+| `match_color` (done) | Match one shot's color to a reference shot | Shots were matched by measuring and guessing per shot |
+| J and L cuts (done) | Audio starts before, or runs past, a picture cut | Standard for talking-head edits; not possible now |
+| Stabilize, denoise, freeze, reverse (done) | Basic footage repair and speed tricks | Common needs with phone footage |
+| `make_thumbnail` (done) | A still with a big title, for YouTube | The sample videos all need one |
 | Icon library and font management | Feature icons; fonts beyond those installed on Windows | The samples use icons; text is limited to system fonts |
-| Script markup for narration | `[pause]` and emphasis in the text given to `generate_voiceover` | Pacing can only be changed by rewriting sentences |
-| More voice languages | The non-English Kokoro voices | Only English voices are listed |
-| Media cleanup | Remove unused assets and duplicate files in `media/` | Duplicate imports needed manual cleanup |
+| Script markup for narration (done) | `[pause]` and emphasis in the text given to `generate_voiceover` | Pacing can only be changed by rewriting sentences |
+| More voice languages (done) | The non-English Kokoro voices | Only English voices are listed |
+| Media cleanup (done) | Remove unused assets and duplicate files in `media/` | Duplicate imports needed manual cleanup |
+
+**Status of the done tools** (2026-10-26):
+
+- `match_color` measures red, green and blue levels of both shots and adds a `curves` effect at the end of each target clip. On a darkened, warmed copy of a shot, it brought the channel difference from 8 to 13% down to under 1%.
+- `split_edit` makes J cuts (`audioLead` on a clip) and L cuts (`audioTail`). The neighbor's sound is muted under the overlap with a 30 ms crossfade, and captions follow the sound. Checked with two tones: the overlap carries only the incoming clip's tone.
+- New effects `stabilize` (FFmpeg `deshake` plus a small zoom, since this FFmpeg build has no vidstab) and `denoise` (video; the audio `denoise` already existed). A clip field `reverse` plays a clip backwards, and the `freeze_frame` tool holds a frame for some seconds, keeping the clip's look.
+- `make_thumbnail` renders a 1280x720 JPEG from a frame of the edit (without its own titles and captions), with punchier color and a big wrapped title on the side away from any faces.
+- Narration markup: `[pause]`, `[pause 1.5]`, `[breath]`, `[slow]...[/slow]`, `[fast]...[/fast]` and `*word*`. A 1.5 s pause measured 1.59 s between the words, against 0.52 s without it.
+- Voices in Spanish, French, Hindi, Italian and Brazilian Portuguese: the Spanish, French, Italian and Portuguese samples came back word for word through Whisper. They need the optional `espeak-ng` package, which is GPL-3.0, so it is not a dependency of this MIT library (`npm install espeak-ng` enables them). Japanese and Chinese voices need a different phonemizer and are not included.
+- `clean_up_media` merges assets that are the same file content and removes unused ones (`deleteFiles` also deletes unused files in `media/`). Importing a file whose content is already in `media/` reuses that copy, and `import_media` does not add the same file twice.
 
 ## Improvements to what exists
 
 - **Templates.** Done (2026-10-26): templates now declare `automation` that `apply_template` runs. 27 of the 33 use it (the rest are single text cards or have nothing to automate): talking-footage templates transcribe and remove retakes, fillers and pauses; essays, slide lessons, list videos, recipes and property tours narrate each item with the local voice and fit the scene to the line; montages cut on the beat; moving transitions get their sound. Video essays open each chapter with a section card. See [Templates](guides/templates.md#automation).
-- **Saving.** A crash lost an import before autosave ran. Save right after each change, and write the file in a way that a crash cannot leave it half written.
+- **Saving.** Done (2026-10-26): the app saves right after every change (there was a 300 ms wait). Each save is flushed to disk under a unique temporary name before it replaces `project.json`, saves to one project run in order, the previous save is kept as `project.json.bak`, and opening a damaged project falls back to it. The host also waits for pending saves before it exits.
 - **Sound map.** Sung vocals come out as "sound (unsure)". A small local speech, music and singing classifier would beat the current hand-tuned rules.
 - **Speech recognition.** The base Whisper model mishears names and skips some quiet speech; the larger model skipped a whole section in testing. Worth comparing other local models.
 - **Version control.** Done: the recent work is committed.

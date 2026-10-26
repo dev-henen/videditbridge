@@ -54,8 +54,10 @@ const handlers: Record<string, Handler> = {
     return attach(new EditorSession(project, sessionOptions(dir)), dir);
   },
   "project.open": async (p) => {
-    const { dir, project } = await store.load(String(p.path));
-    return attach(new EditorSession(project, sessionOptions(dir)), dir);
+    const { dir, project, recovered } = await store.load(String(p.path));
+    const state = attach(new EditorSession(project, sessionOptions(dir)), dir);
+    if (recovered) session!.error("project.json was damaged; opened the previous save instead.");
+    return state;
   },
   "project.importMedia": async (p) => {
     const s = requireSession();
@@ -123,13 +125,10 @@ function attach(s: EditorSession, dir: string) {
     clearTimeout(stateTimer);
     stateTimer = setTimeout(() => rpc.notify("state", snapshot()), 80);
   };
-  let saveTimer: NodeJS.Timeout | undefined;
+  // Every change is saved right away (saves to one folder run in order, each one flushed to disk).
   const onChange = () => {
     pushState();
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      store.save(dir, s.project).catch((e) => rpc.notify("log", { level: "error", message: `Autosave failed: ${(e as Error).message}` }));
-    }, 300);
+    store.save(dir, s.project).catch((e) => rpc.notify("log", { level: "error", message: `Autosave failed: ${(e as Error).message}` }));
   };
   const onActivity = (a: unknown) => {
     rpc.notify("activity", a);
@@ -191,4 +190,5 @@ process.on("exit", () => rmSync(infoFile, { force: true }));
 
 await rpc.start();
 remote.server.close();
+await store.flush();
 process.exit(0);

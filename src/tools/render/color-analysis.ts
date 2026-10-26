@@ -151,3 +151,66 @@ export async function renderScopes(imagePath: string, output: string, scopes: Sc
   await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-i", imagePath, "-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-update", "1", output], opts);
   return output;
 }
+
+/** Brightness levels (0..1) at these percentiles, per channel. */
+export const MATCH_PERCENTILES = [0.02, 0.1, 0.25, 0.5, 0.75, 0.9, 0.98] as const;
+
+export interface ChannelLevels {
+  r: number[];
+  g: number[];
+  b: number[];
+}
+
+/** Per-channel percentile levels of an image (letterbox bars ignored), for matching one shot to another. */
+export async function channelLevels(imagePath: string, opts: FfmpegOptions = {}): Promise<ChannelLevels> {
+  const crop = await detectPictureArea(imagePath, opts);
+  const res = await runFfmpegOrThrow(
+    ["-hide_banner", "-loglevel", "error", "-i", imagePath, "-vf", `${crop ? `${crop},` : ""}scale=192:-2:flags=area,format=rgb24`, "-frames:v", "1", "-f", "rawvideo", "-"],
+    { ...opts, binaryStdout: true },
+  );
+  const px = res.stdoutBuffer ?? Buffer.alloc(0);
+  const n = Math.floor(px.length / 3);
+  const levels = (c: number) => {
+    const hist = new Array<number>(256).fill(0);
+    for (let k = c; k < n * 3; k += 3) hist[px[k]!]!++;
+    return MATCH_PERCENTILES.map((q) => {
+      let acc = 0;
+      for (let v = 0; v < 256; v++) {
+        acc += hist[v]!;
+        if (acc >= q * n) return round(v / 255);
+      }
+      return 1;
+    });
+  };
+  return { r: levels(0), g: levels(1), b: levels(2) };
+}
+
+/**
+ * Curves that move a shot's channel levels onto a reference's (an approximate histogram match).
+ * strength 1 matches fully; lower values blend toward no change.
+ */
+export function matchingCurves(shot: ChannelLevels, reference: ChannelLevels, strength = 1): { red: [number, number][]; green: [number, number][]; blue: [number, number][] } {
+  const curve = (from: number[], to: number[]): [number, number][] => {
+    const target = (k: number, x: number) => round(Math.min(1, Math.max(0, x + (to[k]! - x) * strength)));
+    // Levels measured at pure black or white pin the curve's ends; the rest are points between.
+    let low: number | undefined;
+    let high: number | undefined;
+    const mid: [number, number][] = [];
+    from.forEach((x, k) => {
+      const y = target(k, x);
+      if (x <= 0.01) return void (low = low === undefined ? y : Math.max(low, y));
+      if (x >= 0.99) return void (high ??= y);
+      const last = mid[mid.length - 1];
+      // Keep the curve increasing: skip points too close to the last one or that would bend it back.
+      if (last && (x - last[0] < 0.02 || y < last[1])) return;
+      mid.push([round(x), y]);
+    });
+    // Unmeasured ends keep the offset of the nearest point (black and white levels move with it).
+    const first = mid[0];
+    const last = mid[mid.length - 1];
+    const y0 = low ?? (first ? Math.max(0, Math.min(first[1], first[1] - first[0])) : 0);
+    const y1 = high ?? (last ? Math.min(1, Math.max(last[1], last[1] + (1 - last[0]))) : 1);
+    return [[0, round(y0)], ...mid.filter(([, y]) => y >= y0 && y <= y1), [1, round(Math.max(y0, y1))]];
+  };
+  return { red: curve(shot.r, reference.r), green: curve(shot.g, reference.g), blue: curve(shot.b, reference.b) };
+}

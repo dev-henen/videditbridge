@@ -73,6 +73,15 @@ export interface TimedClip {
   transitionDuration: number;
   /** Speed-ramped clips: how footage maps to timeline time. */
   speedMap?: SpeedMap;
+  /** J cut actually played (clamped to the footage before the clip and the previous clip's length). */
+  audioLead?: number;
+  /** L cut actually played (clamped to the footage after the clip and the next clip's length). */
+  audioTail?: number;
+}
+
+/** Whether a primary clip plays its own sound. */
+export function clipHasSound(tc: Pick<TimedClip, "clip" | "asset">): boolean {
+  return tc.asset.type === "video" && tc.asset.hasAudio !== false && !tc.clip.muted && tc.clip.volume > 0;
 }
 
 export interface TimedAudio {
@@ -137,6 +146,20 @@ export function computeTimeline(project: Project): Timeline {
     cursor = round3(start + duration);
   });
   const primaryDuration = cursor;
+
+  // J and L cuts: sound from just outside a clip's source range, played under its neighbor.
+  for (const tc of clips) {
+    if (!clipHasSound(tc)) continue;
+    const prev = clips[tc.index - 1];
+    const next = clips[tc.index + 1];
+    const speed = tc.clip.speed;
+    const lead = prev ? Math.min(tc.clip.audioLead ?? 0, tc.clip.in / speed, prev.duration - 0.05) : 0;
+    const total = tc.asset.type === "video" ? tc.asset.duration : undefined;
+    const after = total === undefined ? Infinity : Math.max(0, total - tc.clip.in - tc.sourceDuration) / speed;
+    const tail = next ? Math.min(tc.clip.audioTail ?? 0, after, next.duration - 0.05) : 0;
+    if (lead > 0.01) tc.audioLead = round3(lead);
+    if (tail > 0.01) tc.audioTail = round3(tail);
+  }
 
   const layerEnd = project.layers.reduce((m, l) => Math.max(m, l.start + l.duration), 0);
   // Without a primary track the video lasts as long as its layers.
