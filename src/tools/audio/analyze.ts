@@ -1,5 +1,6 @@
 import { formatTime, round3 } from "../../core/util.js";
 import { runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
+import type { SoundClasses } from "./classify.js";
 
 /**
  * Sound analysis without speech recognition: where people talk, where it is quiet,
@@ -23,6 +24,10 @@ export interface SoundSegment {
   level: number;
   /** 0..1, how sure the speech/music/sound label is (1 for silence). */
   confidence: number;
+  /** Music with singing (or singing alone), when a sound model heard it. */
+  vocals?: boolean;
+  /** What a "sound" is (an AudioSet name such as "Dog" or "Siren"), when a sound model heard it. */
+  sound?: string;
 }
 
 export interface LoudMoment {
@@ -62,6 +67,29 @@ export interface AnalyzeOptions {
   minSilence?: number;
   /** Sounds shorter than this are ignored unless loud moments. Default 0.12 s. */
   minSound?: number;
+  /**
+   * What a sound model heard (SoundClassifier.classify). With it, speech, music, singing and other
+   * sounds are told apart by the model instead of by signal rules, and other sounds get names.
+   */
+  classes?: SoundClasses;
+}
+
+/** A model's verdict on a stretch of seconds [a, b). */
+function heardIn(c: SoundClasses, a: number, b: number): { kind: SoundKind; confidence: number; vocals?: boolean; sound?: string } {
+  const k0 = Math.max(0, Math.min(c.speech.length - 1, Math.floor(a / c.step)));
+  const k1 = Math.max(k0 + 1, Math.min(c.speech.length, Math.ceil(b / c.step)));
+  const avg = (x: Float32Array) => mean(x, k0, k1);
+  const [speech, singing, music] = [avg(c.speech), avg(c.singing), avg(c.music)];
+  let other = 0;
+  let sound: string | undefined;
+  for (let k = k0; k < k1; k++) if (c.other[k]! > other) [other, sound] = [c.other[k]!, c.otherLabel[k]];
+  const sure = (p: number) => Math.round(clamp01(p + 0.2) * 100) / 100;
+  // A voice matters most for editing, so it wins over music under it, unless it is sung.
+  if (singing >= 0.3 && singing >= speech) return { kind: "music", confidence: sure(singing), vocals: true };
+  if (speech >= 0.3) return { kind: "speech", confidence: sure(speech) };
+  if (music >= 0.3 && music >= other) return { kind: "music", confidence: sure(music) };
+  if (other >= 0.2) return { kind: "sound", confidence: sure(other), sound };
+  return { kind: "sound", confidence: sure(Math.max(speech, music, other)) };
 }
 
 /** Decode the audio of a file to mono float samples at 16 kHz. Returns an empty array for files without audio. */
@@ -272,6 +300,8 @@ export function analyzeSamples(samples: Float32Array, opts: AnalyzeOptions = {})
   // Label active stretches in ~1.5 s windows so speech over music or a song after talking are told apart.
   const kinds: SoundKind[] = new Array(n).fill("silence");
   const conf = new Float32Array(n).fill(1);
+  // Model details per frame: "vocals", or the name of a sound.
+  const detail: string[] = new Array(n).fill("");
   const W = Math.round(1.5 * FPS);
   for (let i = 0; i < n; ) {
     if (!active[i]) {
@@ -280,10 +310,12 @@ export function analyzeSamples(samples: Float32Array, opts: AnalyzeOptions = {})
     }
     let j = i;
     while (j < n && active[j]) j++;
-    // Short bursts (a bang, a clap, a door) are too brief to tell speech from music.
+    // Short bursts (a bang, a clap, a door) are too brief to tell speech from music, but a model can name them.
     if (j - i < 0.5 * FPS) {
+      const h = opts.classes && heardIn(opts.classes, i / FPS, j / FPS);
       kinds.fill("sound", i, j);
-      conf.fill(0.5, i, j);
+      conf.fill(h?.sound ? h.confidence : 0.5, i, j);
+      if (h?.sound) detail.fill(h.sound, i, j);
       i = j;
       continue;
     }
@@ -296,6 +328,13 @@ export function analyzeSamples(samples: Float32Array, opts: AnalyzeOptions = {})
     for (let w = 0; w < count; w++) {
       const start = i + Math.round(w * size);
       const end = i + Math.round((w + 1) * size);
+      if (opts.classes) {
+        const h = heardIn(opts.classes, start / FPS, end / FPS);
+        kinds.fill(h.kind, start, end);
+        conf.fill(h.confidence, start, end);
+        detail.fill(h.vocals ? "vocals" : (h.sound ?? ""), start, end);
+        continue;
+      }
       const s = soundScores(ff, Math.max(lo, start - 40), Math.min(hi, end + 40));
       // Fades make music swing like speech at its edges, but it stays strongly tonal.
       const tonal = s.flatness < 0.12 && s.speech < 0.35;
@@ -316,15 +355,17 @@ export function analyzeSamples(samples: Float32Array, opts: AnalyzeOptions = {})
   const segments: SoundSegment[] = [];
   for (let i = 0; i < n; ) {
     let j = i;
-    while (j < n && kinds[j] === kinds[i]) j++;
+    while (j < n && kinds[j] === kinds[i] && detail[j] === detail[i]) j++;
     let p = 0;
     for (let k = i; k < j; k++) p += 10 ** (ff.level[k]! / 10);
+    const d = detail[i]!;
     segments.push({
       start: round3(i / FPS),
       end: round3(j === n ? duration : j / FPS),
       kind: kinds[i]!,
       level: Math.round(db(p / (j - i)) * 10) / 10,
       confidence: Math.round(mean(conf, i, j) * 100) / 100,
+      ...(d === "vocals" ? { vocals: true } : d ? { sound: d } : {}),
     });
     i = j;
   }
@@ -378,7 +419,7 @@ function mergeShortSegments(segments: SoundSegment[], minLen: number): SoundSegm
   const out: SoundSegment[] = [];
   for (const s of segments) {
     const prev = out[out.length - 1];
-    if (prev && prev.kind === s.kind) {
+    if (prev && prev.kind === s.kind && prev.vocals === s.vocals && prev.sound === s.sound) {
       prev.level = Math.round(Math.max(prev.level, s.level) * 10) / 10;
       prev.end = s.end;
       continue;
@@ -491,6 +532,13 @@ export function detectBeats(samples: Float32Array, range?: { start: number; end:
   };
 }
 
+/** A segment in words: "music with vocals -18 dB", "sound (dog) -30 dB (unsure)". */
+export function segmentLabel(s: SoundSegment): string {
+  if (s.kind === "silence") return "silence";
+  const what = `${s.kind}${s.vocals ? " with vocals" : ""}${s.sound ? ` (${s.sound.toLowerCase()})` : ""}`;
+  return `${what} ${s.level} dB${s.confidence < 0.6 ? " (unsure)" : ""}`;
+}
+
 /** Readable sound map: one line per segment plus totals and loud moments. */
 export function formatSoundMap(map: SoundMap, opts: { offset?: number; maxLines?: number } = {}): string {
   const off = opts.offset ?? 0;
@@ -500,8 +548,7 @@ export function formatSoundMap(map: SoundMap, opts: { offset?: number; maxLines?
   ];
   const segs = map.segments;
   const max = opts.maxLines ?? 200;
-  for (const s of segs.slice(0, max))
-    lines.push(`${t(s.start)}-${t(s.end)} ${s.kind}${s.kind === "silence" ? "" : ` ${s.level} dB${s.confidence < 0.6 ? " (unsure)" : ""}`} [${s.start}-${s.end}s]`);
+  for (const s of segs.slice(0, max)) lines.push(`${t(s.start)}-${t(s.end)} ${segmentLabel(s)} [${s.start}-${s.end}s]`);
   if (segs.length > max) lines.push(`…${segs.length - max} more segments`);
   if (map.loudMoments.length) lines.push(`Loud moments: ${map.loudMoments.map((m) => `${round3(m.time + off)}s (+${m.jump} dB)`).join(", ")}`);
   return lines.join("\n");

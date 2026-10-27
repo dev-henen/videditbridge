@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Easing, Effect } from "../../core/schema.js";
 import { easeValue } from "../../core/keyframes.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
-import { define, maskBranch, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
+import { bakeColor, define, maskBranch, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
 import { motionEffects } from "./motion.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
 
@@ -58,7 +58,7 @@ const gradeEffects = Object.entries(GRADES).map(([id, g]) =>
     perFrame: true,
     description: `Color grade: ${g.description}.`,
     params: z.object({}),
-    toFilter: () => g.filter,
+    toFilter: (_p, ctx) => bakeColor(ctx, g.filter.split(",")),
   }),
 );
 
@@ -628,7 +628,7 @@ function colorEffects(): EffectDefinition[] {
       perFrame: true,
       description,
       params: z.object({ value: ((shape[key] as z.ZodOptional<z.ZodNumber>).unwrap()).default(0) }),
-      toFilter: (p) => colorFilter({ [key]: (p as { value: unknown }).value } as ColorSettings) || "null",
+      toFilter: (p, ctx) => colorFilter({ [key]: (p as { value: unknown }).value } as ColorSettings, ctx) || "null",
     });
   return [
     define({
@@ -640,7 +640,7 @@ function colorEffects(): EffectDefinition[] {
       description:
         "Full color panel in one effect: exposure, contrast, highlights/shadows/whites/blacks, brilliance, temperature/tint, saturation, vibrance, per-color HSL, tone curves, color wheels, fade, clarity, sharpen, vignette, grain, auto-correct. Use one per clip and tweak values together.",
       params: ColorSettingsSchema,
-      toFilter: (p) => colorFilter(p as ColorSettings) || "null",
+      toFilter: (p, ctx) => colorFilter(p as ColorSettings, ctx) || "null",
     }),
     single("exposure", "Exposure", "light", "Brighten or darken like a camera exposure change (value in stops, -3..3).", "exposure"),
     single("brightness", "Brightness", "light", "Overall brightness (-100..100).", "brightness"),
@@ -660,7 +660,7 @@ function colorEffects(): EffectDefinition[] {
       perFrame: true,
       description: "Relative white balance: temperature (- cooler, + warmer) and tint (- green, + magenta), each -100..100.",
       params: z.object({ temperature: z.number().min(-100).max(100).default(0), tint: z.number().min(-100).max(100).default(0) }),
-      toFilter: (p) => colorFilter(p as ColorSettings) || "null",
+      toFilter: (p, ctx) => colorFilter(p as ColorSettings, ctx) || "null",
     }),
     define({
       id: "hsl",
@@ -669,7 +669,7 @@ function colorEffects(): EffectDefinition[] {
       perFrame: true,
       description: "Adjust hue, saturation and luminance per color range: red, orange, yellow, green, aqua, blue, purple, magenta.",
       params: shape.hsl.unwrap(),
-      toFilter: (p) => colorFilter({ hsl: p } as ColorSettings) || "null",
+      toFilter: (p, ctx) => colorFilter({ hsl: p } as ColorSettings, ctx) || "null",
     }),
     define({
       id: "curves",
@@ -678,7 +678,7 @@ function colorEffects(): EffectDefinition[] {
       perFrame: true,
       description: "Tone curve graphs: master and per-channel red/green/blue curves as [input, output] points in 0..1, or a preset shape.",
       params: shape.curves.unwrap(),
-      toFilter: (p) => colorFilter({ curves: p } as ColorSettings) || "null",
+      toFilter: (p, ctx) => colorFilter({ curves: p } as ColorSettings, ctx) || "null",
     }),
     define({
       id: "colorWheels",
@@ -687,7 +687,7 @@ function colorEffects(): EffectDefinition[] {
       perFrame: true,
       description: "Color grading wheels: tint shadows, midtones and highlights separately, each with a hue (0..360) and amount (0..100). Teal shadows + orange highlights is the classic film look.",
       params: shape.wheels.unwrap(),
-      toFilter: (p) => colorFilter({ wheels: p } as ColorSettings) || "null",
+      toFilter: (p, ctx) => colorFilter({ wheels: p } as ColorSettings, ctx) || "null",
     }),
     single("fade", "Fade", "grade", "Matte film look: lifted blacks and softer contrast (0..100).", "fade"),
     single("clarity", "Clarity", "stylize", "Local contrast: + crisp texture and detail, - soft and dreamy (-100..100).", "clarity"),

@@ -215,7 +215,7 @@ export async function startPreviewServer(source: PreviewSource, opts: PreviewSer
         .run(async () => {
           if (rev !== source.revision) return;
           const out = await source.outputPath("auto-sheet.png");
-          await renderContactSheet(source.project, { output: out, columns: 4, rows: 2, thumbWidth: 280, ...renderOpts() });
+          await renderContactSheet(source.project, { output: out, columns: 4, rows: 2, thumbWidth: 280, proxies: true, ...renderOpts() });
           source.recordRender?.({ kind: "contact-sheet", path: out });
         })
         .catch((e) => {
@@ -271,7 +271,7 @@ export async function startPreviewServer(source: PreviewSource, opts: PreviewSer
         if (!file) {
           file = await queue.run(async () => {
             const out = await source.outputPath(`scrub-${t.toFixed(2)}.png`);
-            await renderFrame(source.project, t, { output: out, scale: 0.5, ...renderOpts() });
+            await renderFrame(source.project, t, { output: out, scale: 0.5, proxies: true, ...renderOpts() });
             return out;
           });
           frameCache.set(key, file);
@@ -280,7 +280,7 @@ export async function startPreviewServer(source: PreviewSource, opts: PreviewSer
       } else if (req.method === "POST" && url.pathname === "/api/contact-sheet") {
         const out = await queue.run(async () => {
           const o = await source.outputPath("contact-sheet.png");
-          await renderContactSheet(source.project, { output: o, columns: 4, rows: 3, thumbWidth: 320, ...renderOpts() });
+          await renderContactSheet(source.project, { output: o, columns: 4, rows: 3, thumbWidth: 320, proxies: true, ...renderOpts() });
           return o;
         });
         source.recordRender?.({ kind: "contact-sheet", path: out });
@@ -288,7 +288,7 @@ export async function startPreviewServer(source: PreviewSource, opts: PreviewSer
       } else if (req.method === "POST" && url.pathname === "/api/preview") {
         const out = await queue.run(async () => {
           const o = await source.outputPath("preview.mp4");
-          await render(source.project, { output: o, scale: 0.5, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], ...renderOpts() });
+          await render(source.project, { output: o, scale: 0.5, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], proxies: true, ...renderOpts() });
           return o;
         });
         source.recordRender?.({ kind: "preview", path: out });

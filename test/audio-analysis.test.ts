@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ANALYSIS_RATE, analyzeSamples, detectBeats, formatSoundMap, snapWordsToSpeech, soundRanges } from "../src/tools/audio/analyze.js";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { SoundClassifier } from "../src/tools/audio/classify.js";
+import { ANALYSIS_RATE, analyzeSamples, decodeAudio, detectBeats, formatSoundMap, snapWordsToSpeech, soundRanges } from "../src/tools/audio/analyze.js";
 
 const SR = ANALYSIS_RATE;
 
@@ -93,6 +96,29 @@ describe("sound map", () => {
     expect(ranges[0]!.end).toBeCloseTo(5.7, 0);
   });
 
+  it("labels by what a sound model heard, naming other sounds", () => {
+    // Per second: talking at 1-5 s, a song at 7-10 s, a door at 12 s (the signal rules call it music and sound).
+    const steps = Math.ceil(x.length / SR);
+    const per = (f: (s: number) => number) => Float32Array.from({ length: steps }, (_, s) => f(s));
+    const classes = {
+      step: 1,
+      speech: per((s) => (s >= 1 && s <= 5 ? 0.8 : 0.02)),
+      singing: per((s) => (s >= 7 && s <= 10 ? 0.6 : 0.01)),
+      music: per((s) => (s >= 7 && s <= 10 ? 0.7 : 0.05)),
+      other: per((s) => (s === 12 ? 0.7 : 0.1)),
+      otherLabel: Array.from({ length: steps }, (_, s) => (s === 12 ? "Door" : "Hum")),
+    };
+    const heard = analyzeSamples(x, { classes });
+    const at = (t: number) => heard.segments.find((s) => t >= s.start && t < s.end);
+    expect(at(3)).toMatchObject({ kind: "speech" });
+    expect(at(9)).toMatchObject({ kind: "music", vocals: true });
+    expect(at(12.05)).toMatchObject({ kind: "sound", sound: "Door" });
+    expect(at(12.05)!.confidence).toBeGreaterThanOrEqual(0.6);
+    const text = formatSoundMap(heard);
+    expect(text).toMatch(/music with vocals -\d/);
+    expect(text).toMatch(/sound \(door\) -\d/);
+  });
+
   it("treats an empty or silent input as silence", () => {
     expect(analyzeSamples(new Float32Array(0)).segments).toEqual([]);
     const quiet = analyzeSamples(signal([silence(3)]));
@@ -154,4 +180,24 @@ describe("beat detection", () => {
     expect(b.bpm).toBeUndefined();
     expect(b.beats).toEqual([]);
   });
+});
+
+// Real recordings live in the local sample projects (not in the repository) and the model downloads on first use.
+const music = path.resolve("projects/earphone-tips/media/1167-close-up.mp3");
+const talk = path.resolve("projects/cinematic-reel/media/20260317_010231.mp4");
+const classifier = new SoundClassifier();
+const modelReady = existsSync(music) && existsSync(talk) && (await classifier.tags(new Float32Array(SR)).then(() => true, () => false));
+
+describe.skipIf(!modelReady)("sound model on real recordings", () => {
+  it("hears a music track as music and a selfie video as speech, where the signal rules wavered", async () => {
+    // Share of the sounding time given to each kind (a short noise between phrases may be "sound").
+    const shares = async (file: string) => {
+      const x = await decodeAudio(file, { duration: 15 });
+      const { totals } = analyzeSamples(x, { classes: await classifier.classify(x) });
+      const sounding = totals.speech + totals.music + totals.sound;
+      return { speech: totals.speech / sounding, music: totals.music / sounding };
+    };
+    expect((await shares(music)).music).toBe(1);
+    expect((await shares(talk)).speech).toBeGreaterThan(0.9);
+  }, 60_000);
 });

@@ -97,10 +97,14 @@ export function modelsDir(opts: { modelsDir?: string } = {}): string {
 }
 
 /** A model file in the models folder, downloaded on first use. */
-export async function ensureModelFile(opts: { modelsDir?: string; onDownload?: (p: number) => void }, folder: string, model: { url: string; file: string }): Promise<string> {
+export async function ensureModelFile(
+  opts: { modelsDir?: string; onDownload?: (p: number) => void },
+  folder: string,
+  model: { url: string; file: string; /** Smallest complete size (default 100 KB). */ minBytes?: number },
+): Promise<string> {
   const dir = path.join(modelsDir(opts), folder);
   const file = path.join(dir, model.file);
-  if (await stat(file).then((s) => s.size > 100_000, () => false)) return file;
+  if (await stat(file).then((s) => s.size > (model.minBytes ?? 100_000), () => false)) return file;
   await mkdir(dir, { recursive: true });
   const res = await fetch(model.url);
   if (!res.ok || !res.body) throw new Error(`Could not download the model (${res.status}) from ${model.url}`);

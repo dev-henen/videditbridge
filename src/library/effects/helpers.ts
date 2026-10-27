@@ -53,9 +53,42 @@ export function define<P extends z.ZodType>(def: EffectDefinition<P>): EffectDef
 
 /** zoompan always produces the project size; upscaling first avoids sub-pixel jitter. */
 export function zoompan(ctx: EffectContext, zoomExpr: string, xExpr = "iw/2-(iw/zoom/2)", yExpr = "ih/2-(ih/zoom/2)") {
-  const w2 = ctx.width * 2;
-  const h2 = ctx.height * 2;
-  return `scale=${w2}:${h2},zoompan=z='${zoomExpr}':x='${xExpr}':y='${yExpr}':d=1:s=${ctx.width}x${ctx.height}:fps=${ctx.fps}`;
+  // Expressions are written for zoompan (zoom, iw, ih, on, it), but run through perspective, which
+  // samples between pixels: as smooth as zoompan on a 2x upscale, without paying for the upscale.
+  const vars = (e: string) => e.replace(/\biw\b/g, "W").replace(/\bih\b/g, "H").replace(/\bit\b/g, `(on/${ctx.fps})`);
+  const z = `clip(${vars(zoomExpr)},1,10)`;
+  const w = `(W/${z})`;
+  const h = `(H/${z})`;
+  const x = `clip(${vars(xExpr).replace(/\bzoom\b/g, z)},0,W-${w})`;
+  const y = `clip(${vars(yExpr).replace(/\bzoom\b/g, z)},0,H-${h})`;
+  const [x1, y1] = [`${x}+${w}`, `${y}+${h}`];
+  return `perspective=x0='${x}':y0='${y}':x1='${x1}':y1='${y}':x2='${x}':y2='${y1}':x3='${x1}':y3='${y1}':interpolation=linear:eval=frame`;
+}
+
+/** Rough cost of per-pixel color filters, in ms per 1080p frame on a laptop CPU (unknown filters: 3). */
+const COLOR_COST: Record<string, number> = { colorbalance: 30, vibrance: 12, colortemperature: 11.5, exposure: 11.5, huesaturation: 10.5, curves: 2.7, hue: 0.5, eq: 0.3, format: 0 };
+/** Cost of applying a baked lookup table, including the conversion to RGB and back. */
+const BAKED_COST = 28;
+
+/**
+ * Run a chain of per-pixel color filters, baked into one lookup table when that is cheaper: the chain
+ * is applied once to a Hald identity image, and haldclut maps every frame through the result. The
+ * filters must not depend on position or time. Returns a graph fragment reading and writing one stream.
+ */
+export function bakeColor(ctx: EffectContext, filters: string[]): string {
+  const cost = filters.reduce((n, f) => n + (COLOR_COST[f.split("=")[0]!] ?? 3), 0);
+  // Only bake a clear win: the estimates are rough.
+  if (cost < BAKED_COST * 1.3) return filters.join(",");
+  const label = labeler(ctx);
+  const [main, clut] = [label("cbm"), label("cbc")];
+  // The table must stay at full color resolution: a 4:2:0 step would blend unrelated entries.
+  // haldclut is only exact on packed RGB.
+  const pin = "format=rgb24|yuv444p|gbrpf32";
+  return [
+    `format=${ctx.alpha ? "rgba" : "rgb24"}[${main}]`,
+    `haldclutsrc=level=8:rate=1,trim=end_frame=1,${filters.map((f) => `${pin},${f}`).join(",")},format=rgb24[${clut}]`,
+    `[${main}][${clut}]haldclut=clut=first,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+  ].join(";");
 }
 
 export const SubjectRegionSchema = z.object({

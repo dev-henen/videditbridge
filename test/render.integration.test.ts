@@ -258,6 +258,63 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     expect((await probe(r.output)).duration).toBeCloseTo(effects.length * 0.4, 0);
   });
 
+  it("bakes heavy color chains and zooms between pixels, matching the plain filters", async () => {
+    const still = (effects: unknown[]) =>
+      parseProject({ settings: { width: 640, height: 360, fps: 30 }, assets: [{ type: "image", id: "img", src: fx.image }], clips: [{ id: "a", assetId: "img", in: 0, duration: 2, effects }] });
+    const frame = async (name: string, effects: unknown[]) => {
+      const file = out(`${name}.png`);
+      await renderFrame(still(effects), 1, { output: file });
+      return file;
+    };
+    const psnr = async (a: string, b: string) => {
+      const r = await runFfmpeg(["-hide_banner", "-i", a, "-i", b, "-filter_complex", "[0:v]format=yuv444p[x];[1:v]format=yuv444p[y];[x][y]psnr", "-f", "null", "-"]);
+      return Number(/average:([\d.]+)/.exec(r.stderr)![1]);
+    };
+    const plain = await frame("bake-plain", []);
+
+    const grade = { temperature: 40, vibrance: 30, contrast: 15, hsl: { orange: { saturation: -20 } } };
+    const p = still([{ type: "color", params: grade }]);
+    const { compileProject } = await import("../src/tools/index.js");
+    expect(compileProject(p, { output: "x.mp4" }).filterGraph).toContain("haldclut");
+    const { colorFilter } = await import("../src/library/effects/color.js");
+    const direct = out("bake-direct.png");
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-i", plain, "-vf", `format=yuv420p,${colorFilter(grade)}`, direct]);
+    expect(await psnr(await frame("bake-baked", [{ type: "color", params: grade }]), direct)).toBeGreaterThan(38);
+
+    // A steady 1.5x zoom on the middle is a center crop.
+    const crop = out("zoom-crop.png");
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-i", plain, "-vf", "crop=iw/1.5:ih/1.5,scale=640:360", crop]);
+    expect(await psnr(await frame("zoom-persp", [{ type: "kenBurns", params: { zoomFrom: 1.5, zoomTo: 1.5 } }]), crop)).toBeGreaterThan(30);
+  });
+
+  it("previews big footage from proxies made in the background", async () => {
+    const cacheDir = out("proxy-cache");
+    await rm(cacheDir, { recursive: true, force: true });
+    const big = out("big.mp4");
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-f", "lavfi", "-i", "testsrc2=size=2560x1440:rate=30:duration=2", "-f", "lavfi", "-i", "sine=d=2", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-shortest", big]);
+    const project = parseProject({ settings: { width: 1280, height: 720, fps: 30 }, assets: [{ type: "video", id: "v", src: big }], clips: [{ id: "a", assetId: "v", in: 0, duration: 2 }] });
+    const { planProxies, probeAssets, proxiesIdle, withProxies } = await import("../src/tools/index.js");
+    const p = await probeAssets(project);
+
+    // The first preview starts the proxy and uses the original.
+    const first = out("proxy-first.png");
+    await renderFrame(p, 1, { output: first, scale: 0.5, cacheDir, proxies: true });
+    await proxiesIdle();
+    const [job] = [...(await planProxies(p, { cacheDir })).values()];
+    expect(job!.exists).toBe(true);
+    const info = await probe(job!.file);
+    expect([info.width, info.height]).toEqual([1280, 720]);
+    expect(info.duration).toBeCloseTo(2, 1);
+    expect(info.hasAudio).toBe(true);
+
+    // Later previews read the proxy, and show the same frame.
+    expect((await withProxies(p, { cacheDir })).assets[0]).toMatchObject({ src: job!.file });
+    const second = out("proxy-second.png");
+    await renderFrame(p, 1, { output: second, scale: 0.5, cacheDir, proxies: true });
+    const diff = await runFfmpeg(["-hide_banner", "-i", first, "-i", second, "-filter_complex", "psnr", "-f", "null", "-"]);
+    expect(Number(/average:([\d.]+)/.exec(diff.stderr)![1])).toBeGreaterThan(30);
+  });
+
   it("reviews an edit for what a viewer would notice", async () => {
     const base = ["-y", "-hide_banner", "-loglevel", "error"];
     // 1 s black, 2.5 s frozen gray, then motion; a tone for 2 s, then silence.

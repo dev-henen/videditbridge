@@ -11,6 +11,7 @@ import { usesFaceMask, usesPersonMask } from "../../library/effects/index.js";
 import { PersonSegmenter, maskFile } from "../vision/segment.js";
 import { faceMaskFile, writeFaceMask } from "../vision/facemask.js";
 import { FaceDetector } from "../vision/faces.js";
+import { withProxies } from "./proxy.js";
 import { hasFilter, probe, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
 
 export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segments" | "segment" | "hardwareEncoder">, FfmpegOptions {
@@ -29,6 +30,12 @@ export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segment
   cacheBytes?: number;
   /** Probe assets with unknown duration/size/audio before compiling (default true). */
   probe?: boolean;
+  /**
+   * Read big videos (over 1920 px) from small proxy copies in the cache folder, for previews and
+   * frames. Missing proxies are made in the background, so the first preview uses the originals.
+   * Leave it off for final renders (default false).
+   */
+  proxies?: boolean;
   /** Keep the work directory (graph + ASS files) for debugging. */
   keepWorkDir?: boolean;
   /** Progress callback: 0..1 */
@@ -153,13 +160,15 @@ const maskFiles = (jobs: MaskJob[]): MaskFiles => {
 };
 
 /** Masks and cached clips for a render: `create` fills the cache; clips not taken from it get their masks made. */
-async function prepare(p: Project, opts: Omit<RenderOptions, "output">, create: boolean, until?: number) {
-  const jobs = await planMasks(p, opts);
+async function prepare(original: Project, opts: Omit<RenderOptions, "output">, create: boolean, until?: number) {
+  // Masks come from the originals either way, so they are shared with full renders.
+  const jobs = await planMasks(original, opts);
+  const p = opts.proxies ? await withProxies(original, opts) : original;
   const { segments, share } = await cachedSegments(p, opts, create, until, jobs);
   await makeMasks(jobs, p.clips.filter((c) => !segments?.[c.id]).map((c) => c.id), opts);
   // Speed ramps sound best through rubberband, when this FFmpeg build has it.
   const rubberband = p.clips.some((c) => c.keyframes?.speed?.length) && (await hasFilter("rubberband", opts));
-  return { segments, share, masks: maskFiles(jobs), rubberband };
+  return { project: p, segments, share, masks: maskFiles(jobs), rubberband };
 }
 
 /** Clips rendered into the cache at once. Filters already use several threads, so this stays small. */
@@ -224,17 +233,17 @@ const after = (opts: Omit<RenderOptions, "output">, share: number) => (opts.onPr
 /** Render a project to a video file. */
 export async function render(project: Project, opts: RenderOptions): Promise<RenderResult> {
   const p = opts.probe === false ? project : await probeAssets(project, opts);
-  const { segments, share, masks, rubberband } = await prepare(p, opts, true, opts.range?.end);
+  const { project: q, segments, share, masks, rubberband } = await prepare(p, opts, true, opts.range?.end);
   const hardwareEncoder =
     opts.hardware !== false && wantsHardware(p.export.videoCodec, opts.preset ?? p.export.preset) ? await detectHardwareEncoder(opts) : undefined;
-  let compiled = compileProject(p, { ...opts, segments, ...masks, rubberband, hardwareEncoder });
+  let compiled = compileProject(q, { ...opts, segments, ...masks, rubberband, hardwareEncoder });
   let workDir: string | undefined;
   try {
     ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
   } catch (e) {
     // A graphics driver can refuse a stream its test encode accepted (size limits, busy device).
     if (!hardwareEncoder || opts.signal?.aborted) throw e;
-    compiled = compileProject(p, { ...opts, segments, ...masks, rubberband });
+    compiled = compileProject(q, { ...opts, segments, ...masks, rubberband });
     ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
   }
   opts.onProgress?.(1);
@@ -249,8 +258,8 @@ export async function renderFrame(
 ): Promise<string> {
   const p = opts.probe === false ? project : await probeAssets(project, opts);
   // One frame does not pay for caching clips, but uses those already cached.
-  const { segments, masks } = await prepare(p, opts, false);
-  const compiled = compileProject(p, { ...opts, segments, ...masks, frameAt: time });
+  const { project: q, segments, masks } = await prepare(p, opts, false);
+  const compiled = compileProject(q, { ...opts, segments, ...masks, frameAt: time });
   await execute(compiled, opts);
   return path.resolve(opts.output);
 }
@@ -264,8 +273,8 @@ export async function renderContactSheet(
   opts: Omit<RenderOptions, "range" | "onProgress"> & { columns?: number; rows?: number; thumbWidth?: number },
 ): Promise<string> {
   const p = opts.probe === false ? project : await probeAssets(project, opts);
-  const { segments, masks } = await prepare(p, opts, true);
-  const compiled = compileProject(p, {
+  const { project: q, segments, masks } = await prepare(p, opts, true);
+  const compiled = compileProject(q, {
     ...opts,
     segments,
     ...masks,
@@ -292,8 +301,8 @@ export async function renderForAnalysis(
   opts: Omit<RenderOptions, "output" | "range"> & { framesAt?: number[]; audio?: { mix: string; voice?: string; music?: string } },
 ): Promise<{ width: number; height: number; frames: AnalysisFrame[] }> {
   const p = opts.probe === false ? project : await probeAssets(project, opts);
-  const { segments, share, masks, rubberband } = await prepare(p, opts, true);
-  const compiled = compileProject(p, { ...opts, segments, ...masks, rubberband, output: "", analysis: { framesAt: opts.framesAt, audio: opts.audio } });
+  const { project: q, segments, share, masks, rubberband } = await prepare(p, opts, true);
+  const compiled = compileProject(q, { ...opts, segments, ...masks, rubberband, output: "", analysis: { framesAt: opts.framesAt, audio: opts.audio } });
   const audio = opts.audio ? [opts.audio.mix, opts.audio.voice, opts.audio.music].filter((f): f is string => !!f) : [];
   const { stdout } = await execute(compiled, { ...opts, ...after(opts, share), output: "" }, audio);
   opts.onProgress?.(1);

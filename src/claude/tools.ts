@@ -40,7 +40,8 @@ import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
 import { analyzeColor, channelLevels, matchingCurves, renderScopes } from "../tools/render/color-analysis.js";
-import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
+import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, segmentLabel, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
+import { SoundClassifier } from "../tools/audio/classify.js";
 import { renderSoundMapImage } from "../tools/audio/image.js";
 import { renderSoundEffect } from "../tools/audio/sfx.js";
 import { detectScenes } from "../tools/video/scenes.js";
@@ -114,6 +115,7 @@ interface SoundAnalysis {
 }
 
 const soundCache = new Map<string, Promise<SoundAnalysis>>();
+const soundClassifier = new SoundClassifier();
 
 /** Sound map and beats of a media file, or of `range` (source seconds) within it. */
 async function analyzeSound(s: EditorSession, src: string, range?: { start: number; end: number }): Promise<SoundAnalysis> {
@@ -122,10 +124,12 @@ async function analyzeSound(s: EditorSession, src: string, range?: { start: numb
   const key = `${file}|${mtime}|${range ? `${range.start}-${range.end}` : "all"}`;
   let pending = soundCache.get(key);
   if (!pending) {
-    pending = decodeAudio(file, { ffmpegPath: s.options.ffmpegPath, start: range?.start, duration: range ? range.end - range.start : undefined }).then((x) => ({
-      map: analyzeSamples(x),
-      beats: detectBeats(x),
-    }));
+    pending = decodeAudio(file, { ffmpegPath: s.options.ffmpegPath, start: range?.start, duration: range ? range.end - range.start : undefined }).then(async (x) => {
+      // The local sound model tells speech, music and singing apart and names other sounds; without
+      // it (no onnxruntime, or offline before its first download) the signal rules label the map.
+      const classes = await soundClassifier.classify(x).catch(() => undefined);
+      return { map: analyzeSamples(x, { classes }), beats: detectBeats(x) };
+    });
     soundCache.set(key, pending);
     if (soundCache.size > 32) soundCache.delete(soundCache.keys().next().value!);
     pending.catch(() => soundCache.delete(key));
@@ -1632,7 +1636,7 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Map the sound of a recording without a transcript: where someone is speaking, where it is silent, where music or other sound plays, loud moments (claps, bangs, laughs) and the beat. " +
       "Give an assetId for source times (best for raw footage, before cutting), or omit it to map every primary clip on the timeline. Returns a timeline of segments and a picture (waveform with a colored band: green speech, blue music, orange other sound, dark silence, red loud moments). " +
-      "Labels come from signal analysis, not speech recognition: treat '(unsure)' segments with care and check with render_frame or your own judgement. Use the times with remove_silences, assemble_from_source, split_clip, add_sound_effect and beat_sync.",
+      "Labels come from a local sound model (no speech recognition): sung music is marked 'music with vocals', and other sounds are named, like 'sound (dog)' or 'sound (siren)'. Treat '(unsure)' segments with care and check with render_frame or your own judgement. Use the times with remove_silences, assemble_from_source, split_clip, add_sound_effect and beat_sync.",
     input: z.object({
       assetId: z.string().optional().describe("Asset to analyze (source times); omit for the current timeline"),
       start: z.number().min(0).optional().describe("Source seconds to start at (asset mode)"),
@@ -1674,7 +1678,7 @@ export const TOOLS: ToolDefinition[] = [
           const a = round3(sourceToTimeline(tc, tc.clip.in + g.start));
           const b = round3(sourceToTimeline(tc, tc.clip.in + g.end));
           totals[g.kind] += b - a;
-          return `${formatTime(a)}-${formatTime(b)} ${g.kind}${g.kind === "silence" ? "" : ` ${g.level} dB${g.confidence < 0.6 ? " (unsure)" : ""}`}`;
+          return `${formatTime(a)}-${formatTime(b)} ${segmentLabel(g)}`;
         });
         lines.push(`${tc.clip.id} (${tc.clip.assetId}, timeline ${formatTime(tc.start)}-${formatTime(tc.end)}):\n  ${segs.join("\n  ")}`);
       }
@@ -2553,7 +2557,7 @@ export const TOOLS: ToolDefinition[] = [
     mutates: false,
     run: async (s, i) => {
       const out = await s.outputPath(`frame-${i.time.toFixed(2)}.png`);
-      await renderFrame(s.project, i.time, { output: out, scale: i.scale, ...s.renderOptions });
+      await renderFrame(s.project, i.time, { output: out, scale: i.scale, proxies: true, ...s.renderOptions });
       s.recordRender({ kind: "frame", path: out, time: i.time });
       return { text: `Frame at ${i.time}s: ${out}`, images: [{ path: out, mediaType: "image/png" }] };
     },
@@ -2565,7 +2569,7 @@ export const TOOLS: ToolDefinition[] = [
     mutates: false,
     run: async (s, i) => {
       const out = await s.outputPath("contact-sheet.png");
-      await renderContactSheet(s.project, { output: out, ...i, ...s.renderOptions });
+      await renderContactSheet(s.project, { output: out, ...i, proxies: true, ...s.renderOptions });
       s.recordRender({ kind: "contact-sheet", path: out });
       return { text: `Contact sheet (${i.columns}x${i.rows}, read left to right, top to bottom): ${out}`, images: [{ path: out, mediaType: "image/png" }] };
     },
@@ -2578,7 +2582,7 @@ export const TOOLS: ToolDefinition[] = [
     run: async (s, i, activity) => {
       const out = await s.outputPath("preview.mp4");
       const range = i.start !== undefined || i.end !== undefined ? { start: i.start ?? 0, end: i.end ?? Number.MAX_SAFE_INTEGER } : undefined;
-      const r = await render(s.project, { output: out, scale: i.scale, range, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
+      const r = await render(s.project, { output: out, scale: i.scale, range, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], proxies: true, ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
       s.recordRender({ kind: "preview", path: out });
       return ok(`Preview rendered (${r.duration}s): ${out}`);
     },

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { clamp, round3 } from "../../core/util.js";
+import { bakeColor, type EffectContext } from "./helpers.js";
 
 /**
  * Lightroom-style color controls compiled to FFmpeg filters.
@@ -137,10 +138,12 @@ function wheelRgb(hueDeg: number, amount: number): [number, number, number] {
 }
 
 /** Compile color settings to a comma-separated FFmpeg filter chain (empty string when neutral). */
-export function colorFilter(s: ColorSettings): string {
+export function colorFilter(s: ColorSettings, ctx?: EffectContext): string {
   const f: string[] = [];
 
   if (s.autoCorrect) f.push("normalize=smoothing=24:independence=0.6:strength=0.8");
+  // From here to clarity every filter works pixel by pixel, so with a context they can be baked (bakeColor).
+  const point = f.length;
   // exposure works in float; clip back to 8-bit range so later filters never see values above white.
   if (s.exposure) f.push(`exposure=exposure=${fmt(s.exposure)}`, "format=gbrp");
 
@@ -206,6 +209,7 @@ export function colorFilter(s: ColorSettings): string {
     f.push(`curves=master='0/${fmt(0.22 * k)} 0.5/${fmt(0.5 + 0.04 * k)} 1/${fmt(1 - 0.08 * k)}'`, `eq=saturation=${fmt(1 - 0.25 * k)}`);
   }
 
+  const spatial = f.length;
   if (s.clarity) f.push(`unsharp=lx=13:ly=13:la=${fmt(clamp(n(s.clarity) * 1.2, -2, 5))}:cx=5:cy=5:ca=0`);
   if (s.sharpen) f.push(`unsharp=lx=5:ly=5:la=${fmt(n(s.sharpen) * 2)}:cx=5:cy=5:ca=0`);
 
@@ -215,7 +219,8 @@ export function colorFilter(s: ColorSettings): string {
   }
   if (s.grain) f.push(`noise=alls=${Math.round(n(s.grain) * 40)}:allf=t+u`);
 
-  return f.join(",");
+  if (!ctx || spatial === point) return f.join(",");
+  return [...f.slice(0, point), bakeColor(ctx, f.slice(point, spatial)), ...f.slice(spatial)].join(",");
 }
 
 /** Human-readable list of active settings (for summaries and the app). */
