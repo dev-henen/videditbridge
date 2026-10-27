@@ -105,6 +105,22 @@ describe("session + tools", () => {
     expect(events).toEqual(["add_clip", "add_text", "set_captions", "add_audio", "undo add_audio", "redo add_audio"]);
   });
 
+  it("retouches faces that move, and turns that off for a fixed ellipse", async () => {
+    const s = session();
+    await executeTool(s, "add_clip", { assetId: "talk" });
+    const id = s.project.clips[0]!.id;
+    const ellipse = { x: 0.5, y: 0.3, width: 0.3, height: 0.3 };
+    const beauty = () => s.project.clips[0]!.effects.find((e) => e.type === "beauty")!.params!;
+    await executeTool(s, "retouch", { target: id, beauty: { region: ellipse } });
+    const r = await executeTool(s, "retouch", { target: id, beauty: { region: "faces" } });
+    expect(r.isError).toBeFalsy();
+    // The ellipse stays as the fallback where faces cannot be followed.
+    expect(beauty()).toMatchObject({ followFace: true, region: ellipse });
+    await executeTool(s, "retouch", { target: id, beauty: { region: null } });
+    expect(beauty().followFace).toBe(false);
+    expect(beauty().region).toBeUndefined();
+  });
+
   it("cleans up speech and searches transcripts", async () => {
     const s = session();
     await executeTool(s, "add_clip", { assetId: "talk" });

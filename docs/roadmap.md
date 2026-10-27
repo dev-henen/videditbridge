@@ -8,7 +8,7 @@ The biggest gap is that the editor does not know where people and objects are in
 
 | # | Item | Why it matters | Size |
 |---|---|---|---|
-| 1 | [Subject and face detection](#1-subject-and-face-detection) | Positions are guessed today; five features depend on it | Done, except crops and ellipses that move (needs #2) |
+| 1 | [Subject and face detection](#1-subject-and-face-detection) | Positions are guessed today; five features depend on it | Done |
 | 2 | [Keyframes](#2-keyframes) | Nothing can move or change over time except preset animations | Done |
 | 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Done (text over faces came with #1) |
 | 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes several minutes, and every change re-renders all of it | Segment cache and hardware encoding done |
@@ -36,7 +36,7 @@ Today these positions are guessed from frames:
 
 Open question: which model is fast and accurate enough on a laptop CPU. Compare two or three before building.
 
-**Status** (2026-10-26): face detection and tracking are done with YuNet, chosen over UltraFace and YOLOS-tiny (see [Faces & reframing](guides/faces.md)). `detect_faces`, `reframe`, `retouch` with `"face"`, and the text-over-face check in `review_edit` use it. The person cutout is done too, with PP-HumanSeg chosen over MediaPipe and MODNet: `backgroundBlur` with `cutout` and the new `backgroundReplace` follow the person's outline on every frame. Still to do: crops and retouch ellipses that follow the face over time, which need keyframes (#2).
+**Status** (2026-10-26): face detection and tracking are done with YuNet, chosen over UltraFace and YOLOS-tiny (see [Faces & reframing](guides/faces.md)). `detect_faces`, `reframe`, `retouch` with `"face"`, and the text-over-face check in `review_edit` use it. The person cutout is done too, with PP-HumanSeg chosen over MediaPipe and MODNet: `backgroundBlur` with `cutout` and the new `backgroundReplace` follow the person's outline on every frame. **Done** (2026-10-27): the crop follows the person with `reframe` `follow` (keyframes, #2), and `retouch` with `region: "faces"` retouches only the faces, following every face frame by frame through a face mask video (see [Face masks](guides/faces.md#face-masks)).
 
 ## 2. Keyframes
 
@@ -64,7 +64,7 @@ A read-only tool that renders sample frames and audio and reports problems with 
 
 Each of these was a real problem in this session, found only by looking: an unreadable title, a gray keyed screen, clipped words, doubled caption words, a render at -24.9 LUFS.
 
-**Status: done** (2026-10-26). `review_edit` covers every item above except text over a face, which waits for #1. It also reports text that runs off the frame or collides with captions, repeated footage, and speech the transcript skipped. See [Reviewing an edit](guides/rendering-and-preview.md#reviewing-an-edit).
+**Status: done** (2026-10-26). `review_edit` covers every item above, including text over a face (added with #1). It also reports text that runs off the frame or collides with captions, repeated footage, and speech the transcript skipped. See [Reviewing an edit](guides/rendering-and-preview.md#reviewing-an-edit).
 
 ## 4. Faster rendering
 

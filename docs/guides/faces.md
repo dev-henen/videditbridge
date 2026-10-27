@@ -21,7 +21,7 @@ YuNet was as accurate as UltraFace without its false detection, gives five landm
 | `detect_faces` | For each clip: when each person is on screen (timeline times), where the face sits in the edit's frame after the clip's crop, how far it moves, and whether the crop cuts it off. For an asset: the same in source time and source frame |
 | `reframe` | Sets each cover-fit clip's `focus` so the main face stays in frame, for 16:9 footage in a 9:16 video and the like. It keeps the face's whole path in frame when the crop is wide enough, and otherwise centers its usual spot. With `follow`, the crop pans with the person instead (focus keyframes, smoothed and reduced to a few moves) |
 | `follow_face` | Makes a layer (a name label, a callout, an arrow) follow the main face: position keyframes above, below, beside or on it, kept inside the frame, fading out when the person leaves the shot |
-| `retouch` | `beauty.region: "face"` places the retouch ellipse on the detected face. `backgroundBlur.subject: "person"` and `replaceBackground` follow the person's outline on every frame (see below) |
+| `retouch` | `beauty.region: "faces"` retouches only the faces, following every face frame by frame (see below). `beauty.region: "face"` places a fixed retouch ellipse on the detected face. `backgroundBlur.subject: "person"` and `replaceBackground` follow the person's outline on every frame (see below) |
 | `review_edit` | Reports text and captions over a face, found in the frames it renders without text |
 
 Video is sampled twice a second by default (`fps`), streamed through one FFmpeg process at the model's 640 px input, and faces in successive frames are linked into tracks, one per person. Results are cached per file version, range and rate, so asking again is instant. A 4 second 1080p clip takes about 2 seconds.
@@ -46,6 +46,10 @@ How it works:
 
 On media layers and global effects there is no cutout, and the effects use their ellipse instead. Cached clips are keyed on their compiled FFmpeg graph, so a new mask (for example after trimming) or a change in how an effect is built renders the clip again.
 
+## Face masks
+
+`beauty` with `followFace: true` (the `retouch` tool's `region: "faces"`) retouches only the faces, wherever they move. It works like the cutout: before rendering, each video clip that asks for it gets a mask video with a soft ellipse, 1.5 times the face box, over every face. Faces are found 10 times a second and the ellipses glide between those samples. A face missed for more than 0.6 s (a turn of the head) holds its place rather than sliding across. The masks are stored next to the cutouts (`face-*.mkv`) and reach the effect as `EffectContext.faceMask`. On media layers and global effects, the effect falls back to its `region` ellipse, or the whole frame.
+
 ## In code
 
 ```ts
@@ -66,7 +70,7 @@ const focus = focusOn(people[0].extent, { width, height }, { width: 1080, height
 
 ## Limits
 
-- The crop follows a face with `reframe` `follow`, but the retouch and blur ellipses are fixed for a clip (use the person cutout for blur).
+- The crop follows a face with `reframe` `follow`, and retouch follows faces with `region: "faces"`, but the blur ellipses are fixed for a clip (use the person cutout for blur).
 - Zooms and shakes from effects are not followed when mapping faces into the frame.
 - Faces smaller than about 10 pixels at the model's 640 px input (a person far away in 4K) can be missed, and faces seen from behind or mostly out of frame are not found.
 - The ellipse from `personRegion` is an estimate from the face; use the cutout when the person moves.

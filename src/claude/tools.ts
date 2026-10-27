@@ -857,6 +857,7 @@ export const TOOLS: ToolDefinition[] = [
     name: "retouch",
     description:
       "Retouch people in a clip, a media layer, every clip, or the whole video. beauty: skin smoothing that keeps edges sharp, plus brighten and warmth, on the whole frame or only inside a face region. " +
+      'beauty region "faces" retouches only the faces and follows every face frame by frame (found on this machine; primary video clips only), which is the best choice when people move. ' +
       "backgroundBlur: portrait mode, blurring everything but the subject. subject \"person\" follows the real outline of the person on every frame (cut out on this machine; primary video clips only), which is the best choice when people move. " +
       "replaceBackground: a solid backdrop color behind the person, using the same cutout (no green screen needed). " +
       'Ellipses instead: region "face" or subject "face" place one from the faces found in each clip (covering where the face moves), or give one yourself (center x, y and width, height as frame fractions); an ellipse stays put for the whole clip. Check the result with render_frame. ' +
@@ -871,9 +872,9 @@ export const TOOLS: ToolDefinition[] = [
             brighten: z.number().min(0).max(100).optional().describe("Brighten skin 0-100 (default 15)"),
             warmth: z.number().min(-100).max(100).optional().describe("Warmth -100..100 (default 10)"),
             region: z
-              .union([SubjectRegionSchema, z.literal("face"), z.null()])
+              .union([SubjectRegionSchema, z.literal("faces"), z.literal("face"), z.null()])
               .optional()
-              .describe('Face ellipse to limit the retouch to; "face" to find it; null for the whole frame'),
+              .describe('"faces" to follow every face frame by frame; a face ellipse to limit the retouch to; "face" to place one from the faces found; null for the whole frame'),
           }),
         ])
         .optional(),
@@ -942,8 +943,15 @@ export const TOOLS: ToolDefinition[] = [
             merged.cutout = settings.subject === "person";
             if (settings.subject === "person") merged.subject = current?.subject;
           }
+          // "faces" follows the faces; any other region (given, found or none) turns that off.
+          if (type === "beauty" && "region" in settings && settings.region !== undefined) {
+            merged.followFace = settings.region === "faces";
+            if (settings.region === "faces") merged.region = current?.region;
+          }
           if ((merged.cutout || type === "backgroundReplace") && !cutoutTarget(target))
             notes.push(`${target}: the person cutout works on primary video clips, so a fixed ellipse is used here`);
+          if (merged.followFace && !cutoutTarget(target))
+            notes.push(`${target}: following faces works on primary video clips, so ${merged.region ? "the fixed ellipse" : "the whole frame"} is used here`);
           for (const [key, kind] of [["region", "face"], ["subject", "person"]] as const) {
             if (merged[key] !== "face") continue;
             const region = await auto(target, kind);
