@@ -18,6 +18,8 @@ export interface EffectContext {
    * a gray stream (255 = person) with the same size and timing as the clip. Undefined otherwise.
    */
   personMask?: () => string | undefined;
+  /** Like personMask, for soft ellipses that follow every face in the clip (255 = face). */
+  faceMask?: () => string | undefined;
 }
 
 export type EffectCategory = "light" | "color" | "grade" | "retouch" | "blur" | "stylize" | "motion" | "shake" | "distort" | "time";
@@ -36,6 +38,8 @@ export interface EffectDefinition<P extends z.ZodType = z.ZodType> {
   perFrame?: boolean | ((params: z.output<P>) => boolean);
   /** The effect wants the clip's person cutout (EffectContext.personMask); the renderer then prepares one. */
   usesPersonMask?: (params: z.output<P>) => boolean;
+  /** The effect wants masks that follow the faces (EffectContext.faceMask); the renderer then prepares them. */
+  usesFaceMask?: (params: z.output<P>) => boolean;
   /** Returns a comma-separated FFmpeg filter chain. */
   toFilter(params: z.output<P>, ctx: EffectContext): string;
 }
@@ -117,6 +121,20 @@ export function personBlend(ctx: EffectContext, mask: string, background: string
     `[${mask}]format=gray,${shrink ? `${Array(Math.max(1, Math.round(Math.min(ctx.width, ctx.height) / 360))).fill("erosion").join(",")},` : ""}gblur=sigma=${sigma}[${soft}]`,
     `[${orig}][${soft}]alphamerge[${person}]`,
     `[${bg}][${person}]overlay=format=auto:shortest=1,format=yuv420p`,
+  ].join(";");
+}
+
+/** Run `branch` on a copy and show it where the gray `mask` is white (softened by feather), at `strength`. */
+export function maskBranch(ctx: EffectContext, mask: string, branch: string, feather: number, strength = 1): string {
+  const label = labeler(ctx);
+  const [orig, copy, done, soft, top] = [label("fmo"), label("fmc"), label("fmb"), label("fmm"), label("fmt")];
+  const sigma = round3(Math.max(0.5, clamp(feather, 0, 1) * Math.min(ctx.width, ctx.height) * 0.02));
+  return [
+    `format=yuv420p,split=2[${orig}][${copy}]`,
+    `[${copy}]${branch}[${done}]`,
+    `[${mask}]format=gray,gblur=sigma=${sigma}${strength < 1 ? `,lut=y='val*${round3(clamp(strength, 0, 1))}'` : ""}[${soft}]`,
+    `[${done}][${soft}]alphamerge[${top}]`,
+    `[${orig}][${top}]overlay=format=auto:shortest=1,format=yuv420p`,
   ].join(";");
 }
 

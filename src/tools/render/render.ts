@@ -7,8 +7,10 @@ import { compileProject, type CompileOptions, type CompiledRender } from "./comp
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
-import { usesPersonMask } from "../../library/effects/index.js";
+import { usesFaceMask, usesPersonMask } from "../../library/effects/index.js";
 import { PersonSegmenter, maskFile } from "../vision/segment.js";
+import { faceMaskFile, writeFaceMask } from "../vision/facemask.js";
+import { FaceDetector } from "../vision/faces.js";
 import { hasFilter, probe, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
 
 export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segments" | "segment" | "hardwareEncoder">, FfmpegOptions {
@@ -91,6 +93,8 @@ async function execute(compiled: CompiledRender, opts: RenderOptions, outputs = 
 }
 
 interface MaskJob {
+  kind: "person" | "face";
+  clipId: string;
   file: string;
   exists: boolean;
   src: string;
@@ -99,40 +103,56 @@ interface MaskJob {
 }
 
 /**
- * The person cutout file of each video clip whose effects use one (see PersonSegmenter), kept in the
- * cache folder (or the system temp folder). Only names them; makeMasks makes the missing ones.
+ * The person cutout and face mask files of each video clip whose effects use them (see PersonSegmenter
+ * and writeFaceMask), kept in the cache folder (or the system temp folder). Only names them; makeMasks
+ * makes the missing ones.
  */
-async function planMasks(p: Project, opts: Omit<RenderOptions, "output">): Promise<Map<string, MaskJob>> {
-  const jobs = new Map<string, MaskJob>();
+async function planMasks(p: Project, opts: Omit<RenderOptions, "output">): Promise<MaskJob[]> {
+  const jobs: MaskJob[] = [];
   const dir = path.join(opts.cacheDir ?? path.join(tmpdir(), "ave-cache"), "masks");
   for (const tc of computeTimeline(p).clips) {
-    if (tc.asset.type !== "video" || !tc.clip.effects.some(usesPersonMask)) continue;
+    const person = tc.clip.effects.some(usesPersonMask);
+    const face = tc.clip.effects.some(usesFaceMask);
+    if (tc.asset.type !== "video" || !(person || face)) continue;
     const src = /^[a-z]+:\/\//i.test(tc.asset.src) ? tc.asset.src : path.resolve(opts.baseDir ?? process.cwd(), tc.asset.src);
     // One mask frame per output frame, counted in source time.
     // A speed ramp needs the rate of its fastest moment.
     const fastest = tc.clip.keyframes?.speed?.length ? Math.max(...tc.clip.keyframes.speed.map((k) => k.value)) : tc.clip.speed;
     const fps = Math.min(60, Math.max(1, Math.round(p.settings.fps * fastest)));
     const range = { start: tc.clip.in, end: tc.clip.in + tc.sourceDuration };
-    jobs.set(tc.clip.id, { ...(await maskFile(dir, src, range, fps)), src, range, fps });
+    const clipId = tc.clip.id;
+    if (person) jobs.push({ kind: "person", clipId, ...(await maskFile(dir, src, range, fps)), src, range, fps });
+    if (face) jobs.push({ kind: "face", clipId, ...(await faceMaskFile(dir, src, range, fps)), src, range, fps });
   }
   return jobs;
 }
 
-/** Make the missing cutouts of the clips in `only` (a few seconds per clip second on a laptop). */
-async function makeMasks(jobs: Map<string, MaskJob>, only: Iterable<string>, opts: Omit<RenderOptions, "output">): Promise<void> {
+/** Make the missing masks of the clips in `only` (a few seconds per clip second on a laptop). */
+async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<RenderOptions, "output">): Promise<void> {
+  const ids = new Set(only);
   let segmenter: PersonSegmenter | undefined;
-  for (const id of only) {
-    const job = jobs.get(id);
-    if (!job || job.exists) continue;
-    segmenter ??= new PersonSegmenter({ ffmpegPath: opts.ffmpegPath });
-    await segmenter.writeMask(job.src, job.file, { ...job.range, fps: job.fps, signal: opts.signal });
+  let detector: FaceDetector | undefined;
+  for (const job of jobs) {
+    if (job.exists || !ids.has(job.clipId)) continue;
+    if (job.kind === "person") {
+      segmenter ??= new PersonSegmenter({ ffmpegPath: opts.ffmpegPath });
+      await segmenter.writeMask(job.src, job.file, { ...job.range, fps: job.fps, signal: opts.signal });
+    } else {
+      detector ??= new FaceDetector({ ffmpegPath: opts.ffmpegPath });
+      await writeFaceMask(job.src, job.file, { ...job.range, fps: job.fps, detector, ffmpegPath: opts.ffmpegPath, signal: opts.signal });
+    }
     job.exists = true;
   }
 }
 
-const maskFiles = (jobs: Map<string, MaskJob>) => Object.fromEntries([...jobs].map(([id, j]) => [id, j.file]));
+type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks">;
 
-/** Cutouts and cached clips for a render: `create` fills the cache; clips not taken from it get their cutouts made. */
+const maskFiles = (jobs: MaskJob[]): MaskFiles => {
+  const of = (kind: MaskJob["kind"]) => Object.fromEntries(jobs.filter((j) => j.kind === kind).map((j) => [j.clipId, j.file]));
+  return { masks: of("person"), faceMasks: of("face") };
+};
+
+/** Masks and cached clips for a render: `create` fills the cache; clips not taken from it get their masks made. */
 async function prepare(p: Project, opts: Omit<RenderOptions, "output">, create: boolean, until?: number) {
   const jobs = await planMasks(p, opts);
   const { segments, share } = await cachedSegments(p, opts, create, until, jobs);
@@ -146,10 +166,10 @@ async function prepare(p: Project, opts: Omit<RenderOptions, "output">, create: 
 const SEGMENT_JOBS = Math.max(1, Math.min(3, Math.floor(availableParallelism() / 2)));
 
 /** Render one clip's picture into the cache, through a temporary file so a crash never leaves a broken entry. */
-async function renderSegment(p: Project, seg: SegmentPlan, opts: Omit<RenderOptions, "output">, masks: Record<string, string>, onProgress?: (fraction: number) => void): Promise<void> {
+async function renderSegment(p: Project, seg: SegmentPlan, opts: Omit<RenderOptions, "output">, masks: MaskFiles, onProgress?: (fraction: number) => void): Promise<void> {
   const one = segmentProject(p, seg.clip.clip);
   const part = seg.file.replace(/\.mkv$/, `.${process.pid}-${Math.random().toString(36).slice(2, 8)}.part.mkv`);
-  const compiled = compileProject(one, { output: part, scale: opts.scale, baseDir: opts.baseDir, fontsDir: opts.fontsDir, segment: true, masks });
+  const compiled = compileProject(one, { output: part, scale: opts.scale, baseDir: opts.baseDir, fontsDir: opts.fontsDir, segment: true, ...masks });
   try {
     await execute(compiled, { output: part, ffmpegPath: opts.ffmpegPath, signal: opts.signal, onProgress });
     await rename(part, seg.file);
@@ -168,12 +188,12 @@ async function cachedSegments(
   opts: Omit<RenderOptions, "output">,
   create: boolean,
   until = Infinity,
-  jobs: Map<string, MaskJob> = new Map(),
+  jobs: MaskJob[] = [],
 ): Promise<{ segments?: Record<string, string>; share: number }> {
   if (!opts.cacheDir) return { share: 0 };
   await mkdir(opts.cacheDir, { recursive: true });
   const masks = maskFiles(jobs);
-  const plan = await planSegments(p, { cacheDir: opts.cacheDir, baseDir: opts.baseDir, fontsDir: opts.fontsDir, scale: opts.scale, masks });
+  const plan = await planSegments(p, { cacheDir: opts.cacheDir, baseDir: opts.baseDir, fontsDir: opts.fontsDir, scale: opts.scale, ...masks });
   const missing = create ? plan.filter((x) => !x.exists && x.clip.start < until) : [];
   const work = missing.reduce((n, x) => n + x.clip.duration, 0);
   // Rendering a clip into the cache costs about as much as rendering it in the final pass.
@@ -207,14 +227,14 @@ export async function render(project: Project, opts: RenderOptions): Promise<Ren
   const { segments, share, masks, rubberband } = await prepare(p, opts, true, opts.range?.end);
   const hardwareEncoder =
     opts.hardware !== false && wantsHardware(p.export.videoCodec, opts.preset ?? p.export.preset) ? await detectHardwareEncoder(opts) : undefined;
-  let compiled = compileProject(p, { ...opts, segments, masks, rubberband, hardwareEncoder });
+  let compiled = compileProject(p, { ...opts, segments, ...masks, rubberband, hardwareEncoder });
   let workDir: string | undefined;
   try {
     ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
   } catch (e) {
     // A graphics driver can refuse a stream its test encode accepted (size limits, busy device).
     if (!hardwareEncoder || opts.signal?.aborted) throw e;
-    compiled = compileProject(p, { ...opts, segments, masks, rubberband });
+    compiled = compileProject(p, { ...opts, segments, ...masks, rubberband });
     ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
   }
   opts.onProgress?.(1);
@@ -230,7 +250,7 @@ export async function renderFrame(
   const p = opts.probe === false ? project : await probeAssets(project, opts);
   // One frame does not pay for caching clips, but uses those already cached.
   const { segments, masks } = await prepare(p, opts, false);
-  const compiled = compileProject(p, { ...opts, segments, masks, frameAt: time });
+  const compiled = compileProject(p, { ...opts, segments, ...masks, frameAt: time });
   await execute(compiled, opts);
   return path.resolve(opts.output);
 }
@@ -248,7 +268,7 @@ export async function renderContactSheet(
   const compiled = compileProject(p, {
     ...opts,
     segments,
-    masks,
+    ...masks,
     contactSheet: { columns: opts.columns ?? 4, rows: opts.rows ?? 3, thumbWidth: opts.thumbWidth ?? 360 },
   });
   await execute(compiled, opts);
@@ -273,7 +293,7 @@ export async function renderForAnalysis(
 ): Promise<{ width: number; height: number; frames: AnalysisFrame[] }> {
   const p = opts.probe === false ? project : await probeAssets(project, opts);
   const { segments, share, masks, rubberband } = await prepare(p, opts, true);
-  const compiled = compileProject(p, { ...opts, segments, masks, rubberband, output: "", analysis: { framesAt: opts.framesAt, audio: opts.audio } });
+  const compiled = compileProject(p, { ...opts, segments, ...masks, rubberband, output: "", analysis: { framesAt: opts.framesAt, audio: opts.audio } });
   const audio = opts.audio ? [opts.audio.mix, opts.audio.voice, opts.audio.music].filter((f): f is string => !!f) : [];
   const { stdout } = await execute(compiled, { ...opts, ...after(opts, share), output: "" }, audio);
   opts.onProgress?.(1);

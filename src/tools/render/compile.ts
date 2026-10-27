@@ -3,7 +3,7 @@ import type { Asset, Clip, Effect, Fit, Keyframe, MediaLayer, Position, Project 
 import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
-import { effectStates, effectsToFilter, escapeFilterPath, perClipGlobalEffects, usesPersonMask, type EffectContext } from "../../library/effects/index.js";
+import { effectStates, effectsToFilter, escapeFilterPath, perClipGlobalEffects, usesFaceMask, usesPersonMask, type EffectContext } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
 import { overlayMotion } from "../../library/animations/index.js";
@@ -49,6 +49,8 @@ export interface CompileOptions {
    * gray, upright, at the source's shape, in source time from the clip's in point.
    */
   masks?: Record<string, string>;
+  /** Face mask videos (soft ellipses following each face), in the same form as `masks`. */
+  faceMasks?: Record<string, string>;
   /** The FFmpeg build has the rubberband filter, used for speed ramps' sound (see rampTempo). */
   rubberband?: boolean;
   /** Encode the video on the graphics card instead of with x264, at matching quality. */
@@ -277,20 +279,27 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const timing = (input: string) => `[${input}]${chain([clip.reverse && "reverse", "setpts=PTS-STARTPTS", retime, `fps=${F}`])}`;
       g.add(`${timing(`${k}:v`)}[${raw}]`);
       const fitted = fit(raw, clip.fit, W, H, false, clip.focus, clip.keyframes?.focus);
-      // The person cutout goes through the same timing and fit as the picture, so it lines up.
-      // A ramped effect runs once per state, and each run takes its own copy of the cutout.
-      const maskUses = clip.effects.reduce((n, e) => n + (usesPersonMask(e) ? effectStates(e).length : 0), 0);
-      const maskLabels: string[] = [];
-      if (maskUses && opts.masks?.[clip.id]) {
+      // Person cutouts and face masks go through the same timing and fit as the picture, so they line up.
+      // A ramped effect runs once per state, and each run takes its own copy of the mask.
+      const maskStreams = (uses: (e: Effect) => boolean, file: string | undefined): string[] => {
+        const count = clip.effects.reduce((n, e) => n + (uses(e) ? effectStates(e).length : 0), 0);
+        if (!count || !file) return [];
         const mraw = g.label("mraw");
-        g.add(`${timing(`${g.addInput(["-i", opts.masks[clip.id]!])}:v`)},format=gray[${mraw}]`);
+        g.add(`${timing(`${g.addInput(["-i", file])}:v`)},format=gray[${mraw}]`);
         const mfit = fit(mraw, clip.fit, W, H, true, clip.focus, clip.keyframes?.focus);
-        for (let n = 0; n < maskUses; n++) maskLabels.push(g.label("mask"));
-        g.add(`[${mfit}]format=gray${maskUses > 1 ? `,split=${maskUses}` : ""}${maskLabels.map((l) => `[${l}]`).join("")}`);
-      }
-      const clipEffects = effectsToFilter(clip.effects, { ...effectCtx(tc.duration), ...(maskLabels.length ? { personMask: () => maskLabels.shift() } : {}) });
-      // Any cutout an effect did not take still has to be consumed.
-      for (const l of maskLabels) g.add(`[${l}]nullsink`);
+        const labels = Array.from({ length: count }, () => g.label("mask"));
+        g.add(`[${mfit}]format=gray${count > 1 ? `,split=${count}` : ""}${labels.map((l) => `[${l}]`).join("")}`);
+        return labels;
+      };
+      const personLabels = maskStreams(usesPersonMask, opts.masks?.[clip.id]);
+      const faceLabels = maskStreams(usesFaceMask, opts.faceMasks?.[clip.id]);
+      const clipEffects = effectsToFilter(clip.effects, {
+        ...effectCtx(tc.duration),
+        ...(personLabels.length ? { personMask: () => personLabels.shift() } : {}),
+        ...(faceLabels.length ? { faceMask: () => faceLabels.shift() } : {}),
+      });
+      // Any mask an effect did not take still has to be consumed.
+      for (const l of [...personLabels, ...faceLabels]) g.add(`[${l}]nullsink`);
       g.add(
         `[${fitted}]${chain([
           ...clipEffects,

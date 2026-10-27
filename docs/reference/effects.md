@@ -552,7 +552,7 @@ _No parameters._
 
 ### beauty
 
-**Beauty / Skin Retouch**. Portrait retouch: edge-preserving skin smoothing that keeps eyes, hair and outlines sharp, plus optional brightening and warmth. Applies to the whole frame, or only inside a face region (x, y, width, height as frame fractions; check placement with render_frame).
+**Beauty / Skin Retouch**. Portrait retouch: edge-preserving skin smoothing that keeps eyes, hair and outlines sharp, plus optional brightening and warmth. Applies to the whole frame, only inside a face region (x, y, width, height as frame fractions; check placement with render_frame), or, with followFace, only on the faces wherever they move (found on every frame of primary video clips).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -564,6 +564,7 @@ _No parameters._
 | `region.y` | number | yes |  | Center y (0 = top, 1 = bottom) (≥ 0, ≤ 1) |
 | `region.width` | number | yes |  | Ellipse width as a fraction of frame width (> 0, ≤ 2) |
 | `region.height` | number | yes |  | Ellipse height as a fraction of frame height (> 0, ≤ 2) |
+| `followFace` | boolean |  | `false` | Retouch only the faces, following them frame by frame (primary video clips; elsewhere region applies) |
 
 ### backgroundBlur
 

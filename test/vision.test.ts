@@ -10,10 +10,12 @@ import {
   FaceDetector,
   PERSON_INPUT,
   PersonSegmenter,
+  boxAt,
   compileProject,
   decodeYunet,
   faceRegion,
   focusOn,
+  paintFaces,
   parseProbeOutput,
   personProbability,
   personRegion,
@@ -24,8 +26,10 @@ import {
   sourceToFrame,
   stabilizeMask,
   trackFaces,
+  writeFaceMask,
   type Face,
   type FaceFrame,
+  type FaceTrack,
 } from "../src/tools/index.js";
 
 /** YuNet outputs with one confident face at a grid cell of the coarsest scale. */
@@ -101,6 +105,50 @@ describe("following faces", () => {
   });
 });
 
+describe("face masks", () => {
+  const track = (frames: [number, Face][]): FaceTrack => ({
+    id: 1,
+    start: frames[0]![0],
+    end: frames[frames.length - 1]![0],
+    frames: frames.map(([time, face]) => ({ time, face })),
+    box: frames[0]![1],
+    extent: frames[0]![1],
+  });
+
+  it("moves the box smoothly between samples and holds it across long gaps", () => {
+    const t = track([[0, face(0.1, 0.1, 0.2, 0.2)], [0.1, face(0.2, 0.1, 0.3, 0.2)], [0.2, face(0.2, 0.1, 0.3, 0.2)], [1.2, face(0.6, 0.1, 0.7, 0.2)]]);
+    expect(boxAt(t, 0.05)!.x0).toBeCloseTo(0.15);
+    expect(boxAt(t, 0.5)!.x0).toBeCloseTo(0.2); // nearer the earlier sample: stays put
+    expect(boxAt(t, 1)!.x0).toBeCloseTo(0.6);
+    expect(boxAt(t, 2)).toBeUndefined();
+  });
+
+  it("paints a soft ellipse 1.5 times the face box", () => {
+    const m = paintFaces([{ x0: 0.4, y0: 0.4, x1: 0.6, y1: 0.6 }], 100, 100);
+    expect(m[50 * 100 + 50]).toBe(255);
+    // Radius 15 px: full to 12 px from the center, fading out by 15.
+    expect(m[50 * 100 + 40]).toBe(255);
+    expect(m[50 * 100 + 37]).toBeGreaterThan(0);
+    expect(m[50 * 100 + 37]).toBeLessThan(255);
+    expect(m[50 * 100 + 33]).toBe(0);
+    expect(m[5 * 100 + 5]).toBe(0);
+  });
+
+  it("feeds the mask to a retouch that follows faces, and not to one that does not", () => {
+    const project = (followFace: boolean) =>
+      parseProject({
+        settings: { width: 640, height: 360, fps: 30 },
+        assets: [{ type: "video", id: "v", src: "a.mp4", duration: 5, width: 1920, height: 1080 }],
+        clips: [{ id: "a", assetId: "v", in: 0, duration: 2, effects: [{ type: "beauty", params: { followFace } }] }],
+      });
+    const faceMasks = { a: "face.mkv" };
+    const on = compileProject(project(true), { output: "out.mp4", faceMasks });
+    expect(on.args).toContain("face.mkv");
+    expect(on.filterGraph).toContain("alphamerge");
+    expect(compileProject(project(false), { output: "out.mp4", faceMasks }).args).not.toContain("face.mkv");
+  });
+});
+
 describe("faces in the edit's frame", () => {
   const src = { width: 1920, height: 1080 };
   const vertical = { width: 1080, height: 1920 };
@@ -165,6 +213,32 @@ describe.skipIf(!ready)("face detection on real footage", () => {
     expect(track!.box.x0).toBeGreaterThan(0.2);
     expect(track!.box.x1).toBeLessThan(0.45);
   });
+
+  it("writes a face mask that follows her and uses it to retouch only the face", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "ave-face-"));
+    try {
+      const mask = path.join(dir, "face.mkv");
+      await writeFaceMask(footage, mask, { start: 0, end: 1, fps: 10, detector });
+      const gray = (await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", mask, "-f", "rawvideo", "-pix_fmt", "gray", "-"], { binaryStdout: true })).stdoutBuffer!;
+      const frame = 320 * 180;
+      expect(gray.length).toBe(frame * 10);
+      const first = gray.subarray(0, frame);
+      const share = first.reduce((n, v) => n + (v > 128 ? 1 : 0), 0) / frame;
+      expect(share).toBeGreaterThan(0.002);
+      expect(share).toBeLessThan(0.1);
+      expect(first[90 * 320 + 315]).toBe(0); // the wall on the right
+
+      const p = parseProject({
+        settings: { width: 640, height: 360, fps: 30 },
+        assets: [{ type: "video", id: "jog", src: footage }],
+        clips: [{ id: "a", assetId: "jog", in: 0, duration: 1, effects: [{ type: "beauty", params: { smooth: 80, followFace: true } }] }],
+      });
+      await renderFrame(p, 0.5, { output: path.join(dir, "frame.png"), cacheDir: dir });
+      expect((await readdir(path.join(dir, "masks"))).filter((f) => f.startsWith("face-") && f.endsWith(".mkv"))).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 describe("person cutout", () => {

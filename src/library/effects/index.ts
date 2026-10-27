@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Easing, Effect } from "../../core/schema.js";
 import { easeValue } from "../../core/keyframes.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
-import { define, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
+import { define, maskBranch, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
 import { motionEffects } from "./motion.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
 
@@ -160,13 +160,15 @@ export const EFFECTS: EffectDefinition[] = [
     category: "retouch",
     perFrame: true,
     description:
-      "Portrait retouch: edge-preserving skin smoothing that keeps eyes, hair and outlines sharp, plus optional brightening and warmth. Applies to the whole frame, or only inside a face region (x, y, width, height as frame fractions; check placement with render_frame).",
+      "Portrait retouch: edge-preserving skin smoothing that keeps eyes, hair and outlines sharp, plus optional brightening and warmth. Applies to the whole frame, only inside a face region (x, y, width, height as frame fractions; check placement with render_frame), or, with followFace, only on the faces wherever they move (found on every frame of primary video clips).",
     params: z.object({
       smooth: num(50, 0, 100, "Skin smoothing strength"),
       brighten: num(15, 0, 100, "Lift and even out skin tones"),
       warmth: num(10, -100, 100, "+ warmer, healthier skin, - cooler"),
       region: SubjectRegionSchema.optional().describe("Only retouch inside this ellipse (the face); omit for the whole frame"),
+      followFace: z.boolean().default(false).describe("Retouch only the faces, following them frame by frame (primary video clips; elsewhere region applies)"),
     }),
+    usesFaceMask: (p) => p.followFace,
     toFilter: (p, ctx) => {
       const s = p.smooth / 100;
       const scale = Math.min(ctx.width, ctx.height) / 1080;
@@ -177,6 +179,9 @@ export const EFFECTS: EffectDefinition[] = [
       ];
       if (!retouched.some(Boolean)) return "null";
       // Smoothing is blended back over the original so detail survives even at full strength.
+      const strength = 0.55 + 0.4 * Math.max(s, 0.25);
+      const mask = p.followFace && !ctx.alpha ? ctx.faceMask?.() : undefined;
+      if (mask) return maskBranch(ctx, mask, retouched.filter(Boolean).join(","), 0.3, strength);
       return maskedBlend(ctx, retouched.filter(Boolean).join(","), {
         region: p.region,
         inside: true,
@@ -244,7 +249,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "denoise",
     name: "Denoise",
     category: "retouch",
-    perFrame: true,
+    perFrame: false, // works across frames
     description:
       "Remove grain and color noise from dim or phone footage, keeping edges. strength 0.3 is light, 0.6 cleans low-light video, 1 is heavy (skin and texture start to smear). Pair with the denoise audio effect for hiss.",
     params: z.object({ strength: num(0.5, 0, 1, "0..1") }),
@@ -257,7 +262,7 @@ export const EFFECTS: EffectDefinition[] = [
     id: "stabilize",
     name: "Stabilize",
     category: "motion",
-    perFrame: true,
+    perFrame: false, // works across frames
     description:
       "Steady shaky handheld footage: camera shake is measured frame to frame and cancelled, and the picture is zoomed in slightly (zoom) so the moving edges stay out of frame. Best on small jitters; it does not straighten big pans. Put it on the clip (each clip is stabilized on its own).",
     params: z.object({
@@ -556,6 +561,14 @@ export function usesPersonMask(effect: Effect): boolean {
   if (!def?.usesPersonMask) return false;
   const parsed = def.params.safeParse(effect.params ?? {});
   return parsed.success && def.usesPersonMask(parsed.data);
+}
+
+/** Whether an effect wants masks that follow the clip's faces (see EffectDefinition.usesFaceMask). */
+export function usesFaceMask(effect: Effect): boolean {
+  const def = byId.get(effect.type);
+  if (!def?.usesFaceMask) return false;
+  const parsed = def.params.safeParse(effect.params ?? {});
+  return parsed.success && def.usesFaceMask(parsed.data);
 }
 
 /** Whether an effect works frame by frame (see EffectDefinition.perFrame). Unknown effects are not. */

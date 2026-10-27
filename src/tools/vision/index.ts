@@ -2,3 +2,4 @@
 export * from "./faces.js";
 export * from "./clips.js";
 export * from "./segment.js";
+export * from "./facemask.js";
