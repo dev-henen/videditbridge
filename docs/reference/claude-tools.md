@@ -498,7 +498,7 @@ _No parameters._
 
 ### analyze_audio
 
-**read-only**. Map the sound of a recording without a transcript: where someone is speaking, where it is silent, where music or other sound plays, loud moments (claps, bangs, laughs) and the beat. Give an assetId for source times (best for raw footage, before cutting), or omit it to map every primary clip on the timeline. Returns a timeline of segments and a picture (waveform with a colored band: green speech, blue music, orange other sound, dark silence, red loud moments). Labels come from signal analysis, not speech recognition: treat '(unsure)' segments with care and check with render_frame or your own judgement. Use the times with remove_silences, assemble_from_source, split_clip, add_sound_effect and beat_sync.
+**read-only**. Map the sound of a recording without a transcript: where someone is speaking, where it is silent, where music or other sound plays, loud moments (claps, bangs, laughs) and the beat. Give an assetId for source times (best for raw footage, before cutting), or omit it to map every primary clip on the timeline. Returns a timeline of segments and a picture (waveform with a colored band: green speech, blue music, orange other sound, dark silence, red loud moments). Labels come from a local sound model (no speech recognition): sung music is marked 'music with vocals', and other sounds are named, like 'sound (dog)' or 'sound (siren)'. Treat '(unsure)' segments with care and check with render_frame or your own judgement. Use the times with remove_silences, assemble_from_source, split_clip, add_sound_effect and beat_sync.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|

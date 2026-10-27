@@ -75,6 +75,10 @@ On a laptop (2-core i3), 12 s of a 62 s edit with graded, Ken Burns and glow cli
 
 Running a global per-frame effect on each clip instead of the joined video only differs during transitions, where each side is graded before the blend rather than after.
 
+## Proxy media
+
+With `proxies: true`, videos larger than 1920 px are read from a 1280 px copy in the cache's `proxies` folder (x264 with a keyframe every half second, sound copied). Missing proxies are made in the background, one at a time, so the first preview uses the originals and later ones are faster: a 4K preview frame took 2.8 s from the original and 0.64 s from the proxy. `render_frame`, `render_contact_sheet`, `render_preview`, the preview server and the app's frames use proxies; final renders, thumbnails and measurements (review, color matching) never do. `makeProxies(project)` makes them up front.
+
 ## Hardware encoding
 
 `render` encodes on the graphics card when one works: NVENC, then Quick Sync, then AMF, each checked once per process with a tiny test encode. Quality follows `export.crf` (Quick Sync at quality 22 matched x264 CRF 20 in SSIM and size). It is only used when the x264 preset is slower than `veryfast`, because x264 `ultrafast` previews are already quicker, and a failed hardware encode falls back to x264. Pass `hardware: false` (CLI `--software`) to always use x264. On the same laptop Quick Sync encoded 1080p about 3.6 times faster than x264 `medium`.

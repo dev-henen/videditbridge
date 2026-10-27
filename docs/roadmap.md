@@ -11,7 +11,7 @@ The biggest gap is that the editor does not know where people and objects are in
 | 1 | [Subject and face detection](#1-subject-and-face-detection) | Positions are guessed today; five features depend on it | Done |
 | 2 | [Keyframes](#2-keyframes) | Nothing can move or change over time except preset animations | Done |
 | 3 | [Automatic quality check](#3-automatic-quality-check-review_edit) | Every problem so far was caught by looking at frames | Done (text over faces came with #1) |
-| 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes several minutes, and every change re-renders all of it | Segment cache and hardware encoding done |
+| 4 | [Faster rendering](#4-faster-rendering) | A 62 s video takes several minutes, and every change re-renders all of it | Done, except parallel chunks (not worth it on most machines) |
 | 5 | [An AI-first desktop app](#5-an-ai-first-desktop-app) | People can only type; they cannot point at things or pick between options | Done |
 
 
@@ -71,13 +71,13 @@ Each of these was a real problem in this session, found only by looking: an unre
 The whole project is rendered as one FFmpeg graph every time. Improvements, in order of payoff:
 
 1. **Segment cache.** Render each clip with its effects once and reuse it until that clip changes. **Done** (2026-10-26): a re-render of an unchanged edit is about 5 times faster. See [Render cache](guides/rendering-and-preview.md#render-cache).
-2. **Proxy media.** Use small copies of the source footage for previews and frames.
+2. **Proxy media.** Use small copies of the source footage for previews and frames. **Done** (2026-10-27): videos over 1920 px get a 1280 px proxy in the cache folder, made in the background, and previews, frames and contact sheets read it (final renders never do). A preview frame of 4K footage went from 2.8 s to 0.64 s.
 3. **Hardware encoding.** Use the graphics card's encoder (NVENC, Quick Sync, AMF) when one is present. **Done**: about 3.6 times faster encoding with Quick Sync.
-4. **Parallel chunks.** Split long exports into pieces rendered at the same time, then join them. Measured first: on a 2-core laptop, rendering three clips at once was only 1.2 times faster than one after another, because FFmpeg's filters already use every core. Worth it only on machines with many cores.
+4. **Parallel chunks.** Split long exports into pieces rendered at the same time, then join them. Measured first: on a 2-core laptop, rendering three clips at once was only 1.2 times faster than one after another, because FFmpeg's filters already use every core. Worth it only on machines with many cores. **Not done**: a range render processes everything before its start, so chunks would need input seeking with every timed effect shifted, a large change for little gain here.
 
 Found on the way: the fps filter rounded every clip up a frame, so on a long edit the cuts drifted a few frames from captions, overlays and sound. Clips now get exactly their frames.
 
-Still slow on a cold render: Ken Burns upscales every frame to twice the size before `zoompan` (about 20 ms per 1080p frame), and `colorbalance` and `vibrance` convert each frame to RGB and back (about 15 to 30 ms each).
+Cold renders: **done** (2026-10-27). Zooms (Ken Burns and the other zoom effects) now run through `perspective`, which samples between pixels, instead of `zoompan` on a 2x upscale: 22.5 to 15.9 ms per 1080p frame at the same quality. Heavy chains of per-pixel color filters are baked into one lookup table (`haldclut`), which costs a flat 28 ms instead of, for example, 42 ms for `colorbalance` plus `vibrance`.
 
 ## 5. An AI-first desktop app
 
@@ -120,8 +120,8 @@ Everything still goes through the same tools, so all changes share one undo hist
 
 - **Templates.** Done (2026-10-26): templates now declare `automation` that `apply_template` runs. 27 of the 33 use it (the rest are single text cards or have nothing to automate): talking-footage templates transcribe and remove retakes, fillers and pauses; essays, slide lessons, list videos, recipes and property tours narrate each item with the local voice and fit the scene to the line; montages cut on the beat; moving transitions get their sound. Video essays open each chapter with a section card. See [Templates](guides/templates.md#automation).
 - **Saving.** Done (2026-10-26): the app saves right after every change (there was a 300 ms wait). Each save is flushed to disk under a unique temporary name before it replaces `project.json`, saves to one project run in order, the previous save is kept as `project.json.bak`, and opening a damaged project falls back to it. The host also waits for pending saves before it exits.
-- **Sound map.** Sung vocals come out as "sound (unsure)". A small local speech, music and singing classifier would beat the current hand-tuned rules.
-- **Speech recognition.** The base Whisper model mishears names and skips some quiet speech; the larger model skipped a whole section in testing. Worth comparing other local models.
+- **Sound map.** Done (2026-10-27): a local sound model (CED-tiny, chosen over YAMNet and AST) labels speech, music and "music with vocals", and names other sounds ("sound (siren)"). The hand-tuned rules remain as the fallback. See [Sound maps](guides/raw-footage.md).
+- **Speech recognition.** Done (2026-10-27): the skipped sections came from the pipeline merging 30 s windows. Audio is now cut in its pauses and leveled before recognition, and English uses `whisper-base.en`. On a test with quiet speech and speech over music, word errors fell from 45 to 69% to 1.9%.
 - **Version control.** Done: the recent work is committed.
 
 ## Suggested order

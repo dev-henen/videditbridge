@@ -27,7 +27,9 @@ It also returns a picture for Claude to look at: the waveform with a colored ban
 
 **How it works.** Each 10 ms frame gets a level, a zero-crossing rate and a spectrum. Silence is anything that does not clear the background (the quietest 10% of the recording, and never above -40 dB) by a margin. Short pauses are bridged, so words are not split into fragments. Speech is told apart by how its level swings with every syllable around its own 200 ms average, and by its alternation of voiced and unvoiced sounds. Music is steady and tonal, and noise is steady and spectrally flat.
 
-**Limits.** This is signal analysis, not speech recognition. It does not know what is said or who says it. Singing in a dense song often shows as `sound`, and `(unsure)` marks labels with low confidence. For words, fillers and captions, use a transcript (see [Transcripts & captions](transcripts-and-captions.md)).
+**How it labels.** A local sound model, CED-tiny (Apache 2.0, 6.7 MB, downloaded once into the models folder), tells speech, music and singing apart and names other sounds: `music with vocals`, `sound (dog)`, `sound (siren)`. It was chosen over YAMNet, which mistook a dog for a chicken, and over AST, which is 14 times bigger. It takes about 15 ms per second of audio. Without it (no `onnxruntime-node`, or offline before the first download), signal rules label the map, and those often call singing `sound` and steady music `speech`.
+
+**Limits.** This is not speech recognition. It does not know what is said or who says it. `(unsure)` marks labels with low confidence. For words, fillers and captions, use a transcript (see [Transcripts & captions](transcripts-and-captions.md)).
 
 Without an `assetId`, `analyze_audio` maps the current timeline: each primary clip's source range, in timeline time. That is useful after cutting, to check what is left.
 

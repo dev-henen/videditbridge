@@ -27,7 +27,7 @@ Times are in **source** seconds of the asset the transcript belongs to. Attach a
 | AssemblyAI | `fromAssemblyAI` | Milliseconds converted, speakers |
 | Plain text + duration | `fromPlainText` | Even spread, e.g. for a script |
 
-**Transcribe media on this machine (default).** `LocalWhisperTranscriber` runs the open Whisper speech model locally with ONNX Runtime (through the `@huggingface/transformers` package). It needs no account or key and uploads nothing. The model downloads once (about 80 MB for the default `onnx-community/whisper-base_timestamped`) to `~/.cache/ai-video-editor/models` (or `$AVE_MODELS_DIR`), then works offline. On a laptop CPU, 57 s of speech took 25 s.
+**Transcribe media on this machine (default).** `LocalWhisperTranscriber` runs the open Whisper speech model locally with ONNX Runtime (through the `@huggingface/transformers` package). It needs no account or key and uploads nothing. The model downloads once (about 80 MB: `onnx-community/whisper-base.en_timestamped` for English or no language given, `onnx-community/whisper-base_timestamped` for other languages) to `~/.cache/ai-video-editor/models` (or `$AVE_MODELS_DIR`), then works offline. On a laptop CPU, 57 s of speech took 25 s.
 
 ```ts
 import { transcribeMedia, LocalWhisperTranscriber } from "ai-video-editor";
@@ -36,7 +36,9 @@ const t = await transcribeMedia("talk.mp4", new LocalWhisperTranscriber());
 
 Whisper's word timestamps are approximate: words are often stretched over the pause after them or start a little early. The local transcriber tightens them with the [sound map](raw-footage.md): each word is trimmed to the speech it overlaps, and a word found in silence moves to the nearest speech within a second. That keeps captions from showing words twice across a cut, or dropping them when silence was removed.
 
-Pick a model with `new LocalWhisperTranscriber({ model })`: `whisper-tiny_timestamped` is fastest, and `whisper-small_timestamped` is more accurate on clear speech but about 7 times slower, and in testing it skipped a stretch of quieter speech that base caught. Proper names are a common miss (here "Claude" came out as "cloud"), so read the transcript and correct it before captioning.
+The audio is cut in its pauses into pieces under 25 s, and each stretch of sound is brought to the same level before recognition. Letting the model's pipeline split 30 s windows itself dropped whole sentences, and quiet speech next to loud parts went unheard. On a 47 s test with quiet speech and speech over music, word errors fell from 45 to 69% to 1.9%, and the quiet passage went from none of its words recognized to 97%.
+
+Pick a model with `new LocalWhisperTranscriber({ model })`: a `tiny` export is fastest and a `small` one more accurate but several times slower. Rare names can still be misheard ("Kokoro" came out as "Goguru"), so read the transcript and correct it with `fix_transcript` before captioning.
 
 **Correcting words.** `replaceWords(t, [{ find: "cloud code", replace: "Claude Code" }])` (the `fix_transcript` tool) replaces words and phrases. Matching ignores case and punctuation. The new words share the time span of the old ones, keep the punctuation around them, and take a capital letter at the start of a sentence. An empty `replace` removes words from the transcript without cutting the video.
 
