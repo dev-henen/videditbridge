@@ -124,6 +124,10 @@ Everything still goes through the same tools, so all changes share one undo hist
 - **Speech recognition.** Done (2026-10-27): the skipped sections came from the pipeline merging 30 s windows. Audio is now cut in its pauses and leveled before recognition, and English uses `whisper-base.en`. On a test with quiet speech and speech over music, word errors fell from 45 to 69% to 1.9%.
 - **Version control.** Done: the recent work is committed.
 
+## Next: cinematic grading and CGI effects
+
+The plan for movie-level color grading (log footage, secondary corrections, film looks, scene matching) and common CGI effects (blend modes, any-object masks and tracking, sky and screen replacement, atmospherics, depth, object removal, smooth slow motion), including a GPU render engine with OpenColorIO and ACES, is in [Cinematic grading and CGI effects](design/cinematic-grade-and-vfx.md).
+
 ## Suggested order
 
 1. Commit the current work. (Done.)
