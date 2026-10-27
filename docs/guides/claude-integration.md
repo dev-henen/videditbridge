@@ -11,10 +11,9 @@ The tool layer doesn't depend on any Anthropic package. The same definitions ser
 
 ```ts
 import Anthropic from "@anthropic-ai/sdk";
-import { EditorSession, executeTool, toAnthropicTools, toToolResultContent, startPreviewServer } from "ai-video-editor";
+import { EditorSession, executeTool, toAnthropicTools, toToolResultContent } from "ai-video-editor";
 
 const session = new EditorSession(undefined, { baseDir: process.cwd() });
-const preview = await startPreviewServer(session);    // the user watches edits at preview.url
 const tools = toAnthropicTools();                       // [{ name, description, input_schema }]
 
 // In your agent loop, for each tool_use block:
@@ -102,4 +101,3 @@ An MCP server needs to:
 2. list `TOOLS` (names, descriptions, `z.toJSONSchema(tool.input)`), and
 3. route each call to `executeTool`, returning text and image content.
 
-`startPreviewServer(session)` can run alongside it so users get a live view link.

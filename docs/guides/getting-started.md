@@ -76,11 +76,7 @@ Browse the [template reference](../reference/templates.md) or run `ave templates
 
 ## Watch edits live
 
-```bash
-ave preview project.json
-```
-
-This opens a local page that redraws the timeline and frames every time `project.json` changes. See [Rendering & live preview](rendering-and-preview.md).
+Open the project in the desktop app (app/VideoEditor; build it with `dotnet build app/VideoEditor`). It shows the timeline, frames and preview video as Claude edits. See [Rendering & preview](rendering-and-preview.md).
 
 ## Next
 

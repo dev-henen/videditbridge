@@ -14,8 +14,6 @@ Relative media paths in a project file resolve against the project file's folder
 | `ave frame <project.json> <time> <out.png>` | Render one frame. Options: `--scale`, `--fonts`, `--cache dir` |
 | `ave sheet <project.json> <out.png>` | Render a contact sheet. Options: `--columns 4`, `--rows 3`, `--fonts`, `--cache dir` |
 | `ave captions <project.json> <out.srt\|vtt\|ass>` | Export captions; the format comes from the file extension |
-| `ave preview <project.json> [--port 4321]` | Start the live preview and reload whenever the file changes |
 | `ave probe <media>` | Print duration, size, fps and audio/video presence as JSON |
 | `ave tools` | Print the Claude tool definitions as JSON (Messages API `tools` format) |
 
-`ave preview` works well alongside an AI that edits `project.json` directly, for example Claude Code: every save shows up in the browser, and parse errors appear in the page's log.

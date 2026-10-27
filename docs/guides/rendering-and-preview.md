@@ -1,6 +1,6 @@
-# Rendering & live preview
+# Rendering & preview
 
-Rendering code is in [src/tools/render](../../src/tools/render), and the preview server is in [src/tools/preview](../../src/tools/preview).
+Rendering code is in [src/tools/render](../../src/tools/render). People watch edits live in the desktop app (app/VideoEditor), which shows the frames and previews these functions render.
 
 ## FFmpeg
 
@@ -77,48 +77,10 @@ Running a global per-frame effect on each clip instead of the joined video only 
 
 ## Proxy media
 
-With `proxies: true`, videos larger than 1920 px are read from a 1280 px copy in the cache's `proxies` folder (x264 with a keyframe every half second, sound copied). Missing proxies are made in the background, one at a time, so the first preview uses the originals and later ones are faster: a 4K preview frame took 2.8 s from the original and 0.64 s from the proxy. `render_frame`, `render_contact_sheet`, `render_preview`, the preview server and the app's frames use proxies; final renders, thumbnails and measurements (review, color matching) never do. `makeProxies(project)` makes them up front.
+With `proxies: true`, videos larger than 1920 px are read from a 1280 px copy in the cache's `proxies` folder (x264 with a keyframe every half second, sound copied). Missing proxies are made in the background, one at a time, so the first preview uses the originals and later ones are faster: a 4K preview frame took 2.8 s from the original and 0.64 s from the proxy. `render_frame`, `render_contact_sheet`, `render_preview` and the app's frames use proxies; final renders, thumbnails and measurements (review, color matching) never do. `makeProxies(project)` makes them up front.
 
 ## Hardware encoding
 
 `render` encodes on the graphics card when one works: NVENC, then Quick Sync, then AMF, each checked once per process with a tiny test encode. Quality follows `export.crf` (Quick Sync at quality 22 matched x264 CRF 20 in SSIM and size). It is only used when the x264 preset is slower than `veryfast`, because x264 `ultrafast` previews are already quicker, and a failed hardware encode falls back to x264. Pass `hardware: false` (CLI `--software`) to always use x264. On the same laptop Quick Sync encoded 1080p about 3.6 times faster than x264 `medium`.
 
 **Preview scaling.** With `scale`, the whole graph runs at reduced resolution, which is about 4× faster at 0.5. The ASS file keeps the full-size coordinate space, so text and captions land exactly where they will in the final render.
-
-## Live preview server
-
-```ts
-const preview = await startPreviewServer(session, { port: 4321, autoContactSheet: true });
-console.log(preview.url);
-// later: await preview.close();
-```
-
-Or from the CLI, watching a project file: `ave preview project.json`.
-
-The page shows:
-
-- **Frame viewer** with a scrubber. Each position renders a frame on demand, cached per revision.
-- **Contact sheet** that re-renders automatically about 1s after edits stop.
-- **Preview video**: a low-res MP4 rendered on request.
-- **Timeline** with lanes for primary clips (transitions hatched), layers, audio and caption chunks. Click a lane to move the playhead.
-- **Issues** from validation, the **edit history** (newest first), **undo/redo** buttons, the session **log**, and recent **renders** (renders from older revisions are dimmed).
-
-The page updates over server-sent events whenever the session changes. Renders run one at a time through a queue, so the machine doesn't get flooded.
-
-The server accepts any object matching `PreviewSource`, so it works with your own session types. `EditorSession` satisfies it.
-
-### HTTP API
-
-| Endpoint | |
-|---|---|
-| `GET /` | The preview page |
-| `GET /events` | SSE stream of `state` events |
-| `GET /api/state` | Current state snapshot (timeline, summary, issues, history, renders) |
-| `GET /api/project` | Raw project JSON |
-| `GET /api/frame?t=1.5` | PNG frame at 0.5× scale |
-| `POST /api/contact-sheet` | Render a contact sheet |
-| `POST /api/preview` | Render a preview video |
-| `POST /api/undo`, `POST /api/redo` | |
-| `GET /media/<path>` | Files from the output directory (supports range requests) |
-
-The server binds to `127.0.0.1` by default. It has no authentication, so don't expose it publicly.

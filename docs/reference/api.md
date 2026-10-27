@@ -57,7 +57,6 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 | Render | `render`, `renderFrame`, `renderContactSheet`, `renderForAnalysis`, `compileProject`, `renderSize`, `planSegments`, `pruneCache`, `detectHardwareEncoder`, `hardwareEncoderArgs`, `probe`, `probeAssets`, `runFfmpeg`, `resolveFfmpegPath` |
 | Review | `reviewEdit` (all checks), `structuralChecks` (project-only checks), `measureLoudness`, `scanFootage`, `keyResidue`, `backdropContrast`, `textLayerBox`, `captionBoxes` |
 | Vision | `FaceDetector` (`detectFile`, `detectRgb`), `trackFaces`, `detectClipFaces`, `detectFacesCached`, `decodeYunet`, `sourceToFrame`, `focusOn`, `faceRegion`, `personRegion`, `PersonSegmenter` (`segmentSquare`, `writeMask`), `maskFile`, `resizeMask`, `stabilizeMask` |
-| Preview | `startPreviewServer`, `previewState` |
 
 ## `ai-video-editor/claude`
 
@@ -67,3 +66,4 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 | `TOOLS`, `getTool`, `registerTool`, `executeTool` | Tool definitions, custom tools, execution |
 | `toAnthropicTools` | Messages API `tools` array |
 | `toToolResultContent` | `tool_result` content blocks (text + images) |
+| `sessionState` | Snapshot of a session for the desktop app: timeline lanes, renders, history, activity, issues |

@@ -2713,7 +2713,7 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "render_preview",
-    description: "Render a fast low-resolution preview video (shown in the live preview for the user). Optionally only a time range.",
+    description: "Render a fast low-resolution preview video (shown in the desktop app for the user). Optionally only a time range.",
     input: z.object({ scale: z.number().min(0.1).max(1).default(0.5), start: z.number().min(0).optional(), end: z.number().positive().optional() }),
     mutates: false,
     run: async (s, i, activity) => {

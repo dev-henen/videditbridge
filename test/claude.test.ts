@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { LocalTTS } from "../src/tools/voiceover/local.js";
-import { EditorSession, TOOLS, executeTool, toAnthropicTools } from "../src/claude/index.js";
+import { EditorSession, TOOLS, executeTool, sessionState, toAnthropicTools } from "../src/claude/index.js";
 import { computeTimeline, parseProject } from "../src/core/index.js";
 
 function session() {
@@ -103,6 +103,23 @@ describe("session + tools", () => {
     await executeTool(s, "redo", {});
     expect(s.project.audio).toHaveLength(1);
     expect(events).toEqual(["add_clip", "add_text", "set_captions", "add_audio", "undo add_audio", "redo add_audio"]);
+  });
+
+  it("summarizes the session for the native app as edits land", async () => {
+    const s = session();
+    await executeTool(s, "add_clip", { assetId: "talk" });
+    const before = sessionState(s);
+    expect(before.duration).toBe(10);
+    expect(before.clips).toHaveLength(1);
+    await executeTool(s, "add_text", { text: "Live!", start: 0, duration: 2 });
+    s.recordRender({ kind: "frame", path: "C:/renders/frame.png", time: 1 });
+    const after = sessionState(s);
+    expect(after.revision).toBe(before.revision + 1);
+    expect(after.layers).toMatchObject([{ type: "text", label: "Live!" }]);
+    // The app opens rendered files directly.
+    expect(after.renders[0]).toMatchObject({ kind: "frame", url: "C:/renders/frame.png", stale: false });
+    expect(after.history[0]!.action).toBe("add_text");
+    expect(after.canUndo).toBe(true);
   });
 
   it("retouches faces that move, and turns that off for a fixed ellipse", async () => {

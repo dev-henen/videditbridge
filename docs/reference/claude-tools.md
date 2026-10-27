@@ -890,7 +890,7 @@ _No parameters._
 
 ### render_preview
 
-**read-only**. Render a fast low-resolution preview video (shown in the live preview for the user). Optionally only a time range.
+**read-only**. Render a fast low-resolution preview video (shown in the desktop app for the user). Optionally only a time range.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|

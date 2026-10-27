@@ -91,7 +91,7 @@ export interface SessionEvents {
 
 /**
  * Holds the project being edited, with undo/redo and change notifications.
- * One session = one video being edited by an AI (and watched by a human through the preview server).
+ * One session = one video being edited by an AI (and watched by a human in the desktop app).
  */
 export class EditorSession extends EventEmitter<SessionEvents> {
   private past: HistoryEntry[] = [];

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { watch } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";

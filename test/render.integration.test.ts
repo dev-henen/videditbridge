@@ -3,7 +3,7 @@ import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { AUDIO_EFFECTS, EFFECTS, TEMPLATES, applyTemplate } from "../src/library/index.js";
-import { probe, render, renderContactSheet, renderFrame, runFfmpeg, runFfmpegOrThrow, startPreviewServer } from "../src/tools/index.js";
+import { probe, render, renderContactSheet, renderFrame, runFfmpeg, runFfmpegOrThrow } from "../src/tools/index.js";
 import { EditorSession, executeTool } from "../src/claude/index.js";
 import { computeTimeline, parseProject, timelineToSource, validateProject, type Transcript } from "../src/core/index.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "./helpers/media.js";
@@ -561,48 +561,4 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     expect((await probe(r.output)).duration).toBeCloseTo(1.5, 0);
   });
 
-  it("serves a live preview that updates on edits", async () => {
-    const session = new EditorSession(undefined, { outputDir: out("preview-server") });
-    await executeTool(session, "import_media", { src: fx.talk, id: "talk" });
-    await executeTool(session, "add_clip", { assetId: "talk" });
-    const server = await startPreviewServer(session, { port: 0, autoContactSheet: false });
-    try {
-      const page = await fetch(server.url);
-      expect(await page.text()).toContain("Video Edit Preview");
-
-      const state = (await (await fetch(`${server.url}/api/state`)).json()) as { duration: number; clips: unknown[]; revision: number };
-      expect(state.duration).toBe(4);
-      expect(state.clips).toHaveLength(1);
-
-      // SSE: first message is the current state; an edit pushes a new one.
-      const ctrl = new AbortController();
-      const res = await fetch(`${server.url}/events`, { signal: ctrl.signal });
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      const nextState = async () => {
-        while (!buf.includes("\n\n")) buf += decoder.decode((await reader.read()).value);
-        const [msg, ...rest] = buf.split("\n\n");
-        buf = rest.join("\n\n");
-        return JSON.parse(msg!.split("data: ")[1]!) as { revision: number; layers: unknown[] };
-      };
-      const first = await nextState();
-      await executeTool(session, "add_text", { text: "Live!", start: 0, duration: 2 });
-      // Activity updates ("Adding text…") are pushed too, at the same revision; skip to the edit.
-      let second = await nextState();
-      for (let n = 0; second.revision === first.revision && n < 10; n++) second = await nextState();
-      expect(second.revision).toBe(first.revision + 1);
-      expect(second.layers).toHaveLength(1);
-      ctrl.abort();
-
-      const frame = await fetch(`${server.url}/api/frame?t=1`);
-      expect(frame.headers.get("content-type")).toBe("image/png");
-      expect((await frame.arrayBuffer()).byteLength).toBeGreaterThan(1000);
-
-      await fetch(`${server.url}/api/undo`, { method: "POST" });
-      expect(session.project.layers).toHaveLength(0);
-    } finally {
-      await server.close();
-    }
-  });
 });

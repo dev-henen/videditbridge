@@ -1,5 +1,6 @@
 /**
- * Claude edits a video with the library's tools while you watch in the live preview.
+ * Claude edits a video with the library's tools. Frames and previews it renders are saved in the
+ * output folder; to watch edits live, use the desktop app (app/VideoEditor), which runs the same tools.
  *
  *   npx tsx examples/claude-agent.ts "Make a 30s vertical highlight from talk.mp4 with bold captions"
  *
@@ -8,7 +9,6 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { EditorSession, executeTool, toAnthropicTools, toToolResultContent } from "../src/claude/index.js";
-import { startPreviewServer } from "../src/tools/preview/index.js";
 import { OpenAITranscriber } from "../src/tools/transcript/index.js";
 import { OpenAITTS } from "../src/tools/voiceover/index.js";
 
@@ -20,7 +20,6 @@ How to work:
 - For talking footage: transcribe (or set_transcript), read it with get_transcript, cut weak parts (cleanup_speech, cut_ranges, assemble_from_source), then set_captions.
 - Use detect_faces before placing titles and callouts, and reframe when 16:9 footage goes into a 9:16 video.
 - After meaningful changes, LOOK at your work with render_contact_sheet or render_frame and fix anything off (text overlapping faces, captions too long, bad pacing). Run review_edit before the final render and fix what it reports.
-- The user watches a live preview of every edit, so make steady, purposeful changes.
 - Finish with render_preview, then summarize what you did and the remaining options. Only call render_video when the user asks for the final file.`;
 
 const prompt = process.argv.slice(2).join(" ") || "Create a 10 second quote-card video that says 'Make it simple, but significant.' by Don Draper.";
@@ -30,8 +29,6 @@ const session = new EditorSession(undefined, {
   transcriber: process.env.OPENAI_API_KEY ? new OpenAITranscriber() : undefined,
   tts: process.env.OPENAI_API_KEY ? new OpenAITTS() : undefined,
 });
-const preview = await startPreviewServer(session, { open: true });
-console.log(`Live preview: ${preview.url}\n`);
 
 const client = new Anthropic();
 const tools = toAnthropicTools() as Anthropic.Beta.BetaTool[];
@@ -83,5 +80,5 @@ try {
     messages.push({ role: "user", content: results });
   }
 } finally {
-  console.log(`\n\nPreview still running at ${preview.url}, Ctrl+C to exit.`);
+  console.log(`\n\nRenders are in ${session.options.outputDir}.`);
 }

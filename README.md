@@ -8,7 +8,7 @@ An AI-native video editing library. The edit is a plain JSON document that Claud
 - **38 effects** (color grades, Ken Burns, punch-in zooms, shake, glitch, letterbox…), **46 transitions**, and **14 text animations**.
 - **14 components**: lower-thirds, title cards, CTAs, subscribe buttons, quotes, number badges, countdowns, end screens.
 - **Voice-over on your machine**: a local neural voice model (27 English voices) with measured word timings, so narration gets captions. No account or key.
-- **Live preview**: a local web page that updates on every edit, with a timeline, frame scrubber, contact sheets and preview video. Claude can also render frames and contact sheets to check its own work.
+- **Desktop app**: a native Windows app (app/VideoEditor) where you edit by asking Claude and watch every edit land, with the timeline, frames, preview video and review findings. Claude can also render frames and contact sheets to check its own work.
 
 **Documentation:** [docs/](docs/README.md) has guides plus a reference for every Claude tool, template, effect, transition, animation, caption style and component.
 
@@ -90,10 +90,9 @@ p = addComponent(p, { component: "lower-third", start: 1, params: { name: "Ada",
 ### Let Claude edit
 
 ```ts
-import { EditorSession, executeTool, toAnthropicTools, toToolResultContent, startPreviewServer } from "ai-video-editor";
+import { EditorSession, executeTool, toAnthropicTools, toToolResultContent } from "ai-video-editor";
 
 const session = new EditorSession();
-const preview = await startPreviewServer(session);    // open preview.url to watch
 const tools = toAnthropicTools();                       // pass as `tools` to the Messages API
 // for each tool_use block from Claude:
 const result = await executeTool(session, block.name, block.input);
@@ -132,13 +131,9 @@ The tool layer has no dependency on the Anthropic SDK. The future connector (an 
 
 `projectJsonSchema()` returns the JSON Schema. `validateProject()` reports problems before a render, and `summarizeProject()` gives a compact text timeline for a model to read.
 
-## Live preview
+## Previews
 
-```bash
-ave preview project.json      # reloads whenever the file changes
-```
-
-In code, call `startPreviewServer(session)`. The page shows the timeline (clips, layers, audio and caption lanes, with a playhead you can click), renders frames on demand while you scrub, refreshes a contact sheet automatically after edits, and offers a low-res preview video, undo/redo, the edit history, validation issues and a log. Updates arrive over server-sent events.
+The desktop app (app/VideoEditor) shows edits as they land: the timeline, frames, preview video, history and review findings. In code, `renderFrame`, `renderContactSheet` and `render` with `scale` give the same previews.
 
 Previews render the whole filter graph at reduced size. Text stays in full-size coordinates, so the layout matches the final render.
 
@@ -150,7 +145,7 @@ ave validate <project.json>      ave summary <project.json>
 ave render <project.json> <out.mp4> [--scale 0.5] [--preset ultrafast] [--start s --end s]
 ave frame <project.json> <t> <out.png>     ave sheet <project.json> <out.png>
 ave captions <project.json> <out.srt|vtt|ass>
-ave preview <project.json> [--port 4321]   ave probe <media>   ave tools
+ave probe <media>   ave tools
 ```
 
 ## Extending
