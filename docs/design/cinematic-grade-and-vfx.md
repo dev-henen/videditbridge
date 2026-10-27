@@ -4,7 +4,7 @@ Status: proposed (2026-10-27). This is the build plan for movie-level color grad
 
 The bar is professional results, not "a filter that looks similar". Every feature below has a measurable "done when" check, and every result must be something Claude can verify itself (scopes, mattes, frames) before it shows the user. Where a model is involved, candidates are compared on the same clips before one is chosen, as was done for faces (YuNet), person cutout (PP-HumanSeg) and sound (CED-tiny).
 
-Changing the core of the project, and adding other languages, is allowed. Section 3.4 recommends doing so: the picture path moves from FFmpeg filter graphs to a GPU render engine with industry color management, and FFmpeg stays for decoding, encoding and audio. The feature specs in sections 4 to 7 hold for either engine; where an implementation note names an FFmpeg filter, it describes the fallback renderer.
+Changing the core of the project, and adding other languages, is allowed. Code on a hot path is moved to Rust where that is easy, and the rest stays in TypeScript (section 3.5); section 3.4 recommends a new core: the picture path moves from FFmpeg filter graphs to a GPU render engine with industry color management, and FFmpeg stays for decoding, encoding and audio. The feature specs in sections 4 to 7 hold for either engine; where an implementation note names an FFmpeg filter, it describes the fallback renderer.
 
 ## 1. What "professional" means here
 
@@ -131,6 +131,64 @@ Any effect, not only grades, takes an optional `mask`: a glow on one object, a b
 
 **Done when** (engine milestone): the engine renders every current template and integration test project; parity with the FFmpeg backend within ΔE 2000 of 1 on 8-bit content; 1080p30 playback of a graded clip with two secondaries and a blended overlay in real time on the reference laptop's integrated GPU, or at least 3x faster than the FFmpeg backend there.
 
+### 3.5 Language rule: Rust where speed matters and the move is easy
+
+**Rule.** Code is moved to Rust when it is on a hot path and the move is easy. Code that does not need it stays in TypeScript.
+
+- **Hot path**: its cost grows with pixels, audio samples or frames, and it is a measurable share of a tool call or a render.
+- **Easy move**: it is self-contained, with plain inputs and outputs (typed arrays, numbers, file paths), so it can be ported behind the same function signature and checked for parity.
+
+Code that is hot but tangled with the edit logic is first separated into a plain kernel, then moved. **New code with a speed budget in section 1 starts in Rust**: the render engine, mask processing outside the GPU, tracking, particles, depth alignment, inference, and inpainting and interpolation glue.
+
+TypeScript keeps everything about the edit itself: the project document and its schema, `core/operations`, the catalogs (effects, templates and the rest stay data), tool definitions and their descriptions, planning (turning a project into an FFmpeg graph or an engine plan), the session, the host and its JSON-RPC to the app. It also keeps code that touches pixels or samples but runs rarely or cheaply, where a port would add a build dependency for no felt gain.
+
+**Decision test.**
+
+1. Does it run per frame, per audio window or per pixel, or does section 1 give it a speed budget? If not, keep it in TypeScript.
+2. If so, is it a measurable share of the time? Profile it on a real project. Under about 10% of the tool call or render, keep it in TypeScript.
+3. If so, can it be ported behind the same signature with a parity test? Then move it. If not, first split out the kernel, then move the kernel.
+
+**Packaging.** One Cargo workspace in `native/`:
+
+| Crate | Ships as | Holds |
+|---|---|---|
+| `ave-engine` | A separate executable (section 3.4), prebuilt per platform | The GPU render engine, OCIO, decode and encode |
+| `ave-native` | A Node addon built with napi-rs, prebuilt per platform as optional npm packages (like `@resvg/resvg-js`), Windows x64 first | The CPU kernels in the table below, and model inference through ONNX Runtime's Rust bindings (`ort`) with DirectML, CUDA and CoreML execution providers |
+
+Inference moves into Rust with its pre- and post-processing, so a frame goes from decode to mask without crossing back into JavaScript. This replaces `onnxruntime-node` and, after the comparison in section 7, the transformers.js Whisper pipeline.
+
+**Interface rules.**
+
+- **Coarse calls**: a whole clip, buffer or source range per call, never per pixel or per frame across the JavaScript boundary.
+- **Data in and out**: typed arrays without copying, and file paths for anything bigger than a frame.
+- **Never block Node**: work runs on a Rust thread pool (rayon) and returns a promise, so the host stays responsive while the app shows progress. Progress callbacks are throttled to a few per second, and an `AbortSignal` sets a cancel flag the kernels check.
+- **Errors**: they cross the boundary as normal JavaScript errors with a clear message, and a panic never takes down the host.
+
+**Existing hot spots, and what happens to each** (moves in the order they pay off; confirm each with a profile before porting):
+
+| Today (TypeScript) | Work | Decision | Why |
+|---|---|---|---|
+| `tools/audio/analyze.ts` (`frameFeatures`, `fft`, `soundScores`, `onsetEnvelope`, `tempo`) | FFT and features per 10 ms frame, beat tracking | **Move** to `ave-native` audio | Runs on every sound map, beat detection, transcription and review over whole recordings; pure functions over sample arrays, so easy to port |
+| `tools/vision/faces.ts` (frame letterboxing, `decodeYunet`, NMS) with YuNet inference | Per-frame pre- and post-processing | **Move** to `ave-native` vision, with inference in `ort` | Per frame over whole clips; moving it with inference keeps frames in Rust from decode to result |
+| `tools/vision/segment.ts` (`personProbability`, `resizeMask`, `stabilizeMask`, the mask writer loop) with PP-HumanSeg inference | Per-frame mask math and encoding | **Move** to `ave-native` vision | Per pixel, per frame; plain array math |
+| `tools/vision/facemask.ts` (`paintFaces`, the frame loop) | Per-pixel ellipse painting per frame | **Move** to `ave-native` vision | Per pixel, per frame; a few lines to port |
+| `tools/audio/classify.ts` with CED inference | Windows and inference | **Move** with the other inference | Easy once `ort` is in place (N0); keeps all models in one runtime |
+| `tools/graphics` (placeholder evaluation, frame loop, piping to FFmpeg) | Per-frame SVG fill | **Stay** in TypeScript | The heavy part (rasterizing) is already Rust in resvg; evaluating placeholders is small. Revisit if a profile shows the loop matters |
+| `tools/review` (`backdropContrast`, frame scans) and `render/color-analysis.ts` (levels, histograms) | Per-pixel statistics on a few frames | **Stay** in TypeScript | Runs on a handful of small frames per review; FFmpeg does the decoding |
+| `tools/transcript/local.ts` (`speechPieces`, `levelSpeech`) | Per-sample leveling | **Stay** in TypeScript | Runs once per transcription and is tiny next to Whisper itself |
+| `trackFaces`, keyframe math, captions, planning (`compileProject`) | Per-track or per-project logic | **Stay** in TypeScript | Not per pixel or sample; it is edit logic |
+
+New code from sections 4 to 7 with a speed budget is written in Rust from the start, as listed under **Rule**.
+
+**How a port is done.**
+
+1. Write the Rust kernel behind the same TypeScript function signature, so callers and tools do not change.
+2. Keep the TypeScript version only as the test oracle. A parity test feeds both the same recorded inputs (real audio, frames and model outputs from the test media) and requires identical results, or results within a stated tolerance for floating point.
+3. Record a benchmark on the reference laptop (before and after, same input) in the relevant guide. A port that does not measurably help is not merged, and the code stays in TypeScript.
+4. Delete the TypeScript implementation once parity holds, so there is one source of truth. Machines where the native package cannot load get a clear error naming the package, not a silent slow path. The FFmpeg render backend (section 3.4) is the one deliberate fallback.
+
+**Done when** (native milestone): every **Move** row of the table runs in Rust with parity tests passing. Each has a recorded speedup. The sound map of a 10-minute recording takes under 2 s, and face detection overhead outside the model itself is under 2 ms per frame. The host stays responsive (JSON-RPC answers under 50 ms) while any kernel runs.
+
 ## 4. Grading features
 
 ### 4.1 Color spaces and camera log (`set_color_space`)
@@ -207,14 +265,14 @@ Write the clip's grade (input transform, primary, look, output; not the secondar
 
 ### 5.4 Point and surface tracking (`track_points`, `pin_layer`, `replace_screen`)
 
-- **Algorithm**: pyramidal Lucas-Kanade feature tracking on downscaled gray frames (good-features corners inside the user's region), outlier rejection with RANSAC, and a model per use: translation (point), similarity (scale and rotation), or homography (a flat surface: a screen, a sign, a wall). Smooth with a short bidirectional filter; mark frames where too few features survive and re-detect. Written in TypeScript like the face pipeline, with typed arrays; no new native dependency.
+- **Algorithm**: pyramidal Lucas-Kanade feature tracking on downscaled gray frames (good-features corners inside the user's region), outlier rejection with RANSAC, and a model per use: translation (point), similarity (scale and rotation), or homography (a flat surface: a screen, a sign, a wall). Smooth with a short bidirectional filter; mark frames where too few features survive and re-detect. Written in Rust in `ave-native` (section 3.5), working on the decoded gray pyramid across threads; one call tracks a whole source range.
 - **pin_layer**: attach any layer to a track: position, scale and rotation keyframes from the track (reuse `simplifyKeys`).
 - **replace_screen**: four tracked corners per frame drive `perspective` with `sense=destination` for the inserted video or image (the corner-pin code from 3D layers). Add a matched blur, a slight glare pass and color match to the screen's surroundings so the insert sits in the shot. Occlusion (a finger over the screen) uses an object mask from section 5.2 over the insert.
 - **Done when**: synthetic homography tests give corner error under 0.5 px; real phone and monitor clips drift under 2 px per 5 s; a tracked insert survives motion blur on a fast pan without jumping (re-detection within 3 frames).
 
 ## 6. Atmosphere and light (`add_particles`, `add_light`)
 
-- **Generator**: deterministic particle simulation in TypeScript (seeded), with emitters, gravity, wind, drag, turbulence (curl noise), size and color over life, motion blur by drawing streaks along velocity, and depth layers (near particles bigger, faster, blurrier). Rendered to RGBA like `create_graphic` and placed as an alpha layer with a blend mode.
+- **Generator**: deterministic particle simulation in Rust (seeded; compute shaders in the engine, a multi-threaded CPU version in `ave-native` for the fallback renderer), with emitters, gravity, wind, drag, turbulence (curl noise), size and color over life, motion blur by drawing streaks along velocity, and depth layers (near particles bigger, faster, blurrier). Rendered to RGBA like `create_graphic` and placed as an alpha layer with a blend mode.
 - **Presets** (data): rain (light, heavy, with splashes at a ground line), snow, dust motes in light, embers and sparks (rising, flickering), confetti, bokeh orbs, smoke and fog (fractal noise layers drifting, not particles), light rays (radial blur of thresholded highlights from a source point), lens flare (ghosts along the line through the frame center, sized by the source's brightness).
 - **Interaction**: particles can be limited by a mask (snow only in the sky region, embers behind a person using the person matte as a holdout), and rain and snow slow down with the speed of the clip.
 - **Budget**: 1080p, 2,000 particles, under 40 ms per frame to generate.
@@ -289,34 +347,37 @@ The app stays AI-first. Additions serve the conversation:
 
 ## 12. Order of work
 
-Two tracks run side by side: the engine (E) and features (F). Features first land in the FFmpeg backend where that is cheap and correct, so users get them early, and each engine milestone ports them.
+Three tracks run side by side: native kernels (N), the engine (E) and features (F). Features first land in the FFmpeg backend where that is cheap and correct, so users get them early, and each engine milestone ports them. Per section 3.5, any feature step with a speed budget writes its kernels in Rust from the start, so N0 comes before F4.
 
 | Step | Builds | Depends on | Done when |
 |---|---|---|---|
+| N0 | `native/` Cargo workspace, napi-rs `ave-native` package with prebuilt Windows x64 binaries, CI builds, parity test harness, `ort` inference | Nothing | One kernel (the sound map) runs from Rust with parity and a recorded speedup |
+| N1 | Port the **Move** rows of the section 3.5 table, one per change, each with parity and a benchmark | N0 | Native milestone of section 3.5 met; ported TypeScript versions deleted |
 | F1 | Blend modes | Nothing | Section 5.1 checks pass |
 | F2 | Mask system, `render_mask`, maskable effects, HSL key and luma masks | Existing masks | Section 4.2 checks pass for key masks |
 | F3 | `grade_region` | F2 | Grading inside masks shows no edges |
-| F4 | Any-object selection and tracking (model comparison first; ONNX Runtime with DirectML where available) | F2 | Section 5.2 checks pass |
+| F4 | Any-object selection and tracking (model comparison first; inference in Rust through `ort`, DirectML where available) | F2, N0 | Section 5.2 checks pass |
 | E1 | Engine skeleton: plan format, separate process, decode, GPU upload, transforms, layers, blend modes, encode | Nothing | Renders the template test projects; parity with FFmpeg backend |
 | E2 | OCIO and ACES in the engine: input transforms, ACEScct grading space, display transforms, the color panel as shaders | E1 | Section 4.1 checks pass through OCIO; precision check of section 1 passes |
 | E3 | Engine preview: single frames and live viewer for the app and `render_frame` | E1 | Real-time or 3x target of section 3.4 |
-| F5 | Point and surface tracking, `pin_layer`, `replace_screen` | F1 | Section 5.4 checks pass |
+| F5 | Point and surface tracking in Rust, `pin_layer`, `replace_screen` | F1, N0 | Section 5.4 checks pass |
 | F6 | Film look effects and look presets, `export_lut` (engine first: they need float) | E2 | Sections 4.4 and 4.5 checks pass |
 | F7 | Sky replacement | F4, F5 | Section 5.3 checks pass |
 | F8 | Scene grading | F3 | Section 4.3 checks pass |
-| F9 | Particles and light (GPU particles in the engine; CPU generator for the fallback) | F1 | Section 6 checks pass |
-| F10 | Depth and depth effects | F2 | Section 7.1 checks pass |
-| F11 | Object removal | F4 | Section 7.2 checks pass |
-| F12 | Frame interpolation | Nothing | Section 7.3 checks pass |
+| F9 | Particles and light (GPU particles in the engine; Rust CPU generator for the fallback) | F1, N0 | Section 6 checks pass |
+| F10 | Depth and depth effects (inference and depth alignment in Rust) | F2, N0 | Section 7.1 checks pass |
+| F11 | Object removal (plate building and inpainting glue in Rust) | F4 | Section 7.2 checks pass |
+| F12 | Frame interpolation (inference in Rust) | N0 | Section 7.3 checks pass |
 | E4 | Retire the FFmpeg picture path as the default; keep it as fallback and reference | E1 to E3, parity on everything | All integration tests pass on the engine |
 
-F1 to F4 give the biggest jump for the effort (sky work, glows on one object, grading one part of the frame) and reuse what exists. E1 should start at the same time, since the film look, log and precision work (F6, E2) is only worth doing properly in float. If the engine is not built, the fallback path of section 3.3 (10-bit FFmpeg pipeline, hand-written log LUTs) still reaches a good, but lower, standard.
+F1 to F4 give the biggest jump for the effort (sky work, glows on one object, grading one part of the frame) and reuse what exists. N0 comes first because every model-based feature builds on it. E1 should start at the same time, since the film look, log and precision work (F6, E2) is only worth doing properly in float. If the engine is not built, the fallback path of section 3.3 (10-bit FFmpeg pipeline, hand-written log LUTs) still reaches a good, but lower, standard.
 
 ## 13. Risks and open questions
 
 - **Engine scope.** A render engine is a large project. Keep the plan format small and versioned, port features one at a time behind parity tests, and never let the FFmpeg backend fall behind on correctness while the engine catches up.
 - **GPU variety.** Integrated GPUs, old drivers and remote desktops can fail. The engine checks the adapter at start, falls back to the FFmpeg backend, and reports why in the app.
-- **Build and packaging.** A Rust engine with an OCIO C++ shim needs prebuilt binaries per platform (Windows x64 first), shipped like `ffmpeg-static` or `@resvg/resvg-js`. Set up CI for those builds before the engine has many features.
+- **Build and packaging.** A Rust engine with an OCIO C++ shim, and the `ave-native` addon, need prebuilt binaries per platform (Windows x64 first), shipped like `ffmpeg-static` or `@resvg/resvg-js`. Users must never need a Rust toolchain. Set up CI for those builds (N0) before much code depends on them.
+- **Two languages.** Contributors now need Rust as well as TypeScript, and a bug can sit on either side of the boundary. The rule of section 3.5 keeps the line clear (measured hot paths that port easily go to Rust; everything about the edit, and anything not worth porting, stays in TypeScript), parity tests pin behavior during ports, and the boundary stays coarse so it is easy to reason about.
 - **CPU speed.** Without a GPU, video segmentation, depth and interpolation are heavy on a 2-core laptop. Everything model-based runs before rendering, in the background, cached per clip and source range, with progress; previews use proxies. Measure each against its budget before building on it.
 - **10-bit cost.** 10-bit segments are larger and slower to decode. Measure before switching the cache default.
 - **Model licenses** change between versions; record the exact weights file and license in code next to the download URL.
