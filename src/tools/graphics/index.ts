@@ -192,9 +192,13 @@ async function renderer(svgSource: string, opts: GraphicOptions) {
   // Only the installed families the SVG names: resvg reads every font file it is given on every frame.
   const named = new Set([...svgSource.matchAll(/font-family\s*[:=]\s*["']?([^"';>]+)/gi)].flatMap((m) => m[1]!.split(",").map((f) => f.trim().replace(/^["']|["']$/g, "").toLowerCase())));
   const fontFiles = (await fontsIn(opts.fontsDir ?? defaultFontsDir()).catch(() => [])).filter((f) => named.has(f.family.toLowerCase())).map((f) => f.file);
-  const settings = { fitTo: { mode: "width", value: opts.width }, font: { fontFiles, loadSystemFonts: true, defaultFontFamily: "Arial" }, background: "rgba(0,0,0,0)" };
+  const settings = { fitTo: { mode: "original" }, font: { fontFiles, loadSystemFonts: true, defaultFontFamily: "Arial" }, background: "rgba(0,0,0,0)" };
+  // The root's own size becomes exactly the canvas (even, for video); the viewBox is fitted inside it,
+  // so a canvas rounded by a pixel never changes the render size.
+  const sized = (svg: string) =>
+    svg.replace(/<svg\b[^>]*>/i, (tag) => tag.replace(/\s(width|height)\s*=\s*("[^"]*"|'[^']*')/gi, "").replace(/^<svg/i, `<svg width="${opts.width}" height="${opts.height}"`));
   return (svg: string) => {
-    const img = new Resvg(svg, settings).render();
+    const img = new Resvg(sized(svg), settings).render();
     if (img.width !== opts.width || img.height !== opts.height)
       throw new Error(`The SVG renders at ${img.width}x${img.height}, not the canvas ${opts.width}x${opts.height}: give the <svg> a viewBox with the canvas's shape`);
     return img;
