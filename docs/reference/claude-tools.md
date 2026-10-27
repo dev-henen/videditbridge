@@ -2,7 +2,7 @@
 
 # Claude tools
 
-91 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+95 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -247,7 +247,7 @@ _No parameters._
 
 ### add_effect
 
-**edits**. Add an effect to a clip, a media layer, or the whole video (target 'global'). See list_effects.
+**edits**. Add an effect to a clip, a media layer, or the whole video (target 'global'). See list_effects. For an effect saved with create_effect, use type 'custom' with params { name }; or give type 'custom' with params { filter } for a one-off.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -334,6 +334,9 @@ _No parameters._
 | `opacity` | number |  |  | (≥ 0, ≤ 1) |
 | `cornerRadius` | number |  |  | Rounded corners in pixels (phone screens, screenshots) (≥ 0) |
 | `shadow` | number |  |  | Drop shadow in pixels (≥ 0) |
+| `rotateX` | number |  |  | 3D tilt in degrees (+ tips the top away) (≥ -89, ≤ 89) |
+| `rotateY` | number |  |  | 3D turn in degrees (+ turns the right side away) (≥ -89, ≤ 89) |
+| `perspective` | number |  |  | Camera distance in layer widths for 3D (default 2; smaller is stronger) (≥ 0.5, ≤ 20) |
 | `volume` | number |  |  |  |
 | `effects` | { type, params, keyframes }[] |  |  |  |
 | `animationIn` | { type, duration, easing } |  |  |  |
@@ -934,6 +937,16 @@ _No parameters._
 | `type` | "j" \| "l" | yes |  |  |
 | `seconds` | number | yes |  | How far the sound leads (j) or trails (l) the picture cut; 0.5-2 is typical (≥ 0, ≤ 10) |
 
+### create_effect
+
+**edits**. Make your own reusable visual effect from an FFmpeg filter chain and save it in the project by name; then add it anywhere with add_effect (type 'custom', params { name }). Use it for looks the catalog lacks: per-pixel math with geq (X, Y, W, H, T and functions like sin, hypot, st/ld), color math, displacement-free distortions (lenscorrection, v360, perspective), glitches (rgbashift, chromashift, noise), trails (lagfun, tmix), edge and comic looks (edgedetect, posterize via lutrgb, elbg). Allowed filters: eq, hue, curves, colorbalance, colorchannelmixer, colorlevels, colortemperature, colorcontrast, colorcorrect, colorize, vibrance, selectivecolor, huesaturation, exposure, lutrgb, lutyuv, lut, negate, monochrome, grayworld, normalize, pseudocolor, geq, gblur, boxblur, avgblur, dblur, smartblur, unsharp, cas, convolution, edgedetect, sobel, prewitt, roberts, deband, gradfun, bilateral, median, vignette, noise, chromashift, rgbashift, pixelize, elbg, posterize, kirsch, colorhold, chromakey, colorkey, hsvhold, hsvkey, lenscorrection, rotate, hflip, vflip, transpose, crop, scale, pad, perspective, shear, swaprect, v360, fillborders, tmix, lagfun, tblend, deflicker, fade, format, setsar, null. The chain is test-rendered before saving, so mistakes come back as errors. Saving a name again replaces it.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Short name, e.g. 'neon edges' |
+| `filter` | string | yes |  | Comma-separated FFmpeg filters for one stream |
+| `description` | string |  |  | What it looks like, for later |
+
 ### detect_faces
 
 **read-only**. Find and follow the faces in primary clips (or in a source asset), on this machine (a small model downloads once). For each person: when they are on screen (timeline times), where the face sits in the edit's frame after the clip's crop, and how far it moves. Use it to place titles and callouts away from faces, to check what a 9:16 crop keeps (then reframe), and for retouch with region or subject "face". Zooms and shakes from effects are not followed.
@@ -1025,6 +1038,53 @@ _No parameters._
 | `weights` | integer[] |  |  | Weights to add, default [400, 700] |
 | `italic` | boolean |  | `false` |  |
 
+### install_fonts
+
+**read-only**. Install many Google Fonts families at once: whole packs and/or a list of families. Packs: sans (30: Inter, Montserrat, Poppins, Roboto, Open Sans…); display (35: Bebas Neue, Anton, Oswald, Archivo Black, Black Ops One…); serif (20: Playfair Display, Merriweather, Lora, DM Serif Display, Cormorant Garamond…); script (20: Pacifico, Lobster, Dancing Script, Great Vibes, Satisfy…); handwriting (15: Caveat, Permanent Marker, Shadows Into Light, Indie Flower, Amatic SC…); mono (12: JetBrains Mono, Fira Code, Roboto Mono, Space Mono, IBM Plex Mono…). Families already installed are skipped. Installed fonts work in text styles, captions and create_graphic SVG (font-family by name).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `packs` | "sans" \| "display" \| "serif" \| "script" \| "handwriting" \| "mono"[] |  |  |  |
+| `families` | string[] |  |  | More families by name as on fonts.google.com |
+
+### create_graphic
+
+**edits**. Design your own graphic in SVG and put it on the video: lower thirds, title cards, styled or 3D-looking text, UI mockups (app screens, notifications, chat bubbles, buttons, progress bars), charts, badges, stickers, frames, logos, patterns. Anything SVG can draw works: paths, gradients, patterns, masks, clip paths, strokes, any installed font (font-family by name; see list_fonts and install_fonts), and filters for drop shadows (feDropShadow), glows, blurs, inner shadows, long shadows and extrusions (stacked offset copies). The <svg> needs a viewBox; it is drawn at width (fraction of frame width) with the viewBox's shape, centered at position. Animate it with {{ expression }} placeholders anywhere in the SVG (attributes, transforms, colors' opacity, text positions), evaluated on every frame. Variables: t (seconds from the graphic's start), p (progress 0..1 over its duration), d (duration), n (frame number), w and h (canvas size in pixels), PI. Operators: + - * / % ** and parentheses, comparisons < <= > >= == != (1 or 0), and cond ? a : b. Functions: sin cos tan asin acos atan atan2 abs min max pow sqrt exp log floor ceil round sign clamp(x,a,b) lerp(a,b,u) step(edge,x) smooth(a,b,x) ease(u) easeIn(u) easeOut(u) easeInOut(u) back(u) elastic(u) bounce(u) (easings take 0..1), seg(t,a,b) (0..1 progress of t from a to b), wave(t,period) (0..1 sine), rad(deg), deg(rad). Example: <rect width="{{ 600*easeOut(seg(t,0,0.8)) }}" .../> grows a bar in 0.8 s; transform="rotate({{ 360*p }} 100 100)" spins once. For depth, turn the whole graphic in 3D with rotateX/rotateY (animate them with animate_layer). The layer also takes animate_layer keyframes, entrance/exit animations and layer effects like any overlay. Check the result with render_frame.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `svg` | string | yes |  | SVG markup with a viewBox, optionally with {{ expression }} placeholders |
+| `start` | number | yes |  | (≥ 0) |
+| `duration` | number | yes |  | (> 0) |
+| `width` | number |  | `0.5` | Width as a fraction of frame width (> 0, ≤ 2) |
+| `position` | { x, y } |  |  | Center (frame fractions, default the middle) |
+| `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `opacity` | number |  |  | (≥ 0, ≤ 1) |
+| `shadow` | number |  |  | Extra soft drop shadow under the whole graphic, in pixels (≥ 0) |
+| `rotateX` | number |  |  | 3D tilt in degrees (≥ -89, ≤ 89) |
+| `rotateY` | number |  |  | 3D turn in degrees (≥ -89, ≤ 89) |
+| `perspective` | number |  |  | Camera distance in widths for 3D (default 2) (≥ 0.5, ≤ 20) |
+| `animationIn` | { type, duration, easing } |  |  |  |
+| `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationIn.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+| `animationOut` | { type, duration, easing } |  |  |  |
+| `animationOut.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationOut.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationOut.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+| `label` | string |  |  |  |
+
+### update_graphic
+
+**edits**. Redraw a graphic made with create_graphic from new SVG (read the current SVG on its asset with get_project), or redraw it for a new duration. Position, 3D and animations are kept; change those with update_layer.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `svg` | string |  |  | New SVG; omit to keep the current one |
+| `duration` | number |  |  | New duration in seconds (animated graphics are redrawn for it) (> 0) |
+
 ### animate_layer
 
 **edits**. Move, scale, turn or fade a layer over time with keyframes (text, shapes and media overlays): a label that slides along with a product, a logo that grows, a title that drifts. Give a list of keyframes per property; each has a time (timeline seconds, or seconds into the layer with relative), a value, and easing into it from the previous keyframe (default ease-in-out; linear for steady motion). Before the first keyframe a property holds its first value, after the last its last. Pass null to remove a property's keyframes. Entrance and exit animations still play. To follow a person, use follow_face.
@@ -1036,6 +1096,8 @@ _No parameters._
 | `scale` | { time, value, easing }[] \| null |  |  | Size multiplier (1 = its own size) |
 | `rotation` | { time, value, easing }[] \| null |  |  | Degrees clockwise |
 | `opacity` | { time, value, easing }[] \| null |  |  | Multiplies the layer's opacity |
+| `rotateX` | { time, value, easing }[] \| null |  |  | 3D tilt in degrees, media and graphic layers (+ tips the top away; 90 is edge-on) |
+| `rotateY` | { time, value, easing }[] \| null |  |  | 3D turn in degrees, media and graphic layers (+ turns the right side away; 0 to 360 is a full spin) |
 | `relative` | boolean |  | `false` | Times count from the layer's start instead of the timeline |
 
 ### follow_face

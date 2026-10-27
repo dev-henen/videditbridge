@@ -8,3 +8,4 @@ export * from "./render/index.js";
 export * from "./preview/index.js";
 export * from "./review/index.js";
 export * from "./vision/index.js";
+export * from "./graphics/index.js";

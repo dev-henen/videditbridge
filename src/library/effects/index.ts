@@ -4,6 +4,9 @@ import { easeValue } from "../../core/keyframes.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
 import { bakeColor, define, maskBranch, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
 import { motionEffects } from "./motion.js";
+import { customEffect } from "./custom.js";
+
+export { CUSTOM_FILTERS, checkCustomFilter } from "./custom.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
 
 export * from "./color.js";
@@ -468,6 +471,8 @@ export const EFFECTS: EffectDefinition[] = [
     toFilter: (p) => `fade=t=in:st=0:d=${p.duration}:color=white`,
   }),
 ];
+
+EFFECTS.push(customEffect);
 
 const byId = new Map(EFFECTS.map((e) => [e.id, e]));
 

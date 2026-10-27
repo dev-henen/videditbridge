@@ -515,6 +515,42 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     expect(late).toBeLessThan(middle * 0.8);
   });
 
+  it("draws custom SVG graphics, turns them in 3D, and runs effects Claude defines", async () => {
+    const session = new EditorSession(undefined, { outputDir: out("graphics") });
+    const call = async (name: string, input: Record<string, unknown>) => {
+      const r = await executeTool(session, name, input);
+      expect(r.isError, r.text).toBeFalsy();
+      return r;
+    };
+    await call("new_project", { aspectRatio: "16:9" });
+    await call("import_media", { src: fx.talk, id: "talk" });
+    await call("add_clip", { assetId: "talk", duration: 3 });
+    // A still card with a drop shadow, and an animated bar that grows.
+    const card = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200"><defs><filter id="s"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-opacity="0.5"/></filter></defs>
+      <rect x="20" y="20" width="360" height="160" rx="24" fill="#FF0000" filter="url(#s)"/><text x="200" y="115" font-family="Arial" font-size="48" text-anchor="middle" fill="#fff">Hello</text></svg>`;
+    await call("create_graphic", { svg: card, start: 0, duration: 3, width: 0.4 });
+    const bar = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 40"><rect width="{{ 400*easeOut(seg(t,0,1)) }}" height="40" fill="#2B6CFF"/></svg>`;
+    await call("create_graphic", { svg: bar, start: 0, duration: 3, width: 0.5, position: { x: 0.5, y: 0.85 }, rotateX: 20 });
+    const layers = session.project.layers;
+    const animated = session.project.assets.find((a) => a.id === (layers[1] as { assetId: string }).assetId)!;
+    expect(animated.type).toBe("video");
+    await call("animate_layer", { layerId: layers[0]!.id, rotateY: [{ time: 0, value: -30 }, { time: 3, value: 30 }] });
+    expect((await executeTool(session, "add_effect", { target: "global", type: "custom", params: { filter: "movie=x.mp4" } })).isError).toBe(true);
+    await call("create_effect", { name: "warm glitch", filter: "rgbashift=rh=4:bh=-4,colorbalance=rm=0.1" });
+    await call("add_effect", { target: "global", type: "custom", params: { name: "warm glitch" } });
+    const frame = out("graphics-frame.png");
+    await renderFrame(session.project, 1.5, { output: frame });
+    // The card's middle (at the frame's center, behind the white text's gap) is red.
+    const px = (await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", frame, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { binaryStdout: true })).stdoutBuffer!;
+    const w = session.project.settings.width;
+    const at = (x: number, y: number) => [...px.subarray((y * w + x) * 3, (y * w + x) * 3 + 3)];
+    const red = at(Math.round(w * 0.5) - Math.round(w * 0.15), Math.round(session.project.settings.height * 0.5));
+    expect(red[0]).toBeGreaterThan(150);
+    expect(red[2]).toBeLessThan(90);
+    const r = await render(session.project, { output: out("graphics.mp4"), preset: "ultrafast", scale: 0.5 });
+    expect((await probe(r.output)).duration).toBeCloseTo(3, 0);
+  });
+
   it("renders a still frame and a range directly", async () => {
     const session = new EditorSession();
     await executeTool(session, "import_media", { src: fx.talk, id: "talk" });

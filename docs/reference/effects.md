@@ -2,7 +2,7 @@
 
 # Effects
 
-82 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+83 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -15,7 +15,7 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 - **color**: [adjust](#adjust), [temperature](#temperature), [grayscale](#grayscale), [sepia](#sepia), [invert](#invert), [hueShift](#hueshift), [tint](#tint), [color](#color), [saturation](#saturation), [vibrance](#vibrance), [hue](#hue), [whiteBalance](#whitebalance), [hsl](#hsl), [autoCorrect](#autocorrect)
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
 - **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe)
-- **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs)
+- **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs), [custom](#custom)
 - **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [denoise](#denoise)
 - **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur)
 - **motion**: [stabilize](#stabilize), [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat)
@@ -547,6 +547,15 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `amount` | number |  | `50` | Strength (≥ 0, ≤ 100) |
+
+### custom
+
+**Custom**. Your own effect as an FFmpeg filter chain (comma-separated filters for one stream), for looks the catalog does not have: e.g. 'geq=r=...:g=...:b=...' per-pixel math with X, Y, W, H, T, 'rgbashift=rh=6:bh=-6,noise=alls=12:allf=t' for a glitch, 'lagfun=decay=0.95' for light trails, 'lenscorrection=k1=-0.3:k2=0.05' for a fisheye. Allowed filters: eq, hue, curves, colorbalance, colorchannelmixer, colorlevels, colortemperature, colorcontrast, colorcorrect, colorize, vibrance, selectivecolor, huesaturation, exposure, lutrgb, lutyuv, lut, negate, monochrome, grayworld, normalize, pseudocolor, geq, gblur, boxblur, avgblur, dblur, smartblur, unsharp, cas, convolution, edgedetect, sobel, prewitt, roberts, deband, gradfun, bilateral, median, vignette, noise, chromashift, rgbashift, pixelize, elbg, posterize, kirsch, colorhold, chromakey, colorkey, hsvhold, hsvkey, lenscorrection, rotate, hflip, vflip, transpose, crop, scale, pad, perspective, shear, swaprect, v360, fillborders, tmix, lagfun, tblend, deflicker, fade, format, setsar, null. The frame size is kept. Save a good one with create_effect to reuse it by name.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `filter` | string |  | `"null"` | FFmpeg filter chain |
+| `name` | string |  |  | Name of the saved effect this came from (create_effect) |
 
 ## Retouch
 

@@ -143,6 +143,47 @@ export async function installGoogleFont(family: string, opts: { dir?: string; we
   return written;
 }
 
+/** Curated Google Fonts families for video, by style. All open-licensed. */
+export const FONT_PACKS = {
+  sans: ["Inter", "Montserrat", "Poppins", "Roboto", "Open Sans", "Lato", "Raleway", "Nunito", "Work Sans", "DM Sans", "Manrope", "Plus Jakarta Sans", "Outfit", "Figtree", "Rubik", "Kanit", "Barlow", "Archivo", "Space Grotesk", "Sora", "Urbanist", "Lexend", "IBM Plex Sans", "Source Sans 3", "Josefin Sans", "Quicksand", "Mulish", "Karla", "Barlow Condensed", "Exo 2"],
+  display: ["Bebas Neue", "Anton", "Oswald", "Archivo Black", "Black Ops One", "Bungee", "Righteous", "Russo One", "Alfa Slab One", "Bowlby One", "Passion One", "Titan One", "Luckiest Guy", "Bangers", "Fredoka", "Lilita One", "Staatliches", "Teko", "Big Shoulders Display", "Monoton", "Audiowide", "Orbitron", "Press Start 2P", "Rubik Mono One", "Chakra Petch", "Syne", "Unbounded", "Dela Gothic One", "Abril Fatface", "Ultra", "Bungee Shade", "Rampart One", "Zen Dots", "Michroma", "Bricolage Grotesque"],
+  serif: ["Playfair Display", "Merriweather", "Lora", "DM Serif Display", "Cormorant Garamond", "EB Garamond", "Libre Baskerville", "Crimson Text", "Bodoni Moda", "Cinzel", "Prata", "Fraunces", "Spectral", "Noto Serif", "Roboto Slab", "Zilla Slab", "Arvo", "Bitter", "Instrument Serif", "Young Serif"],
+  script: ["Pacifico", "Lobster", "Dancing Script", "Great Vibes", "Satisfy", "Sacramento", "Kaushan Script", "Yellowtail", "Allura", "Parisienne", "Alex Brush", "Cookie", "Courgette", "Tangerine", "Pinyon Script", "Mr Dafoe", "Marck Script", "Damion", "Monsieur La Doulaise", "Birthstone"],
+  handwriting: ["Caveat", "Permanent Marker", "Shadows Into Light", "Indie Flower", "Amatic SC", "Patrick Hand", "Gloria Hallelujah", "Rock Salt", "Kalam", "Architects Daughter", "Covered By Your Grace", "Reenie Beanie", "Gochi Hand", "Nothing You Could Do", "Homemade Apple"],
+  mono: ["JetBrains Mono", "Fira Code", "Roboto Mono", "Space Mono", "IBM Plex Mono", "Source Code Pro", "Inconsolata", "DM Mono", "Courier Prime", "VT323", "Share Tech Mono", "Major Mono Display"],
+} as const;
+export type FontPack = keyof typeof FONT_PACKS;
+
+/**
+ * Install many Google Fonts families at once (a few downloads at a time), skipping families already
+ * in the fonts folder. Returns what was installed, skipped and what failed (with the reason).
+ */
+export async function installGoogleFonts(
+  families: string[],
+  opts: { dir?: string; weights?: number[]; onProgress?: (done: number, total: number) => void } = {},
+): Promise<{ installed: string[]; skipped: string[]; failed: { family: string; error: string }[] }> {
+  const dir = opts.dir ?? defaultFontsDir();
+  const have = new Set((await fontsIn(dir).catch(() => [] as FontFile[])).map((f) => f.family.toLowerCase()));
+  const todo = [...new Set(families)].filter((f) => !have.has(f.toLowerCase()));
+  const result = { installed: [] as string[], skipped: families.filter((f) => have.has(f.toLowerCase())), failed: [] as { family: string; error: string }[] };
+  let next = 0;
+  let done = 0;
+  const worker = async () => {
+    for (let k = next++; k < todo.length; k = next++) {
+      const family = todo[k]!;
+      try {
+        await installGoogleFont(family, { dir, weights: opts.weights });
+        result.installed.push(family);
+      } catch (e) {
+        result.failed.push({ family, error: (e as Error).message });
+      }
+      opts.onProgress?.(++done, todo.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, todo.length) }, worker));
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Icons: the Lucide icon font (ISC license), downloaded once.
 // ---------------------------------------------------------------------------

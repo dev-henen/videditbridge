@@ -482,6 +482,28 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       g.add(`[${sil}][${top}]overlay=0:0:format=auto[${out}]`);
       styled = out;
     }
+    // 3D: turn the layer in space and project it through a camera `perspective` layer widths away.
+    // Padding leaves room for the near side, which grows as it comes toward the viewer.
+    const { rotateX: tiltKeys, rotateY: turnKeys } = layer.keyframes ?? {};
+    if (layer.rotateX || layer.rotateY || tiltKeys?.length || turnKeys?.length) {
+      const [pw, ph] = [even(w * 1.8), even(h * 1.8)];
+      const [padded, out] = [g.label("l3p"), g.label("l3d")];
+      const deg = (keys: typeof tiltKeys, value: number) => `((${keys?.length ? numberExpr(keys, `(on/${F})`) : value})*PI/180)`;
+      const [a, b] = [deg(tiltKeys, layer.rotateX), deg(turnKeys, layer.rotateY)];
+      const f = round3(layer.perspective * w);
+      // Where a corner (x, y from the center) lands: turn about the vertical axis, tilt about the horizontal one, project.
+      const corner = (x: number, y: number) => {
+        const z1 = `(${-x}*sin(${b}))`;
+        const z = `(${y}*sin(${a})+${z1}*cos(${a}))`;
+        const k = `(${f}/(${f}+${z}))`;
+        return [`${pw / 2}+${x}*cos(${b})*${k}`, `${ph / 2}+(${y}*cos(${a})-${z1}*sin(${a}))*${k}`];
+      };
+      const pts = [corner(-pw / 2, -ph / 2), corner(pw / 2, -ph / 2), corner(-pw / 2, ph / 2), corner(pw / 2, ph / 2)];
+      const coords = pts.flatMap(([x, y], i) => [`x${i}='${x}'`, `y${i}='${y}'`]).join(":");
+      g.add(`[${styled}]pad=${pw}:${ph}:(ow-iw)/2:(oh-ih)/2:color=black@0[${padded}]`);
+      g.add(`[${padded}]perspective=${coords}:sense=destination:interpolation=linear:eval=${tiltKeys?.length || turnKeys?.length ? "frame" : "init"}[${out}]`);
+      styled = out;
+    }
     const v = g.label("lv");
     const { rotation: rotationKeys, scale: scaleKeys, opacity: opacityKeys } = layer.keyframes ?? {};
     const fadeIn = layer.animationIn && layer.animationIn.type !== "none" ? layer.animationIn.duration : 0;

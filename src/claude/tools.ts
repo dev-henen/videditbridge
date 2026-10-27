@@ -19,7 +19,7 @@ import { isAnimated, simplifyKeys, smoothKeys } from "../core/keyframes.js";
 import { validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, newId, round3, type AspectRatio } from "../core/util.js";
-import { ColorSettingsSchema, SubjectRegionSchema, describeColorSettings, effectStates, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
+import { CUSTOM_FILTERS, ColorSettingsSchema, SubjectRegionSchema, checkCustomFilter, describeColorSettings, effectStates, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { getTransition, listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
@@ -37,11 +37,12 @@ import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
-import { probe, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
+import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
 import { analyzeColor, channelLevels, matchingCurves, renderScopes } from "../tools/render/color-analysis.js";
 import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, segmentLabel, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
 import { SoundClassifier } from "../tools/audio/classify.js";
+import { GRAPHIC_EXPRESSIONS, renderGraphic } from "../tools/graphics/index.js";
 import { renderSoundMapImage } from "../tools/audio/image.js";
 import { renderSoundEffect } from "../tools/audio/sfx.js";
 import { detectScenes } from "../tools/video/scenes.js";
@@ -50,7 +51,7 @@ import { invertRanges } from "../core/ranges.js";
 import { rm, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileHash, listFiles } from "../tools/media/files.js";
-import { ICON_FONT, closestIcons, iconGlyphs, installGoogleFont, listFontFamilies, searchIcons } from "../tools/fonts/index.js";
+import { FONT_PACKS, ICON_FONT, closestIcons, iconGlyphs, installGoogleFont, installGoogleFonts, listFontFamilies, searchIcons, type FontPack } from "../tools/fonts/index.js";
 import type { ActivityHandle, EditorSession } from "./session.js";
 
 export interface ToolResult {
@@ -135,6 +136,31 @@ async function analyzeSound(s: EditorSession, src: string, range?: { start: numb
     pending.catch(() => soundCache.delete(key));
   }
   return pending;
+}
+
+/** Check a custom effect's filter chain and run it on a tiny test picture, so mistakes fail the tool call instead of the render. */
+async function testCustomFilter(s: EditorSession, filter: string): Promise<void> {
+  checkCustomFilter(filter);
+  const chain = getEffect("custom")!.toFilter({ filter }, { width: 320, height: 180, fps: 30, duration: 0.2 });
+  const r = await runFfmpeg(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:d=0.2", "-vf", chain, "-f", "null", "-"], { ffmpegPath: s.options.ffmpegPath });
+  if (r.code !== 0) throw new Error(`FFmpeg rejected the filter chain: ${r.stderr.trim().split("\n").slice(-3).join(" ")}`);
+}
+
+/** Render a create_graphic SVG at its size on the frame, as a new image (still) or video (animated) asset. */
+async function drawGraphic(s: EditorSession, layerId: string, svg: string, width: number, duration: number, activity?: ActivityHandle) {
+  const vb = /viewBox\s*=\s*["']\s*[-\d.e]+[\s,]+[-\d.e]+[\s,]+([\d.e]+)[\s,]+([\d.e]+)/i.exec(svg);
+  if (!vb || !(Number(vb[1]) > 0) || !(Number(vb[2]) > 0)) throw new Error('The <svg> needs a viewBox such as viewBox="0 0 1200 300", which sets its shape.');
+  const even = (v: number) => Math.max(2, 2 * Math.round(v / 2));
+  const w = even(width * s.project.settings.width);
+  const h = even((w * Number(vb[2])) / Number(vb[1]));
+  activity?.progress(0);
+  const id = assetIdFromSrc(s.project, `${layerId}-art`);
+  const out = await s.outputPath(`${id}-${Date.now().toString(36)}.png`);
+  const r = await renderGraphic(svg, out, { width: w, height: h, duration, fps: s.project.settings.fps, fontsDir: s.renderOptions.fontsDir, ffmpegPath: s.options.ffmpegPath });
+  const asset = r.animated
+    ? ({ type: "video", id, src: r.file, svg, width: w, height: h, duration, hasAudio: false } as const)
+    : ({ type: "image", id, src: r.file, svg, width: w, height: h } as const);
+  return { asset, summary: `${w}x${h} px, ${r.animated ? `animated, ${r.frames} frames` : "still"}` };
 }
 
 function mediaAsset(s: EditorSession, assetId: string, p: Project = s.project): Extract<Asset, { type: "video" | "audio" }> {
@@ -845,10 +871,39 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "add_effect",
-    description: "Add an effect to a clip, a media layer, or the whole video (target 'global'). See list_effects.",
+    description:
+      "Add an effect to a clip, a media layer, or the whole video (target 'global'). See list_effects. For an effect saved with create_effect, use type 'custom' with params { name }; or give type 'custom' with params { filter } for a one-off.",
     input: z.object({ target: z.string().describe("Clip id, media layer id, or 'global'"), type: z.string(), params: z.record(z.string(), z.unknown()).optional() }),
     mutates: true,
-    run: async (s, i) => commit(s, ops.addEffect(s.project, i.target, { type: i.type, params: i.params }), "add_effect", i, `Added ${i.type} to ${i.target}.`),
+    run: async (s, i) => {
+      let params = i.params;
+      if (i.type === "custom") {
+        const name = typeof params?.name === "string" ? params.name : undefined;
+        const saved = name ? s.project.customEffects[name] : undefined;
+        if (name && !saved && !params?.filter) return { text: `No saved effect "${name}". Saved: ${Object.keys(s.project.customEffects).join(", ") || "(none; make one with create_effect)"}`, isError: true };
+        params = { ...params, ...(saved && !params?.filter ? { filter: saved.filter } : {}) };
+        await testCustomFilter(s, String(params.filter ?? ""));
+      }
+      return commit(s, ops.addEffect(s.project, i.target, { type: i.type, params }), "add_effect", i, `Added ${i.type}${i.type === "custom" && params?.name ? ` (${params.name})` : ""} to ${i.target}.`);
+    },
+  }),
+  tool({
+    name: "create_effect",
+    description:
+      "Make your own reusable visual effect from an FFmpeg filter chain and save it in the project by name; then add it anywhere with add_effect (type 'custom', params { name }). " +
+      "Use it for looks the catalog lacks: per-pixel math with geq (X, Y, W, H, T and functions like sin, hypot, st/ld), color math, displacement-free distortions (lenscorrection, v360, perspective), glitches (rgbashift, chromashift, noise), trails (lagfun, tmix), edge and comic looks (edgedetect, posterize via lutrgb, elbg). " +
+      `Allowed filters: ${[...CUSTOM_FILTERS].join(", ")}. The chain is test-rendered before saving, so mistakes come back as errors. Saving a name again replaces it.`,
+    input: z.object({
+      name: z.string().regex(/^[A-Za-z0-9 _-]{1,40}$/).describe("Short name, e.g. 'neon edges'"),
+      filter: z.string().min(1).max(4000).describe("Comma-separated FFmpeg filters for one stream"),
+      description: z.string().max(300).optional().describe("What it looks like, for later"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      await testCustomFilter(s, i.filter);
+      const p = { ...s.project, customEffects: { ...s.project.customEffects, [i.name]: { filter: i.filter, description: i.description ?? "" } } };
+      return commit(s, p, "create_effect", i, `Saved effect "${i.name}". Add it with add_effect { type: "custom", params: { name: "${i.name}" } } and check with render_frame.`);
+    },
   }),
   tool({
     name: "remove_effect",
@@ -1285,6 +1340,29 @@ export const TOOLS: ToolDefinition[] = [
     },
   }),
   tool({
+    name: "install_fonts",
+    description:
+      "Install many Google Fonts families at once: whole packs and/or a list of families. Packs: " +
+      Object.entries(FONT_PACKS)
+        .map(([k, v]) => `${k} (${v.length}: ${v.slice(0, 5).join(", ")}…)`)
+        .join("; ") +
+      ". Families already installed are skipped. Installed fonts work in text styles, captions and create_graphic SVG (font-family by name).",
+    input: z.object({
+      packs: z.array(z.enum(Object.keys(FONT_PACKS) as [FontPack, ...FontPack[]])).optional(),
+      families: z.array(z.string().min(1)).optional().describe("More families by name as on fonts.google.com"),
+    }),
+    mutates: false,
+    run: async (s, i, activity) => {
+      const families = [...(i.packs ?? []).flatMap((p) => FONT_PACKS[p]), ...(i.families ?? [])];
+      if (!families.length) return { text: "Give packs or families.", isError: true };
+      const r = await installGoogleFonts(families, { dir: s.fontsDir, onProgress: (d, t) => activity?.progress(d / t) });
+      const lines = [`Installed ${r.installed.length} families${r.installed.length ? `: ${r.installed.join(", ")}` : ""}.`];
+      if (r.skipped.length) lines.push(`Already installed: ${r.skipped.length}.`);
+      if (r.failed.length) lines.push(`Failed: ${r.failed.map((f) => `${f.family} (${f.error})`).join("; ")}`);
+      return ok(lines.join("\n"), r);
+    },
+  }),
+  tool({
     name: "add_media_overlay",
     description: "Overlay a video or image (picture-in-picture, b-roll cutaway, logo). size.width is a fraction of frame width; give size.height too for b-roll that fills an area.",
     input: z.object({
@@ -1298,6 +1376,9 @@ export const TOOLS: ToolDefinition[] = [
       opacity: z.number().min(0).max(1).optional(),
       cornerRadius: z.number().min(0).optional().describe("Rounded corners in pixels (phone screens, screenshots)"),
       shadow: z.number().min(0).optional().describe("Drop shadow in pixels"),
+      rotateX: z.number().min(-89).max(89).optional().describe("3D tilt in degrees (+ tips the top away)"),
+      rotateY: z.number().min(-89).max(89).optional().describe("3D turn in degrees (+ turns the right side away)"),
+      perspective: z.number().min(0.5).max(20).optional().describe("Camera distance in layer widths for 3D (default 2; smaller is stronger)"),
       volume: z.number().optional(),
       effects: z.array(EffectSchema).optional(),
       animationIn: AnimationSchema.optional(),
@@ -1307,6 +1388,59 @@ export const TOOLS: ToolDefinition[] = [
     run: async (s, i) => {
       const id = newId("overlay");
       return commit(s, ops.addLayer(s.project, { type: "media", id, ...i }), "add_media_overlay", i, `Added media overlay ${id}.`);
+    },
+  }),
+  tool({
+    name: "create_graphic",
+    description:
+      "Design your own graphic in SVG and put it on the video: lower thirds, title cards, styled or 3D-looking text, UI mockups (app screens, notifications, chat bubbles, buttons, progress bars), charts, badges, stickers, frames, logos, patterns. " +
+      "Anything SVG can draw works: paths, gradients, patterns, masks, clip paths, strokes, any installed font (font-family by name; see list_fonts and install_fonts), and filters for drop shadows (feDropShadow), glows, blurs, inner shadows, long shadows and extrusions (stacked offset copies). " +
+      "The <svg> needs a viewBox; it is drawn at width (fraction of frame width) with the viewBox's shape, centered at position. " +
+      `Animate it with {{ expression }} placeholders anywhere in the SVG (attributes, transforms, colors' opacity, text positions), evaluated on every frame. ${GRAPHIC_EXPRESSIONS} ` +
+      'Example: <rect width="{{ 600*easeOut(seg(t,0,0.8)) }}" .../> grows a bar in 0.8 s; transform="rotate({{ 360*p }} 100 100)" spins once. ' +
+      "For depth, turn the whole graphic in 3D with rotateX/rotateY (animate them with animate_layer). The layer also takes animate_layer keyframes, entrance/exit animations and layer effects like any overlay. Check the result with render_frame.",
+    input: z.object({
+      svg: z.string().min(10).describe("SVG markup with a viewBox, optionally with {{ expression }} placeholders"),
+      start: z.number().min(0),
+      duration: z.number().positive(),
+      width: z.number().positive().max(2).default(0.5).describe("Width as a fraction of frame width"),
+      position: PositionSchema.optional().describe("Center (frame fractions, default the middle)"),
+      opacity: z.number().min(0).max(1).optional(),
+      shadow: z.number().min(0).optional().describe("Extra soft drop shadow under the whole graphic, in pixels"),
+      rotateX: z.number().min(-89).max(89).optional().describe("3D tilt in degrees"),
+      rotateY: z.number().min(-89).max(89).optional().describe("3D turn in degrees"),
+      perspective: z.number().min(0.5).max(20).optional().describe("Camera distance in widths for 3D (default 2)"),
+      animationIn: AnimationSchema.optional(),
+      animationOut: AnimationSchema.optional(),
+      label: z.string().optional(),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const id = newId("graphic");
+      const drawn = await drawGraphic(s, id, i.svg, i.width, i.duration, activity);
+      const { svg: _, width, start, duration, ...look } = i;
+      let p = ops.addAsset(s.project, drawn.asset);
+      p = ops.addLayer(p, { type: "media", id, assetId: drawn.asset.id, start, duration, size: { width }, ...look });
+      return commit(s, p, "create_graphic", { ...i, svg: `${i.svg.length} characters` }, `Added graphic ${id} (${drawn.summary}). Check it with render_frame.`);
+    },
+  }),
+  tool({
+    name: "update_graphic",
+    description: "Redraw a graphic made with create_graphic from new SVG (read the current SVG on its asset with get_project), or redraw it for a new duration. Position, 3D and animations are kept; change those with update_layer.",
+    input: z.object({
+      layerId: z.string(),
+      svg: z.string().min(10).optional().describe("New SVG; omit to keep the current one"),
+      duration: z.number().positive().optional().describe("New duration in seconds (animated graphics are redrawn for it)"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const layer = s.project.layers.find((l) => l.id === i.layerId);
+      const asset = layer?.type === "media" ? s.project.assets.find((a) => a.id === layer.assetId) : undefined;
+      if (!layer || layer.type !== "media" || !asset || !("svg" in asset) || !asset.svg) return { text: `${i.layerId} is not a graphic made with create_graphic.`, isError: true };
+      const duration = i.duration ?? layer.duration;
+      const drawn = await drawGraphic(s, i.layerId, i.svg ?? asset.svg, layer.size.width, duration, activity);
+      const p = ops.removeAsset(ops.updateLayer(ops.addAsset(s.project, drawn.asset), i.layerId, { assetId: drawn.asset.id, duration }), asset.id);
+      return commit(s, p, "update_graphic", { ...i, svg: i.svg ? `${i.svg.length} characters` : undefined }, `Redrew ${i.layerId} (${drawn.summary}). Check it with render_frame.`);
     },
   }),
   tool({
@@ -1376,15 +1510,18 @@ export const TOOLS: ToolDefinition[] = [
       scale: z.array(z.object({ time: z.number(), value: z.number().positive().max(20), easing: EasingSchema.optional() })).min(1).nullable().optional().describe("Size multiplier (1 = its own size)"),
       rotation: z.array(z.object({ time: z.number(), value: z.number().min(-3600).max(3600), easing: EasingSchema.optional() })).min(1).nullable().optional().describe("Degrees clockwise"),
       opacity: z.array(z.object({ time: z.number(), value: z.number().min(0).max(1), easing: EasingSchema.optional() })).min(1).nullable().optional().describe("Multiplies the layer's opacity"),
+      rotateX: z.array(z.object({ time: z.number(), value: z.number().min(-3600).max(3600), easing: EasingSchema.optional() })).min(1).nullable().optional().describe("3D tilt in degrees, media and graphic layers (+ tips the top away; 90 is edge-on)"),
+      rotateY: z.array(z.object({ time: z.number(), value: z.number().min(-3600).max(3600), easing: EasingSchema.optional() })).min(1).nullable().optional().describe("3D turn in degrees, media and graphic layers (+ turns the right side away; 0 to 360 is a full spin)"),
       relative: z.boolean().default(false).describe("Times count from the layer's start instead of the timeline"),
     }),
     mutates: true,
     run: async (s, i) => {
       const layer = s.project.layers.find((l) => l.id === i.layerId);
       if (!layer) return { text: `No layer "${i.layerId}".`, isError: true };
+      if ((i.rotateX || i.rotateY) && layer.type !== "media") return { text: `3D rotation works on media and graphic layers; ${i.layerId} is ${layer.type}. For 3D text, draw it with create_graphic.`, isError: true };
       const keyframes: Record<string, unknown> = { ...(layer.keyframes ?? {}) };
       const notes: string[] = [];
-      for (const prop of ["position", "scale", "rotation", "opacity"] as const) {
+      for (const prop of ["position", "scale", "rotation", "opacity", "rotateX", "rotateY"] as const) {
         const given = i[prop];
         if (given === undefined) continue;
         if (given === null) {

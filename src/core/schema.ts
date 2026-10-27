@@ -28,6 +28,7 @@ export const VideoAssetSchema = z.object({
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
   hasAudio: z.boolean().optional().describe("Whether the file has an audio stream (filled by probe)"),
+  svg: z.string().optional().describe("SVG source of an animated graphic drawn with create_graphic"),
   label: z.string().optional(),
 });
 
@@ -45,6 +46,7 @@ export const ImageAssetSchema = z.object({
   src: z.string().min(1),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
+  svg: z.string().optional().describe("SVG source of a graphic drawn with create_graphic"),
   label: z.string().optional(),
 });
 
@@ -133,6 +135,8 @@ export const LayerKeyframesSchema = z
     scale: z.array(keyframe(z.number().positive().max(20))).optional().describe("Size multiplier over time (1 = the layer's own size)"),
     rotation: z.array(keyframe(z.number().min(-3600).max(3600))).optional().describe("Degrees clockwise over time"),
     opacity: z.array(keyframe(z.number().min(0).max(1))).optional().describe("Multiplies the layer's opacity over time"),
+    rotateX: z.array(keyframe(z.number().min(-3600).max(3600))).optional().describe("3D tilt in degrees over time (media and graphic layers): + tips the top away"),
+    rotateY: z.array(keyframe(z.number().min(-3600).max(3600))).optional().describe("3D turn in degrees over time (media and graphic layers): + turns the right side away"),
   })
   .describe("Properties that change over time. Before the first keyframe a property holds its first value, after the last its last value");
 
@@ -230,6 +234,9 @@ export const MediaLayerSchema = z.object({
   opacity: z.number().min(0).max(1).default(1),
   cornerRadius: z.number().min(0).default(0).describe("Rounded corners in output pixels (phone screens, screenshots, picture-in-picture)"),
   shadow: z.number().min(0).default(0).describe("Soft drop shadow in output pixels, lifts the overlay off the background"),
+  rotateX: z.number().min(-89).max(89).default(0).describe("3D tilt in degrees: + tips the top away from the viewer"),
+  rotateY: z.number().min(-89).max(89).default(0).describe("3D turn in degrees: + turns the right side away from the viewer"),
+  perspective: z.number().min(0.5).max(20).default(2).describe("Camera distance in layer widths for 3D rotation: smaller is a stronger 3D look"),
   volume: z.number().min(0).max(4).default(0).describe("Overlay audio volume (0 = muted)"),
   audioEffects: audioEffects("the overlay's audio"),
   effects: z.array(EffectSchema).default([]),
@@ -341,6 +348,10 @@ export const ProjectSchema = z.object({
   layers: z.array(LayerSchema).default([]).describe("Overlays drawn on top of the primary track, in array order"),
   audio: z.array(AudioClipSchema).default([]),
   effects: z.array(EffectSchema).default([]).describe("Global effects applied to the composed primary track"),
+  customEffects: z
+    .record(z.string(), z.object({ filter: z.string(), description: z.string().default("") }))
+    .default({})
+    .describe("Effects made with create_effect, by name: add one with the custom effect and its name"),
   audioEffects: audioEffects("the final mix (master)"),
   captions: CaptionsSchema.optional(),
   transcripts: z.record(z.string(), TranscriptSchema).default({}).describe("Transcripts keyed by asset id"),
