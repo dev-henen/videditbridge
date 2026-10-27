@@ -152,10 +152,10 @@ TypeScript keeps everything about the edit itself: the project document and its 
 
 | Crate | Ships as | Holds |
 |---|---|---|
-| `ave-engine` | A separate executable (section 3.4), prebuilt per platform | The GPU render engine, OCIO, decode and encode |
-| `ave-native` | A Node addon built with napi-rs, prebuilt per platform as optional npm packages (like `@resvg/resvg-js`), Windows x64 first | The CPU kernels in the table below, and model inference through ONNX Runtime's Rust bindings (`ort`) with DirectML, CUDA and CoreML execution providers |
+| `ave-engine` | A separate executable (section 3.4), prebuilt for every target of section 3.6 | The GPU render engine, OCIO, decode and encode, and models whose frames already live in the engine |
+| `ave-native` | A Node addon built with napi-rs, prebuilt for every target of section 3.6 as optional npm packages (like `@resvg/resvg-js`) | The CPU kernels marked **Move** below, and the kernels of new features |
 
-Inference moves into Rust with its pre- and post-processing, so a frame goes from decode to mask without crossing back into JavaScript. This replaces `onnxruntime-node` and, after the comparison in section 7, the transformers.js Whisper pipeline.
+**Model inference stays where it is cheapest to ship.** Today's models run through `onnxruntime-node`, which is already native code, ships for Windows, macOS and Linux, and has GPU execution providers per platform (DirectML on Windows, CoreML on macOS, CUDA on Linux). Measured overhead around inference in TypeScript is small (see the table), so it stays. Inference moves into Rust (`ort`) only where frames already live in Rust, as in the engine, so they do not cross into JavaScript and back.
 
 **Interface rules.**
 
@@ -164,15 +164,14 @@ Inference moves into Rust with its pre- and post-processing, so a frame goes fro
 - **Never block Node**: work runs on a Rust thread pool (rayon) and returns a promise, so the host stays responsive while the app shows progress. Progress callbacks are throttled to a few per second, and an `AbortSignal` sets a cancel flag the kernels check.
 - **Errors**: they cross the boundary as normal JavaScript errors with a clear message, and a panic never takes down the host.
 
-**Existing hot spots, and what happens to each** (moves in the order they pay off; confirm each with a profile before porting):
+**Existing hot spots, and what happens to each.** Measured on the reference laptop (2026-10-27). Each port adds a binary per target of section 3.6, so only clear wins move:
 
-| Today (TypeScript) | Work | Decision | Why |
+| Today (TypeScript) | Measured | Decision | Why |
 |---|---|---|---|
-| `tools/audio/analyze.ts` (`frameFeatures`, `fft`, `soundScores`, `onsetEnvelope`, `tempo`) | FFT and features per 10 ms frame, beat tracking | **Move** to `ave-native` audio | Runs on every sound map, beat detection, transcription and review over whole recordings; pure functions over sample arrays, so easy to port |
-| `tools/vision/faces.ts` (frame letterboxing, `decodeYunet`, NMS) with YuNet inference | Per-frame pre- and post-processing | **Move** to `ave-native` vision, with inference in `ort` | Per frame over whole clips; moving it with inference keeps frames in Rust from decode to result |
-| `tools/vision/segment.ts` (`personProbability`, `resizeMask`, `stabilizeMask`, the mask writer loop) with PP-HumanSeg inference | Per-frame mask math and encoding | **Move** to `ave-native` vision | Per pixel, per frame; plain array math |
-| `tools/vision/facemask.ts` (`paintFaces`, the frame loop) | Per-pixel ellipse painting per frame | **Move** to `ave-native` vision | Per pixel, per frame; a few lines to port |
-| `tools/audio/classify.ts` with CED inference | Windows and inference | **Move** with the other inference | Easy once `ort` is in place (N0); keeps all models in one runtime |
+| `tools/audio/analyze.ts` (`frameFeatures`, `fft`, `soundScores`, `onsetEnvelope`, `tempo`) | 232 s of audio: decode (FFmpeg) 1.6 s, sound map 1.2 s, beats 1.3 s; TypeScript is about 60% of audio analysis | **Move** to `ave-native` audio | Runs on every sound map, beat detection and review over whole recordings; pure functions over sample arrays, easy to port. Results are cached per file, so the gain shows on first analysis |
+| `tools/vision/segment.ts` (`personProbability`, `resizeMask`, `stabilizeMask`) | 1.4 ms per frame, next to about 25 ms per frame for the whole cutout (model about 11 ms, the rest decode and encode) | **Stay** in TypeScript | About 6% of the time; under the 10% line. GPU inference saves far more |
+| `tools/vision/facemask.ts` (`paintFaces`) | 0.4 ms per frame, next to about 16 ms per frame of face detection | **Stay** in TypeScript | About 2% of the time |
+| `tools/vision/faces.ts` (letterboxing, `decodeYunet`, NMS) and `tools/audio/classify.ts` | Small next to inference, which is native already | **Stay** in TypeScript, with inference in `onnxruntime-node` | The time is in the model; use GPU execution providers instead of moving code |
 | `tools/graphics` (placeholder evaluation, frame loop, piping to FFmpeg) | Per-frame SVG fill | **Stay** in TypeScript | The heavy part (rasterizing) is already Rust in resvg; evaluating placeholders is small. Revisit if a profile shows the loop matters |
 | `tools/review` (`backdropContrast`, frame scans) and `render/color-analysis.ts` (levels, histograms) | Per-pixel statistics on a few frames | **Stay** in TypeScript | Runs on a handful of small frames per review; FFmpeg does the decoding |
 | `tools/transcript/local.ts` (`speechPieces`, `levelSpeech`) | Per-sample leveling | **Stay** in TypeScript | Runs once per transcription and is tiny next to Whisper itself |
@@ -187,7 +186,32 @@ New code from sections 4 to 7 with a speed budget is written in Rust from the st
 3. Record a benchmark on the reference laptop (before and after, same input) in the relevant guide. A port that does not measurably help is not merged, and the code stays in TypeScript.
 4. Delete the TypeScript implementation once parity holds, so there is one source of truth. Machines where the native package cannot load get a clear error naming the package, not a silent slow path. The FFmpeg render backend (section 3.4) is the one deliberate fallback.
 
-**Done when** (native milestone): every **Move** row of the table runs in Rust with parity tests passing. Each has a recorded speedup. The sound map of a 10-minute recording takes under 2 s, and face detection overhead outside the model itself is under 2 ms per frame. The host stays responsive (JSON-RPC answers under 50 ms) while any kernel runs.
+**Done when** (native milestone): every **Move** row of the table runs in Rust on every target of section 3.6, with parity tests passing and a recorded speedup. The sound map of a 10-minute recording takes under 2 s, not counting decoding. The host stays responsive (JSON-RPC answers under 50 ms) while any kernel runs. Re-measure the **Stay** rows when their inputs grow (4K masks, longer clips) and move them if they cross the 10% line.
+
+### 3.6 Platforms: Windows, macOS and Linux
+
+The app will be built for Windows, macOS and Linux. Everything above must work on all three, and every choice is checked against that.
+
+**Targets.** Windows x64, macOS on Apple silicon (arm64) and on Intel (x64), and Linux x64 (glibc 2.31 or newer, so Ubuntu 20.04 and later). Windows arm64 and Linux arm64 come later. Every native binary (`ave-engine`, `ave-native`, the OCIO shim) is built for each target in CI, never on a user's machine.
+
+| Part | Today | Across platforms |
+|---|---|---|
+| Desktop app | WPF (`net10.0-windows`), Windows only | Move to **Avalonia UI** (C#, XAML close to WPF, MIT, renders the same on all three). View models, `EngineClient` and the JSON-RPC protocol carry over; the views are rewritten. Compare with Tauri (Rust and a web UI) only if Avalonia falls short; the web preview was removed on purpose, so a native UI is the default |
+| Icons | Segoe Fluent Icons, a Windows system font that may not be shipped elsewhere | Bundle **Fluent UI System Icons** (MIT, by Microsoft), the same visual language, as an app font on every platform |
+| Node host | The app starts a separately installed `node` | Bundle the host as a Node single executable application (or a bundled Node runtime) per target, so users install one app |
+| FFmpeg | `ffmpeg-static` | Already per platform. Check that each build has the filters and encoders the renderer uses (a startup self-test, like the hardware encoder check) |
+| Hardware encoding | NVENC, Quick Sync, AMF | Add VideoToolbox on macOS and VAAPI (plus NVENC and Quick Sync) on Linux, each verified with a test encode as today |
+| Models | `onnxruntime-node` | Per platform already. GPU execution: DirectML on Windows, CoreML on macOS, CUDA on Linux (when present), CPU everywhere as the fallback |
+| SVG graphics | `@resvg/resvg-js` | Prebuilt per platform already |
+| GPU engine | Not built | `wgpu` uses Direct3D 12 on Windows, Metal on macOS and Vulkan on Linux, one code path |
+| Fonts | System fonts per platform plus the fonts folder | Already handled per platform. Ship the font packs in the fonts folder so text renders the same everywhere |
+| Paths | Some project files store absolute Windows paths (for example generated voice-overs) | Store media paths relative to the project folder, with forward slashes, so projects move between machines and systems |
+
+**Distribution.** Windows: a signed installer (MSIX or MSI). macOS: a signed and notarized `.app` in a DMG, with a universal (arm64 and x64) build or one per architecture. Linux: AppImage first, then Flatpak. The native Node packages and FFmpeg go inside each package, so nothing downloads at install time except models and fonts on first use.
+
+**Testing.** CI runs the unit tests on all three systems, and the render integration tests (FFmpeg, fonts, models) on each target at least nightly. Rendered frames from each platform are compared, and differences beyond rounding (fonts, filters, GPU) are treated as bugs.
+
+**Required fixes.** Everything found in the code that blocks or differs on macOS and Linux (the WPF app, absolute paths in project files, Arial defaults, FFmpeg builds and more) is listed with locations and fixes in [Cross-platform: required fixes](cross-platform.md).
 
 ## 4. Grading features
 
@@ -337,7 +361,8 @@ The app stays AI-first. Additions serve the conversation:
 - A matte toggle in the viewer shows the current mask (white on black) for the selected layer or effect.
 - Look variants from `offer_choices` show as thumbnail cards.
 - Scopes appear in the Review tab next to findings.
-- UI rules apply: compact, dark neutral with blue as the only accent, Segoe Fluent Icons, no emoji, no em or en dashes.
+- UI rules apply: compact, dark neutral with blue as the only accent, Fluent icons (Segoe Fluent Icons on Windows today; the bundled Fluent UI System Icons once the app is cross-platform, section 3.6), no emoji, no em or en dashes.
+- The viewer and these additions are built so they work in the Avalonia version of the app on Windows, macOS and Linux (section 3.6).
 
 ## 11. Test material and licenses
 
@@ -351,12 +376,12 @@ Three tracks run side by side: native kernels (N), the engine (E) and features (
 
 | Step | Builds | Depends on | Done when |
 |---|---|---|---|
-| N0 | `native/` Cargo workspace, napi-rs `ave-native` package with prebuilt Windows x64 binaries, CI builds, parity test harness, `ort` inference | Nothing | One kernel (the sound map) runs from Rust with parity and a recorded speedup |
+| N0 | `native/` Cargo workspace, napi-rs `ave-native` package with prebuilt binaries for every target of section 3.6, CI builds on Windows, macOS and Linux, parity test harness | Nothing | One kernel (the sound map) runs from Rust with parity and a recorded speedup |
 | N1 | Port the **Move** rows of the section 3.5 table, one per change, each with parity and a benchmark | N0 | Native milestone of section 3.5 met; ported TypeScript versions deleted |
 | F1 | Blend modes | Nothing | Section 5.1 checks pass |
 | F2 | Mask system, `render_mask`, maskable effects, HSL key and luma masks | Existing masks | Section 4.2 checks pass for key masks |
 | F3 | `grade_region` | F2 | Grading inside masks shows no edges |
-| F4 | Any-object selection and tracking (model comparison first; inference in Rust through `ort`, DirectML where available) | F2, N0 | Section 5.2 checks pass |
+| F4 | Any-object selection and tracking (model comparison first; inference through `onnxruntime-node` with the GPU provider of each platform) | F2, N0 | Section 5.2 checks pass |
 | E1 | Engine skeleton: plan format, separate process, decode, GPU upload, transforms, layers, blend modes, encode | Nothing | Renders the template test projects; parity with FFmpeg backend |
 | E2 | OCIO and ACES in the engine: input transforms, ACEScct grading space, display transforms, the color panel as shaders | E1 | Section 4.1 checks pass through OCIO; precision check of section 1 passes |
 | E3 | Engine preview: single frames and live viewer for the app and `render_frame` | E1 | Real-time or 3x target of section 3.4 |
@@ -376,7 +401,7 @@ F1 to F4 give the biggest jump for the effort (sky work, glows on one object, gr
 
 - **Engine scope.** A render engine is a large project. Keep the plan format small and versioned, port features one at a time behind parity tests, and never let the FFmpeg backend fall behind on correctness while the engine catches up.
 - **GPU variety.** Integrated GPUs, old drivers and remote desktops can fail. The engine checks the adapter at start, falls back to the FFmpeg backend, and reports why in the app.
-- **Build and packaging.** A Rust engine with an OCIO C++ shim, and the `ave-native` addon, need prebuilt binaries per platform (Windows x64 first), shipped like `ffmpeg-static` or `@resvg/resvg-js`. Users must never need a Rust toolchain. Set up CI for those builds (N0) before much code depends on them.
+- **Build and packaging.** A Rust engine with an OCIO C++ shim, and the `ave-native` addon, need prebuilt binaries for every target of section 3.6, shipped like `ffmpeg-static` or `@resvg/resvg-js`. Users must never need a Rust toolchain. Set up CI for those builds (N0) before much code depends on them.
 - **Two languages.** Contributors now need Rust as well as TypeScript, and a bug can sit on either side of the boundary. The rule of section 3.5 keeps the line clear (measured hot paths that port easily go to Rust; everything about the edit, and anything not worth porting, stays in TypeScript), parity tests pin behavior during ports, and the boundary stays coarse so it is easy to reason about.
 - **CPU speed.** Without a GPU, video segmentation, depth and interpolation are heavy on a 2-core laptop. Everything model-based runs before rendering, in the background, cached per clip and source range, with progress; previews use proxies. Measure each against its budget before building on it.
 - **10-bit cost.** 10-bit segments are larger and slower to decode. Measure before switching the cache default.

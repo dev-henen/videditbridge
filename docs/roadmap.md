@@ -128,6 +128,10 @@ Everything still goes through the same tools, so all changes share one undo hist
 
 The plan for movie-level color grading (log footage, secondary corrections, film looks, scene matching) and common CGI effects (blend modes, any-object masks and tracking, sky and screen replacement, atmospherics, depth, object removal, smooth slow motion), including a GPU render engine with OpenColorIO and ACES, is in [Cinematic grading and CGI effects](design/cinematic-grade-and-vfx.md).
 
+## Next: Windows, macOS and Linux
+
+The app will ship for Windows, macOS and Linux. Today it runs on Windows only. Everything that must change, with file locations and fixes, is in [Cross-platform: required fixes](design/cross-platform.md).
+
 ## Suggested order
 
 1. Commit the current work. (Done.)

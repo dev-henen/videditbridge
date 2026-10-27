@@ -9,6 +9,7 @@
 | [Claude integration](guides/claude-integration.md) | Sessions, tool execution, the agent loop, letting Claude see its work, the future MCP connector |
 | [Transcripts & captions](guides/transcripts-and-captions.md) | Importing and producing transcripts, correcting names, speech search, filler/pause removal, caption styling and export |
 | [Design: cinematic grading & CGI](design/cinematic-grade-and-vfx.md) | The build plan for movie-level grading and VFX, with quality checks and a GPU engine proposal |
+| [Design: cross-platform fixes](design/cross-platform.md) | Everything that must change for Windows, macOS and Linux, with locations and fixes |
 | [Graphics, 3D & custom effects](guides/graphics.md) | SVG graphics Claude designs and animates, 3D layers, custom FFmpeg effects, font packs |
 | [Templates](guides/templates.md) | How templates work and how to write your own (slots, scenes, placeholders) |
 | [Rendering & preview](guides/rendering-and-preview.md) | FFmpeg setup, renders, frames, contact sheets, proxies, automatic review of an edit |
