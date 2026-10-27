@@ -10,7 +10,6 @@ import { describeTemplate, getTemplate, listTemplates } from "./library/template
 import { exportCaptions, type CaptionExportFormat } from "./tools/captions/build.js";
 import { probe } from "./tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "./tools/render/render.js";
-import { startPreviewServer } from "./tools/preview/server.js";
 import { EditorSession } from "./claude/session.js";
 import { toAnthropicTools } from "./claude/tools.js";
 
@@ -25,7 +24,6 @@ Usage:
   ave frame <project.json> <time> <out.png>  Render one frame [--scale 0.5]
   ave sheet <project.json> <out.png>       Render a contact sheet [--columns 4 --rows 3]
   ave captions <project.json> <out.srt|vtt|ass>  Export captions
-  ave preview <project.json> [--port 4321] [--no-open]  Live preview in your browser; reloads when the file changes
   ave probe <media>                        Inspect a media file
   ave tools                                Print Claude tool definitions (JSON)
   ave remote <method> [json]               Call the running desktop app, e.g. ave remote tools.execute {"name":"get_project"}
@@ -51,9 +49,7 @@ async function main(argv: string[]): Promise<number> {
       end: { type: "string" },
       columns: { type: "string" },
       rows: { type: "string" },
-      port: { type: "string" },
       json: { type: "boolean" },
-      "no-open": { type: "boolean" },
       fonts: { type: "string" },
       cache: { type: "string" },
       software: { type: "boolean" },
@@ -149,28 +145,6 @@ async function main(argv: string[]): Promise<number> {
     }
     case "tools": {
       console.log(JSON.stringify(toAnthropicTools(), null, 2));
-      return 0;
-    }
-    case "preview": {
-      const file = path.resolve(args[0]!);
-      const { project, baseDir } = await loadProject(file);
-      const session = new EditorSession(project, { baseDir, fontsDir: values.fonts });
-      const server = await startPreviewServer(session, { port: num(values.port) ?? 4321, open: !values["no-open"] });
-      console.log(`Live preview: ${server.url}\nWatching ${file}, save the file to update. Ctrl+C to stop.`);
-      let timer: NodeJS.Timeout | undefined;
-      watch(file, () => {
-        clearTimeout(timer);
-        timer = setTimeout(async () => {
-          try {
-            const next = (await loadProject(file)).project;
-            session.commit(next, "file changed");
-            session.info(`Reloaded ${path.basename(file)}`);
-          } catch (e) {
-            session.error(`Could not load ${path.basename(file)}: ${(e as Error).message.split("\n")[0]}`);
-          }
-        }, 200);
-      });
-      await new Promise(() => undefined);
       return 0;
     }
     default:

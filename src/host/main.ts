@@ -15,7 +15,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { EditorSession } from "../claude/session.js";
 import { TOOLS, executeTool } from "../claude/tools.js";
-import { previewState } from "../tools/preview/server.js";
+import { sessionState } from "../claude/state.js";
 import { renderFrame } from "../tools/render/render.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
@@ -109,7 +109,7 @@ function requireSession(): EditorSession {
 function snapshot() {
   if (!session || !projectDir) return null;
   // The app reads files directly, so media "URLs" are absolute paths.
-  return { ...previewState(session, { mediaUrl: (p) => p }), projectDir, agentRunning: !!agent?.running, choices: session.pendingChoices ?? null };
+  return { ...sessionState(session), projectDir, agentRunning: !!agent?.running, choices: session.pendingChoices ?? null };
 }
 
 /** Make `s` the active session: autosave edits and stream state to the app. */
