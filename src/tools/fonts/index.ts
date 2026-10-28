@@ -4,6 +4,9 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultFontsDir } from "../appdirs.js";
+import { scriptFontsFor, type FontFallback } from "./scripts.js";
+
+export * from "./scripts.js";
 
 /**
  * Fonts beyond the ones installed on the system: a folder the renderer always passes to libass
@@ -119,16 +122,55 @@ export function systemFontDirs(): string[] {
   return [...new Set(dirs)].filter((d) => d && existsSync(d));
 }
 
-let systemFamilies: Promise<Set<string>> | undefined;
+let systemFiles: Promise<FontFile[]> | undefined;
 
-/** Lowercase family names installed on the system, read once per process. */
-export function systemFontFamilies(): Promise<Set<string>> {
-  systemFamilies ??= (async () => {
-    const names = new Set<string>();
-    for (const d of systemFontDirs()) for (const f of await fontsIn(d, { recursive: true })) names.add(f.family.toLowerCase());
-    return names;
-  })();
-  return systemFamilies;
+/** Fonts installed on the system, read once per process. */
+export function systemFonts(): Promise<FontFile[]> {
+  systemFiles ??= (async () => (await Promise.all(systemFontDirs().map((d) => fontsIn(d, { recursive: true })))).flat())();
+  return systemFiles;
+}
+
+/** Lowercase family names installed on the system. */
+export async function systemFontFamilies(): Promise<Set<string>> {
+  return new Set((await systemFonts()).map((f) => f.family.toLowerCase()));
+}
+
+/** The code points a TTF/OTF (or the first font of a TTC) has glyphs for, from its cmap table. */
+export async function readFontCoverage(file: string): Promise<Set<number>> {
+  const b = await readFile(file);
+  const cps = new Set<number>();
+  const base = b.toString("latin1", 0, 4) === "ttcf" ? b.readUInt32BE(12) : 0;
+  const tables = b.readUInt16BE(base + 4);
+  let cmap = -1;
+  for (let k = 0; k < tables; k++) if (b.toString("latin1", base + 12 + k * 16, base + 16 + k * 16) === "cmap") cmap = b.readUInt32BE(base + 12 + k * 16 + 8);
+  if (cmap < 0) return cps;
+  // Prefer the full Unicode subtable (format 12), then the BMP one (format 4).
+  const subs: { format: number; at: number }[] = [];
+  for (let k = 0; k < b.readUInt16BE(cmap + 2); k++) {
+    const rec = cmap + 4 + k * 8;
+    const [platform, encoding] = [b.readUInt16BE(rec), b.readUInt16BE(rec + 2)];
+    if (platform === 0 || (platform === 3 && (encoding === 1 || encoding === 10))) {
+      const at = cmap + b.readUInt32BE(rec + 4);
+      subs.push({ format: b.readUInt16BE(at), at });
+    }
+  }
+  const sub = subs.find((s) => s.format === 12) ?? subs.find((s) => s.format === 4);
+  if (sub?.format === 12) {
+    const groups = b.readUInt32BE(sub.at + 12);
+    for (let g = 0; g < groups; g++) {
+      const at = sub.at + 16 + g * 12;
+      for (let cp = b.readUInt32BE(at); cp <= b.readUInt32BE(at + 4); cp++) cps.add(cp);
+    }
+  } else if (sub?.format === 4) {
+    const segs = b.readUInt16BE(sub.at + 6) / 2;
+    const ends = sub.at + 14;
+    const starts = ends + segs * 2 + 2;
+    for (let s = 0; s < segs; s++) {
+      const end = b.readUInt16BE(ends + s * 2);
+      for (let cp = b.readUInt16BE(starts + s * 2); cp <= end && cp !== 0xffff; cp++) cps.add(cp);
+    }
+  }
+  return cps;
 }
 
 /**
@@ -159,10 +201,71 @@ export async function missingFontReplacements(fontsDir = defaultFontsDir()): Pro
   return Object.fromEntries(Object.entries(FONT_REPLACEMENTS).filter(([name]) => !have.has(name.toLowerCase())).map(([name, to]) => [name.toLowerCase(), to]));
 }
 
-/** Everything a render needs for text: the fonts folder (with the bundled fonts in it) and the replacements to apply. */
-export async function prepareFonts(fontsDir?: string): Promise<{ fontsDir: string; fontMap: Record<string, string> }> {
+/** Text and font names in a project (or any JSON): the values of `text`, `fontFamily` and `headingFont` keys. */
+export function textsAndFonts(value: unknown): { texts: string[]; families: string[] } {
+  const texts: string[] = [];
+  const families = new Set<string>();
+  const walk = (v: unknown): void => {
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (!v || typeof v !== "object") return;
+    for (const [k, x] of Object.entries(v)) {
+      if (typeof x === "string") {
+        if (k === "text") texts.push(x);
+        else if (k === "fontFamily" || k === "headingFont") families.add(x);
+      } else walk(x);
+    }
+  };
+  walk(value);
+  return { texts, families: [...families] };
+}
+
+const coverage = new Map<string, Promise<Set<number>>>();
+const coverageOf = (file: string) => {
+  let c = coverage.get(file);
+  if (!c) coverage.set(file, (c = readFontCoverage(file).catch(() => new Set<number>())));
+  return c;
+};
+
+/**
+ * Fallback fonts for the scripts in `texts` (see SCRIPT_FONTS): downloads the Noto fonts they need
+ * into the fonts folder, once, and reads which characters the named families have. Offline, a
+ * missing Noto font is skipped and libass falls back as the system does.
+ */
+export async function prepareFontFallback(texts: string[], families: string[], fontsDir: string): Promise<FontFallback | undefined> {
+  const needed = scriptFontsFor(texts);
+  if (!needed.length) return undefined;
+  const have = new Set((await fontsIn(fontsDir)).map((f) => f.family.toLowerCase()));
+  for (const s of needed) {
+    if (have.has(s.family.toLowerCase())) continue;
+    await installGoogleFont(s.family, { dir: fontsDir, weights: s.script === "Emoji" ? [400] : [400, 700] }).catch(() => undefined);
+  }
+  const files = [...(await fontsIn(fontsDir)), ...(await systemFonts())];
+  const fileOf = (family: string) => {
+    const all = files.filter((f) => f.family.toLowerCase() === family.toLowerCase());
+    return (all.find((f) => /^(regular|normal|book|roman)$/i.test(f.style)) ?? all[0])?.file;
+  };
+  const known = new Map<string, Set<number>>();
+  for (const family of new Set([...families, DEFAULT_FONT, DEFAULT_HEADING_FONT, ...Object.values(FONT_REPLACEMENTS)])) {
+    const file = fileOf(family);
+    if (file) known.set(family.toLowerCase(), await coverageOf(file));
+  }
+  return { covers: (family, cp) => known.get(family.trim().toLowerCase())?.has(cp) };
+}
+
+/**
+ * Everything a render needs for text: the fonts folder (with the bundled fonts in it), the
+ * replacements to apply, and with a project, fallback fonts for the scripts its text uses.
+ */
+export async function prepareFonts(
+  fontsDir?: string,
+  project?: unknown,
+): Promise<{ fontsDir: string; fontMap: Record<string, string>; fontFallback?: FontFallback }> {
   const dir = await ensureBundledFonts(path.resolve(fontsDir ?? defaultFontsDir()));
-  return { fontsDir: dir, fontMap: await missingFontReplacements(dir) };
+  const fontMap = await missingFontReplacements(dir);
+  if (project === undefined) return { fontsDir: dir, fontMap };
+  const { texts, families } = textsAndFonts(project);
+  const fontFallback = await prepareFontFallback(texts, families.map((f) => replaceFont(f, fontMap)), dir);
+  return { fontsDir: dir, fontMap, ...(fontFallback ? { fontFallback } : {}) };
 }
 
 /** A family name after replacement (`fontMap` keys are lowercase). */

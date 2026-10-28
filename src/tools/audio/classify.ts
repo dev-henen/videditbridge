@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { ensureModelFile, loadOrt, modelsDir, type Ort, type OrtSession } from "../vision/faces.js";
+import { createOrtSession, ensureModelFile, loadOrt, modelsDir, type Ort, type OrtSession } from "../vision/faces.js";
 import { ANALYSIS_RATE } from "./analyze.js";
 
 /**
@@ -63,7 +63,7 @@ export class SoundClassifier {
         const file = await ensureModelFile(this.options, "ced-tiny", SOUND_MODEL);
         const config = JSON.parse(await readFile(await ensureModelFile(this.options, "ced-tiny", SOUND_LABELS), "utf8")) as { id2label: Record<string, string> };
         const labels = Object.entries(config.id2label).sort((a, b) => Number(a[0]) - Number(b[0])).map(([, v]) => v);
-        return { ort, labels, session: await ort.InferenceSession.create(file, { logSeverityLevel: 3 }) };
+        return { ort, labels, session: await createOrtSession(ort, file) };
       })();
       sessions.set(key, s);
       s.catch(() => sessions.delete(key));

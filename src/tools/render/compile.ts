@@ -11,6 +11,7 @@ import { AssDocument, addCaptionEvents } from "../captions/ass.js";
 import { buildCaptions } from "../captions/build.js";
 import { addShapeLayer, addTextLayer } from "./text.js";
 import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
+import type { FontFallback } from "../fonts/scripts.js";
 
 export interface CompileOptions {
   /** Output file path. */
@@ -23,6 +24,8 @@ export interface CompileOptions {
   fontsDir?: string;
   /** Font families to use in place of missing ones (lowercase name to family, see prepareFonts). */
   fontMap?: Record<string, string>;
+  /** Fallback fonts for scripts the text's fonts lack (see prepareFonts). */
+  fontFallback?: FontFallback;
   /** Only render this time range of the timeline. */
   range?: { start: number; end: number };
   /** Encoder preset override (e.g. "ultrafast" for previews). */
@@ -540,6 +543,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // -------------------------------------------------------------------------
   const ass = new AssDocument(project.settings.width, project.settings.height, 0);
   ass.fontMap = opts.fontMap;
+  ass.fontFallback = opts.fontFallback;
   project.layers.forEach((layer, i) => {
     if (layer.type === "text") addTextLayer(ass, layer, 10 + i, F);
     else if (layer.type === "shape") addShapeLayer(ass, layer, 10 + i, F);

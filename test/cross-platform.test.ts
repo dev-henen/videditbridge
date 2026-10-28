@@ -170,3 +170,98 @@ describe("FFmpeg self-test (D1)", () => {
     expect(c.ok, describeFfmpegCheck(c)).toBe(true);
   });
 });
+
+describe("model execution providers (E2)", () => {
+  it("measures by default, maps gpu per system and always ends with the CPU", async () => {
+    const { ortProviders } = await import("../src/tools/vision/faces.js");
+    expect(ortProviders("win32", {})).toBe("auto");
+    expect(ortProviders("freebsd", {})).toEqual(["cpu"]);
+    expect(ortProviders("win32", { AVE_ORT_PROVIDERS: "cpu" })).toEqual(["cpu"]);
+    expect(ortProviders("win32", { AVE_ORT_PROVIDERS: "gpu" })).toEqual(["dml", "cpu"]);
+    expect(ortProviders("darwin", { AVE_ORT_PROVIDERS: "gpu" })).toEqual(["coreml", "cpu"]);
+    expect(ortProviders("linux", { AVE_ORT_PROVIDERS: "GPU" })).toEqual(["cuda", "cpu"]);
+    expect(ortProviders("linux", { AVE_ORT_PROVIDERS: "cuda, cpu" })).toEqual(["cuda", "cpu"]);
+  });
+
+  it("falls back to the CPU when the provider fails on the first run", async () => {
+    const { createOrtSession } = await import("../src/tools/vision/faces.js");
+    const made: string[] = [];
+    const ort = {
+      Tensor: class {},
+      InferenceSession: {
+        create: async (_: string, opts?: { executionProviders?: string[] }) => {
+          const on = opts?.executionProviders?.[0] ?? "cpu";
+          made.push(on);
+          return { run: async () => (on === "cpu" ? { out: { data: [1] } } : Promise.reject(new Error("missing operator"))) };
+        },
+      },
+    };
+    const s = await createOrtSession(ort as never, "m.onnx", ["dml", "cpu"]);
+    expect(await s.run({})).toEqual({ out: { data: [1] } });
+    await s.run({});
+    expect(made).toEqual(["dml", "cpu"]);
+  });
+});
+
+describe("script fallback fonts (C3)", () => {
+  it("switches to the script font only where the font in effect has no glyph", async () => {
+    const { applyFontFallback, scriptFontsFor } = await import("../src/tools/fonts/scripts.js");
+    const latinOnly = { covers: (f: string, cp: number) => (f === "Arimo" ? cp < 0x2000 : undefined) };
+    expect(applyFontFallback("Hi 日本 ok", "Arimo", latinOnly)).toBe("Hi {\\fnNoto Sans SC}日本 {\\fnArimo}ok");
+    // Kana makes the Chinese characters Japanese; spaces and \N stay in the font around them.
+    expect(applyFontFallback("日本語です\\Nyes", "Arimo", latinOnly)).toBe("{\\fnNoto Sans JP}日本語です\\N{\\fnArimo}yes");
+    // An \fn tag in the text sets the font in effect.
+    expect(applyFontFallback("{\\fnInter\\b1}a 🎉", "Arimo", latinOnly)).toBe("{\\fnInter\\b1}a {\\fnNoto Emoji}🎉");
+    // A font that covers the script keeps it.
+    expect(applyFontFallback("日本", "MS Gothic", { covers: () => true })).toBe("日本");
+    expect(scriptFontsFor(["Hello", "مرحبا", "שלום 👋"]).map((s) => s.family).sort()).toEqual(["Noto Emoji", "Noto Sans Arabic", "Noto Sans Hebrew"]);
+  });
+
+  it("reads which characters a font has", async () => {
+    const { readFontCoverage } = await import("../src/tools/fonts/index.js");
+    const arimo = await readFontCoverage(path.join(bundledFontsDir(), "Arimo-400.ttf"));
+    expect(arimo.has("A".codePointAt(0)!)).toBe(true);
+    expect(arimo.has("Ж".codePointAt(0)!)).toBe(true);
+    expect(arimo.has("日".codePointAt(0)!)).toBe(false);
+  });
+});
+
+describe("measuring providers on this computer (E2)", () => {
+  const fakeOrt = (ms: Record<string, number>, made: string[] = []) => ({
+    Tensor: class {},
+    InferenceSession: {
+      create: async (_: string, opts?: { executionProviders?: string[] }) => {
+        const on = opts?.executionProviders?.[0] ?? "cpu";
+        made.push(on);
+        return {
+          run: async () => {
+            const until = performance.now() + ms[on]!;
+            while (performance.now() < until);
+            return { out: { data: [on === "cpu" ? 1 : 2] } };
+          },
+        };
+      },
+    },
+  });
+
+  it.each([
+    ["the graphics card when it is faster", { cpu: 8, gpu: 1 }, "gpu"],
+    ["the CPU when it is faster", { cpu: 1, gpu: 8 }, "cpu"],
+  ])("keeps %s and remembers it", async (_, speed, winner) => {
+    const { createOrtSession, gpuProvider, providerChoiceFile } = await import("../src/tools/vision/faces.js");
+    const gpu = gpuProvider()!;
+    const file = path.join(await tempDir(), "m.onnx");
+    const ort = fakeOrt({ cpu: speed.cpu, [gpu]: speed.gpu });
+    const s = await createOrtSession(ort as never, file, "auto");
+    // While measuring, answers come from the CPU.
+    for (let i = 0; i < 4; i++) expect(await s.run({})).toEqual({ out: { data: [1] } });
+    const expected = winner === "gpu" ? gpu : "cpu";
+    expect(await s.run({})).toEqual({ out: { data: [expected === "cpu" ? 1 : 2] } });
+    const { readFile } = await import("node:fs/promises");
+    expect(JSON.parse(await readFile(providerChoiceFile(file), "utf8"))).toMatchObject({ provider: expected });
+    // The next session uses the remembered choice without measuring.
+    const made: string[] = [];
+    await createOrtSession(fakeOrt({ cpu: 0, [gpu]: 0 }, made) as never, file, "auto");
+    expect(made).toEqual([expected]);
+  });
+});

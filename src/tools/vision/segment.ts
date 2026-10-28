@@ -4,7 +4,7 @@ import { mkdir, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { round3 } from "../../core/util.js";
 import { probe, resolveFfmpegPath, type FfmpegOptions } from "../render/ffmpeg.js";
-import { ensureModelFile, loadOrt, modelsDir, type Ort, type OrtSession } from "./faces.js";
+import { createOrtSession, ensureModelFile, loadOrt, modelsDir, type Ort, type OrtSession } from "./faces.js";
 
 /**
  * Person cutout on this machine: PaddleSeg's PP-HumanSeg (Apache 2.0, 6 MB, from the OpenCV model
@@ -86,7 +86,7 @@ export class PersonSegmenter {
       s = (async () => {
         const ort = await loadOrt("Person cutout");
         const file = await ensureModelFile(this.options, "pphumanseg", PERSON_MODEL);
-        return { ort, session: await ort.InferenceSession.create(file, { logSeverityLevel: 3 }) };
+        return { ort, session: await createOrtSession(ort, file) };
       })();
       sessions.set(key, s);
       s.catch(() => sessions.delete(key));

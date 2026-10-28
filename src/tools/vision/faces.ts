@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { defaultModelsDir } from "../appdirs.js";
 import path from "node:path";
 import type { Fit, Position } from "../../core/schema.js";
@@ -137,6 +137,119 @@ export async function loadOrt(what: string): Promise<Ort> {
   }
 }
 
+/** The graphics card provider for each system: DirectML on Windows, CoreML on macOS, CUDA on Linux (when installed). */
+export const gpuProvider = (platform: NodeJS.Platform = process.platform): string | undefined =>
+  platform === "win32" ? "dml" : platform === "darwin" ? "coreml" : platform === "linux" ? "cuda" : undefined;
+
+/**
+ * ONNX Runtime execution providers to try, best first, or "auto" (the default): measure this
+ * system's graphics card provider against the CPU on this computer (see createOrtSession).
+ * $AVE_ORT_PROVIDERS sets them instead: "cpu", "gpu" (this system's graphics card provider) or a
+ * comma separated list such as "dml,cpu". The CPU is always the last resort.
+ */
+export function ortProviders(platform: NodeJS.Platform = process.platform, env = process.env): string[] | "auto" {
+  const asked = (env.AVE_ORT_PROVIDERS ?? "auto").split(",").map((p) => p.trim().toLowerCase()).filter(Boolean);
+  if (asked[0] === "auto" || !asked.length) return gpuProvider(platform) ? "auto" : ["cpu"];
+  const list = asked.flatMap((p) => (p === "gpu" ? [gpuProvider(platform) ?? "cpu"] : [p]));
+  return [...new Set([...list, "cpu"])];
+}
+
+/** Runs timed on each provider before choosing (after one untimed warm-up run each). */
+const MEASURED_RUNS = 3;
+
+/** The provider measured for a model on this computer, kept next to the model file. */
+export interface ProviderChoice {
+  provider: string;
+  /** Median milliseconds per run on each provider (absent when the provider failed). */
+  ms: Record<string, number>;
+  measuredAt: string;
+}
+
+export const providerChoiceFile = (modelFile: string) => `${modelFile}.provider.json`;
+
+/**
+ * A model session on the best execution provider for this computer. With "auto" (the default),
+ * the first runs go through both the graphics card provider and the CPU, timing each, and return
+ * the CPU's answer so results never depend on the measurement; then the faster one is kept, and
+ * remembered next to the model file (delete that file to measure again, e.g. after a new graphics
+ * card). Any provider that fails to load, or fails on a run, falls back to the CPU.
+ */
+export async function createOrtSession(ort: Ort, file: string, providers = ortProviders()): Promise<OrtSession> {
+  const base = { logSeverityLevel: 3 };
+  const cpu = () => ort.InferenceSession.create(file, base);
+  const on = async (list: string[]) => (list[0] === "cpu" ? undefined : await ort.InferenceSession.create(file, { ...base, executionProviders: list }).catch(() => undefined));
+
+  if (providers !== "auto") {
+    if (providers[0] === "cpu") return cpu();
+    const session = await on(providers);
+    return session ? withCpuFallback(session, cpu) : cpu();
+  }
+
+  const gpu = gpuProvider()!;
+  const saved = await readFile(providerChoiceFile(file), "utf8").then((t) => JSON.parse(t) as ProviderChoice, () => undefined);
+  if (saved) {
+    const session = saved.provider === "cpu" ? undefined : await on([saved.provider, "cpu"]);
+    return session ? withCpuFallback(session, cpu) : cpu();
+  }
+
+  const cpuSession = await cpu();
+  const gpuSession = await on([gpu, "cpu"]);
+  const choose = async (choice: Omit<ProviderChoice, "measuredAt">) => {
+    await writeFile(providerChoiceFile(file), JSON.stringify({ ...choice, measuredAt: new Date().toISOString() }, null, 2)).catch(() => undefined);
+    return choice.provider;
+  };
+  if (!gpuSession) {
+    await choose({ provider: "cpu", ms: {} });
+    return cpuSession;
+  }
+
+  const times: Record<string, number[]> = { cpu: [], [gpu]: [] };
+  let chosen: string | undefined;
+  const timed = async (name: string, s: OrtSession, feeds: Record<string, unknown>, warm: boolean) => {
+    const t = performance.now();
+    const out = await s.run(feeds);
+    if (!warm) times[name]!.push(performance.now() - t);
+    return out;
+  };
+  const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
+  let runs = 0;
+  return {
+    run: async (feeds) => {
+      if (chosen === "cpu") return cpuSession.run(feeds);
+      if (chosen) return gpuSession.run(feeds).catch(() => cpuSession.run(feeds));
+      const warm = runs++ === 0;
+      const answer = await timed("cpu", cpuSession, feeds, warm);
+      try {
+        await timed(gpu, gpuSession, feeds, warm);
+      } catch {
+        chosen = await choose({ provider: "cpu", ms: times.cpu!.length ? { cpu: median(times.cpu!) } : {} });
+        return answer;
+      }
+      if (times.cpu!.length >= MEASURED_RUNS) {
+        const ms = { cpu: median(times.cpu!), [gpu]: median(times[gpu]!) };
+        chosen = await choose({ provider: ms[gpu]! < ms.cpu ? gpu : "cpu", ms });
+      }
+      return answer;
+    },
+  };
+}
+
+/** A provider can load a model and still lack one of its operators: switch to the CPU once, then stay there. */
+function withCpuFallback(session: OrtSession, cpu: () => Promise<OrtSession>): OrtSession {
+  let fallback: Promise<OrtSession> | undefined;
+  return {
+    run: async (feeds) => {
+      if (fallback) return (await fallback).run(feeds);
+      try {
+        return await session.run(feeds);
+      } catch {
+        fallback ??= cpu();
+        return (await fallback).run(feeds);
+      }
+    },
+  };
+}
+
 const sessions = new Map<string, Promise<{ ort: Ort; session: OrtSession }>>();
 
 /** Finds faces in pictures and videos. One model session is shared per models folder. */
@@ -150,7 +263,7 @@ export class FaceDetector {
       s = (async () => {
         const ort = await loadOrt("Face detection");
         const file = await ensureModelFile(this.options, "yunet", FACE_MODEL);
-        return { ort, session: await ort.InferenceSession.create(file, { logSeverityLevel: 3 }) };
+        return { ort, session: await createOrtSession(ort, file) };
       })();
       sessions.set(key, s);
       s.catch(() => sessions.delete(key));

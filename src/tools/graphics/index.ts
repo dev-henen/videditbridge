@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { round3 } from "../../core/util.js";
-import { DEFAULT_FONT, fontsIn, prepareFonts, replaceFont } from "../fonts/index.js";
+import { DEFAULT_FONT, fontsIn, prepareFonts, replaceFont, scriptFontsFor } from "../fonts/index.js";
 import { resolveFfmpegPath, type FfmpegOptions } from "../render/ffmpeg.js";
 
 /**
@@ -208,10 +208,13 @@ export function replaceSvgFonts(svg: string, fontMap: Record<string, string>): s
 async function renderer(svgSource: string, opts: GraphicOptions) {
   const Resvg = await loadResvg();
   // Fonts missing on this system become the bundled ones, as in text layers.
-  const { fontsDir, fontMap } = await prepareFonts(opts.fontsDir);
+  // Text between tags may need script fallback fonts (CJK, Arabic, emoji...), downloaded once.
+  const svgText = svgSource.replace(/<[^>]*>/g, " ");
+  const { fontsDir, fontMap } = await prepareFonts(opts.fontsDir, { text: svgText });
   // Only the installed families the SVG names: resvg reads every font file it is given on every frame.
   const named = new Set([...replaceSvgFonts(svgSource, fontMap).matchAll(FONT_FAMILY)].flatMap((m) => m[2]!.split(",").map((f) => familyName(f).toLowerCase())));
   named.add(DEFAULT_FONT.toLowerCase());
+  for (const s of scriptFontsFor([svgText])) named.add(s.family.toLowerCase());
   const fontFiles = (await fontsIn(fontsDir).catch(() => [])).filter((f) => named.has(f.family.toLowerCase())).map((f) => f.file);
   const settings = { fitTo: { mode: "original" }, font: { fontFiles, loadSystemFonts: true, defaultFontFamily: DEFAULT_FONT, sansSerifFamily: DEFAULT_FONT }, background: "rgba(0,0,0,0)" };
   // The root's own size becomes exactly the canvas (even, for video); the viewBox is fitted inside it,

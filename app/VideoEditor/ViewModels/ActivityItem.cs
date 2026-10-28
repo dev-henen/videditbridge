@@ -77,7 +77,7 @@ public sealed record HistoryItem(string Time, string Action);
 public sealed record FindingItem(string Severity, string Check, double Start, double End, string Message)
 {
     public bool IsProblem => Severity == "problem";
-    public string Glyph => IsProblem ? "" : "";
+    public string Glyph => IsProblem ? Icons.Error : Icons.Warning;
     /// <summary>Problems in the project document itself (from validation), rather than in how the video plays.</summary>
     public bool IsProjectCheck => Start < 0;
     public string TimeText => IsProjectCheck ? "Project check" : $"{(int)Start / 60:00}:{Start % 60:00.0} to {(int)End / 60:00}:{End % 60:00.0} | {Check}";

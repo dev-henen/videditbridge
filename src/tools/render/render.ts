@@ -181,7 +181,7 @@ async function prepare(original: Project, opts: Omit<RenderOptions, "output">, c
   // Speed ramps sound best through rubberband, when this FFmpeg build has it.
   const rubberband = p.clips.some((c) => c.keyframes?.speed?.length) && (await hasFilter("rubberband", opts));
   // Always give libass the fonts folder with the bundled fonts, and replace system fonts this machine lacks.
-  const fonts = await prepareFonts(opts.fontsDir);
+  const fonts = await prepareFonts(opts.fontsDir, p);
   return { project: p, segments, share, masks: maskFiles(jobs), rubberband, fonts };
 }
 

@@ -8,13 +8,13 @@ An AI-native video editing library. The edit is a plain JSON document that Claud
 - **38 effects** (color grades, Ken Burns, punch-in zooms, shake, glitch, letterbox…), **46 transitions**, and **14 text animations**.
 - **14 components**: lower-thirds, title cards, CTAs, subscribe buttons, quotes, number badges, countdowns, end screens.
 - **Voice-over on your machine**: a local neural voice model (27 English voices) with measured word timings, so narration gets captions. No account or key.
-- **Desktop app**: a native Windows app (app/VideoEditor) where you edit by asking Claude and watch every edit land, with the timeline, frames, preview video and review findings. Claude can also render frames and contact sheets to check its own work.
+- **Desktop app**: a native app for Windows, macOS and Linux (app/VideoEditor) where you edit by asking Claude and watch every edit land, with the timeline, frames, preview video and review findings. Claude can also render frames and contact sheets to check its own work.
 
 **Documentation:** [docs/](docs/README.md) has guides plus a reference for every Claude tool, template, effect, transition, animation, caption style and component.
 
 ## Desktop app
 
-`app/VideoEditor` is a native Windows app (C# / WPF, .NET 10). It opens projects stored in `projects/` and shows a live session view:
+`app/VideoEditor` is a native desktop app for Windows, macOS and Linux (C# / Avalonia UI, .NET 10). It opens projects stored in `projects/` and shows a live session view:
 
 - what is running now, with progress
 - an activity feed
@@ -26,7 +26,7 @@ An AI-native video editing library. The edit is a plain JSON document that Claud
 dotnet run --project app/VideoEditor          # pass a project folder to open it directly
 ```
 
-The app starts the engine host itself (`src/host`, JSON-RPC over stdio). It needs Node 20+ on PATH and this repository's `node_modules`.
+The app starts the engine host itself (`src/host`, JSON-RPC over stdio). In development it needs Node 20+ (found on PATH, in the usual Homebrew and nvm places, or through `AVE_NODE`) and this repository's `node_modules`. Video playback uses LibVLC: its libraries come with the app on Windows and macOS, and on Linux install VLC (`sudo apt install vlc`).
 
 ## Layout
 
@@ -38,7 +38,7 @@ src/
   claude/      EditorSession (state, undo/redo, events, live activities) + tool definitions for Claude
   host/        Engine host for the desktop app: JSON-RPC over stdio, project storage, Claude agent loop
   cli.ts       `ave` command line
-app/           Native desktop app (C# WPF)
+app/           Native desktop app (C# Avalonia: Windows, macOS, Linux)
 examples/      claude-agent.ts: Claude editing a video while you watch the preview
 test/          unit tests + real FFmpeg integration renders
 ```

@@ -3,6 +3,7 @@ import { escapeAssChar } from "../../library/animations/index.js";
 import type { CaptionStyle } from "../../library/caption-styles/index.js";
 import type { CaptionChunk } from "./chunk.js";
 import type { Word } from "../../core/schema.js";
+import { applyFontFallback, type FontFallback } from "../fonts/scripts.js";
 
 /** Minimal ASS (Advanced SubStation Alpha) document builder. Rendered by libass inside FFmpeg. */
 
@@ -41,6 +42,8 @@ export class AssDocument {
   readonly events: AssEvent[] = [];
   /** Font families to write in place of others (lowercase name to family), for fonts missing on this system. */
   fontMap?: Record<string, string>;
+  /** Fallback fonts for scripts the style's font lacks (see applyFontFallback). */
+  fontFallback?: FontFallback;
 
   constructor(
     readonly width: number,
@@ -98,8 +101,13 @@ export class AssDocument {
         1,
       ].join(","),
     );
+    const family = (style: string) => {
+      const f = this.styles.get(style)?.fontFamily ?? "";
+      return this.fontMap?.[f.trim().toLowerCase()] ?? f;
+    };
     const eventLines = this.events.map(
-      (e) => `Dialogue: ${e.layer},${assTime(e.start)},${assTime(e.end)},${e.style},,0,0,0,,${e.text}`,
+      (e) =>
+        `Dialogue: ${e.layer},${assTime(e.start)},${assTime(e.end)},${e.style},,0,0,0,,${this.fontFallback ? applyFontFallback(e.text, family(e.style), this.fontFallback) : e.text}`,
     );
     return [
       "[Script Info]",

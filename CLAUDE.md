@@ -16,17 +16,18 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 - Catalog items (effects, transitions, animations, caption styles, components, templates) are self-describing. Descriptions are read by Claude, so keep them clear and specific.
 - Templates are pure JSON specs (`library/templates/catalog/*`) interpreted by `builder.ts`. Add new looks as data, not code.
 
-## Desktop app (app/VideoEditor, C# WPF)
+## Desktop app (app/VideoEditor, C# Avalonia, Windows/macOS/Linux)
 - It talks to `src/host/main.ts` over stdio JSON-RPC. stdout carries protocol messages only; the host routes `console.log` to stderr. To add a host method, define it in `main.ts` and call it from `MainViewModel`.
 - Projects live in `projects/<slug>/` (gitignored app storage), and the host autosaves them.
 - The app is AI-first: people edit by asking Claude. It is not a manual editor (not competing with CapCut or Premiere), so direct interaction serves the conversation (pointing Claude at a clip, reviewing what it offers, undo) rather than drag-to-trim editing.
 - UI rules from the user:
   - compact default window (960x460)
   - dark neutral palette with blue as the primary color (buttons, selection, playhead, focus); no purple or other accents
-  - icon glyphs from Segoe Fluent Icons
+  - icon glyphs from the bundled Fluent UI System Icons font (`Icons.cs` names them; `Assets/Fonts`), not Segoe (Windows-only)
   - no emoji, no em or en dashes in any text
   - the timeline is a compact preview strip by default
-- Build with `dotnet build app/VideoEditor`. Test the host with `test/host.integration.test.ts`.
+- Nothing Windows-only: dialogs through `StorageProvider`, video and audio through LibVLC (`Playback/Player.cs`, frames drawn into a bitmap so overlays stay on top), UI font Segoe UI on Windows and bundled Inter elsewhere.
+- Build with `dotnet build app/VideoEditor` (add `-r linux-x64` or `-r osx-arm64` to check the other systems compile). Test the host with `test/host.integration.test.ts`.
 
 ## Renderer gotchas (compile.ts)
 - Every primary segment ends with `fps`, `format=yuv420p`, `setsar=1` and `settb=AVTB`. `concat` outputs AV_TIME_BASE, and `xfade` fails if the timebases differ.

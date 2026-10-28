@@ -2,8 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Text.Json.Nodes;
-using System.Windows;
-using System.Windows.Threading;
+using Avalonia.Threading;
 using VideoEditor.Engine;
 
 namespace VideoEditor.ViewModels;
@@ -12,7 +11,6 @@ namespace VideoEditor.ViewModels;
 public sealed class MainViewModel : Observable, IDisposable
 {
     private EngineClient? _engine;
-    private readonly Dispatcher _ui = Application.Current.Dispatcher;
     private readonly DispatcherTimer _ticker;
 
     public ObservableCollection<ActivityItem> Activities { get; } = [];
@@ -146,8 +144,8 @@ public sealed class MainViewModel : Observable, IDisposable
         try
         {
             _engine = await Task.Run(EngineClient.Start);
-            _engine.Notification += (method, p) => _ui.InvokeAsync(() => OnNotification(method, p));
-            _engine.Exited += () => _ui.InvokeAsync(() =>
+            _engine.Notification += (method, p) => Dispatcher.UIThread.Post(() => OnNotification(method, p));
+            _engine.Exited += () => Dispatcher.UIThread.Post(() =>
             {
                 EngineError = "The editing engine stopped. Restart the app.";
                 SetIdle("Engine stopped");
@@ -311,7 +309,10 @@ public sealed class MainViewModel : Observable, IDisposable
         catch (Exception e) { ShowError(e.Message); }
     }
 
-    public void ShowError(string message) => MessageBox.Show(message, "AI Video Editor", MessageBoxButton.OK, MessageBoxImage.Warning);
+    /// <summary>Raised when an action fails; the window shows the message.</summary>
+    public event Action<string>? ErrorRaised;
+
+    public void ShowError(string message) => ErrorRaised?.Invoke(message);
 
     // ---------------------------------------------------------------- notifications
 

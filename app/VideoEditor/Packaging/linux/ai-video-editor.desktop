@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=AI Video Editor
+GenericName=Video Editor
+Comment=Edit videos by asking Claude
+Exec=VideoEditor %f
+Icon=ai-video-editor
+Terminal=false
+Categories=AudioVideo;Video;AudioVideoEditing;
+Keywords=video;editor;claude;captions;
+StartupWMClass=VideoEditor

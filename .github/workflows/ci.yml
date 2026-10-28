@@ -48,9 +48,16 @@ jobs:
           if-no-files-found: ignore
 
   app:
-    # The desktop app is WPF (Windows only) until the Avalonia port; then this becomes a matrix.
-    name: Desktop app (Windows)
-    runs-on: windows-latest
+    name: Desktop app (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows x64, os: windows-latest }
+          - { name: macOS arm64, os: macos-14 }
+          - { name: macOS x64, os: macos-13 }
+          - { name: Ubuntu 22.04 x64, os: ubuntu-22.04 }
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4

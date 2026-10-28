@@ -1,8 +1,11 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
-using System.Windows;
-using System.Windows.Input;
-using System.Windows.Media;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Controls.Documents;
+using Avalonia.Media;
+using Avalonia.Media.Immutable;
 
 namespace VideoEditor.Controls;
 
@@ -15,7 +18,7 @@ public sealed record TimelineItem(string Kind, string Id, string Label, double S
 /// The app is AI-first, so the timeline does not edit: click an item to point Claude at it (and
 /// seek there), click empty space or drag to seek, Escape to clear the pick.
 /// </summary>
-public sealed class TimelineView : FrameworkElement
+public sealed class TimelineView : Control
 {
     private enum Kind { Clip, Text, Media, Shape, Audio, Caption }
     private sealed record Block(double Start, double End, string Label, Kind Kind, double TransitionIn = 0, string? Id = null);
@@ -30,30 +33,30 @@ public sealed class TimelineView : FrameworkElement
     private double _duration;
     private double _playhead;
     private bool _compact = true;
+    private bool _dragging;
     private string? _selectedId;
     private Block? _hover;
 
     private const double RulerHeight = 16;
     private const double LaneHeight = 20;
 
-    private static readonly Brush ClipFill = Freeze(new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x4A)));
-    private static readonly Brush ClipFillAlt = Freeze(new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x3E)));
-    private static readonly Brush TextFill = Freeze(new SolidColorBrush(Color.FromRgb(0xB8, 0xB8, 0xB8)));
-    private static readonly Brush MediaFill = Freeze(new SolidColorBrush(Color.FromRgb(0x7A, 0x7A, 0x7A)));
-    private static readonly Brush ShapeFill = Freeze(new SolidColorBrush(Color.FromRgb(0x5E, 0x5E, 0x5E)));
-    private static readonly Brush AudioFill = Freeze(new SolidColorBrush(Color.FromRgb(0x35, 0x35, 0x35)));
-    private static readonly Brush CaptionFill = Freeze(new SolidColorBrush(Color.FromRgb(0x2E, 0x2E, 0x2E)));
-    private static readonly Brush LabelText = Freeze(new SolidColorBrush(Color.FromRgb(0xE6, 0xE6, 0xE6)));
-    private static readonly Brush DarkText = Freeze(new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x14)));
-    private static readonly Brush Muted = Freeze(new SolidColorBrush(Color.FromRgb(0x6E, 0x6E, 0x6E)));
-    private static readonly Brush Hatch = Freeze(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)));
+    private static readonly IBrush ClipFill = new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x4A)).ToImmutable();
+    private static readonly IBrush ClipFillAlt = new SolidColorBrush(Color.FromRgb(0x3E, 0x3E, 0x3E)).ToImmutable();
+    private static readonly IBrush TextFill = new SolidColorBrush(Color.FromRgb(0xB8, 0xB8, 0xB8)).ToImmutable();
+    private static readonly IBrush MediaFill = new SolidColorBrush(Color.FromRgb(0x7A, 0x7A, 0x7A)).ToImmutable();
+    private static readonly IBrush ShapeFill = new SolidColorBrush(Color.FromRgb(0x5E, 0x5E, 0x5E)).ToImmutable();
+    private static readonly IBrush AudioFill = new SolidColorBrush(Color.FromRgb(0x35, 0x35, 0x35)).ToImmutable();
+    private static readonly IBrush CaptionFill = new SolidColorBrush(Color.FromRgb(0x2E, 0x2E, 0x2E)).ToImmutable();
+    private static readonly IBrush LabelText = new SolidColorBrush(Color.FromRgb(0xE6, 0xE6, 0xE6)).ToImmutable();
+    private static readonly IBrush DarkText = new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x14)).ToImmutable();
+    private static readonly IBrush Muted = new SolidColorBrush(Color.FromRgb(0x6E, 0x6E, 0x6E)).ToImmutable();
+    private static readonly IBrush Hatch = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)).ToImmutable();
     // Blue is the app's primary color: the playhead and the picked item.
-    private static readonly Brush Blue = Freeze(new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6)));
-    private static readonly Brush BlueSoft = Freeze(new SolidColorBrush(Color.FromArgb(0x40, 0x3B, 0x82, 0xF6)));
-    private static readonly Pen LinePen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromRgb(0x24, 0x24, 0x24))), 1));
-    private static readonly Pen PlayheadPen = Freeze(new Pen(Blue, 1.5));
-    private static readonly Pen SelectPen = Freeze(new Pen(Blue, 1.5));
-    private static readonly Typeface Face = new("Segoe UI");
+    private static readonly IBrush Blue = new SolidColorBrush(Color.FromRgb(0x3B, 0x82, 0xF6)).ToImmutable();
+    private static readonly IBrush BlueSoft = new SolidColorBrush(Color.FromArgb(0x40, 0x3B, 0x82, 0xF6)).ToImmutable();
+    private static readonly IPen LinePen = new ImmutablePen(new SolidColorBrush(Color.FromRgb(0x24, 0x24, 0x24)).ToImmutable(), 1);
+    private static readonly IPen PlayheadPen = new ImmutablePen((ImmutableSolidColorBrush)Blue, 1.5);
+    private static readonly IPen SelectPen = new ImmutablePen((ImmutableSolidColorBrush)Blue, 1.5);
 
     public event Action<double>? Seek;
 
@@ -63,8 +66,10 @@ public sealed class TimelineView : FrameworkElement
     public TimelineView()
     {
         Focusable = true;
-        FocusVisualStyle = null;
+        ClipToBounds = true;
     }
+
+    private Typeface Face => new(TextElement.GetFontFamily(this));
 
     public bool Compact
     {
@@ -155,7 +160,7 @@ public sealed class TimelineView : FrameworkElement
 
     // Compact layout: clip strip + overlay marks + audio marks.
     private const double CompactClip = 18, CompactMark = 3, CompactGap = 2;
-    private double CompactHeight => CompactClip + CompactGap + CompactMark + CompactGap + CompactMark + 2;
+    private static double CompactHeight => CompactClip + CompactGap + CompactMark + CompactGap + CompactMark + 2;
 
     protected override Size MeasureOverride(Size available)
     {
@@ -163,43 +168,44 @@ public sealed class TimelineView : FrameworkElement
         return new Size(w, _compact ? CompactHeight : RulerHeight + Math.Max(1, _lanes.Count) * LaneHeight + 2);
     }
 
-    private double TimeToX(double t) => LabelWidth + (_duration <= 0 ? 0 : t / _duration * Math.Max(1, ActualWidth - LabelWidth - 2));
+    private double Width0 => Bounds.Width;
+    private double TimeToX(double t) => LabelWidth + (_duration <= 0 ? 0 : t / _duration * Math.Max(1, Width0 - LabelWidth - 2));
 
-    protected override void OnRender(DrawingContext dc)
+    public override void Render(DrawingContext dc)
     {
-        dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, ActualWidth, ActualHeight));
+        // Transparent fill so the whole area takes clicks.
+        dc.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
         _hits.Clear();
-        var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
         if (_duration <= 0)
         {
-            dc.DrawText(Text("Timeline", 10, Muted, dpi), new Point(LabelWidth + 4, 3));
+            dc.DrawText(Text("Timeline", 10, Muted), new Point(LabelWidth + 4, 3));
             return;
         }
-        if (_compact) RenderCompact(dc, dpi);
-        else RenderLanes(dc, dpi);
+        if (_compact) RenderCompact(dc);
+        else RenderLanes(dc);
 
         var px = TimeToX(Math.Clamp(_playhead, 0, _duration));
-        dc.DrawLine(PlayheadPen, new Point(px, 0), new Point(px, ActualHeight));
+        dc.DrawLine(PlayheadPen, new Point(px, 0), new Point(px, Bounds.Height));
     }
 
-    private void RenderCompact(DrawingContext dc, double dpi)
+    private void RenderCompact(DrawingContext dc)
     {
         for (var i = 0; i < _clips.Count; i++)
-            Hit(dc, DrawBlock(dc, dpi, _clips[i], 0, CompactClip, i % 2 == 0 ? ClipFill : ClipFillAlt, withLabel: true), _clips[i]);
+            Hit(dc, DrawBlock(dc, _clips[i], 0, CompactClip, i % 2 == 0 ? ClipFill : ClipFillAlt, withLabel: true), _clips[i]);
         // The hairline marks get a taller click area than they are drawn.
         var y = CompactClip + CompactGap;
-        foreach (var b in _layers) Hit(dc, DrawBlock(dc, dpi, b, y, CompactMark, FillFor(b.Kind), withLabel: false), b, grow: 2);
+        foreach (var b in _layers) Hit(dc, DrawBlock(dc, b, y, CompactMark, FillFor(b.Kind), withLabel: false), b, grow: 2);
         y += CompactMark + CompactGap;
-        foreach (var b in _audio) Hit(dc, DrawBlock(dc, dpi, b, y, CompactMark, MediaFill, withLabel: false), b, grow: 2);
+        foreach (var b in _audio) Hit(dc, DrawBlock(dc, b, y, CompactMark, MediaFill, withLabel: false), b, grow: 2);
     }
 
-    private void RenderLanes(DrawingContext dc, double dpi)
+    private void RenderLanes(DrawingContext dc)
     {
         var step = _duration > 300 ? 60 : _duration > 120 ? 30 : _duration > 40 ? 10 : _duration > 15 ? 5 : 1;
         for (double t = 0; t <= _duration + 0.001; t += step)
         {
-            var ft = Text($"{(int)t / 60:00}:{(int)t % 60:00}", 9, Muted, dpi);
-            dc.DrawText(ft, new Point(Math.Min(TimeToX(t) - ft.Width / 2, ActualWidth - ft.Width), 1));
+            var ft = Text($"{(int)t / 60:00}:{(int)t % 60:00}", 9, Muted);
+            dc.DrawText(ft, new Point(Math.Min(TimeToX(t) - ft.Width / 2, Width0 - ft.Width), 1));
         }
         for (var i = 0; i < _lanes.Count; i++)
         {
@@ -207,13 +213,13 @@ public sealed class TimelineView : FrameworkElement
             var lane = _lanes[i];
             if (lane.Name.Length > 0)
             {
-                var ft = Text(lane.Name, 10, Muted, dpi);
+                var ft = Text(lane.Name, 10, Muted);
                 dc.DrawText(ft, new Point(LabelWidth - ft.Width - 8, y + 4));
             }
             var alt = 0;
             foreach (var b in lane.Blocks)
-                Hit(dc, DrawBlock(dc, dpi, b, y + 2, LaneHeight - 4, b.Kind == Kind.Clip ? (alt++ % 2 == 0 ? ClipFill : ClipFillAlt) : FillFor(b.Kind), withLabel: true), b);
-            dc.DrawLine(LinePen, new Point(LabelWidth, y + LaneHeight), new Point(ActualWidth, y + LaneHeight));
+                Hit(dc, DrawBlock(dc, b, y + 2, LaneHeight - 4, b.Kind == Kind.Clip ? (alt++ % 2 == 0 ? ClipFill : ClipFillAlt) : FillFor(b.Kind), withLabel: true), b);
+            dc.DrawLine(LinePen, new Point(LabelWidth, y + LaneHeight), new Point(Width0, y + LaneHeight));
         }
     }
 
@@ -224,29 +230,27 @@ public sealed class TimelineView : FrameworkElement
         _hits.Add((grow > 0 ? new Rect(rect.Left, rect.Top - grow, rect.Width, rect.Height + 2 * grow) : rect, b));
         if (b.Id != _selectedId) return;
         var r = Math.Min(3, rect.Height / 2);
-        dc.DrawRoundedRectangle(BlueSoft, SelectPen, rect, r, r);
+        dc.DrawRectangle(BlueSoft, SelectPen, rect, r, r);
     }
 
-    private Rect DrawBlock(DrawingContext dc, double dpi, Block b, double y, double h, Brush fill, bool withLabel)
+    private Rect DrawBlock(DrawingContext dc, Block b, double y, double h, IBrush fill, bool withLabel)
     {
         var x0 = TimeToX(b.Start);
         var w = Math.Max(1.5, TimeToX(b.End) - x0 - 1);
         var rect = new Rect(x0, y, w, h);
-        dc.DrawRoundedRectangle(fill, null, rect, Math.Min(3, h / 2), Math.Min(3, h / 2));
+        dc.DrawRectangle(fill, null, rect, Math.Min(3, h / 2), Math.Min(3, h / 2));
         if (b.TransitionIn > 0)
-            dc.DrawRectangle(Hatch, null, new Rect(x0, y, Math.Min(w, TimeToX(b.Start + b.TransitionIn) - x0), h));
+            dc.FillRectangle(Hatch, new Rect(x0, y, Math.Min(w, TimeToX(b.Start + b.TransitionIn) - x0), h));
         if (!withLabel || w < 28 || h < 12) return rect;
-        var ft = Text(b.Label, 10, b.Kind == Kind.Text ? DarkText : LabelText, dpi);
+        var ft = Text(b.Label, 10, b.Kind == Kind.Text ? DarkText : LabelText);
         ft.MaxTextWidth = Math.Max(1, w - 8);
         ft.MaxLineCount = 1;
         ft.Trimming = TextTrimming.CharacterEllipsis;
-        dc.PushClip(new RectangleGeometry(rect));
-        dc.DrawText(ft, new Point(x0 + 4, y + (h - ft.Height) / 2));
-        dc.Pop();
+        using (dc.PushClip(rect)) dc.DrawText(ft, new Point(x0 + 4, y + (h - ft.Height) / 2));
         return rect;
     }
 
-    private static Brush FillFor(Kind k) => k switch
+    private static IBrush FillFor(Kind k) => k switch
     {
         Kind.Text => TextFill,
         Kind.Media => MediaFill,
@@ -256,8 +260,8 @@ public sealed class TimelineView : FrameworkElement
         _ => ClipFill,
     };
 
-    private static FormattedText Text(string s, double size, Brush brush, double dpi) =>
-        new(s, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, Face, size, brush, dpi);
+    private FormattedText Text(string s, double size, IBrush brush) =>
+        new(s, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, Face, size, brush);
 
     private static string KindName(Kind k) => k switch
     {
@@ -281,19 +285,22 @@ public sealed class TimelineView : FrameworkElement
         SelectionChanged?.Invoke(Selected);
     }
 
-    protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
+    protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
         Focus();
         var p = e.GetPosition(this);
         Select(HitTest(p)?.Id);
-        CaptureMouse();
+        e.Pointer.Capture(this);
+        _dragging = true;
         SeekTo(p.X);
+        e.Handled = true;
     }
 
-    protected override void OnMouseMove(MouseEventArgs e)
+    protected override void OnPointerMoved(PointerEventArgs e)
     {
         var p = e.GetPosition(this);
-        if (IsMouseCaptured)
+        if (_dragging)
         {
             SeekTo(p.X);
             return;
@@ -302,10 +309,16 @@ public sealed class TimelineView : FrameworkElement
         if (ReferenceEquals(b, _hover)) return;
         _hover = b;
         var name = b is null ? "" : KindName(b.Kind);
-        ToolTip = b is null ? null : $"{char.ToUpper(name[0])}{name[1..]}: {b.Label}\n{Clock(b.Start)} to {Clock(b.End)}\nClick to ask Claude about it";
+        ToolTip.SetTip(this, b is null ? null : $"{char.ToUpper(name[0])}{name[1..]}: {b.Label}\n{Clock(b.Start)} to {Clock(b.End)}\nClick to ask Claude about it");
     }
 
-    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) => ReleaseMouseCapture();
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        _dragging = false;
+        e.Pointer.Capture(null);
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e) => _dragging = false;
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
@@ -317,10 +330,8 @@ public sealed class TimelineView : FrameworkElement
     private void SeekTo(double x)
     {
         if (_duration <= 0 || x < LabelWidth) return;
-        var t = Math.Clamp((x - LabelWidth) / Math.Max(1, ActualWidth - LabelWidth - 2) * _duration, 0, _duration);
+        var t = Math.Clamp((x - LabelWidth) / Math.Max(1, Width0 - LabelWidth - 2) * _duration, 0, _duration);
         Playhead = t;
         Seek?.Invoke(t);
     }
-
-    private static T Freeze<T>(T f) where T : Freezable { f.Freeze(); return f; }
 }
