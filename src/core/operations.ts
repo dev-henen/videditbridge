@@ -276,19 +276,25 @@ export function addEffect(p: Project, target: string, effect: Effect): Project {
   return edit(p, (d) => effectList(d, target).push(e));
 }
 
-/** The params of the first effect of a type on a target, if any. */
+/**
+ * The effect of a type on a target that applies to the whole picture: masked effects (secondary
+ * corrections, see setMaskedEffect) are separate and found by their label.
+ */
+const wholeFrame = (list: Effect[], effectType: string) => list.find((e) => e.type === effectType && !e.mask);
+
+/** The params of the first unmasked effect of a type on a target, if any. */
 export function getEffectParams(p: Project, target: string, effectType: string): Record<string, unknown> | undefined {
-  return effectList(p, target).find((e) => e.type === effectType)?.params;
+  return wholeFrame(effectList(p, target), effectType)?.params;
 }
 
 /**
- * Set the params of the first effect of a type on a target, adding the effect if it isn't there.
+ * Set the params of the first unmasked effect of a type on a target, adding the effect if it isn't there.
  * `prepend` adds a new effect first in the chain (color correction belongs before stylizing).
  */
 export function setEffectParams(p: Project, target: string, effectType: string, params: Record<string, unknown>, opts: { prepend?: boolean } = {}): Project {
   return edit(p, (d) => {
     const list = effectList(d, target);
-    const existing = list.find((e) => e.type === effectType);
+    const existing = wholeFrame(list, effectType);
     if (existing) existing.params = params;
     else if (opts.prepend) {
       // "First" still comes after keying: a green screen must be keyed on the original colors.
@@ -301,7 +307,8 @@ export function setEffectParams(p: Project, target: string, effectType: string, 
 /** Set or clear (`null`) the keyframes of an effect already on a target. */
 export function setEffectKeyframes(p: Project, target: string, effectType: string, keyframes: Effect["keyframes"] | null): Project {
   return edit(p, (d) => {
-    const effect = effectList(d, target).find((e) => e.type === effectType);
+    const list = effectList(d, target);
+    const effect = wholeFrame(list, effectType) ?? list.find((e) => e.type === effectType);
     if (!effect) throw new EditError(`"${target}" has no ${effectType} effect; add it first`);
     if (keyframes?.length) effect.keyframes = [...keyframes].sort((a, b) => a.time - b.time);
     else delete effect.keyframes;
@@ -311,12 +318,41 @@ export function setEffectKeyframes(p: Project, target: string, effectType: strin
 /** Effects that must see the untouched source colors, so prepended effects go after them. */
 const KEYING_EFFECTS = new Set(["chromaKey"]);
 
-export function removeEffect(p: Project, target: string, effectType: string): Project {
+/** Remove an effect by type (the unmasked one first), or by `label` when given. */
+export function removeEffect(p: Project, target: string, effectType: string, label?: string): Project {
   return edit(p, (d) => {
     const list = effectList(d, target);
-    const i = list.findIndex((e) => e.type === effectType);
-    if (i === -1) throw new EditError(`"${target}" has no "${effectType}" effect`);
-    list.splice(i, 1);
+    const found = label !== undefined ? list.find((e) => e.label === label) : (wholeFrame(list, effectType) ?? list.find((e) => e.type === effectType));
+    if (!found) throw new EditError(`"${target}" has no ${label !== undefined ? `effect labeled "${label}"` : `"${effectType}" effect`}`);
+    list.splice(list.indexOf(found), 1);
+  });
+}
+
+/** The effects on a target that are limited to a mask (secondary corrections, masked looks). */
+export function maskedEffects(p: Project, target: string): Effect[] {
+  return effectList(p, target).filter((e) => e.mask);
+}
+
+/**
+ * Add or replace (`null` removes) the masked effect with this label on a target. New ones go after
+ * the primary correction and earlier masked effects, before stylizing, as a colorist orders a grade.
+ */
+export function setMaskedEffect(p: Project, target: string, label: string, effect: Effect | null): Project {
+  return edit(p, (d) => {
+    const list = effectList(d, target);
+    const i = list.findIndex((e) => e.label === label);
+    if (!effect) {
+      if (i === -1) throw new EditError(`"${target}" has no effect labeled "${label}"`);
+      list.splice(i, 1);
+      return;
+    }
+    const e = EffectSchema.parse({ ...effect, label });
+    if (!e.mask) throw new EditError("A masked effect needs a mask");
+    if (i !== -1) list[i] = e;
+    else {
+      const after = list.reduce((last, x, k) => (KEYING_EFFECTS.has(x.type) || x.mask || x.type === "color" ? k + 1 : last), 0);
+      list.splice(after, 0, e);
+    }
   });
 }
 

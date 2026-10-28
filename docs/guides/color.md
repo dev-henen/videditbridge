@@ -77,16 +77,33 @@ So setting values in a different order gives the same result.
 | `get_color` | Read the current settings |
 | `analyze_color` | Measure brightness, shadow and highlight levels, contrast range, saturation and color cast at a time, with suggestions. Letterbox bars are ignored |
 | `render_scopes` | Histogram, luma waveform, RGB parade and vectorscope as an image Claude can look at |
+| `grade_region` | A secondary correction: color settings inside a mask (HSL key, luma range, shape, faces or the person), by label. The same label updates it; `remove: true` deletes it |
+| `render_mask` | The frame with a mask as white on black, or as a red tint over the picture, to check a selection before and after grading |
 
 A colorist's loop for Claude:
 
 1. `analyze_color` and `render_scopes` to see where the image stands.
 2. **Correct**: exposure, white balance and contrast until the image looks neutral and the scopes are balanced.
 3. **Grade**: curves, wheels and HSL for the look (for example teal shadows with warm highlights, or muted greens).
-4. **Finish**: clarity, vignette and grain.
-5. `render_frame` and `analyze_color` again to confirm the result, and do the same on a couple of different shots.
+4. **Secondaries**: `render_mask` to build a clean selection (check the start, middle and end of the clip), then `grade_region` (a deeper sky, lifted faces, cooler shadows).
+5. **Finish**: clarity, vignette and grain.
+6. `render_frame` and `analyze_color` again to confirm the result, and do the same on a couple of different shots.
 
-A new `color` effect is inserted *before* stylize effects such as `letterbox`, so the grade never tints the black bars.
+A new `color` effect is inserted *before* stylize effects such as `letterbox`, so the grade never tints the black bars. Secondaries go after the whole-frame `color` effect and earlier secondaries, also before stylizing. `color_adjust` and `get_color` only touch the whole-frame grade, never a secondary.
+
+### Secondary corrections
+
+```json
+{ "target": "clip_1", "label": "deeper sky",
+  "mask": { "kind": "key", "hue": [190, 240], "saturation": [0.15, 1], "softness": 0.2,
+            "combine": [{ "kind": "shape", "op": "intersect", "shape": { "type": "rect", "x": 0.5, "y": 0.25, "width": 1, "height": 0.5 } }] },
+  "color": { "saturation": 15, "temperature": -10 } }
+```
+
+- **Key**: hue is measured on the color circle, so a range can cross red (`[340, 20]`). Pixels with almost no color never pass a hue test, since their hue is noise. `softness` widens each range's falloff (up to 45 degrees of hue and 0.25 of saturation and luma).
+- **Combine** a key with a shape to keep the sky but not blue clothes, or subtract `face` from a luma key to keep skin out of a highlight change.
+- **Feather** of 0.01 (1% of the frame height) or more keeps the edge invisible; `grow` closes small holes before feathering; `smooth` (frames) stops a key from flickering on noisy footage, as does `denoise`.
+- Masks work on any effect, not only color: a `blur` outside a shape, `sharpen` on faces, a `glow` on one object. See [the project document](project-format.md) for the full mask format.
 
 ## Notes
 

@@ -2,7 +2,7 @@
 
 # Effects
 
-83 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+84 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -16,7 +16,7 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
 - **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe)
 - **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs), [custom](#custom)
-- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [denoise](#denoise)
+- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [maskView](#maskview), [denoise](#denoise)
 - **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur)
 - **motion**: [stabilize](#stabilize), [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat)
 - **distort**: [mirror](#mirror), [chromaKey](#chromakey), [tilt](#tilt)
@@ -605,6 +605,32 @@ _No parameters._
 | `subject.width` | number | yes |  | Ellipse width as a fraction of frame width (> 0, ≤ 2) |
 | `subject.height` | number | yes |  | Ellipse height as a fraction of frame height (> 0, ≤ 2) |
 | `feather` | number |  | `0.25` | Softness of the person's edge (≥ 0.02, ≤ 1) |
+
+### maskView
+
+**Mask View**. Shows a mask in place of an effect, white on black (matte) or as a red tint over the picture (overlay), to check what the mask selects. render_mask uses it; it does not belong in a finished edit.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `mask` | { kind, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  | `{"kind":"shape","softness":0.2,"shape":{"type":"ellipse","x":0.5,"y":0.5,"width":0.5,"height":0.5},"invert":false,"feather":0.01,"grow":0,"smooth":0,"denoise":false}` | Limits an effect to part of the frame. Check it with render_mask before relying on it |
+| `mask.kind` | "person" \| "face" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face (both found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
+| `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
+| `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
+| `mask.softness` | number |  | `0.2` | key and luma: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
+| `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
+| `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number | yes |  | Center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number | yes |  | Width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number | yes |  | Height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.invert` | boolean |  | `false` | Select everything except this |
+| `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
+| `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
+| `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
+| `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
+| `mask.combine` | { kind, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `style` | "matte" \| "overlay" |  | `"matte"` |  |
 
 ### denoise
 

@@ -1,16 +1,18 @@
 import { z } from "zod";
-import type { Easing, Effect } from "../../core/schema.js";
+import { MaskSchema, type Easing, type Effect } from "../../core/schema.js";
 import { easeValue } from "../../core/keyframes.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
 import { bakeColor, define, maskBranch, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
 import { motionEffects } from "./motion.js";
 import { customEffect } from "./custom.js";
+import { maskIsTemporal, maskNeeds, maskViewFilter, maskedEffect } from "./masks.js";
 
 export { CUSTOM_FILTERS, checkCustomFilter } from "./custom.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
 
 export * from "./color.js";
 export * from "./helpers.js";
+export * from "./masks.js";
 
 
 const GRADES: Record<string, { name: string; description: string; filter: string }> = {
@@ -239,6 +241,21 @@ export const EFFECTS: EffectDefinition[] = [
   }),
 
   // --- blur & stylize -----------------------------------------------------------
+  define({
+    id: "maskView",
+    name: "Mask View",
+    category: "retouch",
+    perFrame: (p) => !maskIsTemporal((p as { mask: z.output<typeof MaskSchema> }).mask),
+    description:
+      "Shows a mask in place of an effect, white on black (matte) or as a red tint over the picture (overlay), to check what the mask selects. render_mask uses it; it does not belong in a finished edit.",
+    params: z.object({
+      mask: MaskSchema.default(MaskSchema.parse({ kind: "shape", shape: { type: "ellipse", x: 0.5, y: 0.5, width: 0.5, height: 0.5 } })),
+      style: z.enum(["matte", "overlay"]).default("matte"),
+    }),
+    usesPersonMask: (p) => maskNeeds(p.mask, "person"),
+    usesFaceMask: (p) => maskNeeds(p.mask, "face"),
+    toFilter: (p, ctx) => maskViewFilter(ctx, p.mask, p.style),
+  }),
   define({
     id: "blur",
     name: "Blur",
@@ -501,13 +518,17 @@ export function effectToFilter(effect: Effect, ctx: EffectContext): string {
   const def = getEffect(effect.type);
   if (!def) throw new Error(`Unknown effect "${effect.type}"`);
   const states = effectStates(effect);
-  if (states.length === 1) return def.toFilter(def.params.parse(states[0]!.params), ctx);
-  return rampFilter(
-    ctx,
-    states.map((s) => def.toFilter(def.params.parse(s.params), ctx)),
-    states.map((s) => s.time),
-    states.map((s) => s.easing),
-  );
+  const chain =
+    states.length === 1
+      ? def.toFilter(def.params.parse(states[0]!.params), ctx)
+      : rampFilter(
+          ctx,
+          states.map((s) => def.toFilter(def.params.parse(s.params), ctx)),
+          states.map((s) => s.time),
+          states.map((s) => s.easing),
+        );
+  // A masked effect runs on a copy and shows through its matte.
+  return effect.mask ? maskedEffect(ctx, MaskSchema.parse(effect.mask), chain) : chain;
 }
 
 /** Numbers move part way (`e`) from `a` to `b`, also inside nested settings; other values switch half way. */
@@ -560,26 +581,32 @@ export function effectsToFilter(effects: Effect[], ctx: EffectContext): string[]
   return effects.map((e) => effectToFilter(e, ctx));
 }
 
-/** Whether an effect wants the clip's person cutout (see EffectDefinition.usesPersonMask). */
-export function usesPersonMask(effect: Effect): boolean {
+/**
+ * How many copies of the clip's person cutout or face mask stream an effect takes: one per state of
+ * a ramped effect that uses it itself (EffectDefinition.usesPersonMask), plus one for its mask.
+ */
+export function maskStreams(effect: Effect, kind: "person" | "face"): number {
   const def = byId.get(effect.type);
-  if (!def?.usesPersonMask) return false;
-  const parsed = def.params.safeParse(effect.params ?? {});
-  return parsed.success && def.usesPersonMask(parsed.data);
+  const uses = kind === "person" ? def?.usesPersonMask : def?.usesFaceMask;
+  const parsed = uses && def!.params.safeParse(effect.params ?? {});
+  const own = uses && parsed?.success && uses(parsed.data) ? effectStates(effect).length : 0;
+  return own + (maskNeeds(effect.mask, kind) ? 1 : 0);
 }
 
-/** Whether an effect wants masks that follow the clip's faces (see EffectDefinition.usesFaceMask). */
+/** Whether an effect wants the clip's person cutout (see EffectDefinition.usesPersonMask and Effect.mask). */
+export function usesPersonMask(effect: Effect): boolean {
+  return maskStreams(effect, "person") > 0;
+}
+
+/** Whether an effect wants masks that follow the clip's faces (see EffectDefinition.usesFaceMask and Effect.mask). */
 export function usesFaceMask(effect: Effect): boolean {
-  const def = byId.get(effect.type);
-  if (!def?.usesFaceMask) return false;
-  const parsed = def.params.safeParse(effect.params ?? {});
-  return parsed.success && def.usesFaceMask(parsed.data);
+  return maskStreams(effect, "face") > 0;
 }
 
 /** Whether an effect works frame by frame (see EffectDefinition.perFrame). Unknown effects are not. */
 export function isPerFrame(effect: Effect): boolean {
-  // Settings that change over time make the effect depend on time.
-  if (effect.keyframes?.length) return false;
+  // Settings that change over time, or a matte smoothed over frames, make the effect depend on time.
+  if (effect.keyframes?.length || maskIsTemporal(effect.mask)) return false;
   const def = byId.get(effect.type);
   if (!def?.perFrame) return false;
   if (typeof def.perFrame === "boolean") return true;

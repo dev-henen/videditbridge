@@ -79,9 +79,56 @@ export const AssetSchema = z.discriminatedUnion("type", [
 
 export const EasingSchema = z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]);
 
+const range01 = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]);
+
+/** What a mask selects, without modifiers. */
+const maskSelection = {
+  kind: z
+    .enum(["person", "face", "key", "luma", "shape"])
+    .describe(
+      "person = the person's cutout, face = soft ellipses following every face (both found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle",
+    ),
+  hue: z
+    .tuple([z.number().min(0).max(360), z.number().min(0).max(360)])
+    .optional()
+    .describe("key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue"),
+  saturation: range01.optional().describe("key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any"),
+  luma: range01.optional().describe("key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any"),
+  softness: z.number().min(0).max(1).default(0.2).describe("key and luma: how gradually the ranges fall off at their ends (0 = hard edge)"),
+  shape: z
+    .object({
+      type: z.enum(["ellipse", "rect"]).default("ellipse"),
+      x: z.number().min(0).max(1).describe("Center x as a frame fraction"),
+      y: z.number().min(0).max(1).describe("Center y as a frame fraction"),
+      width: z.number().positive().max(2).describe("Width as a fraction of frame width"),
+      height: z.number().positive().max(2).describe("Height as a fraction of frame height"),
+    })
+    .optional()
+    .describe("shape: the area, fixed for the whole clip"),
+  invert: z.boolean().default(false).describe("Select everything except this"),
+};
+
+export const MaskPartSchema = z.object({
+  ...maskSelection,
+  op: z.enum(["add", "intersect", "subtract"]).describe("add = either mask, intersect = only where both select, subtract = the main mask minus this one"),
+});
+
+export const MaskSchema = z
+  .object({
+    ...maskSelection,
+    feather: z.number().min(0).max(0.2).default(0.01).describe("Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft)"),
+    grow: z.number().min(-0.05).max(0.05).default(0).describe("Grow (+) or shrink (-) the selection by a fraction of frame height"),
+    smooth: z.number().int().min(0).max(10).default(0).describe("Average the matte over this many frames to stop flicker (0 = off)"),
+    denoise: z.boolean().default(false).describe("key and luma: clean speckles from noisy footage with a small median"),
+    combine: z.array(MaskPartSchema).max(4).optional().describe("More masks merged into this one, in order, e.g. a key intersected with a shape"),
+  })
+  .describe("Limits an effect to part of the frame. Check it with render_mask before relying on it");
+
 export const EffectSchema = z.object({
   type: z.string().min(1).describe("Effect id from the effects catalog, e.g. 'blur', 'kenBurns', 'cinematic'"),
   params: z.record(z.string(), z.unknown()).optional(),
+  mask: MaskSchema.optional().describe("Apply the effect only where this mask selects (a grade on the sky, a glow on one object, sharpening on a face)"),
+  label: z.string().optional().describe("Name of this effect, e.g. a secondary correction 'deeper sky'"),
   keyframes: z
     .array(
       z.object({
@@ -149,6 +196,12 @@ export const ClipKeyframesSchema = z
       .describe("Speed ramp: playback speed over the clip's footage. Times here are seconds of SOURCE footage from the clip's in point. Replaces speed while set"),
   })
   .describe("Clip properties that change over time (times from the clip's start on the timeline)");
+
+export const BlendModeSchema = z
+  .enum(["normal", "screen", "add", "multiply", "overlay", "softlight", "lighten", "darken", "colordodge", "difference"])
+  .describe(
+    "How the layer mixes with the picture under it. screen and add brighten (fire, sparks, light leaks and flares shot on black: the black disappears), multiply darkens (shadows, paper textures shot on white), overlay and softlight add contrast and texture, lighten and darken keep the brighter or darker pixel, colordodge burns in bright light, difference inverts where the layer is bright",
+  );
 
 export const FitSchema = z
   .enum(["cover", "contain", "stretch", "blur"])
@@ -232,6 +285,7 @@ export const MediaLayerSchema = z.object({
     .default({ width: 1 }),
   fit: FitSchema.default("cover"),
   opacity: z.number().min(0).max(1).default(1),
+  blend: BlendModeSchema.default("normal"),
   cornerRadius: z.number().min(0).default(0).describe("Rounded corners in output pixels (phone screens, screenshots, picture-in-picture)"),
   shadow: z.number().min(0).default(0).describe("Soft drop shadow in output pixels, lifts the overlay off the background"),
   rotateX: z.number().min(-89).max(89).default(0).describe("3D tilt in degrees: + tips the top away from the viewer"),
@@ -364,6 +418,9 @@ export type VideoAsset = z.infer<typeof VideoAssetSchema>;
 export type AudioAsset = z.infer<typeof AudioAssetSchema>;
 export type ImageAsset = z.infer<typeof ImageAssetSchema>;
 export type Effect = z.infer<typeof EffectSchema>;
+export type Mask = z.infer<typeof MaskSchema>;
+export type MaskPart = z.infer<typeof MaskPartSchema>;
+export type BlendMode = z.infer<typeof BlendModeSchema>;
 export type Transition = z.infer<typeof TransitionSchema>;
 export type Animation = z.infer<typeof AnimationSchema>;
 export type Easing = z.infer<typeof EasingSchema>;

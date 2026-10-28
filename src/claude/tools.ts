@@ -3,13 +3,16 @@ import path from "node:path";
 import { z } from "zod";
 import {
   AnimationSchema,
+  BlendModeSchema,
   EasingSchema,
   EffectSchema,
+  MaskSchema,
   FitSchema,
   PositionSchema,
   TextStyleSchema,
   TransitionSchema,
   type Asset,
+  type Mask,
   type Project,
   type Transcript,
 } from "../core/schema.js";
@@ -19,7 +22,7 @@ import { isAnimated, simplifyKeys, smoothKeys } from "../core/keyframes.js";
 import { fileOnDisk, validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, isAbsolutePath, isUrl, newId, round3, type AspectRatio } from "../core/util.js";
-import { CUSTOM_FILTERS, ColorSettingsSchema, SubjectRegionSchema, checkCustomFilter, describeColorSettings, effectStates, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
+import { CUSTOM_FILTERS, ColorSettingsSchema, SubjectRegionSchema, checkCustomFilter, describeColorSettings, describeMask, effectStates, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { getTransition, listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
@@ -39,6 +42,7 @@ import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voi
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
+import { effectsOf } from "../tools/render/compile.js";
 import { analyzeColor, channelLevels, matchingCurves, renderScopes } from "../tools/render/color-analysis.js";
 import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, segmentLabel, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
 import { SoundClassifier } from "../tools/audio/classify.js";
@@ -910,10 +914,13 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "remove_effect",
-    description: "Remove an effect (by type) from a clip, media layer or 'global'.",
-    input: z.object({ target: z.string(), type: z.string() }),
+    description: "Remove an effect from a clip, media layer or 'global': by type (the whole-frame one first), or by label for a masked effect such as a grade_region correction.",
+    input: z.object({ target: z.string(), type: z.string().default(""), label: z.string().optional() }),
     mutates: true,
-    run: async (s, i) => commit(s, ops.removeEffect(s.project, i.target, i.type), "remove_effect", i, `Removed ${i.type} from ${i.target}.`),
+    run: async (s, i) => {
+      if (!i.type && i.label === undefined) return { text: "Give the effect's type or label.", isError: true };
+      return commit(s, ops.removeEffect(s.project, i.target, i.type, i.label), "remove_effect", i, `Removed ${i.label !== undefined ? `"${i.label}"` : i.type} from ${i.target}.`);
+    },
   }),
   tool({
     name: "retouch",
@@ -1379,6 +1386,7 @@ export const TOOLS: ToolDefinition[] = [
       size: z.object({ width: z.number().positive(), height: z.number().positive().optional() }).optional(),
       fit: FitSchema.optional(),
       opacity: z.number().min(0).max(1).optional(),
+      blend: BlendModeSchema.optional(),
       cornerRadius: z.number().min(0).optional().describe("Rounded corners in pixels (phone screens, screenshots)"),
       shadow: z.number().min(0).optional().describe("Drop shadow in pixels"),
       rotateX: z.number().min(-89).max(89).optional().describe("3D tilt in degrees (+ tips the top away)"),
@@ -1411,6 +1419,7 @@ export const TOOLS: ToolDefinition[] = [
       width: z.number().positive().max(2).default(0.5).describe("Width as a fraction of frame width"),
       position: PositionSchema.optional().describe("Center (frame fractions, default the middle)"),
       opacity: z.number().min(0).max(1).optional(),
+      blend: BlendModeSchema.optional().describe("screen or add for glows and light drawn on black; see update_layer"),
       shadow: z.number().min(0).optional().describe("Extra soft drop shadow under the whole graphic, in pixels"),
       rotateX: z.number().min(-89).max(89).optional().describe("3D tilt in degrees"),
       rotateY: z.number().min(-89).max(89).optional().describe("3D turn in degrees"),
@@ -1486,7 +1495,9 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "update_layer",
-    description: "Change a layer's properties (text, start, duration, position, style, size, opacity, animations…). Text style is merged.",
+    description:
+      "Change a layer's properties (text, start, duration, position, style, size, opacity, animations…). Text style is merged. " +
+      'Media and graphic layers take blend: "screen" or "add" for fire, sparks, light leaks and flares shot on black (the black disappears), "multiply" for textures on white, "overlay" or "softlight" for texture and contrast, also lighten, darken, colordodge, difference, and "normal" to undo. Check a blend with render_frame on a dark and a bright moment.',
     input: z.object({ layerId: z.string(), patch: z.record(z.string(), z.unknown()) }),
     mutates: true,
     run: async (s, i) => commit(s, ops.updateLayer(s.project, i.layerId, i.patch), "update_layer", i, `Updated ${i.layerId}.`),
@@ -2467,7 +2478,7 @@ export const TOOLS: ToolDefinition[] = [
         const tc = tl.clips.find((c) => c.clip.id === id)!;
         const curves = matchingCurves(await frameOf(tc), reference, i.strength);
         // Its own curves effect, last on the clip, so it corrects what the clip's other effects produce.
-        if (tc.clip.effects.some((e) => e.type === "curves")) p = ops.removeEffect(p, id, "curves");
+        if (tc.clip.effects.some((e) => e.type === "curves" && !e.mask)) p = ops.removeEffect(p, id, "curves");
         p = ops.addEffect(p, id, { type: "curves", params: curves });
         done.push(id);
         activity?.progress((k + 1) / ids.length);
@@ -2483,6 +2494,93 @@ export const TOOLS: ToolDefinition[] = [
     run: async (s, i) => {
       const params = (ops.getEffectParams(s.project, i.target, "color") ?? {}) as ColorSettings;
       return ok(`${i.target}: ${describeColorSettings(params)}\n${JSON.stringify(params)}`, params);
+    },
+  }),
+  tool({
+    name: "grade_region",
+    description:
+      "Secondary color correction: grade only part of the frame, as a colorist does after the primary grade. Deepen a sky, warm or lift faces, cool the shadows, tame bright highlights, make one colored object pop. " +
+      "The mask selects the part: key (an HSL qualifier: hue range in degrees, saturation and luma ranges, with softness), luma (a brightness range: highlights or shadows), shape (a fixed ellipse or rectangle), face (soft ellipses following every face) or person (the person's cutout); face and person work on primary video clips only. " +
+      'Masks combine (a blue key intersected with a shape over the top of the frame selects sky without blue clothes), invert, grow or shrink, and feather. color takes the same settings as color_adjust. Each correction has a label; the same label updates it (color settings merge, a new mask replaces the old), and remove: true deletes it. ' +
+      "Work in this order: render_mask to check the selection at the start, middle and end of the clip (and at fast motion), then grade, then render_frame and render_scopes to check for edges and clipping. Keep feather at 0.01 or more so the edge never shows.",
+    input: z.object({
+      target: z.string().describe('A clip id, a media layer id, "all-clips", or "global" (whole video; key, luma and shape masks only)'),
+      label: z.string().min(1).max(40).describe("Name of this correction, e.g. 'deeper sky' or 'lift faces'"),
+      mask: MaskSchema.optional().describe("What to grade; needed for a new correction, omit to keep the current mask"),
+      color: ColorSettingsSchema.optional().describe("Color settings inside the mask (merged into the correction's current ones)"),
+      reset: z.array(z.string()).optional().describe('Color setting names to clear, or ["all"]'),
+      remove: z.boolean().optional().describe("Delete this correction"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const targets = i.target === "all-clips" ? s.project.clips.map((c) => c.id) : [i.target];
+      if (!targets.length) return { text: "There are no clips to grade.", isError: true };
+      let p = s.project;
+      if (i.remove) {
+        for (const target of targets) p = ops.setMaskedEffect(p, target, i.label, null);
+        return commit(s, p, "grade_region", i, `Removed "${i.label}" from ${i.target}.`);
+      }
+      let summary = "";
+      for (const target of targets) {
+        const current = ops.maskedEffects(p, target).find((e) => e.label === i.label);
+        const mask = i.mask ? MaskSchema.parse(i.mask) : current?.mask;
+        if (!mask) return { text: `"${i.label}" is new on ${target}: give it a mask.`, isError: true };
+        const onClip = s.project.clips.some((c) => c.id === target);
+        const model = [mask, ...(mask.combine ?? [])].find((m) => m.kind === "person" || m.kind === "face");
+        if (model && !onClip) return { text: `${model.kind} masks work on primary video clips only; target a clip or "all-clips", or use a key or shape mask.`, isError: true };
+        const base = i.reset?.includes("all") || current?.type !== "color" ? {} : ((current.params ?? {}) as ColorSettings);
+        const cleared = Object.fromEntries((i.reset ?? []).filter((k) => k !== "all").map((k) => [k, null]));
+        const color = mergeColorSettings(base, { ...cleared, ...(i.color ?? {}) });
+        p = ops.setMaskedEffect(p, target, i.label, { type: "color", params: color as Record<string, unknown>, mask });
+        summary = `${describeColorSettings(color)} inside ${describeMask(mask)}`;
+      }
+      return commit(s, p, "grade_region", i, `"${i.label}" on ${i.target}: ${summary}. Check the mask with render_mask and the result with render_frame.`);
+    },
+  }),
+  tool({
+    name: "render_mask",
+    description:
+      "Look at a mask before (or after) grading or compositing with it: renders the frame with the mask as white on black (matte) or as a red tint over the picture (overlay). " +
+      "Give a mask to try one, or the label of a masked effect on the target (from grade_region). The mask is cut from the picture as it reaches that effect. " +
+      "A good mask covers the whole subject with no holes, leaves everything else black, has a soft but tight edge, and holds at the start, middle and end of the clip and during fast motion: check several times.",
+    input: z.object({
+      target: z.string().describe('The clip id, media layer id, or "global" the mask is (or will be) on'),
+      mask: MaskSchema.optional().describe("A mask to try"),
+      label: z.string().optional().describe("Label of a masked effect already on the target"),
+      time: z.number().min(0).optional().describe("Timeline time; defaults to the middle of the target"),
+      style: z.enum(["matte", "overlay"]).default("matte"),
+      scale: z.number().min(0.1).max(1).default(0.5),
+    }),
+    mutates: false,
+    run: async (s, i) => {
+      const VIEW = "\u0000mask view";
+      const existing = ops.maskedEffects(s.project, i.target);
+      const found = i.label !== undefined ? existing.find((e) => e.label === i.label) : existing.length === 1 && !i.mask ? existing[0] : undefined;
+      if (!i.mask && !found) {
+        const labels = existing.map((e) => `"${e.label ?? e.type}"`).join(", ");
+        return { text: `Give a mask to try${labels ? `, or the label of one on ${i.target}: ${labels}` : ""}.`, isError: true };
+      }
+      const mask: Mask = i.mask ? MaskSchema.parse(i.mask) : found!.mask!;
+      // Show the mask in place of its effect (or where grade_region would put it), with nothing drawn after it.
+      let p = ops.setMaskedEffect(s.project, i.target, found?.label ?? VIEW, { type: "maskView", params: { mask, style: i.style }, mask });
+      p = structuredClone(p);
+      const list = effectsOf(p, i.target)!;
+      const k = list.findIndex((e) => e.type === "maskView");
+      delete list[k]!.mask;
+      list.splice(k + 1);
+      const tl = computeTimeline(p);
+      const clip = tl.clips.find((c) => c.clip.id === i.target);
+      const layer = p.layers.find((l) => l.id === i.target);
+      const span = clip ? { start: clip.start, end: clip.end } : layer ? { start: layer.start, end: layer.start + layer.duration } : { start: 0, end: tl.duration };
+      const time = round3(i.time ?? (span.start + span.end) / 2);
+      if (time < span.start || time > span.end) return { text: `${i.target} plays ${span.start}-${span.end}s; pick a time inside it.`, isError: true };
+      if (i.target !== "global") p.effects = [];
+      p.layers = layer ? [layer] : [];
+      p.captions = undefined;
+      const out = await s.outputPath(`mask-${i.target}-${time.toFixed(2)}.png`);
+      await renderFrame(p, time, { output: out, scale: i.scale, proxies: true, ...s.renderOptions });
+      s.recordRender({ kind: "frame", path: out, time });
+      return { text: `Mask ${describeMask(mask)} on ${i.target} at ${time}s (${i.style === "matte" ? "white = selected" : "red = selected"}): ${out}`, images: [{ path: out, mediaType: "image/png" }] };
     },
   }),
   tool({
@@ -2843,6 +2941,10 @@ export function describeToolCall(name: string, input: unknown): string {
     }
     case "analyze_color":
       return "Measuring color and exposure";
+    case "grade_region":
+      return i.remove ? `Removing the ${quote(i.label)} correction` : `Grading ${quote(i.label)}`;
+    case "render_mask":
+      return `Rendering the mask on ${quote(i.target)}`;
     case "render_scopes":
       return "Rendering color scopes";
     case "render_contact_sheet":

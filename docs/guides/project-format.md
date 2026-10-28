@@ -70,6 +70,7 @@ Layers are drawn on top of the primary track in array order (later entries are o
 | `position` | center | |
 | `size` | `{ width: 1 }` | `width` is a fraction of the frame width. Add `height` to fill a box using `fit`. Without `height`, the source aspect ratio is kept |
 | `opacity` | `1` | |
+| `blend` | `"normal"` | How the layer mixes with the picture under it: `screen`, `add`, `multiply`, `overlay`, `softlight`, `lighten`, `darken`, `colordodge`, `difference`. `screen` and `add` make black disappear (fire, sparks, light leaks shot on black). The blend runs in RGB inside the layer's area and alpha only; pixels outside the layer are unchanged |
 | `cornerRadius`, `shadow` | `0`, `0` | Rounded corners and a soft drop shadow, in output pixels (phone screens, screenshots, picture-in-picture) |
 | `volume` | `0` | Overlays are muted by default |
 | `effects`, `audioEffects` | `[]` | |
@@ -123,6 +124,25 @@ Clips take `keyframes.focus`, the crop focus over time for `fit: "cover"`, so a 
 ```json
 { "type": "blur", "params": { "amount": 0 }, "keyframes": [{ "time": 3, "params": { "amount": 0 } }, { "time": 4, "params": { "amount": 30 }, "easing": "ease-in" }] }
 ```
+
+**Effects on part of the frame.** Any effect takes a `mask`, and then runs only where the mask selects; `label` names it (secondary color corrections made with `grade_region` are `color` effects with a mask and a label). The matte is cut from the picture as it reaches the effect.
+
+| `kind` | Selects |
+|---|---|
+| `key` | An HSL qualifier: `hue` range in degrees (clockwise, so `[340, 20]` is reds), `saturation` and `luma` ranges in 0..1, with `softness` |
+| `luma` | A brightness range only, e.g. `[0.7, 1]` for highlights |
+| `shape` | A fixed `ellipse` or `rect` (`shape: { type, x, y, width, height }` in frame fractions) |
+| `face` | Soft ellipses following every face (primary video clips only) |
+| `person` | The person's cutout (primary video clips only) |
+
+Every mask also takes `invert`, `feather` (edge softness as a fraction of frame height, default 0.01), `grow` (+ grows, - shrinks, fraction of frame height), `smooth` (average the matte over this many frames), `denoise` (median on key and luma mattes) and `combine`: more masks merged in order with `op` `add`, `intersect` or `subtract`.
+
+```json
+{ "type": "color", "label": "deeper sky", "params": { "saturation": 15, "temperature": -10 },
+  "mask": { "kind": "key", "hue": [190, 240], "saturation": [0.15, 1], "combine": [{ "kind": "shape", "op": "intersect", "shape": { "type": "rect", "x": 0.5, "y": 0.25, "width": 1, "height": 0.5 } }] } }
+```
+
+Key and luma mattes are a per-pixel function of color, so they are baked into a lookup table once and applied at full size each frame. A mask with `smooth` depends on time, so the render cache does not bake it into cached clips as a global effect.
 
 ## Audio
 

@@ -1,9 +1,9 @@
 import path from "node:path";
-import type { Asset, Clip, Effect, Fit, Keyframe, MediaLayer, Position, Project } from "../../core/schema.js";
+import type { Asset, BlendMode, Clip, Effect, Fit, Keyframe, MediaLayer, Position, Project } from "../../core/schema.js";
 import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
-import { effectStates, effectsToFilter, escapeFilterPath, perClipGlobalEffects, usesFaceMask, usesPersonMask, type EffectContext } from "../../library/effects/index.js";
+import { effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, type EffectContext } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
 import { overlayMotion } from "../../library/animations/index.js";
@@ -89,6 +89,22 @@ const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=ster
 const SPLIT_FADE = 0.03;
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+
+/**
+ * FFmpeg blend modes for each layer blend. The picture under the layer is blend's first input, so
+ * modes that depend on order (overlay, colordodge) follow the usual definitions with it as the backdrop.
+ */
+const BLEND_MODES: Record<Exclude<BlendMode, "normal">, string> = {
+  screen: "screen",
+  add: "addition",
+  multiply: "multiply",
+  overlay: "overlay",
+  softlight: "softlight",
+  lighten: "lighten",
+  darken: "darken",
+  colordodge: "dodge",
+  difference: "difference",
+};
 
 /**
  * A speed ramp as a setpts expression of the input time T (source seconds from the in point): the
@@ -285,9 +301,9 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       g.add(`${timing(`${k}:v`)}[${raw}]`);
       const fitted = fit(raw, clip.fit, W, H, false, clip.focus, clip.keyframes?.focus);
       // Person cutouts and face masks go through the same timing and fit as the picture, so they line up.
-      // A ramped effect runs once per state, and each run takes its own copy of the mask.
-      const maskStreams = (uses: (e: Effect) => boolean, file: string | undefined): string[] => {
-        const count = clip.effects.reduce((n, e) => n + (uses(e) ? effectStates(e).length : 0), 0);
+      // A ramped effect runs once per state, and each run (and the effect's mask) takes its own copy.
+      const modelMasks = (kind: "person" | "face", file: string | undefined): string[] => {
+        const count = clip.effects.reduce((n, e) => n + maskStreams(e, kind), 0);
         if (!count || !file) return [];
         const mraw = g.label("mraw");
         g.add(`${timing(`${g.addInput(["-i", file])}:v`)},format=gray[${mraw}]`);
@@ -296,8 +312,8 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         g.add(`[${mfit}]format=gray${count > 1 ? `,split=${count}` : ""}${labels.map((l) => `[${l}]`).join("")}`);
         return labels;
       };
-      const personLabels = maskStreams(usesPersonMask, opts.masks?.[clip.id]);
-      const faceLabels = maskStreams(usesFaceMask, opts.faceMasks?.[clip.id]);
+      const personLabels = modelMasks("person", opts.masks?.[clip.id]);
+      const faceLabels = modelMasks("face", opts.faceMasks?.[clip.id]);
       const clipEffects = effectsToFilter(clip.effects, {
         ...effectCtx(tc.duration),
         ...(personLabels.length ? { personMask: () => personLabels.shift() } : {}),
@@ -444,7 +460,26 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       layer.animationIn,
       layer.animationOut,
     );
-    g.add(`[${vCur}][${v}]overlay=x='${motion.x}':y='${motion.y}':enable='between(t,${layer.start},${end})':eof_action=pass[${out}]`);
+    const enable = `enable='between(t,${layer.start},${end})'`;
+    if (layer.blend === "normal") {
+      g.add(`[${vCur}][${v}]overlay=x='${motion.x}':y='${motion.y}':${enable}:eof_action=pass[${out}]`);
+    } else {
+      // blend ignores alpha and position: place the layer on a clear frame-size canvas, blend the
+      // whole frame in RGB, then show the result only through the layer's alpha (opacity and fades
+      // included).
+      const [base, under, canvas, placed, color, alpha, top, mixed, cut] = ["lbb", "lbu", "lbc", "lbp", "lbr", "lba", "lbt", "lbm", "lbx"].map((p) => g.label(p));
+      g.add(`[${vCur}]split=2[${base}][${under}]`);
+      g.add(`color=c=black@0:s=${W}x${H}:r=${F}:d=${total},format=yuva420p[${canvas}]`);
+      g.add(`[${canvas}][${v}]overlay=x='${motion.x}':y='${motion.y}':${enable}:eof_action=pass:format=auto,format=gbrap,split=2[${placed}][${alpha}]`);
+      g.add(`[${placed}]format=gbrp[${color}]`);
+      // Nearest-neighbor chroma both ways makes the round trip exact, so a black screen layer changes nothing.
+      g.add(`[${under}]scale=flags=neighbor,format=gbrp[${top}]`);
+      g.add(`[${top}][${color}]blend=all_mode=${BLEND_MODES[layer.blend]}:${enable},scale=flags=neighbor,format=yuv420p[${mixed}]`);
+      g.add(`[${alpha}]alphaextract[${cut}]`);
+      const shown = g.label("lbs");
+      g.add(`[${mixed}][${cut}]alphamerge[${shown}]`);
+      g.add(`[${base}][${shown}]overlay=format=auto:shortest=1:${enable},format=yuv420p[${out}]`);
+    }
     vCur = out;
     if (a) overlayAudio.push(a);
   });

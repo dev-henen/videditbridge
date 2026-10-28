@@ -2,6 +2,7 @@ import type { Effect, Project } from "./schema.js";
 import { computeTimeline } from "./timeline.js";
 import { formatTime } from "./util.js";
 import { describeColorSettings, type ColorSettings } from "../library/effects/color.js";
+import { describeMask } from "../library/effects/masks.js";
 
 const fx = (effects: Effect[]) =>
   effects.length
@@ -14,6 +15,10 @@ const fx = (effects: Effect[]) =>
               : e.type,
         )
         .map((s, k) => (effects[k]!.keyframes?.length ? `${s} ramped over ${effects[k]!.keyframes!.length} keyframes` : s))
+        .map((s, k) => {
+          const { mask, label } = effects[k]!;
+          return `${label ? `"${label}" ` : ""}${s}${mask ? ` masked to ${describeMask(mask)}` : ""}`;
+        })
         .join(", ")}]`
     : "";
 
@@ -91,7 +96,7 @@ export function summarizeProject(project: Project): string {
         l.type === "text"
           ? `text "${l.text.length > 60 ? `${l.text.slice(0, 57)}...` : l.text}" ${l.style.fontFamily} ${l.style.fontSize}px ${l.style.color}`
           : l.type === "media"
-            ? `media ${l.assetId} w=${l.size.width}${l.size.height ? ` h=${l.size.height}` : ""}${l.opacity < 1 ? ` opacity ${l.opacity}` : ""}${l.volume > 0 ? ` vol ${l.volume}` : ""}${fx(l.effects)}${afx(l.audioEffects)}`
+            ? `media ${l.assetId} w=${l.size.width}${l.size.height ? ` h=${l.size.height}` : ""}${l.opacity < 1 ? ` opacity ${l.opacity}` : ""}${l.blend !== "normal" ? ` blend ${l.blend}` : ""}${l.volume > 0 ? ` vol ${l.volume}` : ""}${fx(l.effects)}${afx(l.audioEffects)}`
             : `shape ${l.shape} ${l.size.width}x${l.size.height} ${l.color}`;
       lines.push(`  ${l.id} ${span(l.start, l.start + l.duration)} ${what}${pos}${anim ? ` [${anim}]` : ""}`);
     }

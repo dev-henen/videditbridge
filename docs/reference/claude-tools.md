@@ -2,7 +2,7 @@
 
 # Claude tools
 
-95 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+97 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -174,7 +174,7 @@ _No parameters._
 | `transition.origin` | { x, y } |  |  | Where shape transitions such as circlereveal start (frame fractions; default center) |
 | `transition.origin.x` | number | yes |  | (≥ 0, ≤ 1) |
 | `transition.origin.y` | number | yes |  | (≥ 0, ≤ 1) |
-| `effects` | { type, params, keyframes }[] |  |  |  |
+| `effects` | { type, params, mask, label, keyframes }[] |  |  |  |
 
 ### update_clip
 
@@ -257,12 +257,13 @@ _No parameters._
 
 ### remove_effect
 
-**edits**. Remove an effect (by type) from a clip, media layer or 'global'.
+**edits**. Remove an effect from a clip, media layer or 'global': by type (the whole-frame one first), or by label for a masked effect such as a grade_region correction.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `target` | string | yes |  |  |
-| `type` | string | yes |  |  |
+| `type` | string |  | `""` |  |
+| `label` | string |  |  |  |
 
 ## Retouch
 
@@ -332,13 +333,14 @@ _No parameters._
 | `size.height` | number |  |  | (> 0) |
 | `fit` | "cover" \| "contain" \| "stretch" \| "blur" |  |  | cover = fill & crop, contain = letterbox, stretch = distort, blur = contain over blurred copy |
 | `opacity` | number |  |  | (≥ 0, ≤ 1) |
+| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" |  |  | How the layer mixes with the picture under it. screen and add brighten (fire, sparks, light leaks and flares shot on black: the black disappears), multiply darkens (shadows, paper textures shot on white), overlay and softlight add contrast and texture, lighten and darken keep the brighter or darker pixel, colordodge burns in bright light, difference inverts where the layer is bright |
 | `cornerRadius` | number |  |  | Rounded corners in pixels (phone screens, screenshots) (≥ 0) |
 | `shadow` | number |  |  | Drop shadow in pixels (≥ 0) |
 | `rotateX` | number |  |  | 3D tilt in degrees (+ tips the top away) (≥ -89, ≤ 89) |
 | `rotateY` | number |  |  | 3D turn in degrees (+ turns the right side away) (≥ -89, ≤ 89) |
 | `perspective` | number |  |  | Camera distance in layer widths for 3D (default 2; smaller is stronger) (≥ 0.5, ≤ 20) |
 | `volume` | number |  |  |  |
-| `effects` | { type, params, keyframes }[] |  |  |  |
+| `effects` | { type, params, mask, label, keyframes }[] |  |  |  |
 | `animationIn` | { type, duration, easing } |  |  |  |
 | `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
 | `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
@@ -392,7 +394,7 @@ _No parameters._
 
 ### update_layer
 
-**edits**. Change a layer's properties (text, start, duration, position, style, size, opacity, animations…). Text style is merged.
+**edits**. Change a layer's properties (text, start, duration, position, style, size, opacity, animations…). Text style is merged. Media and graphic layers take blend: "screen" or "add" for fire, sparks, light leaks and flares shot on black (the black disappears), "multiply" for textures on white, "overlay" or "softlight" for texture and contrast, also lighten, darken, colordodge, difference, and "normal" to undo. Check a blend with render_frame on a dark and a bright moment.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -1061,6 +1063,7 @@ _No parameters._
 | `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
 | `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
 | `opacity` | number |  |  | (≥ 0, ≤ 1) |
+| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" |  |  | screen or add for glows and light drawn on black; see update_layer |
 | `shadow` | number |  |  | Extra soft drop shadow under the whole graphic, in pixels (≥ 0) |
 | `rotateX` | number |  |  | 3D tilt in degrees (≥ -89, ≤ 89) |
 | `rotateY` | number |  |  | 3D turn in degrees (≥ -89, ≤ 89) |
@@ -1139,6 +1142,134 @@ _No parameters._
 | `clipIds` | string[] | yes |  | Clips to change, or ["all-clips"] for every clip except the reference |
 | `referenceClipId` | string | yes |  | Clip whose look to match |
 | `strength` | number |  | `0.85` | (≥ 0, ≤ 1) |
+
+### grade_region
+
+**edits**. Secondary color correction: grade only part of the frame, as a colorist does after the primary grade. Deepen a sky, warm or lift faces, cool the shadows, tame bright highlights, make one colored object pop. The mask selects the part: key (an HSL qualifier: hue range in degrees, saturation and luma ranges, with softness), luma (a brightness range: highlights or shadows), shape (a fixed ellipse or rectangle), face (soft ellipses following every face) or person (the person's cutout); face and person work on primary video clips only. Masks combine (a blue key intersected with a shape over the top of the frame selects sky without blue clothes), invert, grow or shrink, and feather. color takes the same settings as color_adjust. Each correction has a label; the same label updates it (color settings merge, a new mask replaces the old), and remove: true deletes it. Work in this order: render_mask to check the selection at the start, middle and end of the clip (and at fast motion), then grade, then render_frame and render_scopes to check for edges and clipping. Keep feather at 0.01 or more so the edge never shows.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | A clip id, a media layer id, "all-clips", or "global" (whole video; key, luma and shape masks only) |
+| `label` | string | yes |  | Name of this correction, e.g. 'deeper sky' or 'lift faces' |
+| `mask` | { kind, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | What to grade; needed for a new correction, omit to keep the current mask |
+| `mask.kind` | "person" \| "face" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face (both found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
+| `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
+| `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
+| `mask.softness` | number |  | `0.2` | key and luma: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
+| `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
+| `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number | yes |  | Center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number | yes |  | Width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number | yes |  | Height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.invert` | boolean |  | `false` | Select everything except this |
+| `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
+| `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
+| `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
+| `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
+| `mask.combine` | { kind, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `color` | { exposure, brightness, contrast, highlights, shadows, whites, blacks, brilliance, temperature, tint, hue, saturation, vibrance, hsl, curves, wheels, fade, clarity, sharpen, vignette, grain, autoCorrect } |  |  | Color settings inside the mask (merged into the correction's current ones) |
+| `color.exposure` | number |  |  | Exposure in stops (-3..3) (≥ -3, ≤ 3) |
+| `color.brightness` | number |  |  | Overall brightness (≥ -100, ≤ 100) |
+| `color.contrast` | number |  |  | Contrast (≥ -100, ≤ 100) |
+| `color.highlights` | number |  |  | Recover (−) or boost (+) bright areas (≥ -100, ≤ 100) |
+| `color.shadows` | number |  |  | Lift (+) or deepen (−) dark areas (≥ -100, ≤ 100) |
+| `color.whites` | number |  |  | Set the white point: + brighter whites, − pull whites down (≥ -100, ≤ 100) |
+| `color.blacks` | number |  |  | Set the black point: + lifted blacks, − crushed blacks (≥ -100, ≤ 100) |
+| `color.brilliance` | number |  |  | Balance the image: + brightens shadows and tames highlights, − adds punch (≥ -100, ≤ 100) |
+| `color.temperature` | number |  |  | White balance: − cooler/blue, + warmer/yellow (≥ -100, ≤ 100) |
+| `color.tint` | number |  |  | White balance: − greener, + more magenta (≥ -100, ≤ 100) |
+| `color.hue` | number |  |  | Rotate all hues in degrees (≥ -180, ≤ 180) |
+| `color.saturation` | number |  |  | Saturation of all colors (−100 = black & white) (≥ -100, ≤ 100) |
+| `color.vibrance` | number |  |  | Smart saturation: boosts muted colors more than already-saturated ones and protects skin (≥ -100, ≤ 100) |
+| `color.hsl` | { red, orange, yellow, green, aqua, blue, purple, magenta } |  |  | Per-color hue/saturation/luminance, e.g. {blue: {saturation: 30}, orange: {luminance: 10}} |
+| `color.hsl.red` | { hue, saturation, luminance } |  |  |  |
+| `color.hsl.red.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `color.hsl.red.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `color.hsl.red.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `color.hsl.orange` | { hue, saturation, luminance } |  |  |  |
+| `color.hsl.orange.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `color.hsl.orange.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `color.hsl.orange.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `color.hsl.yellow` | { hue, saturation, luminance } |  |  |  |
+| `color.hsl.yellow.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `color.hsl.yellow.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `color.hsl.yellow.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `color.hsl.green` | { hue, saturation, luminance } |  |  |  |
+| `color.hsl.green.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `color.hsl.green.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `color.hsl.green.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `color.hsl.aqua` | { hue, saturation, luminance } |  |  |  |
+| `color.hsl.aqua.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `color.hsl.aqua.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `color.hsl.aqua.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `color.hsl.blue` | { hue, saturation, luminance } |  |  |  |
+| `color.hsl.blue.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `color.hsl.blue.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `color.hsl.blue.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `color.hsl.purple` | { hue, saturation, luminance } |  |  |  |
+| `color.hsl.purple.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `color.hsl.purple.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `color.hsl.purple.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `color.hsl.magenta` | { hue, saturation, luminance } |  |  |  |
+| `color.hsl.magenta.hue` | number |  |  | Shift this color's hue (-100..100 = about -60°..+60°) (≥ -100, ≤ 100) |
+| `color.hsl.magenta.saturation` | number |  |  | More or less saturated (≥ -100, ≤ 100) |
+| `color.hsl.magenta.luminance` | number |  |  | Brighter or darker (≥ -100, ≤ 100) |
+| `color.curves` | { master, red, green, blue, preset } |  |  | Tone curves (the graph): a master curve plus per-channel R/G/B curves |
+| `color.curves.master` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `color.curves.red` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `color.curves.green` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `color.curves.blue` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `color.curves.preset` | "increase_contrast" \| "medium_contrast" \| "strong_contrast" \| "linear_contrast" \| "lighter" \| "darker" \| "vintage" \| "cross_process" \| "color_negative" \| "negative" |  |  | Built-in curve shape (applied before custom points) |
+| `color.wheels` | { shadows, midtones, highlights } |  |  | Color wheels for grading: tint shadows, midtones and highlights separately (e.g. teal shadows + orange highlights) |
+| `color.wheels.shadows` | { hue, amount } |  |  |  |
+| `color.wheels.shadows.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `color.wheels.shadows.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `color.wheels.midtones` | { hue, amount } |  |  |  |
+| `color.wheels.midtones.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `color.wheels.midtones.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `color.wheels.highlights` | { hue, amount } |  |  |  |
+| `color.wheels.highlights.hue` | number | yes |  | Tint direction in degrees: 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 teal-blue, 240 blue, 300 magenta (≥ 0, ≤ 360) |
+| `color.wheels.highlights.amount` | number | yes |  | Tint strength 0..100 (≥ 0, ≤ 100) |
+| `color.fade` | number |  |  | Matte/faded film look: lifts blacks and softens contrast (≥ 0, ≤ 100) |
+| `color.clarity` | number |  |  | Local contrast: + crisp and textured, − soft and dreamy (≥ -100, ≤ 100) |
+| `color.sharpen` | number |  |  | Edge sharpening (≥ 0, ≤ 100) |
+| `color.vignette` | number |  |  | Edge darkening (+) or lightening (−) (≥ -100, ≤ 100) |
+| `color.grain` | number |  |  | Film grain amount (≥ 0, ≤ 100) |
+| `color.autoCorrect` | boolean |  |  | Automatic levels and white balance before other adjustments |
+| `reset` | string[] |  |  | Color setting names to clear, or ["all"] |
+| `remove` | boolean |  |  | Delete this correction |
+
+### render_mask
+
+**read-only**. Look at a mask before (or after) grading or compositing with it: renders the frame with the mask as white on black (matte) or as a red tint over the picture (overlay). Give a mask to try one, or the label of a masked effect on the target (from grade_region). The mask is cut from the picture as it reaches that effect. A good mask covers the whole subject with no holes, leaves everything else black, has a soft but tight edge, and holds at the start, middle and end of the clip and during fast motion: check several times.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | The clip id, media layer id, or "global" the mask is (or will be) on |
+| `mask` | { kind, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | A mask to try |
+| `mask.kind` | "person" \| "face" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face (both found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
+| `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
+| `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
+| `mask.softness` | number |  | `0.2` | key and luma: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
+| `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
+| `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number | yes |  | Center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number | yes |  | Width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number | yes |  | Height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.invert` | boolean |  | `false` | Select everything except this |
+| `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
+| `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
+| `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
+| `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
+| `mask.combine` | { kind, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `label` | string |  |  | Label of a masked effect already on the target |
+| `time` | number |  |  | Timeline time; defaults to the middle of the target (≥ 0) |
+| `style` | "matte" \| "overlay" |  | `"matte"` |  |
+| `scale` | number |  | `0.5` | (≥ 0.1, ≤ 1) |
 
 ### review_edit
 

@@ -1,6 +1,6 @@
 # Design: cinematic grading and common CGI effects
 
-Status: proposed (2026-10-27). This is the build plan for movie-level color grading and the visual effects editors ask for most: sky replacement, glows and light effects on one object, screen replacement, depth of field, atmospherics, object removal and smooth slow motion.
+Status: in progress. Proposed 2026-10-27; F1 to F3 done 2026-10-28 (see section 12 for each step's status). This is the build plan for movie-level color grading and the visual effects editors ask for most: sky replacement, glows and light effects on one object, screen replacement, depth of field, atmospherics, object removal and smooth slow motion.
 
 The bar is professional results, not "a filter that looks similar". Every feature below has a measurable "done when" check, and every result must be something Claude can verify itself (scopes, mattes, frames) before it shows the user. Where a model is involved, candidates are compared on the same clips before one is chosen, as was done for faces (YuNet), person cutout (PP-HumanSeg) and sound (CED-tiny).
 
@@ -374,26 +374,34 @@ The app stays AI-first. Additions serve the conversation:
 
 Three tracks run side by side: native kernels (N), the engine (E) and features (F). Features first land in the FFmpeg backend where that is cheap and correct, so users get them early, and each engine milestone ports them. Per section 3.5, any feature step with a speed budget writes its kernels in Rust from the start, so N0 comes before F4.
 
-| Step | Builds | Depends on | Done when |
-|---|---|---|---|
-| N0 | `native/` Cargo workspace, napi-rs `ave-native` package with prebuilt binaries for every target of section 3.6, CI builds on Windows, macOS and Linux, parity test harness | Nothing | One kernel (the sound map) runs from Rust with parity and a recorded speedup |
-| N1 | Port the **Move** rows of the section 3.5 table, one per change, each with parity and a benchmark | N0 | Native milestone of section 3.5 met; ported TypeScript versions deleted |
-| F1 | Blend modes | Nothing | Section 5.1 checks pass |
-| F2 | Mask system, `render_mask`, maskable effects, HSL key and luma masks | Existing masks | Section 4.2 checks pass for key masks |
-| F3 | `grade_region` | F2 | Grading inside masks shows no edges |
-| F4 | Any-object selection and tracking (model comparison first; inference through `onnxruntime-node` with the GPU provider of each platform) | F2, N0 | Section 5.2 checks pass |
-| E1 | Engine skeleton: plan format, separate process, decode, GPU upload, transforms, layers, blend modes, encode | Nothing | Renders the template test projects; parity with FFmpeg backend |
-| E2 | OCIO and ACES in the engine: input transforms, ACEScct grading space, display transforms, the color panel as shaders | E1 | Section 4.1 checks pass through OCIO; precision check of section 1 passes |
-| E3 | Engine preview: single frames and live viewer for the app and `render_frame` | E1 | Real-time or 3x target of section 3.4 |
-| F5 | Point and surface tracking in Rust, `pin_layer`, `replace_screen` | F1, N0 | Section 5.4 checks pass |
-| F6 | Film look effects and look presets, `export_lut` (engine first: they need float) | E2 | Sections 4.4 and 4.5 checks pass |
-| F7 | Sky replacement | F4, F5 | Section 5.3 checks pass |
-| F8 | Scene grading | F3 | Section 4.3 checks pass |
-| F9 | Particles and light (GPU particles in the engine; Rust CPU generator for the fallback) | F1, N0 | Section 6 checks pass |
-| F10 | Depth and depth effects (inference and depth alignment in Rust) | F2, N0 | Section 7.1 checks pass |
-| F11 | Object removal (plate building and inpainting glue in Rust) | F4 | Section 7.2 checks pass |
-| F12 | Frame interpolation (inference in Rust) | N0 | Section 7.3 checks pass |
-| E4 | Retire the FFmpeg picture path as the default; keep it as fallback and reference | E1 to E3, parity on everything | All integration tests pass on the engine |
+| Step | Builds | Depends on | Done when | Status |
+|---|---|---|---|---|
+| N0 | `native/` Cargo workspace, napi-rs `ave-native` package with prebuilt binaries for every target of section 3.6, CI builds on Windows, macOS and Linux, parity test harness | Nothing | One kernel (the sound map) runs from Rust with parity and a recorded speedup | Not started |
+| N1 | Port the **Move** rows of the section 3.5 table, one per change, each with parity and a benchmark | N0 | Native milestone of section 3.5 met; ported TypeScript versions deleted | Not started |
+| F1 | Blend modes | Nothing | Section 5.1 checks pass | **Done** (2026-10-28), FFmpeg backend. See notes below |
+| F2 | Mask system, `render_mask`, maskable effects, HSL key and luma masks | Existing masks | Section 4.2 checks pass for key masks | **Done** (2026-10-28) for `person`, `face`, `key`, `luma`, `shape`; IoU checks wait for the test clips of section 11 |
+| F3 | `grade_region` | F2 | Grading inside masks shows no edges | **Done** (2026-10-28) |
+| F4 | Any-object selection and tracking (model comparison first; inference through `onnxruntime-node` with the GPU provider of each platform) | F2, N0 | Section 5.2 checks pass | Not started |
+| E1 | Engine skeleton: plan format, separate process, decode, GPU upload, transforms, layers, blend modes, encode | Nothing | Renders the template test projects; parity with FFmpeg backend | Not started |
+| E2 | OCIO and ACES in the engine: input transforms, ACEScct grading space, display transforms, the color panel as shaders | E1 | Section 4.1 checks pass through OCIO; precision check of section 1 passes | Not started |
+| E3 | Engine preview: single frames and live viewer for the app and `render_frame` | E1 | Real-time or 3x target of section 3.4 | Not started |
+| F5 | Point and surface tracking in Rust, `pin_layer`, `replace_screen` | F1, N0 | Section 5.4 checks pass | Not started |
+| F6 | Film look effects and look presets, `export_lut` (engine first: they need float) | E2 | Sections 4.4 and 4.5 checks pass | Not started |
+| F7 | Sky replacement | F4, F5 | Section 5.3 checks pass | Not started |
+| F8 | Scene grading | F3 | Section 4.3 checks pass | Not started |
+| F9 | Particles and light (GPU particles in the engine; Rust CPU generator for the fallback) | F1, N0 | Section 6 checks pass | Not started |
+| F10 | Depth and depth effects (inference and depth alignment in Rust) | F2, N0 | Section 7.1 checks pass | Not started |
+| F11 | Object removal (plate building and inpainting glue in Rust) | F4 | Section 7.2 checks pass | Not started |
+| F12 | Frame interpolation (inference in Rust) | N0 | Section 7.3 checks pass | Not started |
+| E4 | Retire the FFmpeg picture path as the default; keep it as fallback and reference | E1 to E3, parity on everything | All integration tests pass on the engine | Not started |
+
+### Progress notes
+
+**F1, blend modes (done 2026-10-28).** `layers[].blend` on media and graphic layers, set through `add_media_overlay`, `create_graphic` and `update_layer` (`compile.ts`, `BLEND_MODES`). The layer is placed on a clear frame-size canvas, blended in `gbrp` with the picture as the backdrop (blend's first input, so `overlay` and `colordodge` follow the usual definitions), and shown through the layer's alpha with opacity and fades. Conversions to and from RGB use nearest-neighbor chroma, which makes the round trip exact. Checked in `test/masks.integration.test.ts`: screen and add of a black layer change nothing (pixel exact), and multiply matches its formula within 3 code values (8-bit YUV in and out). Open: the linear-light comparison for `add` and `screen` waits for the 16-bit pipeline (section 3.3) or the engine, and the "fire clip on black" check needs the test clips of section 11.
+
+**F2, masks (done 2026-10-28).** `MaskSchema` in `core/schema.ts`, with any effect taking `mask` and `label`. `library/effects/masks.ts` builds the mattes: `person` and `face` from the prepared streams (one copy per mask, counted by `maskStreams`), `key` and `luma` as an HSL qualifier (circular hue, HSV saturation, Rec.709 luma, smoothstep softness) baked into a Hald CLUT once and applied at full size, and `shape` drawn once. Each mask also takes `invert`, `feather`, `grow`, `smooth`, `denoise` and `combine` (`add`, `intersect`, `subtract`). `effectToFilter` wraps every masked effect in `maskedEffect`. `render_mask` shows the matte (white on black, or a red overlay) where the effect sits in the chain. Checked: a hue key selects a blue area and rejects red, hue ranges wrap through red, grays never pass a hue test. Not yet built: `object`, `sky` and `depth` kinds (F4, F7, F10); shapes with keyframes or pinned to a track (F5). The masks still run in the 8-bit pipeline (section 3.3 is not started). The special cases in `beauty`, `backgroundBlur` and `backgroundReplace` are kept for now. Open: IoU against hand mattes for sky and skin keys (section 4.2) waits for the test clips.
+
+**F3, `grade_region` (done 2026-10-28).** Adds, updates (color settings merge, a new mask replaces the old) or removes a labeled secondary on a clip, a layer, `all-clips` or `global`, and rejects person and face masks where no stream exists. Secondaries go after the whole-frame `color` effect and before stylizing (`setMaskedEffect`), and `color_adjust` and `get_color` only touch the whole-frame grade. Checked: grading inside a feathered mask ramps smoothly across the edge (feather 0.05 gives a 90% to 10% ramp of more than 8 px at 180 px height), and pixels outside the mask are unchanged.
 
 F1 to F4 give the biggest jump for the effort (sky work, glows on one object, grading one part of the frame) and reuse what exists. N0 comes first because every model-based feature builds on it. E1 should start at the same time, since the film look, log and precision work (F6, E2) is only worth doing properly in float. If the engine is not built, the fallback path of section 3.3 (10-bit FFmpeg pipeline, hand-written log LUTs) still reaches a good, but lower, standard.
 
