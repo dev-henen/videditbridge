@@ -178,8 +178,10 @@ export function fileOnDisk(file: string): string | undefined {
       return existsSync(full) ? full : undefined;
     }
     const name = names.includes(part) ? part : names.find((n) => n.toLowerCase() === part.toLowerCase());
-    if (name === undefined) return undefined;
-    at = path.join(at, name);
+    if (name !== undefined) at = path.join(at, name);
+    // Not in the listing but there all the same, like Windows short names ("RUNNER~1"): keep it as written.
+    else if (existsSync(path.join(at, part))) at = path.join(at, part);
+    else return undefined;
   }
   return existsSync(at) ? at : undefined;
 }

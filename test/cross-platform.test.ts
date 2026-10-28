@@ -95,6 +95,19 @@ describe("file name case (B2)", () => {
     if (process.platform === "linux") expect(issues[0]).toMatchObject({ level: "error", message: expect.stringMatching(/not found.*"Media\/Clip\.MP4"/) });
     else expect(issues[0]).toMatchObject({ level: "warning", message: expect.stringContaining('named "Media/Clip.MP4" on disk') });
   });
+
+  it.runIf(process.platform === "win32")("follows Windows short names (8.3), which folder listings do not show", async () => {
+    const { execSync } = await import("node:child_process");
+    const dir = path.join(await tempDir(), "a long folder name");
+    await mkdir(path.join(dir, "Media"), { recursive: true });
+    await writeFile(path.join(dir, "Media", "Clip.MP4"), "x");
+    const short = execSync(`for %I in ("${dir}") do @echo %~sI`, { shell: "cmd.exe", encoding: "utf8" }).trim();
+    // Short names can be turned off for a drive; then there is nothing to test.
+    if (short.toLowerCase() === dir.toLowerCase()) return;
+    const file = path.join(short, "Media", "Clip.MP4");
+    expect(fileOnDisk(file)).toBe(file);
+    expect(fileOnDisk(path.join(short, "Media", "clip.mp4"))).toBe(file);
+  });
 });
 
 describe("filter paths (B3)", () => {
