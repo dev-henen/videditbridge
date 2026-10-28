@@ -1,26 +1,34 @@
 name: CI
 
-# Every push and pull request: typecheck, unit tests, generated docs and the FFmpeg self-test on
-# each target system. Nightly (and on demand): the render and model integration tests too.
+# The repository is private, so Actions minutes are billed, and macOS minutes cost about ten times
+# Linux ones. To stay inside the monthly allowance:
+# - pull requests and pushes to other branches: Linux and Windows only (typecheck, unit tests,
+#   generated docs, FFmpeg self-test, app build)
+# - pushes to main, the weekly run and manual runs: macOS (Apple silicon) too
+# - weekly (Sunday) and manual runs: the full suite, with the render and model integration tests
+# - a newer run on the same branch cancels the older one, and every job has a time limit
 on:
   push:
+    branches: [main]
   pull_request:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "0 3 * * 0"
   workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   engine:
     name: Engine (${{ matrix.name }})
+    # Pull requests skip macOS: see the note at the top.
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { name: Windows x64, os: windows-latest }
-          - { name: macOS arm64, os: macos-14 }
-          - { name: macOS x64, os: macos-15-intel }
-          - { name: Ubuntu 22.04 x64, os: ubuntu-22.04 }
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"name":"Windows x64","os":"windows-latest"},{"name":"Ubuntu 22.04 x64","os":"ubuntu-22.04"}]' || '[{"name":"Windows x64","os":"windows-latest"},{"name":"macOS arm64","os":"macos-14"},{"name":"Ubuntu 22.04 x64","os":"ubuntu-22.04"}]') }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 40 || 15 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,18 +54,16 @@ jobs:
           name: renders-${{ matrix.os }}
           path: test/.output
           if-no-files-found: ignore
+          retention-days: 7
 
   app:
     name: Desktop app (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { name: Windows x64, os: windows-latest }
-          - { name: macOS arm64, os: macos-14 }
-          - { name: macOS x64, os: macos-15-intel }
-          - { name: Ubuntu 22.04 x64, os: ubuntu-22.04 }
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"name":"Windows x64","os":"windows-latest"},{"name":"Ubuntu 22.04 x64","os":"ubuntu-22.04"}]' || '[{"name":"Windows x64","os":"windows-latest"},{"name":"macOS arm64","os":"macos-14"},{"name":"Ubuntu 22.04 x64","os":"ubuntu-22.04"}]') }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
