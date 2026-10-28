@@ -1,0 +1,26 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="using:VideoEditor.Shell"
+        xmlns:preview="using:VideoEditor.Preview"
+        xmlns:session="using:VideoEditor.Session"
+        xmlns:projects="using:VideoEditor.Projects"
+        xmlns:timeline="using:VideoEditor.Timeline"
+        xmlns:ask="using:VideoEditor.Ask"
+        x:Class="VideoEditor.Shell.MainWindow"
+        Title="{Binding Title}" Width="960" Height="460" MinWidth="760" MinHeight="400"
+        Background="{StaticResource Bg}" WindowStartupLocation="CenterScreen"
+        Icon="/Assets/AppIcon.png">
+  <!-- The layout only; each part lives in its own folder (Preview, Session, Timeline, Ask, Projects) -->
+  <Grid RowDefinitions="Auto,*,Auto,Auto">
+    <shell:TopBar x:Name="Bar" Grid.Row="0"/>
+
+    <Grid Grid.Row="1" Margin="8,0,8,0" ColumnDefinitions="*,8,0.5*">
+      <preview:PreviewScreen x:Name="Screen" Grid.Column="0"/>
+      <session:SessionPanel x:Name="Side" Grid.Column="2"/>
+      <projects:ProjectsScreen x:Name="Picker" Grid.ColumnSpan="3" IsVisible="{Binding ShowStartScreen}"/>
+    </Grid>
+
+    <timeline:TimelineStrip x:Name="Strip" Grid.Row="2" Margin="8,6,8,0"/>
+    <ask:AskBox x:Name="AskBar" Grid.Row="3" Margin="8,6,8,8"/>
+  </Grid>
+</Window>

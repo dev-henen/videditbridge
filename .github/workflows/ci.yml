@@ -37,9 +37,25 @@ jobs:
           cache: npm
       # Optional dependencies (ffmpeg-static, onnxruntime-node, resvg) must install on every target.
       - run: npm ci
+      # The Rust kernels (native/ave-native): built here for every target, never on a user's machine.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - name: Native kernels
+        run: npm run native
+      - name: Native kernel tests
+        working-directory: native
+        run: cargo test --release
+      - name: Keep the native build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ave-native-${{ matrix.os }}
+          path: native/ave-native/*.node
+          retention-days: 14
       - run: npx tsc --noEmit
       - name: FFmpeg self-test
-        run: npx tsx src/cli.ts check
+        run: npx tsx engine/cli.ts check
       - run: npm run docs:check
       - name: Unit tests
         if: github.event_name == 'push' || github.event_name == 'pull_request'
@@ -69,4 +85,4 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - run: dotnet build app/VideoEditor
+      - run: dotnet build ui

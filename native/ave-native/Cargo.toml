@@ -1,0 +1,18 @@
+[package]
+name = "ave-native"
+version = "0.1.0"
+description = "CPU kernels of ai-video-editor (audio analysis), as a Node addon"
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { version = "3", default-features = false, features = ["napi4"] }
+napi-derive = "3"
+rayon = "1"
+rustfft = "6"
+
+[build-dependencies]
+napi-build = "2"

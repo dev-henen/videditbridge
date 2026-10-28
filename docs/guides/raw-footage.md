@@ -1,6 +1,6 @@
 # Editing raw footage
 
-Tools for turning an unedited recording into a finished edit: find where people talk and where it is quiet, cut the dead air, split at shot changes, then add energy with effects at chosen moments, edits on the music's beat and sound effects. None of it needs a transcript or a speech service. Everything runs on FFmpeg and plain TypeScript.
+Tools for turning an unedited recording into a finished edit: find where people talk and where it is quiet, cut the dead air, split at shot changes, then add energy with effects at chosen moments, edits on the music's beat and sound effects. None of it needs a transcript or a speech service. Everything runs on this machine: FFmpeg decodes, a Rust kernel measures the sound (see [native/](../../native/README.md)), and TypeScript does the rest.
 
 ## The sound map
 
@@ -25,7 +25,16 @@ Duration 43.008s. Speech 19.46s, music 8s, other sound 0.33s, silence 15.218s. B
 
 It also returns a picture for Claude to look at: the waveform with a colored band underneath (green speech, blue music, orange other sound, dark silence), red marks at loud moments and white ticks at beats.
 
-**How it works.** Each 10 ms frame gets a level, a zero-crossing rate and a spectrum. Silence is anything that does not clear the background (the quietest 10% of the recording, and never above -40 dB) by a margin. Short pauses are bridged, so words are not split into fragments. Speech is told apart by how its level swings with every syllable around its own 200 ms average, and by its alternation of voiced and unvoiced sounds. Music is steady and tonal, and noise is steady and spectrally flat.
+**How it works.** Each 10 ms frame gets a level, a zero-crossing rate and a spectrum (in Rust, `frameFeatures`, shared by the sound map and the beats). Silence is anything that does not clear the background (the quietest 10% of the recording, and never above -40 dB) by a margin. Short pauses are bridged, so words are not split into fragments. Speech is told apart by how its level swings with every syllable around its own 200 ms average, and by its alternation of voiced and unvoiced sounds. Music is steady and tonal, and noise is steady and spectrally flat.
+
+**Speed.** Measured on the reference laptop (Intel i3-1005G1, 2 cores, 4 threads), not counting decoding, which FFmpeg does in about 1.6 s for 4 minutes of audio:
+
+| Audio | Frame features, TypeScript (before) | Frame features, Rust | Sound map and beats, before | Sound map and beats, now |
+|---|---|---|---|---|
+| 232 s | 940 ms | 98 ms | about 1.85 s | 126 ms |
+| 600 s | 2.5 s | 259 ms | about 4.9 s | 302 ms |
+
+The frame features were over 80% of the time. They now run off the JavaScript thread, so the desktop app stays responsive (the event loop waited at most 39 ms during a 10-minute analysis). The Rust results match the old TypeScript within float rounding, and the sound map and beats built from them are identical (`test/native/native.test.ts`).
 
 **How it labels.** A local sound model, CED-tiny (Apache 2.0, 6.7 MB, downloaded once into the models folder), tells speech, music and singing apart and names other sounds: `music with vocals`, `sound (dog)`, `sound (siren)`. It was chosen over YAMNet, which mistook a dog for a chicken, and over AST, which is 14 times bigger. It takes about 15 ms per second of audio. Without it (no `onnxruntime-node`, or offline before the first download), signal rules label the map, and those often call singing `sound` and steady music `speech`.
 

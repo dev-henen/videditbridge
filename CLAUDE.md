@@ -1,13 +1,24 @@
 # ai-video-editor, notes for Claude
 
-TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Rendering is FFmpeg via `ffmpeg-static`.
+TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Rendering is FFmpeg via `ffmpeg-static`. Hot CPU kernels are Rust (`native/`), reached only through `engine/tools/native`.
+
+## Layout
+- `engine/` TypeScript (the editing engine: library, Claude tools, CLI, app host), `native/` Rust (speed-critical kernels), `ui/` C# desktop app, `assets/` bundled fonts and models, `scripts/` doc and native builds.
+- `ui/` has one folder per part of the screen (`Shell`, `Preview`, `Timeline`, `Session`, `Ask`, `Projects`), plus `Engine` (host client) and `Shared`. Namespaces follow folders. A part is a UserControl with its own handlers and styles; `Shell/MainWindow` only lays them out and connects their events.
+- Tests live in `test/<area>/`, mirroring `engine` (`core`, `library`, `render`, `audio`, `vision`, `transcript`, `claude`, `host`, `native`), plus `test/repo/` for repository-wide checks and `test/helpers/` for fixtures and oracles. Put a new test in the folder of the code it tests.
 
 ## Commands
 - `npm test` runs unit and integration tests; integration renders real video (~3 min). `FULL_RENDER=1 npm test` renders all templates.
 - `npx vitest run --exclude "**/*.integration.test.ts"` gives fast unit tests only.
-- `npx tsc --noEmit` typechecks. `npx tsx src/cli.ts <cmd>` runs the CLI from source.
+- `npx tsc --noEmit` typechecks. `npx tsx engine/cli.ts <cmd>` runs the CLI from source.
+- `npm run native` builds the Rust addon (`native/ave-native`) for this machine; tests need it. `cd native && cargo test --release` runs the Rust tests (on Windows add `--target x86_64-pc-windows-msvc` inside the Visual Studio environment; `npm run native` does that itself).
 - Scratch renders go in `test/.output/` (gitignored).
-- `npm run docs` regenerates `docs/reference/*` (except `api.md` and `cli.md`, which are hand-written) from the catalogs and tools. Run it after changing any tool, effect, transition, animation, caption style, component or template. `test/docs.test.ts` fails when these files are stale. Keep `docs/guides/*` accurate by hand.
+- `npm run docs` regenerates `docs/reference/*` (except `api.md` and `cli.md`, which are hand-written) from the catalogs and tools. Run it after changing any tool, effect, transition, animation, caption style, component or template. `test/repo/docs.test.ts` fails when these files are stale. Keep `docs/guides/*` accurate by hand.
+
+## Rust (native/)
+- Move code to Rust only when it is on a hot path (per pixel, sample or frame, and a measured share of the time) and ports easily behind the same function; see section 3.5 of `docs/design/cinematic-grade-and-vfx.md`.
+- Calls are coarse (a whole buffer), run off the JavaScript thread and return promises; a panic becomes an error.
+- A port keeps the old TypeScript in `test/helpers/` as the oracle for a parity test, and records a benchmark in the guide that uses it. No silent TypeScript fallback at runtime.
 
 ## Architecture rules
 - Layers: `core` ← `library` ← `tools` ← `claude`. `core` and `library` must never import from `tools` or `claude`. `applyTemplate` takes an injected `probe` for this reason.
@@ -16,8 +27,8 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 - Catalog items (effects, transitions, animations, caption styles, components, templates) are self-describing. Descriptions are read by Claude, so keep them clear and specific.
 - Templates are pure JSON specs (`library/templates/catalog/*`) interpreted by `builder.ts`. Add new looks as data, not code.
 
-## Desktop app (app/VideoEditor, C# Avalonia, Windows/macOS/Linux)
-- It talks to `src/host/main.ts` over stdio JSON-RPC. stdout carries protocol messages only; the host routes `console.log` to stderr. To add a host method, define it in `main.ts` and call it from `MainViewModel`.
+## Desktop app (ui, C# Avalonia, Windows/macOS/Linux)
+- It talks to `engine/host/main.ts` over stdio JSON-RPC. stdout carries protocol messages only; the host routes `console.log` to stderr. To add a host method, define it in `main.ts` and call it from `MainViewModel`.
 - Projects live in `projects/<slug>/` (gitignored app storage), and the host autosaves them.
 - The app is AI-first: people edit by asking Claude. It is not a manual editor (not competing with CapCut or Premiere), so direct interaction serves the conversation (pointing Claude at a clip, reviewing what it offers, undo) rather than drag-to-trim editing.
 - UI rules from the user:
@@ -27,7 +38,7 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
   - no emoji, no em or en dashes in any text
   - the timeline is a compact preview strip by default
 - Nothing Windows-only: dialogs through `StorageProvider`, video and audio through LibVLC (`Playback/Player.cs`, frames drawn into a bitmap so overlays stay on top), UI font Segoe UI on Windows and bundled Inter elsewhere.
-- Build with `dotnet build app/VideoEditor` (add `-r linux-x64` or `-r osx-arm64` to check the other systems compile). Test the host with `test/host.integration.test.ts`.
+- Build with `dotnet build ui` (add `-r linux-x64` or `-r osx-arm64` to check the other systems compile). Test the host with `test/host/host.integration.test.ts`.
 
 ## Renderer gotchas (compile.ts)
 - Every primary segment ends with `fps`, `format=yuv420p`, `setsar=1` and `settb=AVTB`. `concat` outputs AV_TIME_BASE, and `xfade` fails if the timebases differ.
@@ -35,5 +46,5 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 - Image outputs (frame, contact sheet) must consume the audio graph with `anullsink`.
 - The filter graph goes through `-filter_complex_script` to avoid Windows command-line limits.
 - File paths inside filter arguments go through `escapeFilterPath`. It escapes for two levels, since `\`, `'` and `:` are legal in macOS and Linux names.
-- Default fonts are the bundled open fonts in `fonts/` (Arimo, Archivo Black, Gelasio and others), never system fonts like Arial. Renders call `prepareFonts`, which copies them into the fonts folder and replaces missing system fonts (`FONT_REPLACEMENTS`).
-- App data folders come from `src/tools/appdirs.ts` (`defaultModelsDir`, `defaultFontsDir`); don't hard-code `~/.cache`.
+- Default fonts are the bundled open fonts in `assets/fonts/` (Arimo, Archivo Black, Gelasio and others), never system fonts like Arial. Renders call `prepareFonts`, which copies them into the fonts folder and replaces missing system fonts (`FONT_REPLACEMENTS`).
+- App data folders come from `engine/tools/appdirs.ts` (`defaultModelsDir`, `defaultFontsDir`); don't hard-code `~/.cache`.

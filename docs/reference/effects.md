@@ -8,7 +8,7 @@
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
 ```
 
-Parameters you omit take their defaults. Each effect compiles to an FFmpeg filter chain ([src/library/effects/index.ts](../../src/library/effects/index.ts)). Register your own with `registerEffect`.
+Parameters you omit take their defaults. Each effect compiles to an FFmpeg filter chain ([engine/library/effects/index.ts](../../engine/library/effects/index.ts)). Register your own with `registerEffect`.
 
 ## Contents
 

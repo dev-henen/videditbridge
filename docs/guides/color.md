@@ -1,6 +1,6 @@
 # Color correction & grading
 
-All color work goes through one engine ([src/library/effects/color.ts](../../src/library/effects/color.ts)) that compiles Lightroom-style controls into FFmpeg filters.
+All color work goes through one engine ([engine/library/effects/color.ts](../../engine/library/effects/color.ts)) that compiles Lightroom-style controls into FFmpeg filters.
 
 ## The controls
 

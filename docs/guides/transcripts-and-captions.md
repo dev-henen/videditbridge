@@ -1,6 +1,6 @@
 # Transcripts & captions
 
-Transcripts drive three things: **captions**, **speech search**, and **editing by transcript** (cutting fillers, pauses and tangents). Code is in [src/tools/transcript](../../src/tools/transcript) and [src/tools/captions](../../src/tools/captions).
+Transcripts drive three things: **captions**, **speech search**, and **editing by transcript** (cutting fillers, pauses and tangents). Code is in [engine/tools/transcript](../../engine/tools/transcript) and [engine/tools/captions](../../engine/tools/captions).
 
 ## The transcript format
 

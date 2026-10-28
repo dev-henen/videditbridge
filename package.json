@@ -34,17 +34,19 @@
   },
   "files": [
     "dist",
-    "fonts"
+    "assets/fonts",
+    "native/ave-native/*.node"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "cli": "tsx src/cli.ts",
+    "cli": "tsx engine/cli.ts",
     "docs": "tsx scripts/gen-docs.ts",
     "docs:check": "tsx scripts/gen-docs.ts --check",
-    "host": "tsx src/host/main.ts"
+    "host": "tsx engine/host/main.ts",
+    "native": "tsx scripts/build-native.ts"
   },
   "engines": {
     "node": ">=20"

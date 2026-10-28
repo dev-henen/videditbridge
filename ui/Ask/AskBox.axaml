@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:VideoEditor.Shared"
+             x:Class="VideoEditor.Ask.AskBox">
+  <UserControl.Styles>
+    <!-- No border until it has focus, then a blue one -->
+    <Style Selector="Border.ask">
+      <Setter Property="Background" Value="{StaticResource Panel}"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+    </Style>
+    <Style Selector="Border.ask:focus-within">
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+    </Style>
+    <!-- The activity glow fades in and out -->
+    <Style Selector="Border#Glow">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.35"/>
+        </Transitions>
+      </Setter>
+    </Style>
+  </UserControl.Styles>
+
+  <!-- One box holding the picked item, the request and the send (or stop) button -->
+  <Grid>
+    <Border Classes="ask" CornerRadius="10" BorderThickness="1" Padding="10,6,6,6">
+      <StackPanel>
+        <!-- What the request is about: pills above the text for the item picked on the timeline and the spot clicked in the frame -->
+        <StackPanel x:Name="Pills" Orientation="Horizontal" Margin="0,0,0,4" IsVisible="False">
+          <Border x:Name="PickChip" IsVisible="False" Background="{StaticResource AccentSoft}" CornerRadius="10" Padding="8,1,2,1" Margin="0,0,6,0" MaxWidth="300">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock x:Name="PickText" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="250"/>
+              <Button Click="OnClearPick" ToolTip.Tip="Clear" AutomationProperties.Name="Clear the picked item" MinHeight="18" MinWidth="18" Padding="0" Margin="4,0,0,0">
+                <TextBlock Classes="icon" Text="{x:Static shared:Icons.Dismiss}" FontSize="10"/>
+              </Button>
+            </StackPanel>
+          </Border>
+          <Border x:Name="SpotChip" IsVisible="False" Background="{StaticResource AccentSoft}" CornerRadius="10" Padding="8,1,2,1">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Location}" FontSize="12" Foreground="{StaticResource Accent}" Margin="0,0,5,0"/>
+              <TextBlock x:Name="SpotText" FontSize="11" VerticalAlignment="Center"/>
+              <Button Click="OnClearSpot" ToolTip.Tip="Clear" AutomationProperties.Name="Clear the spot" MinHeight="18" MinWidth="18" Padding="0" Margin="4,0,0,0">
+                <TextBlock Classes="icon" Text="{x:Static shared:Icons.Dismiss}" FontSize="10"/>
+              </Button>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+        <DockPanel>
+          <Button DockPanel.Dock="Right" Classes="primary" Click="OnStopClaude" ToolTip.Tip="Stop Claude" AutomationProperties.Name="Stop Claude"
+                  Width="22" Height="22" MinWidth="0" MinHeight="0" Padding="0" Margin="6,0,0,2" VerticalAlignment="Bottom"
+                  IsVisible="{Binding AgentRunning}">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Stop}" FontSize="12" Foreground="{StaticResource OnAccent}"/>
+          </Button>
+          <Button DockPanel.Dock="Right" Classes="primary" Click="OnAsk" IsEnabled="{Binding CanAsk}" ToolTip.Tip="Ask Claude" AutomationProperties.Name="Ask Claude"
+                  Width="22" Height="22" MinWidth="0" MinHeight="0" Padding="0" Margin="6,0,0,2" VerticalAlignment="Bottom"
+                  IsVisible="{Binding !AgentRunning}">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Send}" FontSize="13" Foreground="{StaticResource OnAccent}"/>
+          </Button>
+          <TextBox x:Name="PromptBox" Classes="bare" KeyDown="OnPromptKeyDown" IsEnabled="{Binding CanAsk}" Padding="0,4" MinHeight="26"
+                   Watermark="{Binding AskHint}" VerticalAlignment="Center"/>
+        </DockPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- Activity glow: while anything runs, a light travels around the box and it softly glows -->
+    <Border x:Name="Glow" CornerRadius="10" BorderThickness="1.5" IsHitTestVisible="False" Opacity="0"
+            BoxShadow="0 0 14 0 #803B82F6">
+      <Border.BorderBrush>
+        <ConicGradientBrush Center="50%,50%">
+          <GradientStop Color="#1D4ED8" Offset="0"/>
+          <GradientStop Color="#3B82F6" Offset="0.35"/>
+          <GradientStop Color="#BFDBFE" Offset="0.5"/>
+          <GradientStop Color="#3B82F6" Offset="0.65"/>
+          <GradientStop Color="#1D4ED8" Offset="1"/>
+        </ConicGradientBrush>
+      </Border.BorderBrush>
+    </Border>
+  </Grid>
+</UserControl>

@@ -1,6 +1,6 @@
 # The project document
 
-An edit is one JSON document, a `Project`. It is validated by the zod schema in [src/core/schema.ts](../../src/core/schema.ts). `parseProject(json)` fills in defaults, and `projectJsonSchema()` returns the JSON Schema.
+An edit is one JSON document, a `Project`. It is validated by the zod schema in [engine/core/schema.ts](../../engine/core/schema.ts). `parseProject(json)` fills in defaults, and `projectJsonSchema()` returns the JSON Schema.
 
 **Conventions**
 

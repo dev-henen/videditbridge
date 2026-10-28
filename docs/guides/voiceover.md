@@ -1,6 +1,6 @@
 # Voice-over
 
-Text-to-speech narration that comes with word timings, so voice-overs can be captioned like recorded speech. It runs on your machine: no account, no key, nothing sent anywhere. Code: [src/tools/voiceover](../../src/tools/voiceover).
+Text-to-speech narration that comes with word timings, so voice-overs can be captioned like recorded speech. It runs on your machine: no account, no key, nothing sent anywhere. Code: [engine/tools/voiceover](../../engine/tools/voiceover).
 
 ## The local voice (default)
 

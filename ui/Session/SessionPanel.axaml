@@ -1,0 +1,171 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:VideoEditor.Shared"
+             x:Class="VideoEditor.Session.SessionPanel">
+  <UserControl.Styles>
+    <!-- Status dot: grey when idle, a pulsing blue while anything runs -->
+    <Style Selector="Ellipse.status">
+      <Setter Property="Fill" Value="{StaticResource Faint}"/>
+    </Style>
+    <Style Selector="Ellipse.status.busy">
+      <Setter Property="Fill" Value="{StaticResource Accent}"/>
+      <Style.Animations>
+        <Animation Duration="0:0:1.2" IterationCount="INFINITE">
+          <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1"/></KeyFrame>
+          <KeyFrame Cue="50%"><Setter Property="Opacity" Value="0.2"/></KeyFrame>
+          <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1"/></KeyFrame>
+        </Animation>
+      </Style.Animations>
+    </Style>
+    <!-- Activity labels: muted when finished, bright while running, underlined on error -->
+    <Style Selector="TextBlock.activity">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+    </Style>
+    <Style Selector="TextBlock.activity.running">
+      <Setter Property="Foreground" Value="{StaticResource Text}"/>
+    </Style>
+    <Style Selector="TextBlock.activity.error">
+      <Setter Property="Foreground" Value="{StaticResource Text}"/>
+      <Setter Property="TextDecorations" Value="Underline"/>
+    </Style>
+    <Style Selector="TextBlock.finding">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+    </Style>
+    <Style Selector="TextBlock.finding.problem">
+      <Setter Property="Foreground" Value="{StaticResource Text}"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Border Background="{StaticResource Panel}" CornerRadius="8" MinWidth="240" MaxWidth="400">
+    <DockPanel>
+      <!-- Now -->
+      <StackPanel DockPanel.Dock="Top" Margin="10,9,10,6">
+        <DockPanel>
+          <Ellipse DockPanel.Dock="Left" Classes="status" Classes.busy="{Binding IsBusy}" Width="7" Height="7" Margin="0,0,8,0" VerticalAlignment="Center"/>
+          <TextBlock Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusText}"/>
+        </DockPanel>
+        <ProgressBar Margin="0,7,0,0" Value="{Binding StatusPercent, Mode=OneWay}" Maximum="100" IsIndeterminate="{Binding StatusIndeterminate, Mode=OneWay}"
+                     IsVisible="{Binding IsBusy}"/>
+      </StackPanel>
+      <Rectangle DockPanel.Dock="Top" Height="1" Fill="{StaticResource Line}"/>
+
+      <TabControl x:Name="Tabs" Margin="4" Padding="0">
+        <TabItem Header="Activity">
+          <ListBox ItemsSource="{Binding Activities}" Margin="0,4,0,0">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Grid Margin="6,4" ColumnDefinitions="20,*,Auto">
+                  <Grid Grid.Column="0" VerticalAlignment="Top" Margin="0,1,0,0">
+                    <TextBlock Classes="icon" Text="{x:Static shared:Icons.Check}" FontSize="13" Foreground="{StaticResource Muted}" IsVisible="{Binding IsDone}"/>
+                    <TextBlock Classes="icon" Text="{x:Static shared:Icons.Error}" FontSize="13" Foreground="{StaticResource Text}" IsVisible="{Binding IsError}"/>
+                    <TextBlock Classes="icon spin" Text="{x:Static shared:Icons.Sync}" FontSize="13" Foreground="{StaticResource Accent}" IsVisible="{Binding IsRunning}"/>
+                  </Grid>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Classes="activity" Classes.running="{Binding IsRunning}" Classes.error="{Binding IsError}" Text="{Binding Label}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" FontSize="10" Foreground="{StaticResource Faint}" Margin="0,1,0,0"
+                               IsVisible="{Binding HasDetail}" MaxHeight="42" TextTrimming="CharacterEllipsis"/>
+                    <ProgressBar Margin="0,4,0,1" Height="2" MinHeight="2" Value="{Binding ProgressPercent, Mode=OneWay}" Maximum="100" IsIndeterminate="{Binding Indeterminate, Mode=OneWay}"
+                                 IsVisible="{Binding ShowProgress}"/>
+                  </StackPanel>
+                  <TextBlock Grid.Column="2" Text="{Binding TimeText}" FontSize="10" Foreground="{StaticResource Faint}" Margin="6,2,0,0"/>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </TabItem>
+        <TabItem x:Name="ClaudeTab" Header="Claude">
+          <DockPanel>
+            <!-- Options Claude offered: play or look, then pick -->
+            <Border DockPanel.Dock="Top" Margin="4,6,4,2" Padding="8,6" CornerRadius="8" Background="{StaticResource Panel2}" IsVisible="{Binding HasChoices}">
+              <StackPanel>
+                <DockPanel Margin="0,0,0,4">
+                  <Button DockPanel.Dock="Right" Click="OnDismissChoices" ToolTip.Tip="Close without picking" AutomationProperties.Name="Close the options"
+                          MinHeight="20" MinWidth="20" Padding="2">
+                    <TextBlock Classes="icon" Text="{x:Static shared:Icons.Dismiss}" FontSize="11"/>
+                  </Button>
+                  <TextBlock Text="{Binding ChoiceQuestion}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                </DockPanel>
+                <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto">
+                  <ItemsControl ItemsSource="{Binding Choices}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Border Margin="0,3" Padding="6" CornerRadius="6" Background="{StaticResource Panel}">
+                          <DockPanel>
+                            <Button DockPanel.Dock="Right" Classes="primary" Click="OnPickChoice" Tag="{Binding}" Width="22" Height="22" MinWidth="0" MinHeight="0" Padding="0"
+                                    Margin="6,0,0,0" VerticalAlignment="Center" ToolTip.Tip="Pick this" AutomationProperties.Name="Pick this"
+                                    IsEnabled="{Binding $parent[Window].DataContext.CanAsk}">
+                              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Check}" FontSize="13" Foreground="{StaticResource OnAccent}"/>
+                            </Button>
+                            <Button DockPanel.Dock="Left" Click="OnPlayChoice" Tag="{Binding}" MinHeight="22" MinWidth="22" Padding="2" Margin="0,0,6,0" VerticalAlignment="Center"
+                                    ToolTip.Tip="{Binding PlayHint}" AutomationProperties.Name="Play this option" IsVisible="{Binding HasAudio}">
+                              <TextBlock Classes="icon" Text="{Binding PlayGlyph}" FontSize="13" Foreground="{StaticResource Accent}"/>
+                            </Button>
+                            <Border DockPanel.Dock="Left" CornerRadius="4" ClipToBounds="True" Margin="0,0,8,0" IsVisible="{Binding HasImage}">
+                              <Image Source="{Binding ImageBitmap}" Height="54" MaxWidth="96" Stretch="Uniform" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                              <TextBlock Text="{Binding Label}" TextWrapping="Wrap"/>
+                              <TextBlock Text="{Binding Description}" FontSize="10" Foreground="{StaticResource Muted}" TextWrapping="Wrap" IsVisible="{Binding HasDescription}"/>
+                            </StackPanel>
+                          </DockPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </StackPanel>
+            </Border>
+            <ScrollViewer x:Name="AgentScroll" VerticalScrollBarVisibility="Auto" Padding="8">
+              <SelectableTextBlock Text="{Binding AgentText}" TextWrapping="Wrap" LineHeight="18" Foreground="{StaticResource Text}" FontSize="12"/>
+            </ScrollViewer>
+          </DockPanel>
+        </TabItem>
+        <TabItem x:Name="ReviewTab" Header="Review">
+          <DockPanel>
+            <DockPanel DockPanel.Dock="Top" Margin="6,6,2,4">
+              <Button DockPanel.Dock="Right" Click="OnReview" IsEnabled="{Binding IsProjectOpen}" ToolTip.Tip="Check the edit for problems" AutomationProperties.Name="Check the edit for problems">
+                <TextBlock Classes="icon" Text="{x:Static shared:Icons.Review}"/>
+              </Button>
+              <TextBlock Text="{Binding ReviewSummary}" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            </DockPanel>
+            <ListBox ItemsSource="{Binding Findings}" SelectionChanged="OnFindingSelected">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <DockPanel Margin="6,4">
+                    <Button DockPanel.Dock="Right" Click="OnFix" Tag="{Binding}" VerticalAlignment="Top" Margin="6,0,0,0" MinHeight="22" MinWidth="22" Padding="3"
+                            IsEnabled="{Binding $parent[Window].DataContext.CanAsk}"
+                            ToolTip.Tip="Ask Claude to fix this" AutomationProperties.Name="Ask Claude to fix this">
+                      <TextBlock Classes="icon" Text="{x:Static shared:Icons.Wrench}" FontSize="13" Foreground="{StaticResource Accent}"/>
+                    </Button>
+                    <TextBlock DockPanel.Dock="Left" Classes="icon finding" Classes.problem="{Binding IsProblem}" Text="{Binding Glyph}" FontSize="13" Width="18"
+                               VerticalAlignment="Top" Margin="0,2,0,0"/>
+                    <StackPanel>
+                      <TextBlock Text="{Binding TimeText}" FontSize="10" Foreground="{StaticResource Faint}"/>
+                      <TextBlock Text="{Binding Message}" FontSize="11" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </DockPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
+        </TabItem>
+        <TabItem Header="Summary">
+          <TextBox Text="{Binding Summary, Mode=OneWay}" IsReadOnly="True" FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="10.5"
+                   Classes="bare" TextWrapping="Wrap" Padding="6" VerticalContentAlignment="Top" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+        </TabItem>
+        <TabItem Header="History">
+          <ListBox ItemsSource="{Binding History}" Margin="0,4,0,0">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <DockPanel Margin="6,3">
+                  <TextBlock DockPanel.Dock="Left" Text="{Binding Time}" Width="64" Foreground="{StaticResource Faint}" FontSize="10"/>
+                  <TextBlock Text="{Binding Action}" FontSize="11" Foreground="{StaticResource Muted}"/>
+                </DockPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </TabItem>
+      </TabControl>
+    </DockPanel>
+  </Border>
+</UserControl>

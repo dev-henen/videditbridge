@@ -1,6 +1,6 @@
 # Design: cinematic grading and common CGI effects
 
-Status: in progress. Proposed 2026-10-27; F1 to F3 done 2026-10-28 (see section 12 for each step's status). This is the build plan for movie-level color grading and the visual effects editors ask for most: sky replacement, glows and light effects on one object, screen replacement, depth of field, atmospherics, object removal and smooth slow motion.
+Status: in progress. Proposed 2026-10-27; F1 to F3 and N0 done 2026-10-28 (see section 12 for each step's status). This is the build plan for movie-level color grading and the visual effects editors ask for most: sky replacement, glows and light effects on one object, screen replacement, depth of field, atmospherics, object removal and smooth slow motion.
 
 The bar is professional results, not "a filter that looks similar". Every feature below has a measurable "done when" check, and every result must be something Claude can verify itself (scopes, mattes, frames) before it shows the user. Where a model is involved, candidates are compared on the same clips before one is chosen, as was done for faces (YuNet), person cutout (PP-HumanSeg) and sound (CED-tiny).
 
@@ -125,7 +125,7 @@ Any effect, not only grades, takes an optional `mask`: a glow on one object, a b
 3. **Preview**: the same engine renders single frames and scrubbing previews in real time where the GPU allows, for the app's viewer and for Claude's `render_frame` (much faster than spawning FFmpeg per frame).
 4. **Fallback and reference**: the FFmpeg backend stays. Parity tests render the test projects with both backends and compare (mean ΔE 2000 under 1 for 8-bit-safe features, excluding features only the engine has). Machines without a usable GPU use the FFmpeg backend.
 
-**Process boundary.** Start with the engine as a separate executable speaking JSON-RPC over stdio, like `src/host/main.ts` does for the app: it crashes alone, can be rebuilt without touching Node, and is easy to test. Move to an in-process napi-rs module only if the per-frame handoff (preview) measurably needs it.
+**Process boundary.** Start with the engine as a separate executable speaking JSON-RPC over stdio, like `engine/host/main.ts` does for the app: it crashes alone, can be rebuilt without touching Node, and is easy to test. Move to an in-process napi-rs module only if the per-frame handoff (preview) measurably needs it.
 
 **Desktop app.** The WPF app can show engine frames through a shared texture or a memory-mapped frame buffer instead of PNG files, which makes the viewer live (scrubbing, A/B before and after, matte overlay). The app remains AI-first; this only makes looking faster.
 
@@ -152,7 +152,7 @@ TypeScript keeps everything about the edit itself: the project document and its 
 
 | Crate | Ships as | Holds |
 |---|---|---|
-| `ave-engine` | A separate executable (section 3.4), prebuilt for every target of section 3.6 | The GPU render engine, OCIO, decode and encode, and models whose frames already live in the engine |
+| `ave-render` | A separate executable (section 3.4), prebuilt for every target of section 3.6 | The GPU render engine, OCIO, decode and encode, and models whose frames already live in the engine |
 | `ave-native` | A Node addon built with napi-rs, prebuilt for every target of section 3.6 as optional npm packages (like `@resvg/resvg-js`) | The CPU kernels marked **Move** below, and the kernels of new features |
 
 **Model inference stays where it is cheapest to ship.** Today's models run through `onnxruntime-node`, which is already native code, ships for Windows, macOS and Linux, and has GPU execution providers per platform (DirectML on Windows, CoreML on macOS, CUDA on Linux). Measured overhead around inference in TypeScript is small (see the table), so it stays. Inference moves into Rust (`ort`) only where frames already live in Rust, as in the engine, so they do not cross into JavaScript and back.
@@ -192,7 +192,7 @@ New code from sections 4 to 7 with a speed budget is written in Rust from the st
 
 The app will be built for Windows, macOS and Linux. Everything above must work on all three, and every choice is checked against that.
 
-**Targets.** Windows x64, macOS on Apple silicon (arm64) and on Intel (x64), and Linux x64 (glibc 2.31 or newer, so Ubuntu 20.04 and later). Windows arm64 and Linux arm64 come later. Every native binary (`ave-engine`, `ave-native`, the OCIO shim) is built for each target in CI, never on a user's machine.
+**Targets.** Windows x64, macOS on Apple silicon (arm64) and on Intel (x64), and Linux x64 (glibc 2.31 or newer, so Ubuntu 20.04 and later). Windows arm64 and Linux arm64 come later. Every native binary (`ave-render`, `ave-native`, the OCIO shim) is built for each target in CI, never on a user's machine.
 
 | Part | Today | Across platforms |
 |---|---|---|
@@ -376,7 +376,7 @@ Three tracks run side by side: native kernels (N), the engine (E) and features (
 
 | Step | Builds | Depends on | Done when | Status |
 |---|---|---|---|---|
-| N0 | `native/` Cargo workspace, napi-rs `ave-native` package with prebuilt binaries for every target of section 3.6, CI builds on Windows, macOS and Linux, parity test harness | Nothing | One kernel (the sound map) runs from Rust with parity and a recorded speedup | Not started |
+| N0 | `native/` Cargo workspace, napi-rs `ave-native` package with prebuilt binaries for every target of section 3.6, CI builds on Windows, macOS and Linux, parity test harness | Nothing | One kernel (the sound map) runs from Rust with parity and a recorded speedup | **Done** (2026-10-28) except prebuilt npm packages. See notes below |
 | N1 | Port the **Move** rows of the section 3.5 table, one per change, each with parity and a benchmark | N0 | Native milestone of section 3.5 met; ported TypeScript versions deleted | Not started |
 | F1 | Blend modes | Nothing | Section 5.1 checks pass | **Done** (2026-10-28), FFmpeg backend. See notes below |
 | F2 | Mask system, `render_mask`, maskable effects, HSL key and luma masks | Existing masks | Section 4.2 checks pass for key masks | **Done** (2026-10-28) for `person`, `face`, `key`, `luma`, `shape`; IoU checks wait for the test clips of section 11 |
@@ -397,7 +397,10 @@ Three tracks run side by side: native kernels (N), the engine (E) and features (
 
 ### Progress notes
 
-**F1, blend modes (done 2026-10-28).** `layers[].blend` on media and graphic layers, set through `add_media_overlay`, `create_graphic` and `update_layer` (`compile.ts`, `BLEND_MODES`). The layer is placed on a clear frame-size canvas, blended in `gbrp` with the picture as the backdrop (blend's first input, so `overlay` and `colordodge` follow the usual definitions), and shown through the layer's alpha with opacity and fades. Conversions to and from RGB use nearest-neighbor chroma, which makes the round trip exact. Checked in `test/masks.integration.test.ts`: screen and add of a black layer change nothing (pixel exact), and multiply matches its formula within 3 code values (8-bit YUV in and out). Open: the linear-light comparison for `add` and `screen` waits for the 16-bit pipeline (section 3.3) or the engine, and the "fire clip on black" check needs the test clips of section 11.
+**N0, native workspace (done 2026-10-28, except publishing).** `native/` is a Cargo workspace with `ave-native` (napi-rs 3, rayon, rustfft), loaded through `engine/tools/native` and built with `npm run native`; see [native/README.md](../../native/README.md). Profiling the audio analysis on the reference laptop showed `frameFeatures` (level, zero crossings and a 512-point spectrum per 10 ms frame) at 82% of the sound map and beat detection, and everything else under 1%. So `frameFeatures` is the first kernel, and segmentation, tempo and beats stay in TypeScript. It runs as an `AsyncTask` with rayon chunks, so it never blocks Node. `analyzeSamples`, `detectBeats` and `levelSpeech` became async, and `speechPieces` takes the map, because of that. The old TypeScript kernel is the parity oracle in `test/helpers/audio-reference.ts`. `test/native/native.test.ts` checks synthetic edge cases and the recorded test media: features within float rounding, and identical sound maps and beats. Measured on the reference laptop: frame features of 232 s of audio 940 ms in TypeScript, 98 ms in Rust (9.6x); the sound map and beats of a 10-minute recording 302 ms (target under 2 s); event loop delayed at most 39 ms during the call (target 50 ms). The numbers are in [the raw footage guide](../guides/raw-footage.md). CI builds the addon and runs the Rust tests on Windows, Linux and macOS (arm64), and keeps each build as an artifact. Open: publishing per-platform npm packages (`@ai-video-editor/native-<target>`, which the loader already tries first); macOS x64 and Linux on glibc 2.31 builds (CI uses Ubuntu 22.04, glibc 2.35); `AbortSignal` and progress in kernels (this one finishes in well under a second, so neither was needed yet).
+
+
+**F1, blend modes (done 2026-10-28).** `layers[].blend` on media and graphic layers, set through `add_media_overlay`, `create_graphic` and `update_layer` (`compile.ts`, `BLEND_MODES`). The layer is placed on a clear frame-size canvas, blended in `gbrp` with the picture as the backdrop (blend's first input, so `overlay` and `colordodge` follow the usual definitions), and shown through the layer's alpha with opacity and fades. Conversions to and from RGB use nearest-neighbor chroma, which makes the round trip exact. Checked in `test/render/masks.integration.test.ts`: screen and add of a black layer change nothing (pixel exact), and multiply matches its formula within 3 code values (8-bit YUV in and out). Open: the linear-light comparison for `add` and `screen` waits for the 16-bit pipeline (section 3.3) or the engine, and the "fire clip on black" check needs the test clips of section 11.
 
 **F2, masks (done 2026-10-28).** `MaskSchema` in `core/schema.ts`, with any effect taking `mask` and `label`. `library/effects/masks.ts` builds the mattes: `person` and `face` from the prepared streams (one copy per mask, counted by `maskStreams`), `key` and `luma` as an HSL qualifier (circular hue, HSV saturation, Rec.709 luma, smoothstep softness) baked into a Hald CLUT once and applied at full size, and `shape` drawn once. Each mask also takes `invert`, `feather`, `grow`, `smooth`, `denoise` and `combine` (`add`, `intersect`, `subtract`). `effectToFilter` wraps every masked effect in `maskedEffect`. `render_mask` shows the matte (white on black, or a red overlay) where the effect sits in the chain. Checked: a hue key selects a blue area and rejects red, hue ranges wrap through red, grays never pass a hue test. Not yet built: `object`, `sky` and `depth` kinds (F4, F7, F10); shapes with keyframes or pinned to a track (F5). The masks still run in the 8-bit pipeline (section 3.3 is not started). The special cases in `beauty`, `backgroundBlur` and `backgroundReplace` are kept for now. Open: IoU against hand mattes for sky and skin keys (section 4.2) waits for the test clips.
 

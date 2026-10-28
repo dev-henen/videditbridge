@@ -12,8 +12,8 @@ Check that everything works:
 
 ```bash
 npm test
-npx tsx src/cli.ts templates
-npx tsx src/cli.ts check   # this FFmpeg build has every filter and codec the renderer uses
+npx tsx engine/cli.ts templates
+npx tsx engine/cli.ts check   # this FFmpeg build has every filter and codec the renderer uses
 ```
 
 ### Where downloads go
@@ -89,7 +89,7 @@ Browse the [template reference](../reference/templates.md) or run `ave templates
 
 ## Watch edits live
 
-Open the project in the desktop app (app/VideoEditor; build it with `dotnet build app/VideoEditor`). It shows the timeline, frames and preview video as Claude edits. See [Rendering & preview](rendering-and-preview.md).
+Open the project in the desktop app (ui; build it with `dotnet build ui`). It shows the timeline, frames and preview video as Claude edits. See [Rendering & preview](rendering-and-preview.md).
 
 ## Next
 

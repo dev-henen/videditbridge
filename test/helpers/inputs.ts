@@ -1,5 +1,5 @@
-import type { TemplateInputs, TemplateSpec } from "../../src/library/templates/index.js";
-import type { Transcript } from "../../src/core/index.js";
+import type { TemplateInputs, TemplateSpec } from "../../engine/library/templates/index.js";
+import type { Transcript } from "../../engine/core/index.js";
 
 export interface SampleMedia {
   video: string;

@@ -2,8 +2,8 @@
 
 The `claude/` layer turns the library into something Claude can operate. It has two parts:
 
-- **`EditorSession`** ([src/claude/session.ts](../../src/claude/session.ts)) holds the project being edited, with undo/redo history, a revision counter, a list of rendered artifacts, and `change`, `render` and `log` events.
-- **Tools** ([src/claude/tools.ts](../../src/claude/tools.ts)) are 46 tools with zod input schemas, listed in the [Claude tools reference](../reference/claude-tools.md).
+- **`EditorSession`** ([engine/claude/session.ts](../../engine/claude/session.ts)) holds the project being edited, with undo/redo history, a revision counter, a list of rendered artifacts, and `change`, `render` and `log` events.
+- **Tools** ([engine/claude/tools.ts](../../engine/claude/tools.ts)) are 46 tools with zod input schemas, listed in the [Claude tools reference](../reference/claude-tools.md).
 
 The tool layer doesn't depend on any Anthropic package. The same definitions serve the Messages API today and an MCP connector later.
 

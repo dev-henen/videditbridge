@@ -1,6 +1,6 @@
 # Rendering & preview
 
-Rendering code is in [src/tools/render](../../src/tools/render). People watch edits live in the desktop app (app/VideoEditor), which shows the frames and previews these functions render.
+Rendering code is in [engine/tools/render](../../engine/tools/render). People watch edits live in the desktop app (ui), which shows the frames and previews these functions render.
 
 ## FFmpeg
 

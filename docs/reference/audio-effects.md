@@ -8,7 +8,7 @@
 { "type": "denoise", "params": { "amount": 40 } }
 ```
 
-Effects run in order, after speed and before volume and fades. Parameters you omit take their defaults. Each effect compiles to an FFmpeg audio filter chain ([src/library/audio-effects/index.ts](../../src/library/audio-effects/index.ts)). Register your own with `registerAudioEffect`.
+Effects run in order, after speed and before volume and fades. Parameters you omit take their defaults. Each effect compiles to an FFmpeg audio filter chain ([engine/library/audio-effects/index.ts](../../engine/library/audio-effects/index.ts)). Register your own with `registerAudioEffect`.
 
 ## Contents
 

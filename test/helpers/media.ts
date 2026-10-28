@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import { runFfmpeg, runFfmpegOrThrow } from "../../src/tools/render/ffmpeg.js";
+import { runFfmpeg, runFfmpegOrThrow } from "../../engine/tools/render/ffmpeg.js";
 
 export const OUT_DIR = path.resolve(import.meta.dirname, "..", ".output");
 

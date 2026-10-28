@@ -1,6 +1,6 @@
 # CLI: `ave`
 
-After `npm run build`, the `ave` binary is available (`npx ave …`). From source, run `npx tsx src/cli.ts …`.
+After `npm run build`, the `ave` binary is available (`npx ave …`). From source, run `npx tsx engine/cli.ts …`.
 
 Relative media paths in a project file resolve against the project file's folder.
 

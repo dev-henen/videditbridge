@@ -1,6 +1,6 @@
 # Templates
 
-A template describes a *style* of video: what inputs it needs, how it looks, and how its scenes are structured. Each template is pure JSON (`TemplateSpec`, defined in [src/library/templates/types.ts](../../src/library/templates/types.ts)) and is interpreted by one builder, so:
+A template describes a *style* of video: what inputs it needs, how it looks, and how its scenes are structured. Each template is pure JSON (`TemplateSpec`, defined in [engine/library/templates/types.ts](../../engine/library/templates/types.ts)) and is interpreted by one builder, so:
 
 - Claude can read a template (`get_template`) and follow its `aiGuidance` when choosing and cutting footage,
 - new templates are data, not code, and Claude can write them too,
@@ -139,4 +139,4 @@ registerTemplate(spec);                       // validates; throws if the id exi
 registerTemplate(spec, { replace: true });
 ```
 
-To ship a template with the library, add it to a file in `src/library/templates/catalog/` and run `npm run docs`. The test suite builds every template with sample inputs and checks that the result validates.
+To ship a template with the library, add it to a file in `engine/library/templates/catalog/` and run `npm run docs`. The test suite builds every template with sample inputs and checks that the result validates.

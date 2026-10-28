@@ -1,6 +1,6 @@
 /**
  * Claude edits a video with the library's tools. Frames and previews it renders are saved in the
- * output folder; to watch edits live, use the desktop app (app/VideoEditor), which runs the same tools.
+ * output folder; to watch edits live, use the desktop app (ui), which runs the same tools.
  *
  *   npx tsx examples/claude-agent.ts "Make a 30s vertical highlight from talk.mp4 with bold captions"
  *
@@ -8,9 +8,9 @@
  * transcription and voice-over. Media paths in the prompt resolve against the current directory.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { EditorSession, executeTool, toAnthropicTools, toToolResultContent } from "../src/claude/index.js";
-import { OpenAITranscriber } from "../src/tools/transcript/index.js";
-import { OpenAITTS } from "../src/tools/voiceover/index.js";
+import { EditorSession, executeTool, toAnthropicTools, toToolResultContent } from "../engine/claude/index.js";
+import { OpenAITranscriber } from "../engine/tools/transcript/index.js";
+import { OpenAITTS } from "../engine/tools/voiceover/index.js";
 
 const SYSTEM = `You are a professional video editor working through editing tools.
 

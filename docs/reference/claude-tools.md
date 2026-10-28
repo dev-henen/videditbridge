@@ -2,7 +2,7 @@
 
 # Claude tools
 
-97 tools that Claude calls to edit a video. They are defined in [src/claude/tools.ts](../../src/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+97 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 

@@ -1,0 +1,18 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:VideoEditor.Shared"
+             xmlns:timeline="using:VideoEditor.Timeline"
+             x:Class="VideoEditor.Timeline.TimelineStrip">
+  <!-- Compact preview of the timeline by default; expand for every lane -->
+  <Border Background="{StaticResource Panel}" CornerRadius="8" Padding="4,3">
+    <DockPanel>
+      <Button x:Name="ExpandTimeline" DockPanel.Dock="Right" Click="OnToggleTimeline" ToolTip.Tip="Show all timeline lanes" AutomationProperties.Name="Show all timeline lanes"
+              VerticalAlignment="Top" MinHeight="22" MinWidth="24" Padding="4,2">
+        <TextBlock x:Name="ExpandIcon" Classes="icon" Text="{x:Static shared:Icons.ChevronUp}" FontSize="12"/>
+      </Button>
+      <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="160">
+        <timeline:TimelineView x:Name="View"/>
+      </ScrollViewer>
+    </DockPanel>
+  </Border>
+</UserControl>

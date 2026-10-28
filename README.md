@@ -8,13 +8,13 @@ An AI-native video editing library. The edit is a plain JSON document that Claud
 - **38 effects** (color grades, Ken Burns, punch-in zooms, shake, glitch, letterbox…), **46 transitions**, and **14 text animations**.
 - **14 components**: lower-thirds, title cards, CTAs, subscribe buttons, quotes, number badges, countdowns, end screens.
 - **Voice-over on your machine**: a local neural voice model (27 English voices) with measured word timings, so narration gets captions. No account or key.
-- **Desktop app**: a native app for Windows, macOS and Linux (app/VideoEditor) where you edit by asking Claude and watch every edit land, with the timeline, frames, preview video and review findings. Claude can also render frames and contact sheets to check its own work.
+- **Desktop app**: a native app for Windows, macOS and Linux (ui) where you edit by asking Claude and watch every edit land, with the timeline, frames, preview video and review findings. Claude can also render frames and contact sheets to check its own work.
 
 **Documentation:** [docs/](docs/README.md) has guides plus a reference for every Claude tool, template, effect, transition, animation, caption style and component.
 
 ## Desktop app
 
-`app/VideoEditor` is a native desktop app for Windows, macOS and Linux (C# / Avalonia UI, .NET 10). It opens projects stored in `projects/` and shows a live session view:
+`ui` is a native desktop app for Windows, macOS and Linux (C# / Avalonia UI, .NET 10). It opens projects stored in `projects/` and shows a live session view:
 
 - what is running now, with progress
 - an activity feed
@@ -23,27 +23,46 @@ An AI-native video editing library. The edit is a plain JSON document that Claud
 - an "Ask Claude" box (requires `ANTHROPIC_API_KEY` to be set)
 
 ```bash
-dotnet run --project app/VideoEditor          # pass a project folder to open it directly
+dotnet run --project ui          # pass a project folder to open it directly
 ```
 
-The app starts the engine host itself (`src/host`, JSON-RPC over stdio). In development it needs Node 20+ (found on PATH, in the usual Homebrew and nvm places, or through `AVE_NODE`) and this repository's `node_modules`. Video playback uses LibVLC: its libraries come with the app on Windows and macOS, and on Linux install VLC (`sudo apt install vlc`).
+The app starts the engine host itself (`engine/host`, JSON-RPC over stdio). In development it needs Node 20+ (found on PATH, in the usual Homebrew and nvm places, or through `AVE_NODE`) and this repository's `node_modules`. Video playback uses LibVLC: its libraries come with the app on Windows and macOS, and on Linux install VLC (`sudo apt install vlc`).
 
 ## Layout
 
+One folder per part, named for what it is: `engine/` (TypeScript), `native/` (Rust) and `ui/` (C#). Each owns its code and build:
+
 ```
-src/
-  core/        Project schema (zod), timeline math, pure edit operations, validation, summaries
-  library/     Catalogs: effects, transitions, animations, caption-styles, components, templates
-  tools/       transcript, captions, voiceover, render (FFmpeg), preview (live web UI)
-  claude/      EditorSession (state, undo/redo, events, live activities) + tool definitions for Claude
-  host/        Engine host for the desktop app: JSON-RPC over stdio, project storage, Claude agent loop
-  cli.ts       `ave` command line
-app/           Native desktop app (C# Avalonia: Windows, macOS, Linux)
-examples/      claude-agent.ts: Claude editing a video while you watch the preview
-test/          unit tests + real FFmpeg integration renders
+engine/              TypeScript: the editing engine (library, Claude tools, CLI, host for the app)
+  core/              Project schema (zod), timeline math, pure edit operations, validation, summaries
+  library/           Catalogs: effects (and masks), transitions, animations, caption styles, components, templates
+  tools/             render (FFmpeg), audio, vision, transcript, captions, voiceover, graphics, fonts, review
+    native/          Loader for the Rust addon (native/ave-native)
+  claude/            EditorSession (state, undo/redo, events, live activities) + tool definitions for Claude
+  host/              Engine host for the desktop app: JSON-RPC over stdio, project storage, Claude agent loop
+  cli.ts             `ave` command line
+native/              Rust: speed-critical code (Cargo workspace). ave-native, the CPU kernels as a Node addon. See native/README.md
+ui/                  C# (Avalonia): the desktop app for Windows, macOS and Linux, one folder per part of the screen
+  Shell/             The window and its layout, the top bar, the app state (MainViewModel)
+  Preview/           The preview screen: frames and video (LibVLC), live follow, scrubbing, pointing at a spot
+  Timeline/          The timeline strip
+  Session/           The side panel: activity, Claude's replies and offered choices, review, summary, history
+  Ask/               The box where people ask Claude, with the picked item and spot
+  Projects/          The projects screen
+  Engine/            JSON-RPC client that starts and talks to engine/host
+  Shared/            Icons and helpers
+  Assets/ Packaging/ Fonts and icons; per-system packaging (see ui/Packaging/README.md)
+test/                TypeScript tests, grouped like engine/
+  core/ library/ render/ audio/ vision/ transcript/ claude/ host/ native/
+  repo/              Repository-wide checks: generated docs are current, cross-platform rules
+  helpers/           Fixtures (synthetic media) and oracles (old TypeScript kernels kept for parity tests)
+assets/              fonts/ (bundled open fonts, shipped in the package), models/
+scripts/             gen-docs.ts (docs/reference), build-native.ts (npm run native)
+docs/                guides/ (hand-written), reference/ (generated), design/ (plans and their status)
+examples/            claude-agent.ts: Claude editing a video while you watch the preview
 ```
 
-Dependencies only point downward: `host → claude → tools → library → core`. `core` and `library` never import `tools` or `claude`.
+Dependencies only point downward: `host → claude → tools → library → core`. `core` and `library` never import `tools` or `claude`. Rust code is reached only through `engine/tools/native`.
 
 Every area can be imported on its own: `ai-video-editor/core`, `/library`, `/tools`, `/claude`.
 
@@ -51,6 +70,7 @@ Every area can be imported on its own: `ai-video-editor/core`, `/library`, `/too
 
 ```bash
 npm install          # includes ffmpeg-static as an optional dependency
+npm run native       # builds the Rust kernels (needs Rust; on Windows also the VS C++ tools and Windows SDK)
 npm test             # unit + integration tests (integration renders are skipped if FFmpeg is missing)
 FULL_RENDER=1 npm test   # also renders every template end-to-end
 npm run build
@@ -133,7 +153,7 @@ The tool layer has no dependency on the Anthropic SDK. The future connector (an 
 
 ## Previews
 
-The desktop app (app/VideoEditor) shows edits as they land: the timeline, frames, preview video, history and review findings. In code, `renderFrame`, `renderContactSheet` and `render` with `scale` give the same previews.
+The desktop app (ui) shows edits as they land: the timeline, frames, preview video, history and review findings. In code, `renderFrame`, `renderContactSheet` and `render` with `scale` give the same previews.
 
 Previews render the whole filter graph at reduced size. Text stays in full-size coordinates, so the layout matches the final render.
 

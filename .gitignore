@@ -5,5 +5,7 @@ coverage/
 *.log
 test/.output/
 projects/
-app/**/bin/
-app/**/obj/
+ui/**/bin/
+ui/**/obj/
+native/target/
+native/ave-native/*.node

@@ -4,7 +4,7 @@
 
 16 sound effects, synthesized by FFmpeg, so no audio files are needed. With Claude, use `add_sound_effect` with timeline times (`align: "end"` makes a sound finish at the time, for risers), or `beat_sync` with `sound` to add one on every beat. Each effect is rendered once to a WAV file in the session's output folder and added as an `sfx` audio clip.
 
-Definitions live in [src/library/sound-effects/index.ts](../../src/library/sound-effects/index.ts). Register your own with `registerSoundEffect`.
+Definitions live in [engine/library/sound-effects/index.ts](../../engine/library/sound-effects/index.ts). Register your own with `registerSoundEffect`.
 
 | id | Name | Category | Length | Params | Description |
 |---|---|---|---|---|---|
