@@ -21,6 +21,8 @@ export interface CompileOptions {
   scale?: number;
   /** Directory with extra .ttf/.otf fonts for text and captions. */
   fontsDir?: string;
+  /** Font families to use in place of missing ones (lowercase name to family, see prepareFonts). */
+  fontMap?: Record<string, string>;
   /** Only render this time range of the timeline. */
   range?: { start: number; end: number };
   /** Encoder preset override (e.g. "ultrafast" for previews). */
@@ -537,6 +539,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // Text, shapes & captions (ASS via libass)
   // -------------------------------------------------------------------------
   const ass = new AssDocument(project.settings.width, project.settings.height, 0);
+  ass.fontMap = opts.fontMap;
   project.layers.forEach((layer, i) => {
     if (layer.type === "text") addTextLayer(ass, layer, 10 + i, F);
     else if (layer.type === "shape") addShapeLayer(ass, layer, 10 + i, F);

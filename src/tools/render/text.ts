@@ -186,7 +186,7 @@ export function addShapeLayer(doc: AssDocument, layer: ShapeLayer, z: number, fp
   const color = parseColor(layer.color);
   const style = doc.addStyle(
     {
-      fontFamily: "Arial",
+      fontFamily: "Arimo",
       fontSize: 20,
       primaryColor: layer.color.slice(0, 7),
       secondaryColor: "#000000",

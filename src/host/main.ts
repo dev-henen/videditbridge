@@ -17,6 +17,7 @@ import { EditorSession } from "../claude/session.js";
 import { TOOLS, executeTool } from "../claude/tools.js";
 import { sessionState } from "../claude/state.js";
 import { renderFrame } from "../tools/render/render.js";
+import { checkFfmpeg, describeFfmpegCheck } from "../tools/render/selftest.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import type { AspectRatio } from "../core/util.js";
@@ -188,7 +189,21 @@ await mkdir(store.root, { recursive: true });
 await writeFile(infoFile, JSON.stringify({ port: remote.port, token, pid: process.pid }), "utf8");
 process.on("exit", () => rmSync(infoFile, { force: true }));
 
+// The app closes stdin to stop the host, but on macOS and Linux a signal can come first (the app
+// killed, the terminal closed, a service stopping): either way pending saves finish before exit.
+let stopping: Promise<never> | undefined;
+const stop = () =>
+  (stopping ??= (async () => {
+    remote.server.close();
+    await store.flush();
+    process.exit(0);
+  })());
+for (const signal of ["SIGTERM", "SIGHUP", "SIGINT"] as const) process.on(signal, () => void stop());
+
+// FFmpeg builds differ per platform; say early (on stderr, the host log) when this one lacks something.
+void checkFfmpeg()
+  .then((c) => !c.ok && console.error(describeFfmpegCheck(c)))
+  .catch((e: Error) => console.error(`FFmpeg check failed: ${e.message}`));
+
 await rpc.start();
-remote.server.close();
-await store.flush();
-process.exit(0);
+await stop();

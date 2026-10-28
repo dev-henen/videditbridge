@@ -54,7 +54,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 20-60s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
-- **Look:** captions `bold-pop`, transition hard cut, grade `vibrant`, fonts Arial Black / Arial
+- **Look:** captions `bold-pop`, transition hard cut, grade `vibrant`, fonts Archivo Black / Arimo
 - **Tags:** talking head, tiktok, reels, shorts, hormozi, captions
 - **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.4s from main
 
@@ -82,7 +82,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 30-90s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts, LinkedIn
-- **Look:** captions `karaoke`, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions `karaoke`, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** podcast, interview, clip, repurpose
 - **Automatic in apply_template:** transcribes main; removes fillers, pauses over 0.8s from main
 
@@ -108,7 +108,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 15-45s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
-- **Look:** captions none, transition `slideup`, grade `vibrant`, fonts Arial Black / Arial
+- **Look:** captions none, transition `slideup`, grade `vibrant`, fonts Archivo Black / Arimo
 - **Tags:** list, top 5, ranking, countdown, tips
 - **Automatic in apply_template:** speaks each items item's narration as that scene's narration (the scene lasts as long as the line); adds a sound to each transition
 
@@ -135,7 +135,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 5-10s
 - **Platforms:** Instagram, TikTok, LinkedIn, X
-- **Look:** captions none, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions none, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** quote, motivation, text only, testimonial
 
 **Editing guidance:** Keep the quote under ~25 words; split long quotes into two cards. Pair calm music. 6-8s gives time to read.
@@ -159,7 +159,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 6-15s
 - **Platforms:** TikTok, Instagram Reels
-- **Look:** captions none, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions none, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** transformation, makeover, renovation, fitness, editing
 
 **Editing guidance:** Hold the BEFORE long enough to register (2-3s), then reveal. Match framing between before and after shots if possible.
@@ -184,7 +184,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 10-30s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
-- **Look:** captions none, transition `fadeblack`, grade `moody` + `grain` + `vignette`, fonts Impact / Arial
+- **Look:** captions none, transition `fadeblack`, grade `moody` + `grain` + `vignette`, fonts Anton / Arimo
 - **Tags:** motivation, quotes, mindset, fitness, b-roll
 - **Automatic in apply_template:** speaks script with the local voice when voiceover is not given; puts cuts on the downbeats
 
@@ -209,7 +209,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 20-60s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts, X
-- **Look:** captions `boxed`, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions `boxed`, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** news, update, explainer, current events
 - **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.5s from main
 
@@ -233,7 +233,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 1:1 at 30fps, ideally 30-90s
 - **Platforms:** Instagram, LinkedIn, X, YouTube
-- **Look:** captions `karaoke`, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions `karaoke`, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** podcast, audiogram, audio, repurpose
 - **Automatic in apply_template:** transcribes audio
 
@@ -259,7 +259,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 10-60s
 - **Platforms:** Instagram Reels, TikTok, Facebook
-- **Look:** captions none, transition `fade`, grade `warm` + `vignette`, fonts Georgia / Georgia
+- **Look:** captions none, transition `fade`, grade `warm` + `vignette`, fonts Gelasio / Gelasio
 - **Tags:** slideshow, photos, memories, travel, story
 - **Automatic in apply_template:** puts cuts on the beat (every 2)
 
@@ -284,7 +284,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 15-60s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
-- **Look:** captions none, transition hard cut, grade `bright`, fonts Arial Black / Arial
+- **Look:** captions none, transition hard cut, grade `bright`, fonts Archivo Black / Arimo
 - **Tags:** vlog, montage, routine, lifestyle
 - **Automatic in apply_template:** puts cuts on the beat
 
@@ -308,7 +308,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 60-240s
 - **Platforms:** Instagram, Facebook, YouTube, Private
-- **Look:** captions none, transition `fadewhite`, grade `faded` + `warm`, fonts Georgia / Georgia
+- **Look:** captions none, transition `fadewhite`, grade `faded` + `warm`, fonts Gelasio / Gelasio
 - **Tags:** wedding, anniversary, memories, family, romantic
 - **Automatic in apply_template:** puts cuts on the downbeats (every 2)
 
@@ -334,7 +334,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 20-90s
 - **Platforms:** YouTube, Instagram, TikTok
-- **Look:** captions none, transition `smoothleft`, grade `tealOrange`, fonts Arial Black / Arial
+- **Look:** captions none, transition `smoothleft`, grade `tealOrange`, fonts Archivo Black / Arimo
 - **Tags:** travel, vlog, cinematic, destination, adventure
 - **Automatic in apply_template:** puts cuts on the downbeats; adds a sound to each transition
 
@@ -360,7 +360,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 10-40s
 - **Platforms:** WhatsApp, Instagram, Private
-- **Look:** captions none, transition `circleopen`, grade none, fonts Arial Black / Arial
+- **Look:** captions none, transition `circleopen`, grade none, fonts Archivo Black / Arimo
 - **Tags:** birthday, celebration, greeting, party, family
 - **Automatic in apply_template:** puts cuts on the beat; adds a sound to each transition
 
@@ -389,7 +389,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 15-30s
 - **Platforms:** TikTok, Instagram Reels, Facebook Ads
-- **Look:** captions none, transition `whip`, grade `vibrant`, fonts Arial Black / Arial
+- **Look:** captions none, transition `whip`, grade `vibrant`, fonts Archivo Black / Arimo
 - **Tags:** ecommerce, product, ad, ugc, shop
 - **Automatic in apply_template:** adds a sound to each transition
 
@@ -418,7 +418,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 8-30s
 - **Platforms:** Everywhere
-- **Look:** captions none, transition `slideup`, grade none, fonts Arial Black / Arial
+- **Look:** captions none, transition `slideup`, grade none, fonts Archivo Black / Arimo
 - **Tags:** text, typography, lyric, announcement, no footage
 - **Automatic in apply_template:** speaks script with the local voice when voiceover is not given; puts cuts on the beat
 
@@ -443,7 +443,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 30-120s
 - **Platforms:** YouTube, Social
-- **Look:** captions none, transition `fadeblack`, grade `tealOrange` + `letterbox`, fonts Georgia / Arial
+- **Look:** captions none, transition `fadeblack`, grade `tealOrange` + `letterbox`, fonts Gelasio / Arimo
 - **Tags:** trailer, teaser, cinematic, dramatic, launch
 - **Automatic in apply_template:** puts cuts on the downbeats
 
@@ -469,7 +469,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 1:1 at 30fps, ideally 6-15s
 - **Platforms:** LinkedIn, Instagram, X
-- **Look:** captions none, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions none, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** announcement, launch, hiring, sale, milestone, no footage
 
 **Editing guidance:** One message. Headline ≤6 words; details one sentence; CTA a verb.
@@ -498,7 +498,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 15-60s
 - **Platforms:** TikTok, YouTube Shorts
-- **Look:** captions `green-highlight`, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions `green-highlight`, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** reaction, duet, split screen, commentary
 - **Automatic in apply_template:** transcribes reaction; removes fillers, pauses over 0.8s from reaction
 
@@ -517,11 +517,11 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 ### meme
 
-**Meme**: Classic Impact top/bottom text over a clip or image.
+**Meme**: Classic meme: heavy condensed top and bottom text (Anton, the Impact look) over a clip or image.
 
 - **Format:** 1:1 at 30fps, ideally 3-15s
 - **Platforms:** Everywhere
-- **Look:** captions none, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions none, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** meme, funny, impact
 
 **Editing guidance:** Setup on top, punchline on the bottom. All caps. Short.
@@ -544,7 +544,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 15-60s
 - **Platforms:** TikTok, YouTube Shorts, Twitch
-- **Look:** captions `word-by-word`, transition `glitch`, grade `vibrant`, fonts Impact / Arial
+- **Look:** captions `word-by-word`, transition `glitch`, grade `vibrant`, fonts Anton / Arimo
 - **Tags:** gaming, highlights, montage, clips, esports
 - **Automatic in apply_template:** puts cuts on the beat; adds a sound to each transition
 
@@ -571,7 +571,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 20-60s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
-- **Look:** captions none, transition `slideleft`, grade `adjust`, fonts Arial Black / Arial
+- **Look:** captions none, transition `slideleft`, grade `adjust`, fonts Archivo Black / Arimo
 - **Tags:** fitness, workout, gym, routine, exercise
 - **Automatic in apply_template:** puts cuts on the downbeats; adds a sound to each transition
 
@@ -596,7 +596,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 9:16 at 30fps, ideally 20-60s
 - **Platforms:** TikTok, Instagram Reels, YouTube Shorts
-- **Look:** captions none, transition `fade`, grade `warm`, fonts Arial Black / Arial
+- **Look:** captions none, transition `fade`, grade `warm`, fonts Archivo Black / Arimo
 - **Tags:** recipe, cooking, food, how-to, steps
 - **Automatic in apply_template:** speaks each steps item's narration as that scene's narration (the scene lasts as long as the line)
 
@@ -623,7 +623,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 120-900s
 - **Platforms:** YouTube
-- **Look:** captions `subtle-highlight`, transition `fade`, grade none, fonts Arial Black / Arial
+- **Look:** captions `subtle-highlight`, transition `fade`, grade none, fonts Archivo Black / Arimo
 - **Tags:** tutorial, how-to, screen recording, course, explainer
 - **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.8s from main
 
@@ -651,7 +651,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 60-900s
 - **Platforms:** YouTube, LMS, LinkedIn Learning
-- **Look:** captions `boxed`, transition `fade`, grade none, fonts Arial Black / Arial
+- **Look:** captions `boxed`, transition `fade`, grade none, fonts Archivo Black / Arimo
 - **Tags:** course, lesson, slides, presentation, e-learning
 - **Automatic in apply_template:** speaks each slides item's narration as that scene's narration (the scene lasts as long as the line); transcribes voiceover
 
@@ -679,7 +679,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 3-7s
 - **Platforms:** YouTube
-- **Look:** captions none, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions none, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** intro, channel, branding, opener
 
 **Editing guidance:** Short and on-brand; under 5s. Title = channel name, subtitle = tagline.
@@ -703,7 +703,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 180-1200s
 - **Platforms:** YouTube
-- **Look:** captions `cinematic`, transition `fadeblack`, grade `cinematic`, fonts Georgia / Georgia
+- **Look:** captions `cinematic`, transition `fadeblack`, grade `cinematic`, fonts Gelasio / Gelasio
 - **Tags:** essay, explainer, documentary, narration, chapters
 - **Automatic in apply_template:** speaks each sections item's narration as that scene's narration (the scene lasts as long as the line); transcribes voiceover
 
@@ -729,7 +729,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 120-1800s
 - **Platforms:** YouTube, Vimeo, Film festivals
-- **Look:** captions `cinematic`, transition `fade`, grade `tealOrange` + `grain` + `letterbox`, fonts Georgia / Georgia
+- **Look:** captions `cinematic`, transition `fade`, grade `tealOrange` + `grain` + `letterbox`, fonts Gelasio / Gelasio
 - **Tags:** documentary, cinematic, film, interview, story
 
 **Editing guidance:** Let shots breathe (5-10s). Alternate interview and b-roll. Introduce each interviewee once with a lower third. Use silence and music for emotional beats.
@@ -753,7 +753,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 60-1800s
 - **Platforms:** YouTube, LinkedIn
-- **Look:** captions `classic`, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions `classic`, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** interview, q&a, conversation
 - **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.8s from main
 
@@ -780,7 +780,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 4:5 at 30fps, ideally 20-60s
 - **Platforms:** LinkedIn, Website, Instagram
-- **Look:** captions `boxed-highlight`, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions `boxed-highlight`, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** testimonial, review, case study, social proof
 - **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.6s from main
 
@@ -807,7 +807,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 30-180s
 - **Platforms:** Website, YouTube, Product Hunt, LinkedIn
-- **Look:** captions `subtle-highlight`, transition `fade`, grade none, fonts Arial Black / Arial
+- **Look:** captions `subtle-highlight`, transition `fade`, grade none, fonts Archivo Black / Arimo
 - **Tags:** saas, demo, walkthrough, screen recording, launch
 - **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 1s from main
 
@@ -836,7 +836,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 30-90s
 - **Platforms:** Instagram, Facebook, YouTube, MLS
-- **Look:** captions none, transition `fade`, grade `bright`, fonts Georgia / Arial
+- **Look:** captions none, transition `fade`, grade `bright`, fonts Gelasio / Arimo
 - **Tags:** real estate, property, listing, tour, home
 - **Automatic in apply_template:** speaks each rooms item's narration as that scene's narration (the scene lasts as long as the line)
 
@@ -865,7 +865,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 16:9 at 30fps, ideally 30-120s
 - **Platforms:** Instagram, LinkedIn, YouTube
-- **Look:** captions none, transition `zoomin`, grade `vibrant`, fonts Arial Black / Arial
+- **Look:** captions none, transition `zoomin`, grade `vibrant`, fonts Archivo Black / Arimo
 - **Tags:** event, conference, recap, highlights, aftermovie
 - **Automatic in apply_template:** puts cuts on the beat; adds a sound to each transition
 
@@ -892,7 +892,7 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 - **Format:** 1:1 at 30fps, ideally 30-90s
 - **Platforms:** LinkedIn
-- **Look:** captions `boxed-highlight`, transition hard cut, grade none, fonts Arial Black / Arial
+- **Look:** captions `boxed-highlight`, transition hard cut, grade none, fonts Archivo Black / Arimo
 - **Tags:** linkedin, talking head, b2b, founder, professional
 - **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.6s from main
 

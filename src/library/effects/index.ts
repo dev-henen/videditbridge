@@ -608,9 +608,15 @@ function rgbToHue(r: number, g: number, b: number): number {
   return clamp(((h * 60) + 360) % 360, 0, 359);
 }
 
-/** Escape a filesystem path for use inside a single-quoted FFmpeg filter argument. */
-export function escapeFilterPath(p: string): string {
-  return p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "'\\''");
+/**
+ * Escape a filesystem path for use inside a single-quoted FFmpeg filter argument. FFmpeg reads it
+ * twice: the option level treats \ ' and : as special (so each gets a backslash), then the graph
+ * level reads everything inside '...' literally except ' itself (written '\''). Backslashes are
+ * folder separators only on Windows; on macOS and Linux they, like : and ', are legal in names.
+ */
+export function escapeFilterPath(p: string, platform: NodeJS.Platform = process.platform): string {
+  const file = platform === "win32" ? p.replace(/\\/g, "/") : p;
+  return file.replace(/[\\':]/g, (c) => `\\${c}`).replace(/'/g, "'\\''");
 }
 
 /**

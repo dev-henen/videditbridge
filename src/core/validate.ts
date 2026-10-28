@@ -1,4 +1,7 @@
+import { existsSync, readdirSync } from "node:fs";
+import path from "node:path";
 import type { Effect, Project } from "./schema.js";
+import { isAbsolutePath, isUrl } from "./util.js";
 import { ProjectSchema } from "./schema.js";
 import { getEffect } from "../library/effects/index.js";
 import { getAudioEffect } from "../library/audio-effects/index.js";
@@ -18,8 +21,11 @@ export interface ValidationResult {
   issues: ValidationIssue[];
 }
 
-/** Check a project for problems an AI (or human) should fix before rendering. */
-export function validateProject(input: unknown): ValidationResult {
+/**
+ * Check a project for problems an AI (or human) should fix before rendering. With `baseDir` (the
+ * folder relative paths resolve against), media files are also checked on disk, with exact case.
+ */
+export function validateProject(input: unknown, opts: { baseDir?: string } = {}): ValidationResult {
   const issues: ValidationIssue[] = [];
   const err = (path: string, message: string) => issues.push({ level: "error", path, message });
   const warn = (path: string, message: string) => issues.push({ level: "warning", path, message });
@@ -135,5 +141,42 @@ export function validateProject(input: unknown): ValidationResult {
       else throw e;
     }
   }
+
+  // File paths that only work on this computer or this system.
+  p.assets.forEach((a, i) => {
+    if (!("src" in a) || isUrl(a.src)) return;
+    const at = `assets.${i}.src`;
+    if (a.src.includes("\\")) warn(at, `"${a.src}" uses backslashes, which only Windows reads as folder separators; use "/"`);
+    if (isAbsolutePath(a.src)) warn(at, `"${a.src}" is an absolute path, so the project breaks when it is moved or opened on another computer; keep media inside the project folder`);
+    if (!opts.baseDir) return;
+    const file = path.resolve(opts.baseDir, a.src.replace(/\\/g, "/"));
+    const onDisk = fileOnDisk(file);
+    if (!onDisk) err(at, `File not found: ${a.src}`);
+    else if (onDisk !== file)
+      warn(at, `"${a.src}" is named "${path.relative(opts.baseDir, onDisk).replace(/\\/g, "/")}" on disk: only the case differs, which works on Windows and macOS but not on Linux`);
+  });
   return { ok: !issues.some((i) => i.level === "error"), issues };
+}
+
+/**
+ * A file's path with every part spelled as it is on disk, or undefined when it does not exist.
+ * Differs from `file` only in letter case, on systems that ignore case (Windows, macOS).
+ */
+export function fileOnDisk(file: string): string | undefined {
+  const full = path.resolve(file);
+  const { root } = path.parse(full);
+  let at = root;
+  for (const part of full.slice(root.length).split(path.sep).filter(Boolean)) {
+    let names: string[];
+    try {
+      names = readdirSync(at);
+    } catch {
+      // A folder that cannot be listed: trust the path as given.
+      return existsSync(full) ? full : undefined;
+    }
+    const name = names.includes(part) ? part : names.find((n) => n.toLowerCase() === part.toLowerCase());
+    if (name === undefined) return undefined;
+    at = path.join(at, name);
+  }
+  return existsSync(at) ? at : undefined;
 }

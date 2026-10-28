@@ -24,7 +24,7 @@ import { clipAtTime, computeTimeline, getAsset, sourceToTimeline, timelineToSour
 import { numberAt, positionAt } from "./keyframes.js";
 import { getEffect } from "../library/effects/index.js";
 import { mergeRanges, type TimeRange } from "./ranges.js";
-import { ASPECT_RATIOS, deepClone, dimensionsFor, newId, round3, type AspectRatio } from "./util.js";
+import { ASPECT_RATIOS, deepClone, dimensionsFor, newId, round3, toProjectPath, type AspectRatio } from "./util.js";
 import type { z } from "zod";
 
 /**
@@ -72,6 +72,18 @@ export function addAsset(p: Project, asset: z.input<typeof AssetSchema>): Projec
   const parsed = AssetSchema.parse(asset);
   if (p.assets.some((a) => a.id === parsed.id)) throw new EditError(`Asset id "${parsed.id}" already exists`);
   return edit(p, (d) => void d.assets.push(parsed));
+}
+
+/**
+ * Asset files as project paths (see toProjectPath): relative to the project folder `dir`, with
+ * forward slashes. Returns the same project when nothing changes.
+ */
+export function withProjectPaths(p: Project, dir: string): Project {
+  const moved = p.assets.some((a) => "src" in a && toProjectPath(a.src, dir) !== a.src);
+  if (!moved) return p;
+  return edit(p, (d) => {
+    for (const a of d.assets) if ("src" in a) a.src = toProjectPath(a.src, dir);
+  });
 }
 
 /** Add or update an asset (by id). */

@@ -4,7 +4,7 @@ Text-to-speech narration that comes with word timings, so voice-overs can be cap
 
 ## The local voice (default)
 
-`LocalTTS` runs the open-weight Kokoro-82M voice model on this machine with ONNX Runtime (through the `kokoro-js` package). The model downloads once (about 90 MB) to `~/.cache/ai-video-editor/models` (or `$AVE_MODELS_DIR`), then works offline. On a laptop CPU, a 7 s line took about 9 s to generate.
+`LocalTTS` runs the open-weight Kokoro-82M voice model on this machine with ONNX Runtime (through the `kokoro-js` package). The model downloads once (about 90 MB) to the models folder (or `$AVE_MODELS_DIR`), then works offline. On a laptop CPU, a 7 s line took about 9 s to generate.
 
 Long scripts are spoken sentence by sentence and joined with short breaths. Word timings come from transcribing the result with the local Whisper model, so they match the audio rather than being estimated.
 

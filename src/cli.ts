@@ -8,6 +8,7 @@ import { summarizeProject } from "./core/summary.js";
 import { describeTemplate, getTemplate, listTemplates } from "./library/templates/index.js";
 import { exportCaptions, type CaptionExportFormat } from "./tools/captions/build.js";
 import { probe } from "./tools/render/ffmpeg.js";
+import { checkFfmpeg, describeFfmpegCheck } from "./tools/render/selftest.js";
 import { render, renderContactSheet, renderFrame } from "./tools/render/render.js";
 import { EditorSession } from "./claude/session.js";
 import { toAnthropicTools } from "./claude/tools.js";
@@ -24,6 +25,7 @@ Usage:
   ave sheet <project.json> <out.png>       Render a contact sheet [--columns 4 --rows 3]
   ave captions <project.json> <out.srt|vtt|ass>  Export captions
   ave probe <media>                        Inspect a media file
+  ave check                                Check that this FFmpeg build has every filter and codec the renderer uses
   ave tools                                Print Claude tool definitions (JSON)
   ave remote <method> [json]               Call the running desktop app, e.g. ave remote tools.execute {"name":"get_project"}
 
@@ -76,7 +78,7 @@ async function main(argv: string[]): Promise<number> {
     }
     case "validate": {
       const raw = JSON.parse(await readFile(args[0]!, "utf8"));
-      const r = validateProject(raw);
+      const r = validateProject(raw, { baseDir: path.dirname(path.resolve(args[0]!)) });
       for (const i of r.issues) console.log(`${i.level === "error" ? "Error" : "Warning"}: ${i.path}: ${i.message}`);
       console.log(r.ok ? "Valid" : "Invalid");
       return r.ok ? 0 : 1;
@@ -126,6 +128,11 @@ async function main(argv: string[]): Promise<number> {
       await writeFile(out, exportCaptions(project, format), "utf8");
       console.log(`Done: ${out}`);
       return 0;
+    }
+    case "check": {
+      const c = await checkFfmpeg();
+      console.log(describeFfmpegCheck(c));
+      return c.ok ? 0 : 1;
     }
     case "probe": {
       console.log(JSON.stringify(await probe(args[0]!), null, 2));

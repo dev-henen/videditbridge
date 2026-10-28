@@ -33,7 +33,8 @@
     "ave-host": "./dist/host/main.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "fonts"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

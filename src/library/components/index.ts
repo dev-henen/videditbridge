@@ -51,7 +51,7 @@ export const COMPONENTS: ComponentDefinition[] = [
       title: z.string().default("").describe("Secondary line, e.g. role or company"),
       accentColor: color("#6C47FF"),
       textColor: color("#FFFFFF"),
-      fontFamily: z.string().default("Arial"),
+      fontFamily: z.string().default("Arimo"),
     }),
     build: (p, ctx) => {
       const y = 0.8;
@@ -76,7 +76,7 @@ export const COMPONENTS: ComponentDefinition[] = [
       subtitle: z.string().default(""),
       color: color("#FFFFFF"),
       subtitleColor: color("#CCCCCC"),
-      fontFamily: z.string().default("Arial Black"),
+      fontFamily: z.string().default("Archivo Black"),
       animation: z.string().default("pop").describe("Animation id for the title"),
       y: z.number().default(0.45),
     }),
@@ -85,7 +85,7 @@ export const COMPONENTS: ComponentDefinition[] = [
         { type: "text", id: "title", start: 0, duration: ctx.duration, text: p.title, position: { x: 0.5, y: p.y }, style: { fontFamily: p.fontFamily, fontSize: px(ctx, 104), color: p.color, outlineWidth: 0, shadow: 3 }, animationIn: anim(p.animation, 0.5), animationOut: anim("fade", 0.3) },
       ];
       if (p.subtitle)
-        layers.push({ type: "text", id: "subtitle", start: 0.35, duration: ctx.duration - 0.35, text: p.subtitle, position: { x: 0.5, y: p.y + 0.09 }, style: { fontFamily: "Arial", fontSize: px(ctx, 48), color: p.subtitleColor, bold: false, outlineWidth: 0, shadow: 2 }, animationIn: anim("slide-up"), animationOut: anim("fade", 0.3) });
+        layers.push({ type: "text", id: "subtitle", start: 0.35, duration: ctx.duration - 0.35, text: p.subtitle, position: { x: 0.5, y: p.y + 0.09 }, style: { fontFamily: "Arimo", fontSize: px(ctx, 48), color: p.subtitleColor, bold: false, outlineWidth: 0, shadow: 2 }, animationIn: anim("slide-up"), animationOut: anim("fade", 0.3) });
       return layers;
     },
   }),
@@ -112,8 +112,8 @@ export const COMPONENTS: ComponentDefinition[] = [
         text: p.text,
         position: { x: 0.5, y: p.y },
         style: p.boxed
-          ? { fontFamily: "Arial Black", fontSize: px(ctx, 68), color: p.textOnHighlight, background: p.highlight, uppercase: true, outlineWidth: px(ctx, 16) }
-          : { fontFamily: "Arial Black", fontSize: px(ctx, 80), color: p.color, uppercase: true, outlineWidth: px(ctx, 6) },
+          ? { fontFamily: "Archivo Black", fontSize: px(ctx, 68), color: p.textOnHighlight, background: p.highlight, uppercase: true, outlineWidth: px(ctx, 16) }
+          : { fontFamily: "Archivo Black", fontSize: px(ctx, 80), color: p.color, uppercase: true, outlineWidth: px(ctx, 6) },
         animationIn: anim("pop", 0.35),
         animationOut: anim("fade", 0.25),
       },
@@ -139,7 +139,7 @@ export const COMPONENTS: ComponentDefinition[] = [
         duration: ctx.duration,
         text: p.text,
         position: { x: 0.5, y: p.y },
-        style: { fontFamily: "Arial Black", fontSize: px(ctx, 56), color: p.textColor, background: p.buttonColor, outlineWidth: px(ctx, 22) },
+        style: { fontFamily: "Archivo Black", fontSize: px(ctx, 56), color: p.textColor, background: p.buttonColor, outlineWidth: px(ctx, 22) },
         animationIn: anim("pop", 0.4),
         animationOut: anim("zoom", 0.3),
       },
@@ -160,7 +160,7 @@ export const COMPONENTS: ComponentDefinition[] = [
         duration: ctx.duration,
         text: p.text,
         position: { x: p.x, y: p.y },
-        style: { fontFamily: "Arial Black", fontSize: px(ctx, 50), color: "#FFFFFF", background: "#FF0000", outlineWidth: px(ctx, 18) },
+        style: { fontFamily: "Archivo Black", fontSize: px(ctx, 50), color: "#FFFFFF", background: "#FF0000", outlineWidth: px(ctx, 18) },
         animationIn: anim("pop", 0.4),
         animationOut: anim("pop", 0.3),
       },
@@ -234,7 +234,7 @@ export const COMPONENTS: ComponentDefinition[] = [
       author: z.string().default(""),
       color: color("#FFFFFF"),
       accentColor: color("#FFD54A"),
-      fontFamily: z.string().default("Georgia"),
+      fontFamily: z.string().default("Gelasio"),
     }),
     build: (p, ctx) => {
       const layers: ComponentLayer[] = [
@@ -242,7 +242,7 @@ export const COMPONENTS: ComponentDefinition[] = [
         { type: "text", id: "quote", start: 0.2, duration: ctx.duration - 0.2, text: p.quote, position: { x: 0.5, y: 0.47 }, style: { fontFamily: p.fontFamily, fontSize: px(ctx, 62), color: p.color, bold: false, italic: true, outlineWidth: 0, shadow: 2 }, animationIn: anim("blur", 0.8), animationOut: anim("fade") },
       ];
       if (p.author)
-        layers.push({ type: "text", id: "author", start: 0.8, duration: ctx.duration - 0.8, text: p.author, position: { x: 0.5, y: 0.66 }, style: { fontFamily: "Arial", fontSize: px(ctx, 40), color: p.accentColor, outlineWidth: 0 }, animationIn: anim("fade", 0.5), animationOut: anim("fade") });
+        layers.push({ type: "text", id: "author", start: 0.8, duration: ctx.duration - 0.8, text: p.author, position: { x: 0.5, y: 0.66 }, style: { fontFamily: "Arimo", fontSize: px(ctx, 40), color: p.accentColor, outlineWidth: 0 }, animationIn: anim("fade", 0.5), animationOut: anim("fade") });
       return layers;
     },
   }),
@@ -262,10 +262,10 @@ export const COMPONENTS: ComponentDefinition[] = [
     }),
     build: (p, ctx) => {
       const layers: ComponentLayer[] = [
-        { type: "text", id: "number", start: 0, duration: ctx.duration, text: `#${p.number}`, position: { x: 0.5, y: p.y }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 96), color: p.numberColor, background: p.badgeColor, outlineWidth: px(ctx, 18) }, animationIn: anim("pop", 0.35), animationOut: anim("fade", 0.25) },
+        { type: "text", id: "number", start: 0, duration: ctx.duration, text: `#${p.number}`, position: { x: 0.5, y: p.y }, style: { fontFamily: "Archivo Black", fontSize: px(ctx, 96), color: p.numberColor, background: p.badgeColor, outlineWidth: px(ctx, 18) }, animationIn: anim("pop", 0.35), animationOut: anim("fade", 0.25) },
       ];
       if (p.label)
-        layers.push({ type: "text", id: "label", start: 0.2, duration: ctx.duration - 0.2, text: p.label, position: { x: 0.5, y: p.y + 0.1 }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 60), color: p.labelColor, uppercase: true, outlineWidth: px(ctx, 5) }, animationIn: anim("slide-up"), animationOut: anim("fade", 0.25) });
+        layers.push({ type: "text", id: "label", start: 0.2, duration: ctx.duration - 0.2, text: p.label, position: { x: 0.5, y: p.y + 0.1 }, style: { fontFamily: "Archivo Black", fontSize: px(ctx, 60), color: p.labelColor, uppercase: true, outlineWidth: px(ctx, 5) }, animationIn: anim("slide-up"), animationOut: anim("fade", 0.25) });
       return layers;
     },
   }),
@@ -278,10 +278,10 @@ export const COMPONENTS: ComponentDefinition[] = [
     params: z.object({ kicker: z.string().default(""), heading: z.string(), accentColor: color("#6C47FF"), color: color("#FFFFFF") }),
     build: (p, ctx) => {
       const layers: ComponentLayer[] = [
-        { type: "text", id: "heading", start: 0.15, duration: ctx.duration - 0.15, text: p.heading, position: { x: 0.5, y: 0.5 }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 84), color: p.color, outlineWidth: 0, shadow: 3 }, animationIn: anim("wipe", 0.6), animationOut: anim("fade") },
+        { type: "text", id: "heading", start: 0.15, duration: ctx.duration - 0.15, text: p.heading, position: { x: 0.5, y: 0.5 }, style: { fontFamily: "Archivo Black", fontSize: px(ctx, 84), color: p.color, outlineWidth: 0, shadow: 3 }, animationIn: anim("wipe", 0.6), animationOut: anim("fade") },
       ];
       if (p.kicker)
-        layers.unshift({ type: "text", id: "kicker", start: 0, duration: ctx.duration, text: p.kicker, position: { x: 0.5, y: 0.42 }, style: { fontFamily: "Arial", fontSize: px(ctx, 36), color: p.accentColor, bold: true, uppercase: true, outlineWidth: 0, letterSpacing: 6 }, animationIn: anim("fade"), animationOut: anim("fade") });
+        layers.unshift({ type: "text", id: "kicker", start: 0, duration: ctx.duration, text: p.kicker, position: { x: 0.5, y: 0.42 }, style: { fontFamily: "Arimo", fontSize: px(ctx, 36), color: p.accentColor, bold: true, uppercase: true, outlineWidth: 0, letterSpacing: 6 }, animationIn: anim("fade"), animationOut: anim("fade") });
       return layers;
     },
   }),
@@ -289,11 +289,11 @@ export const COMPONENTS: ComponentDefinition[] = [
     id: "meme-text",
     name: "Meme Text",
     category: "social",
-    description: "Classic Impact top/bottom meme captions.",
+    description: "Classic meme captions: heavy condensed white top and bottom text (Anton, the Impact look).",
     defaultDuration: 4,
     params: z.object({ top: z.string().default(""), bottom: z.string().default("") }),
     build: (p, ctx) => {
-      const style = { fontFamily: "Impact", fontSize: px(ctx, 96), color: "#FFFFFF", bold: false, uppercase: true, outlineWidth: px(ctx, 6) };
+      const style = { fontFamily: "Anton", fontSize: px(ctx, 96), color: "#FFFFFF", bold: false, uppercase: true, outlineWidth: px(ctx, 6) };
       const layers: ComponentLayer[] = [];
       if (p.top) layers.push({ type: "text", id: "top", start: 0, duration: ctx.duration, text: p.top, position: { x: 0.5, y: 0.1 }, style });
       if (p.bottom) layers.push({ type: "text", id: "bottom", start: 0, duration: ctx.duration, text: p.bottom, position: { x: 0.5, y: 0.9 }, style });
@@ -318,7 +318,7 @@ export const COMPONENTS: ComponentDefinition[] = [
         duration: round3(each),
         text: s,
         position: { x: 0.5, y: 0.5 },
-        style: { fontFamily: "Arial Black", fontSize: px(ctx, s.length > 2 ? 110 : 260), color: p.color, outlineWidth: px(ctx, 8) },
+        style: { fontFamily: "Archivo Black", fontSize: px(ctx, s.length > 2 ? 110 : 260), color: p.color, outlineWidth: px(ctx, 8) },
         animationIn: anim("pop", Math.min(0.3, each / 2)),
       }));
     },
@@ -346,7 +346,7 @@ export const COMPONENTS: ComponentDefinition[] = [
         duration: ctx.duration,
         text: p.text,
         position: { x: p.x, y: p.y },
-        style: { fontFamily: "Arial", fontSize: px(ctx, p.size), color: p.color, background: p.background, outlineWidth: px(ctx, 12) },
+        style: { fontFamily: "Arimo", fontSize: px(ctx, p.size), color: p.color, background: p.background, outlineWidth: px(ctx, 12) },
         animationIn: anim(p.animation, 0.3),
         animationOut: anim("fade", 0.25),
       },
@@ -380,9 +380,9 @@ export const COMPONENTS: ComponentDefinition[] = [
         const side = 0.62 * Math.min(ctx.width, ctx.height);
         layers.push({ type: "shape", id: "motif", shape: "roundedRect", start: grow * 0.7, duration: ctx.duration - grow * 0.7, position: { x: 0.5, y: 0.5 }, size: { width: side / ctx.width, height: side / ctx.height }, radius: side * 0.22, fill: false, strokeWidth: px(ctx, 34), strokeColor: "#FFFFFF2E", color: p.color, animationIn: anim("zoom", 0.5), animationOut: out });
       }
-      layers.push({ type: "text", id: "title", start: grow * 0.8, duration: ctx.duration - grow * 0.8, text: p.title, position: { x: 0.5, y: p.subtitle ? 0.47 : 0.5 }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 120), color: p.textColor, italic: true, uppercase: true, outlineWidth: 0, shadow: px(ctx, 4), shadowColor: "#00000040" }, animationIn: anim("wipe", 0.45), animationOut: out });
+      layers.push({ type: "text", id: "title", start: grow * 0.8, duration: ctx.duration - grow * 0.8, text: p.title, position: { x: 0.5, y: p.subtitle ? 0.47 : 0.5 }, style: { fontFamily: "Archivo Black", fontSize: px(ctx, 120), color: p.textColor, italic: true, uppercase: true, outlineWidth: 0, shadow: px(ctx, 4), shadowColor: "#00000040" }, animationIn: anim("wipe", 0.45), animationOut: out });
       if (p.subtitle)
-        layers.push({ type: "text", id: "subtitle", start: grow + 0.15, duration: ctx.duration - grow - 0.15, text: p.subtitle, position: { x: 0.5, y: 0.58 }, style: { fontFamily: "Arial", bold: true, fontSize: px(ctx, 44), color: p.textColor, outlineWidth: 0 }, animationIn: anim("slide-up", 0.35), animationOut: out });
+        layers.push({ type: "text", id: "subtitle", start: grow + 0.15, duration: ctx.duration - grow - 0.15, text: p.subtitle, position: { x: 0.5, y: 0.58 }, style: { fontFamily: "Arimo", bold: true, fontSize: px(ctx, 44), color: p.textColor, outlineWidth: 0 }, animationIn: anim("slide-up", 0.35), animationOut: out });
       return layers;
     },
   }),
@@ -401,7 +401,7 @@ export const COMPONENTS: ComponentDefinition[] = [
       color: color("#FFFFFF"),
     }),
     build: (p, ctx) => [
-      { type: "text", id: "callout", start: 0, duration: ctx.duration, text: p.text, position: { x: p.x, y: p.y }, style: { fontFamily: "Arial Black", fontSize: px(ctx, p.size), color: p.color, italic: true, uppercase: true, outlineWidth: 0, shadow: px(ctx, 5), shadowColor: "#00000066" }, animationIn: anim("pop", 0.3), animationOut: anim("fade", 0.25) },
+      { type: "text", id: "callout", start: 0, duration: ctx.duration, text: p.text, position: { x: p.x, y: p.y }, style: { fontFamily: "Archivo Black", fontSize: px(ctx, p.size), color: p.color, italic: true, uppercase: true, outlineWidth: 0, shadow: px(ctx, 5), shadowColor: "#00000066" }, animationIn: anim("pop", 0.3), animationOut: anim("fade", 0.25) },
     ],
   }),
   define({
@@ -424,7 +424,7 @@ export const COMPONENTS: ComponentDefinition[] = [
         { type: "shape", id: "box", shape: "roundedRect", start: 0, duration: ctx.duration, position: { x: p.x, y: p.y }, size: { width: p.width, height: p.height }, radius: px(ctx, 28), fill: false, strokeWidth: px(ctx, p.thickness), strokeColor: p.color, animationIn: anim("pop", 0.3), animationOut: anim("fade", 0.25) },
       ];
       if (p.label)
-        layers.push({ type: "text", id: "label", start: 0.15, duration: ctx.duration - 0.15, text: p.label, position: { x: p.x, y: Math.max(0.05, p.y - p.height / 2 - 0.05) }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 44), color: p.color, italic: true, uppercase: true, outlineWidth: 0, shadow: px(ctx, 4), shadowColor: "#00000066" }, animationIn: anim("slide-up", 0.3), animationOut: anim("fade", 0.25) });
+        layers.push({ type: "text", id: "label", start: 0.15, duration: ctx.duration - 0.15, text: p.label, position: { x: p.x, y: Math.max(0.05, p.y - p.height / 2 - 0.05) }, style: { fontFamily: "Archivo Black", fontSize: px(ctx, 44), color: p.color, italic: true, uppercase: true, outlineWidth: 0, shadow: px(ctx, 4), shadowColor: "#00000066" }, animationIn: anim("slide-up", 0.3), animationOut: anim("fade", 0.25) });
       return layers;
     },
   }),
@@ -446,7 +446,7 @@ export const COMPONENTS: ComponentDefinition[] = [
       const y = (px(ctx, 40) + d / 2) / ctx.height;
       return [
         { type: "shape", id: "circle", shape: "ellipse", start: 0, duration: ctx.duration, position: { x, y }, size: { width: d / ctx.width, height: d / ctx.height }, color: p.color, shadow: px(ctx, 6), animationIn: anim("pop", 0.3), animationOut: anim("fade", 0.25) },
-        { type: "text", id: "number", start: 0, duration: ctx.duration, text: p.number, position: { x, y }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 58), color: p.numberColor, italic: true, outlineWidth: 0 }, animationIn: anim("pop", 0.3), animationOut: anim("fade", 0.25) },
+        { type: "text", id: "number", start: 0, duration: ctx.duration, text: p.number, position: { x, y }, style: { fontFamily: "Archivo Black", fontSize: px(ctx, 58), color: p.numberColor, italic: true, outlineWidth: 0 }, animationIn: anim("pop", 0.3), animationOut: anim("fade", 0.25) },
       ];
     },
   }),
@@ -464,8 +464,8 @@ export const COMPONENTS: ComponentDefinition[] = [
     }),
     build: (p, ctx) => {
       const layers: ComponentLayer[] = [
-        { type: "text", id: "headline", start: 0, duration: ctx.duration, text: p.headline, position: { x: 0.5, y: 0.4 }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 84), color: "#FFFFFF", outlineWidth: 0, shadow: 3 }, animationIn: anim("pop", 0.45), animationOut: anim("fade") },
-        { type: "text", id: "prompt", start: 0.5, duration: ctx.duration - 0.5, text: p.prompt, position: { x: 0.5, y: 0.53 }, style: { fontFamily: "Arial Black", fontSize: px(ctx, 50), color: "#FFFFFF", background: p.accentColor, outlineWidth: px(ctx, 18) }, animationIn: anim("pop", 0.4), animationOut: anim("fade") },
+        { type: "text", id: "headline", start: 0, duration: ctx.duration, text: p.headline, position: { x: 0.5, y: 0.4 }, style: { fontFamily: "Archivo Black", fontSize: px(ctx, 84), color: "#FFFFFF", outlineWidth: 0, shadow: 3 }, animationIn: anim("pop", 0.45), animationOut: anim("fade") },
+        { type: "text", id: "prompt", start: 0.5, duration: ctx.duration - 0.5, text: p.prompt, position: { x: 0.5, y: 0.53 }, style: { fontFamily: "Archivo Black", fontSize: px(ctx, 50), color: "#FFFFFF", background: p.accentColor, outlineWidth: px(ctx, 18) }, animationIn: anim("pop", 0.4), animationOut: anim("fade") },
       ];
       if (p.handle)
         layers.push({ type: "text", id: "handle", start: 0.8, duration: ctx.duration - 0.8, text: p.handle, position: { x: 0.5, y: 0.63 }, style: { fontSize: px(ctx, 40), color: "#DDDDDD", outlineWidth: 0 }, animationIn: anim("fade"), animationOut: anim("fade") });

@@ -88,15 +88,15 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
       { id: "agent", kind: "text", description: "Agent name and phone" },
       music,
     ],
-    theme: { headingFont: "Georgia", fontFamily: "Arial", accentColor: "#C9A227", backgroundColor: "#111111" },
+    theme: { headingFont: "Gelasio", fontFamily: "Arimo", accentColor: "#C9A227", backgroundColor: "#111111" },
     transition: { type: "fade", duration: 0.7 },
     grade: [{ type: "bright" }],
     music: { slot: "music", volume: 0.6, duck: true },
     automation: { narrate: { items: { list: "rooms", field: "narration", into: "voice" } } },
     scenes: [
-      { id: "intro", name: "Intro", purpose: "Address and price", duration: 4, background: { media: "{{rooms.0.media}}" }, effects: [{ type: "kenBurns", params: { zoomTo: 1.15 } }, { type: "adjust", params: { brightness: -0.12 } }], components: [{ component: "title-card", params: { title: "{{address}}", subtitle: "{{details}}", fontFamily: "Georgia", animation: "fade" } }, { component: "label", params: { text: "{{price}}", y: 0.7, size: 56, background: "#C9A227E6", color: "#111111" }, start: 1 }] },
+      { id: "intro", name: "Intro", purpose: "Address and price", duration: 4, background: { media: "{{rooms.0.media}}" }, effects: [{ type: "kenBurns", params: { zoomTo: 1.15 } }, { type: "adjust", params: { brightness: -0.12 } }], components: [{ component: "title-card", params: { title: "{{address}}", subtitle: "{{details}}", fontFamily: "Gelasio", animation: "fade" } }, { component: "label", params: { text: "{{price}}", y: 0.7, size: 56, background: "#C9A227E6", color: "#111111" }, start: 1 }] },
       { id: "room", name: "Room", purpose: "Show a room", repeat: "rooms", duration: 3.5, audio: { media: "{{item.voice}}", start: 0.3 }, background: { media: "{{item.media}}" }, effects: [{ type: "kenBurns", params: { zoomFrom: 1.05, zoomTo: 1.15, pan: "right" } }], components: [{ component: "label", params: { text: "{{item.label}}", x: 0.15, y: 0.9, size: 38, animation: "slide-right" }, start: 0.4 }] },
-      { id: "agent", name: "Agent", purpose: "Contact", optional: true, duration: 4, background: { color: "#111111" }, components: [{ component: "title-card", params: { title: "Schedule a viewing", subtitle: "{{agent}}", fontFamily: "Georgia", animation: "fade" } }] },
+      { id: "agent", name: "Agent", purpose: "Contact", optional: true, duration: 4, background: { color: "#111111" }, components: [{ component: "title-card", params: { title: "Schedule a viewing", subtitle: "{{agent}}", fontFamily: "Gelasio", animation: "fade" } }] },
     ],
   },
   {
@@ -115,7 +115,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
       { id: "clips", kind: "list", description: "Highlight clips", required: true, fields: { media: "Clip" } },
       music,
     ],
-    theme: { accentColor: "#FF006E", headingFont: "Arial Black" },
+    theme: { accentColor: "#FF006E", headingFont: "Archivo Black" },
     transition: { type: "zoomin", duration: 0.3 },
     grade: [{ type: "vibrant" }],
     music: { slot: "music", volume: 0.9, duck: false },
@@ -145,7 +145,7 @@ export const BUSINESS_TEMPLATES: TemplateSpecInput[] = [
       logo,
       music,
     ],
-    theme: { accentColor: "#FFBE0B", headingFont: "Arial Black" },
+    theme: { accentColor: "#FFBE0B", headingFont: "Archivo Black" },
     music: { slot: "music", volume: 0.6, duck: false },
     scenes: [
       {

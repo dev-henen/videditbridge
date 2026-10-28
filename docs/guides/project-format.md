@@ -80,7 +80,7 @@ Layers are drawn on top of the primary track in array order (later entries are o
 |---|---|---|
 | `text` | | `\n` for line breaks |
 | `position` | center | With `align: "left"`/`"right"`, `x` is the left or right edge |
-| `style.fontFamily` | `Arial` | Any installed font, or one from `fontsDir` |
+| `style.fontFamily` | `Arimo` | A bundled font (the same on every system), any installed font, or one from `fontsDir` |
 | `style.fontSize` | `64` | Pixels at the output resolution |
 | `style.color`, `outlineColor`, `outlineWidth`, `shadow`, `shadowColor` | white / black / 3 / 0 | |
 | `style.background` | | Draws an opaque box behind the text |

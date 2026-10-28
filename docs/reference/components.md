@@ -41,7 +41,7 @@ With Claude, use the `add_component` tool. Templates use components in their sce
 | `title` | string |  | `""` | Secondary line, e.g. role or company |
 | `accentColor` | string |  | `"#6C47FF"` |  |
 | `textColor` | string |  | `"#FFFFFF"` |  |
-| `fontFamily` | string |  | `"Arial"` |  |
+| `fontFamily` | string |  | `"Arimo"` |  |
 
 ## title-card
 
@@ -53,7 +53,7 @@ With Claude, use the `add_component` tool. Templates use components in their sce
 | `subtitle` | string |  | `""` |  |
 | `color` | string |  | `"#FFFFFF"` |  |
 | `subtitleColor` | string |  | `"#CCCCCC"` |  |
-| `fontFamily` | string |  | `"Arial Black"` |  |
+| `fontFamily` | string |  | `"Archivo Black"` |  |
 | `animation` | string |  | `"pop"` | Animation id for the title |
 | `y` | number |  | `0.45` |  |
 
@@ -122,7 +122,7 @@ With Claude, use the `add_component` tool. Templates use components in their sce
 | `author` | string |  | `""` |  |
 | `color` | string |  | `"#FFFFFF"` |  |
 | `accentColor` | string |  | `"#FFD54A"` |  |
-| `fontFamily` | string |  | `"Georgia"` |  |
+| `fontFamily` | string |  | `"Gelasio"` |  |
 
 ## number-badge
 
@@ -150,7 +150,7 @@ With Claude, use the `add_component` tool. Templates use components in their sce
 
 ## meme-text
 
-**Meme Text** (social, default 4s). Classic Impact top/bottom meme captions.
+**Meme Text** (social, default 4s). Classic meme captions: heavy condensed white top and bottom text (Anton, the Impact look).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|

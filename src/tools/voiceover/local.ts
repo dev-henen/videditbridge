@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { defaultModelsDir } from "../appdirs.js";
 import path from "node:path";
 import { round3 } from "../../core/util.js";
 import { LocalWhisperTranscriber } from "../transcript/local.js";
@@ -38,7 +38,7 @@ export interface LocalVoiceOptions {
   model?: string;
   /** Default voice, e.g. "af_heart" (American female), "am_michael" (American male), "bf_emma" (British female), "bm_george" (British male). */
   voice?: string;
-  /** Where downloaded models are kept. Default $AVE_MODELS_DIR or ~/.cache/ai-video-editor/models. */
+  /** Where downloaded models are kept. Default $AVE_MODELS_DIR, else the models folder in the app cache (see appDir). */
   cacheDir?: string;
   /** Measure word timings with the local Whisper model (default true); otherwise they are estimated. */
   alignWords?: boolean;
@@ -224,7 +224,7 @@ export class LocalTTS implements TTSProvider {
           throw new Error("Local voice-over needs the optional package kokoro-js (npm install kokoro-js).");
         }
         const tf = await import("@huggingface/transformers");
-        tf.env.cacheDir = this.options.cacheDir ?? process.env.AVE_MODELS_DIR ?? path.join(homedir(), ".cache", "ai-video-editor", "models");
+        tf.env.cacheDir = this.options.cacheDir ?? defaultModelsDir();
         const files = new Map<string, { loaded: number; total: number }>();
         const tts = await kokoro.KokoroTTS.from_pretrained(this.model, {
           dtype: "q8",

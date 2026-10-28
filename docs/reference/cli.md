@@ -15,5 +15,6 @@ Relative media paths in a project file resolve against the project file's folder
 | `ave sheet <project.json> <out.png>` | Render a contact sheet. Options: `--columns 4`, `--rows 3`, `--fonts`, `--cache dir` |
 | `ave captions <project.json> <out.srt\|vtt\|ass>` | Export captions; the format comes from the file extension |
 | `ave probe <media>` | Print duration, size, fps and audio/video presence as JSON |
+| `ave check` | Check that this FFmpeg build has every filter, encoder and decoder the renderer uses; exits 1 and lists what is missing otherwise |
 | `ave tools` | Print the Claude tool definitions as JSON (Messages API `tools` format) |
 

@@ -16,9 +16,9 @@ import {
 import * as ops from "../core/operations.js";
 import { computeTimeline, sourceToTimeline, timelineToSource } from "../core/timeline.js";
 import { isAnimated, simplifyKeys, smoothKeys } from "../core/keyframes.js";
-import { validateProject } from "../core/validate.js";
+import { fileOnDisk, validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
-import { ASPECT_RATIOS, formatTime, newId, round3, type AspectRatio } from "../core/util.js";
+import { ASPECT_RATIOS, formatTime, isAbsolutePath, isUrl, newId, round3, type AspectRatio } from "../core/util.js";
 import { CUSTOM_FILTERS, ColorSettingsSchema, SubjectRegionSchema, checkCustomFilter, describeColorSettings, effectStates, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { getTransition, listTransitions } from "../library/transitions/index.js";
@@ -51,7 +51,7 @@ import { invertRanges } from "../core/ranges.js";
 import { rm, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { fileHash, listFiles } from "../tools/media/files.js";
-import { FONT_PACKS, ICON_FONT, closestIcons, iconGlyphs, installGoogleFont, installGoogleFonts, listFontFamilies, searchIcons, type FontPack } from "../tools/fonts/index.js";
+import { FONT_PACKS, ICON_FONT, closestIcons, ensureBundledFonts, iconGlyphs, installGoogleFont, installGoogleFonts, listFontFamilies, searchIcons, type FontPack } from "../tools/fonts/index.js";
 import type { ActivityHandle, EditorSession } from "./session.js";
 
 export interface ToolResult {
@@ -455,7 +455,7 @@ export const TOOLS: ToolDefinition[] = [
     input: z.object({ includeJson: z.boolean().default(false).describe("Also return the raw project JSON") }),
     mutates: false,
     run: async (s, i) => {
-      const v = validateProject(s.project);
+      const v = validateProject(s.project, { baseDir: s.options.baseDir });
       const issues = v.issues.map((x) => `${x.level === "error" ? "Error" : "Warning"}: ${x.path}: ${x.message}`).join("\n");
       return ok(`${summarizeProject(s.project)}${issues ? `\n\nIssues:\n${issues}` : "\n\nNo issues."}${i.includeJson ? `\n\nJSON:\n${JSON.stringify(s.project)}` : ""}`);
     },
@@ -664,12 +664,15 @@ export const TOOLS: ToolDefinition[] = [
       const same = s.project.assets.find((a) => "src" in a && s.resolve(a.src) === s.resolve(i.src));
       if (same && (!i.id || i.id === same.id)) return ok(`Already imported as "${same.id}".`);
       const info = await probe(s.resolve(i.src), { ffmpegPath: s.options.ffmpegPath });
-      const id = i.id ?? assetIdFromSrc(s.project, i.src);
+      // The name exactly as it is on disk: Windows and macOS find "Clip.MP4" as "clip.mp4", Linux does not.
+      const onDisk = isUrl(i.src) ? undefined : fileOnDisk(s.resolve(i.src));
+      const src = onDisk && onDisk !== s.resolve(i.src) ? (isAbsolutePath(i.src) ? onDisk : path.relative(s.options.baseDir, onDisk)) : i.src;
+      const id = i.id ?? assetIdFromSrc(s.project, src);
       const asset: Asset = info.isImage
-        ? { type: "image", id, src: i.src, width: info.width, height: info.height, label: i.label }
+        ? { type: "image", id, src, width: info.width, height: info.height, label: i.label }
         : info.hasVideo
-          ? { type: "video", id, src: i.src, duration: info.duration, width: info.width, height: info.height, hasAudio: info.hasAudio, label: i.label }
-          : { type: "audio", id, src: i.src, duration: info.duration, label: i.label };
+          ? { type: "video", id, src, duration: info.duration, width: info.width, height: info.height, hasAudio: info.hasAudio, label: i.label }
+          : { type: "audio", id, src, duration: info.duration, label: i.label };
       return commit(s, ops.addAsset(s.project, asset), "import_media", i, `Imported "${id}" (${asset.type}${info.duration ? `, ${info.duration}s` : ""}${info.width ? `, ${info.width}x${info.height}` : ""}${asset.type === "video" ? `, ${info.hasAudio ? "with" : "no"} audio` : ""}).`);
     },
   }),
@@ -1308,11 +1311,13 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "list_fonts",
-    description: "List the font families text can use: the ones installed on this computer and the ones added with install_font. Use the family name exactly as listed in a text style's fontFamily.",
+    description:
+      "List the font families text can use: the ones added with install_font, the bundled ones (Arimo, Archivo Black, Gelasio, Anton, Cousine, Comic Neue: the same on every computer, so prefer them and added fonts over system fonts) and the ones installed on this computer. Use the family name exactly as listed in a text style's fontFamily.",
     input: z.object({ query: z.string().optional().describe("Filter by name, e.g. 'mono' or 'sans'") }),
     mutates: false,
     run: async (s, i) => {
       const q = i.query?.toLowerCase();
+      await ensureBundledFonts(s.fontsDir);
       const fams = (await listFontFamilies(s.fontsDir)).filter((f) => f.family !== ICON_FONT && (!q || f.family.toLowerCase().includes(q)));
       const added = fams.filter((f) => f.source === "installed");
       const system = fams.filter((f) => f.source === "system");
@@ -2668,7 +2673,7 @@ export const TOOLS: ToolDefinition[] = [
         start: 0,
         duration: 1,
         position: pos,
-        style: { fontFamily: "Arial Black", fontSize, color: i.color, bold: true, uppercase: true, outlineWidth: Math.round(7 * k), outlineColor: "#000000", shadow: Math.round(6 * k), shadowColor: "#000000B0" },
+        style: { fontFamily: "Archivo Black", fontSize, color: i.color, bold: true, uppercase: true, outlineWidth: Math.round(7 * k), outlineColor: "#000000", shadow: Math.round(6 * k), shadowColor: "#000000B0" },
       });
       if (i.subtitle) {
         p = ops.addLayer(p, {
@@ -2677,7 +2682,7 @@ export const TOOLS: ToolDefinition[] = [
           start: 0,
           duration: 1,
           position: { x: pos.x, y: Math.min(0.94, pos.y + textH / 2 + 0.07) },
-          style: { fontFamily: "Arial Black", fontSize: Math.round(fontSize * 0.36), color: "#111111", bold: true, uppercase: true, outlineWidth: Math.round(12 * k), background: i.accentColor },
+          style: { fontFamily: "Archivo Black", fontSize: Math.round(fontSize * 0.36), color: "#111111", bold: true, uppercase: true, outlineWidth: Math.round(12 * k), background: i.accentColor },
         });
       }
       const out = await s.outputPath("thumbnail.jpg");

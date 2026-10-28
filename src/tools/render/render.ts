@@ -3,6 +3,7 @@ import { availableParallelism, tmpdir } from "node:os";
 import path from "node:path";
 import type { Project } from "../../core/schema.js";
 import { deepClone } from "../../core/util.js";
+import { withProjectPaths } from "../../core/operations.js";
 import { compileProject, type CompileOptions, type CompiledRender } from "./compile.js";
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
@@ -13,6 +14,7 @@ import { faceMaskFile, writeFaceMask } from "../vision/facemask.js";
 import { FaceDetector } from "../vision/faces.js";
 import { withProxies } from "./proxy.js";
 import { hasFilter, probe, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
+import { prepareFonts } from "../fonts/index.js";
 
 export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segments" | "segment" | "hardwareEncoder">, FfmpegOptions {
   /**
@@ -48,6 +50,16 @@ export interface RenderResult {
   duration: number;
   workDir?: string;
   args: string[];
+}
+
+/**
+ * The project as a render reads it: asset paths in the project form (forward slashes, relative
+ * inside the media folder, so projects saved on Windows render on macOS and Linux), probed unless
+ * `probe` is false.
+ */
+async function readyToRender(project: Project, opts: RenderOptions | Omit<RenderOptions, "output" | "range">): Promise<Project> {
+  const p = withProjectPaths(project, path.resolve(opts.baseDir ?? process.cwd()));
+  return opts.probe === false ? p : probeAssets(p, opts);
 }
 
 /** Fill in missing asset metadata (duration, dimensions, audio presence) by probing files. */
@@ -168,7 +180,9 @@ async function prepare(original: Project, opts: Omit<RenderOptions, "output">, c
   await makeMasks(jobs, p.clips.filter((c) => !segments?.[c.id]).map((c) => c.id), opts);
   // Speed ramps sound best through rubberband, when this FFmpeg build has it.
   const rubberband = p.clips.some((c) => c.keyframes?.speed?.length) && (await hasFilter("rubberband", opts));
-  return { project: p, segments, share, masks: maskFiles(jobs), rubberband };
+  // Always give libass the fonts folder with the bundled fonts, and replace system fonts this machine lacks.
+  const fonts = await prepareFonts(opts.fontsDir);
+  return { project: p, segments, share, masks: maskFiles(jobs), rubberband, fonts };
 }
 
 /** Clips rendered into the cache at once. Filters already use several threads, so this stays small. */
@@ -232,18 +246,18 @@ const after = (opts: Omit<RenderOptions, "output">, share: number) => (opts.onPr
 
 /** Render a project to a video file. */
 export async function render(project: Project, opts: RenderOptions): Promise<RenderResult> {
-  const p = opts.probe === false ? project : await probeAssets(project, opts);
-  const { project: q, segments, share, masks, rubberband } = await prepare(p, opts, true, opts.range?.end);
+  const p = await readyToRender(project, opts);
+  const { project: q, segments, share, masks, rubberband, fonts } = await prepare(p, opts, true, opts.range?.end);
   const hardwareEncoder =
     opts.hardware !== false && wantsHardware(p.export.videoCodec, opts.preset ?? p.export.preset) ? await detectHardwareEncoder(opts) : undefined;
-  let compiled = compileProject(q, { ...opts, segments, ...masks, rubberband, hardwareEncoder });
+  let compiled = compileProject(q, { ...opts, ...fonts, segments, ...masks, rubberband, hardwareEncoder });
   let workDir: string | undefined;
   try {
     ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
   } catch (e) {
     // A graphics driver can refuse a stream its test encode accepted (size limits, busy device).
     if (!hardwareEncoder || opts.signal?.aborted) throw e;
-    compiled = compileProject(q, { ...opts, segments, ...masks, rubberband });
+    compiled = compileProject(q, { ...opts, ...fonts, segments, ...masks, rubberband });
     ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
   }
   opts.onProgress?.(1);
@@ -256,10 +270,10 @@ export async function renderFrame(
   time: number,
   opts: Omit<RenderOptions, "range" | "onProgress">,
 ): Promise<string> {
-  const p = opts.probe === false ? project : await probeAssets(project, opts);
+  const p = await readyToRender(project, opts);
   // One frame does not pay for caching clips, but uses those already cached.
-  const { project: q, segments, masks } = await prepare(p, opts, false);
-  const compiled = compileProject(q, { ...opts, segments, ...masks, frameAt: time });
+  const { project: q, segments, masks, fonts } = await prepare(p, opts, false);
+  const compiled = compileProject(q, { ...opts, ...fonts, segments, ...masks, frameAt: time });
   await execute(compiled, opts);
   return path.resolve(opts.output);
 }
@@ -272,10 +286,11 @@ export async function renderContactSheet(
   project: Project,
   opts: Omit<RenderOptions, "range" | "onProgress"> & { columns?: number; rows?: number; thumbWidth?: number },
 ): Promise<string> {
-  const p = opts.probe === false ? project : await probeAssets(project, opts);
-  const { project: q, segments, masks } = await prepare(p, opts, true);
+  const p = await readyToRender(project, opts);
+  const { project: q, segments, masks, fonts } = await prepare(p, opts, true);
   const compiled = compileProject(q, {
     ...opts,
+    ...fonts,
     segments,
     ...masks,
     contactSheet: { columns: opts.columns ?? 4, rows: opts.rows ?? 3, thumbWidth: opts.thumbWidth ?? 360 },
@@ -300,9 +315,9 @@ export async function renderForAnalysis(
   project: Project,
   opts: Omit<RenderOptions, "output" | "range"> & { framesAt?: number[]; audio?: { mix: string; voice?: string; music?: string } },
 ): Promise<{ width: number; height: number; frames: AnalysisFrame[] }> {
-  const p = opts.probe === false ? project : await probeAssets(project, opts);
-  const { project: q, segments, share, masks, rubberband } = await prepare(p, opts, true);
-  const compiled = compileProject(q, { ...opts, segments, ...masks, rubberband, output: "", analysis: { framesAt: opts.framesAt, audio: opts.audio } });
+  const p = await readyToRender(project, opts);
+  const { project: q, segments, share, masks, rubberband, fonts } = await prepare(p, opts, true);
+  const compiled = compileProject(q, { ...opts, ...fonts, segments, ...masks, rubberband, output: "", analysis: { framesAt: opts.framesAt, audio: opts.audio } });
   const audio = opts.audio ? [opts.audio.mix, opts.audio.voice, opts.audio.music].filter((f): f is string => !!f) : [];
   const { stdout } = await execute(compiled, { ...opts, ...after(opts, share), output: "" }, audio);
   opts.onProgress?.(1);

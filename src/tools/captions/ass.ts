@@ -39,6 +39,8 @@ export class AssDocument {
   private styles = new Map<string, AssStyle>();
   private styleKeys = new Map<string, string>();
   readonly events: AssEvent[] = [];
+  /** Font families to write in place of others (lowercase name to family), for fonts missing on this system. */
+  fontMap?: Record<string, string>;
 
   constructor(
     readonly width: number,
@@ -72,7 +74,7 @@ export class AssDocument {
     const styleLines = [...this.styles].map(([name, s]) =>
       [
         `Style: ${name}`,
-        s.fontFamily,
+        this.fontMap?.[s.fontFamily.trim().toLowerCase()] ?? s.fontFamily,
         Math.round(s.fontSize),
         toAssColor(s.primaryColor),
         toAssColor(s.secondaryColor),

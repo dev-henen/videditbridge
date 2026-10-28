@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { round3 } from "../../core/util.js";
-import { defaultFontsDir, fontsIn } from "../fonts/index.js";
+import { DEFAULT_FONT, fontsIn, prepareFonts, replaceFont } from "../fonts/index.js";
 import { resolveFfmpegPath, type FfmpegOptions } from "../render/ffmpeg.js";
 
 /**
@@ -187,18 +187,39 @@ export interface GraphicOptions extends FfmpegOptions {
   signal?: AbortSignal;
 }
 
+const FONT_FAMILY = /(font-family\s*[:=]\s*["']?)([^"';>]+)/gi;
+const familyName = (f: string) => f.trim().replace(/^["']|["']$/g, "");
+
+/** The SVG with the font families in `fontMap` (lowercase name to family) replaced, see prepareFonts. */
+export function replaceSvgFonts(svg: string, fontMap: Record<string, string>): string {
+  return svg.replace(FONT_FAMILY, (_, pre: string, list: string) =>
+    pre +
+    list
+      .split(",")
+      .map((f) => {
+        const name = familyName(f);
+        const to = replaceFont(name, fontMap);
+        return to === name ? f : f.replace(name, to);
+      })
+      .join(","),
+  );
+}
+
 async function renderer(svgSource: string, opts: GraphicOptions) {
   const Resvg = await loadResvg();
+  // Fonts missing on this system become the bundled ones, as in text layers.
+  const { fontsDir, fontMap } = await prepareFonts(opts.fontsDir);
   // Only the installed families the SVG names: resvg reads every font file it is given on every frame.
-  const named = new Set([...svgSource.matchAll(/font-family\s*[:=]\s*["']?([^"';>]+)/gi)].flatMap((m) => m[1]!.split(",").map((f) => f.trim().replace(/^["']|["']$/g, "").toLowerCase())));
-  const fontFiles = (await fontsIn(opts.fontsDir ?? defaultFontsDir()).catch(() => [])).filter((f) => named.has(f.family.toLowerCase())).map((f) => f.file);
-  const settings = { fitTo: { mode: "original" }, font: { fontFiles, loadSystemFonts: true, defaultFontFamily: "Arial" }, background: "rgba(0,0,0,0)" };
+  const named = new Set([...replaceSvgFonts(svgSource, fontMap).matchAll(FONT_FAMILY)].flatMap((m) => m[2]!.split(",").map((f) => familyName(f).toLowerCase())));
+  named.add(DEFAULT_FONT.toLowerCase());
+  const fontFiles = (await fontsIn(fontsDir).catch(() => [])).filter((f) => named.has(f.family.toLowerCase())).map((f) => f.file);
+  const settings = { fitTo: { mode: "original" }, font: { fontFiles, loadSystemFonts: true, defaultFontFamily: DEFAULT_FONT, sansSerifFamily: DEFAULT_FONT }, background: "rgba(0,0,0,0)" };
   // The root's own size becomes exactly the canvas (even, for video); the viewBox is fitted inside it,
   // so a canvas rounded by a pixel never changes the render size.
   const sized = (svg: string) =>
     svg.replace(/<svg\b[^>]*>/i, (tag) => tag.replace(/\s(width|height)\s*=\s*("[^"]*"|'[^']*')/gi, "").replace(/^<svg/i, `<svg width="${opts.width}" height="${opts.height}"`));
   return (svg: string) => {
-    const img = new Resvg(sized(svg), settings).render();
+    const img = new Resvg(sized(replaceSvgFonts(svg, fontMap)), settings).render();
     if (img.width !== opts.width || img.height !== opts.height)
       throw new Error(`The SVG renders at ${img.width}x${img.height}, not the canvas ${opts.width}x${opts.height}: give the <svg> a viewBox with the canvas's shape`);
     return img;

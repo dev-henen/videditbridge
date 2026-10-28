@@ -1,6 +1,6 @@
 # Faces, cutouts & reframing
 
-The editor finds faces on this machine with OpenCV's YuNet model (MIT license, 230 KB), run by ONNX Runtime (the optional `onnxruntime-node` package, which also comes with `@huggingface/transformers`). The model downloads once to `~/.cache/ai-video-editor/models/yunet` (or `$AVE_MODELS_DIR`) and then works offline, with no account or key. Code is in [src/tools/vision](../../src/tools/vision).
+The editor finds faces on this machine with OpenCV's YuNet model (MIT license, 230 KB), run by ONNX Runtime (the optional `onnxruntime-node` package, which also comes with `@huggingface/transformers`). The model downloads once to `yunet` in the models folder (or `$AVE_MODELS_DIR`; see [Where downloads go](getting-started.md#where-downloads-go)) and then works offline, with no account or key. Code is in [src/tools/vision](../../src/tools/vision).
 
 ## Choosing the model
 

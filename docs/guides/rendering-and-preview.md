@@ -15,7 +15,7 @@ await render(project, {
   scale: 0.5,              // fast preview: the whole graph runs at half size
   preset: "ultrafast",     // x264 preset override
   range: { start: 10, end: 20 },
-  fontsDir: "./fonts",
+  fontsDir: "./fonts",     // extra fonts; the bundled ones are copied in (default: the app fonts folder)
   onProgress: (p) => console.log(Math.round(p * 100) + "%"),
   signal,                  // AbortSignal
   keepWorkDir: true,       // keep graph.txt + overlay.ass for debugging

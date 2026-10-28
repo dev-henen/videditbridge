@@ -1,4 +1,4 @@
-import { homedir } from "node:os";
+import { defaultModelsDir } from "../appdirs.js";
 import path from "node:path";
 import type { Transcript, Word } from "../../core/schema.js";
 import { round3 } from "../../core/util.js";
@@ -13,7 +13,7 @@ export interface LocalWhisperOptions {
    * "small" export for accuracy or "tiny" for speed.
    */
   model?: string;
-  /** Where downloaded models are kept. Default $AVE_MODELS_DIR or ~/.cache/ai-video-editor/models. */
+  /** Where downloaded models are kept. Default $AVE_MODELS_DIR, else the models folder in the app cache (see appDir). */
   cacheDir?: string;
   /** Called while the model downloads (0..1) on first use. */
   onDownload?: (progress: number) => void;
@@ -117,7 +117,7 @@ export class LocalWhisperTranscriber implements TranscriptionProvider {
         } catch {
           throw new Error("Local transcription needs the optional package @huggingface/transformers (npm install @huggingface/transformers).");
         }
-        tf.env.cacheDir = this.options.cacheDir ?? process.env.AVE_MODELS_DIR ?? path.join(homedir(), ".cache", "ai-video-editor", "models");
+        tf.env.cacheDir = this.options.cacheDir ?? defaultModelsDir();
         const files = new Map<string, { loaded: number; total: number }>();
         const asr = await tf.pipeline("automatic-speech-recognition", model, {
           dtype: "q8",

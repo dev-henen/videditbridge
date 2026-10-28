@@ -33,3 +33,6 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 - Text, shapes and captions all go into one ASS file (`overlay.ass`, with PlayRes equal to the project size, even for scaled previews), applied with the `ass` filter. ffmpeg runs with `cwd` set to the work dir so the filename needs no escaping.
 - Image outputs (frame, contact sheet) must consume the audio graph with `anullsink`.
 - The filter graph goes through `-filter_complex_script` to avoid Windows command-line limits.
+- File paths inside filter arguments go through `escapeFilterPath`. It escapes for two levels, since `\`, `'` and `:` are legal in macOS and Linux names.
+- Default fonts are the bundled open fonts in `fonts/` (Arimo, Archivo Black, Gelasio and others), never system fonts like Arial. Renders call `prepareFonts`, which copies them into the fonts folder and replaces missing system fonts (`FONT_REPLACEMENTS`).
+- App data folders come from `src/tools/appdirs.ts` (`defaultModelsDir`, `defaultFontsDir`); don't hard-code `~/.cache`.

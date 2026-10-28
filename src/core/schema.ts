@@ -155,7 +155,7 @@ export const FitSchema = z
   .describe("cover = fill & crop, contain = letterbox, stretch = distort, blur = contain over blurred copy");
 
 export const TextStyleSchema = z.object({
-  fontFamily: z.string().default("Arial"),
+  fontFamily: z.string().default("Arimo"),
   fontSize: z.number().positive().default(64).describe("Font size in output pixels"),
   color: color.default("#FFFFFF"),
   bold: z.boolean().default(true),

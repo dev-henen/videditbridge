@@ -27,7 +27,7 @@ Times are in **source** seconds of the asset the transcript belongs to. Attach a
 | AssemblyAI | `fromAssemblyAI` | Milliseconds converted, speakers |
 | Plain text + duration | `fromPlainText` | Even spread, e.g. for a script |
 
-**Transcribe media on this machine (default).** `LocalWhisperTranscriber` runs the open Whisper speech model locally with ONNX Runtime (through the `@huggingface/transformers` package). It needs no account or key and uploads nothing. The model downloads once (about 80 MB: `onnx-community/whisper-base.en_timestamped` for English or no language given, `onnx-community/whisper-base_timestamped` for other languages) to `~/.cache/ai-video-editor/models` (or `$AVE_MODELS_DIR`), then works offline. On a laptop CPU, 57 s of speech took 25 s.
+**Transcribe media on this machine (default).** `LocalWhisperTranscriber` runs the open Whisper speech model locally with ONNX Runtime (through the `@huggingface/transformers` package). It needs no account or key and uploads nothing. The model downloads once (about 80 MB: `onnx-community/whisper-base.en_timestamped` for English or no language given, `onnx-community/whisper-base_timestamped` for other languages) to the models folder (or `$AVE_MODELS_DIR`), then works offline. On a laptop CPU, 57 s of speech took 25 s.
 
 ```ts
 import { transcribeMedia, LocalWhisperTranscriber } from "ai-video-editor";

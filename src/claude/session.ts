@@ -3,7 +3,8 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { Project } from "../core/schema.js";
-import { createProject } from "../core/operations.js";
+import { createProject, withProjectPaths } from "../core/operations.js";
+import { toProjectPath } from "../core/util.js";
 import { defaultFontsDir } from "../tools/fonts/index.js";
 import type { TranscriptionProvider } from "../tools/transcript/providers.js";
 import type { TTSProvider } from "../tools/voiceover/providers.js";
@@ -167,7 +168,6 @@ export class EditorSession extends EventEmitter<SessionEvents> {
 
   constructor(project?: Project, options: SessionOptions = {}) {
     super();
-    this.current = project ?? createProject({ aspectRatio: "9:16" });
     const baseDir = path.resolve(options.baseDir ?? process.cwd());
     this.options = {
       ...options,
@@ -176,6 +176,8 @@ export class EditorSession extends EventEmitter<SessionEvents> {
       historyLimit: options.historyLimit ?? 100,
     };
     if (options.cacheDir !== false) this.options.cacheDir = path.resolve(options.cacheDir ?? path.join(this.options.outputDir, "cache"));
+    // Projects saved with absolute or backslash paths (older versions) open with project paths.
+    this.current = withProjectPaths(project ?? createProject({ aspectRatio: "9:16" }), baseDir);
   }
 
   /** Options every render of this session shares: media folder, ffmpeg, fonts and the render cache. */
@@ -216,6 +218,9 @@ export class EditorSession extends EventEmitter<SessionEvents> {
     this.past.push({ action, details, at: new Date().toISOString(), project: this.current });
     if (this.past.length > this.options.historyLimit) this.past.shift();
     this.future = [];
+    // Generated media (voice-overs, sound effects, stills, graphics) lands in the output folder as
+    // absolute paths; the project keeps them relative so it can move between folders and systems.
+    project = withProjectPaths(project, this.options.baseDir);
     this.current = project;
     this.rev++;
     this.emit("change", { project, action, revision: this.rev });
@@ -271,6 +276,11 @@ export class EditorSession extends EventEmitter<SessionEvents> {
     this.stampSeq = stamp === this.lastStamp ? this.stampSeq + 1 : 0;
     this.lastStamp = stamp;
     return path.join(this.options.outputDir, `${stamp}${this.stampSeq ? `-${this.stampSeq}` : ""}-${name}`);
+  }
+
+  /** A file as this project stores it: relative to the project folder, with forward slashes (see toProjectPath). */
+  projectPath(file: string): string {
+    return toProjectPath(file, this.options.baseDir);
   }
 
   resolve(src: string): string {

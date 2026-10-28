@@ -79,3 +79,24 @@ export function dimensionsFor(aspect: AspectRatio, scale = 1): { width: number; 
 export function deepClone<T>(value: T): T {
   return structuredClone(value);
 }
+
+/** A URL (http://, https://, file://...) rather than a file path. */
+export const isUrl = (src: string): boolean => /^[a-z][a-z0-9+.-]+:\/\//i.test(src);
+
+/** An absolute file path on any system: /x, C:\x, C:/x or \server\share. */
+export const isAbsolutePath = (src: string): boolean => /^([a-z]:)?[\\/]/i.test(src);
+
+/**
+ * A file as a project path: relative to the project folder `dir` when it is inside it, always with
+ * forward slashes, so a project opens on any system and after being moved. Files outside the folder
+ * stay absolute (with forward slashes) and URLs are kept as they are.
+ */
+export function toProjectPath(file: string, dir: string): string {
+  if (isUrl(file)) return file;
+  const p = file.replace(/\\/g, "/");
+  if (!isAbsolutePath(p)) return p.replace(/^(\.\/)+/, "");
+  const d = dir.replace(/\\/g, "/").replace(/\/+$/, "");
+  // Drive-letter paths compare without case, like Windows does.
+  const same = (a: string, b: string) => (/^[a-z]:/i.test(a) ? a.toLowerCase() === b.toLowerCase() : a === b);
+  return same(p.slice(0, d.length + 1), `${d}/`) ? p.slice(d.length + 1) : p;
+}

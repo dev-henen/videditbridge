@@ -50,7 +50,7 @@ Passing `transcript` on a media input enables the template's captions for that m
     { "id": "shots", "kind": "list", "description": "Product shots", "fields": { "media": "Clip", "label": "Benefit" } },
     { "id": "music", "kind": "audio", "description": "Optional music" }
   ],
-  "theme": { "headingFont": "Arial Black", "accentColor": "#FFBE0B", "backgroundColor": "#101010" },
+  "theme": { "headingFont": "Archivo Black", "accentColor": "#FFBE0B", "backgroundColor": "#101010" },
   "captions": { "style": "bold-pop" },      // used when a transcript is present
   "transition": { "type": "slideup", "duration": 0.3 },   // default between scenes
   "grade": [{ "type": "vibrant" }],         // global effects

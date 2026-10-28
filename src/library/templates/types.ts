@@ -21,8 +21,8 @@ export const SlotSpecSchema = z.object({
 });
 
 export const ThemeSchema = z.object({
-  fontFamily: z.string().default("Arial"),
-  headingFont: z.string().default("Arial Black"),
+  fontFamily: z.string().default("Arimo"),
+  headingFont: z.string().default("Archivo Black"),
   primaryColor: z.string().default("#FFFFFF"),
   accentColor: z.string().default("#FFE600"),
   backgroundColor: z.string().default("#000000"),

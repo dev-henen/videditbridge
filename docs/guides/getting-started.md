@@ -13,7 +13,20 @@ Check that everything works:
 ```bash
 npm test
 npx tsx src/cli.ts templates
+npx tsx src/cli.ts check   # this FFmpeg build has every filter and codec the renderer uses
 ```
+
+### Where downloads go
+
+Models download on first use into the models folder, and installed fonts go into the fonts folder. Each system has its own location:
+
+| System | Models (`$AVE_MODELS_DIR`) | Fonts (`$AVE_FONTS_DIR`) |
+|---|---|---|
+| Windows | `%LOCALAPPDATA%\ai-video-editor\models` | `%LOCALAPPDATA%\ai-video-editor\fonts` |
+| macOS | `~/Library/Caches/ai-video-editor/models` | `~/Library/Application Support/ai-video-editor/fonts` |
+| Linux | `$XDG_CACHE_HOME/ai-video-editor/models` (`~/.cache`) | `$XDG_DATA_HOME/ai-video-editor/fonts` (`~/.local/share`) |
+
+Folders from older versions in `~/.cache/ai-video-editor` move to these places on first use. The default fonts (Arimo, Archivo Black, Gelasio, Anton, Cousine, Comic Neue; all OFL) ship in the package's `fonts` folder and are copied into the fonts folder, so text renders the same on every system. Projects that name Arial, Arial Black, Georgia, Impact, Courier New or Comic Sans MS get those fonts on systems that lack the originals.
 
 ## Your first render
 

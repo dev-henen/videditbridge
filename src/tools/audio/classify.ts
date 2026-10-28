@@ -38,7 +38,7 @@ export interface SoundClasses {
 }
 
 export interface SoundClassifierOptions {
-  /** Where the model is kept. Default $AVE_MODELS_DIR or ~/.cache/ai-video-editor/models. */
+  /** Where the model is kept. Default $AVE_MODELS_DIR, else the models folder in the app cache (see appDir). */
   modelsDir?: string;
   /** Called while the model downloads on first use (0..1). */
   onDownload?: (progress: number) => void;

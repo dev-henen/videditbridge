@@ -1,16 +1,43 @@
 import { existsSync } from "node:fs";
-import { mkdir, open, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, open, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { defaultFontsDir } from "../appdirs.js";
 
 /**
  * Fonts beyond the ones installed on the system: a folder the renderer always passes to libass
- * (default ~/.cache/ai-video-editor/fonts, or $AVE_FONTS_DIR). Google Fonts are downloaded into it
- * by family name, and the Lucide icon font lives there too.
+ * (the fonts folder in the app's data folder, or $AVE_FONTS_DIR). Google Fonts are downloaded into
+ * it by family name, the Lucide icon font lives there too, and the bundled fonts are copied into it.
  */
-export function defaultFontsDir(): string {
-  return process.env.AVE_FONTS_DIR ?? path.join(homedir(), ".cache", "ai-video-editor", "fonts");
+export { defaultFontsDir };
+
+/**
+ * Open fonts shipped with the engine, so text looks the same on every system: the `fonts` folder
+ * at the package root, or $AVE_BUNDLED_FONTS_DIR (a packaged app puts them next to the host).
+ */
+export function bundledFontsDir(): string {
+  return process.env.AVE_BUNDLED_FONTS_DIR ?? fileURLToPath(new URL("../../../fonts/", import.meta.url));
 }
+
+/** Default text font (bundled; metric-compatible with Arial). */
+export const DEFAULT_FONT = "Arimo";
+/** Default heading font (bundled; a heavy face in place of Arial Black). */
+export const DEFAULT_HEADING_FONT = "Archivo Black";
+
+/**
+ * System fonts older projects and styles name, and the bundled open font used when one is not
+ * installed (Linux has none of them, macOS lacks some). Arimo, Gelasio and Cousine keep the
+ * original's widths, so lines wrap the same way.
+ */
+export const FONT_REPLACEMENTS: Readonly<Record<string, string>> = {
+  Arial: "Arimo",
+  "Arial Black": "Archivo Black",
+  Georgia: "Gelasio",
+  Impact: "Anton",
+  "Courier New": "Cousine",
+  "Comic Sans MS": "Comic Neue",
+};
 
 export interface FontFile {
   family: string;
@@ -69,27 +96,77 @@ function decodeUtf16be(b: Buffer): string {
 
 const FONT_EXT = /\.(ttf|otf|ttc)$/i;
 
-/** Fonts in one folder (not recursive). */
-export async function fontsIn(dir: string): Promise<FontFile[]> {
-  const files = (await readdir(dir).catch(() => [] as string[])).filter((f) => FONT_EXT.test(f));
+/** Fonts in one folder; with `recursive`, in its subfolders too (Linux sorts system fonts into them). */
+export async function fontsIn(dir: string, opts: { recursive?: boolean } = {}): Promise<FontFile[]> {
+  const entries = await readdir(dir, { recursive: opts.recursive }).catch(() => [] as string[]);
   const out: FontFile[] = [];
-  for (const f of files) {
+  for (const f of entries.filter((e) => FONT_EXT.test(e))) {
     const n = await readFontNames(path.join(dir, f));
     if (n) out.push({ ...n, file: path.join(dir, f) });
   }
   return out;
 }
 
-/** System font folders (Windows, macOS, Linux). */
+/** System font folders (Windows, macOS, Linux), including the user's own. */
 export function systemFontDirs(): string[] {
+  const xdgData = process.env.XDG_DATA_HOME && path.isAbsolute(process.env.XDG_DATA_HOME) ? process.env.XDG_DATA_HOME : path.join(homedir(), ".local", "share");
   const dirs =
     process.platform === "win32"
       ? [path.join(process.env.WINDIR ?? "C:\\Windows", "Fonts"), path.join(process.env.LOCALAPPDATA ?? "", "Microsoft", "Windows", "Fonts")]
       : process.platform === "darwin"
         ? ["/System/Library/Fonts", "/Library/Fonts", path.join(homedir(), "Library", "Fonts")]
-        : ["/usr/share/fonts", "/usr/local/share/fonts", path.join(homedir(), ".fonts")];
-  return dirs.filter((d) => d && existsSync(d));
+        : ["/usr/share/fonts", "/usr/local/share/fonts", path.join(xdgData, "fonts"), path.join(homedir(), ".fonts")];
+  return [...new Set(dirs)].filter((d) => d && existsSync(d));
 }
+
+let systemFamilies: Promise<Set<string>> | undefined;
+
+/** Lowercase family names installed on the system, read once per process. */
+export function systemFontFamilies(): Promise<Set<string>> {
+  systemFamilies ??= (async () => {
+    const names = new Set<string>();
+    for (const d of systemFontDirs()) for (const f of await fontsIn(d, { recursive: true })) names.add(f.family.toLowerCase());
+    return names;
+  })();
+  return systemFamilies;
+}
+
+/**
+ * Copy the bundled fonts (and their licenses) into a fonts folder where they are missing, so libass
+ * and resvg find them in the one folder they are given. Returns the folder.
+ */
+export async function ensureBundledFonts(dir = defaultFontsDir(), from = bundledFontsDir()): Promise<string> {
+  await mkdir(dir, { recursive: true });
+  for (const f of await readdir(from).catch(() => [] as string[])) {
+    if (!FONT_EXT.test(f) && !/\.txt$/i.test(f)) continue;
+    const to = path.join(dir, f);
+    const src = path.join(from, f);
+    const [a, b] = await Promise.all([stat(src), stat(to).catch(() => undefined)]);
+    if (b?.size === a.size) continue;
+    await copyFile(src, `${to}.part`);
+    await rename(`${to}.part`, to);
+  }
+  return dir;
+}
+
+/**
+ * The replacements (lowercase name to family) for FONT_REPLACEMENTS names that are neither installed
+ * on the system nor in the fonts folder. A project made on Windows with Arial keeps Arial there and
+ * gets Arimo on Linux.
+ */
+export async function missingFontReplacements(fontsDir = defaultFontsDir()): Promise<Record<string, string>> {
+  const have = new Set([...(await systemFontFamilies()), ...(await fontsIn(fontsDir)).map((f) => f.family.toLowerCase())]);
+  return Object.fromEntries(Object.entries(FONT_REPLACEMENTS).filter(([name]) => !have.has(name.toLowerCase())).map(([name, to]) => [name.toLowerCase(), to]));
+}
+
+/** Everything a render needs for text: the fonts folder (with the bundled fonts in it) and the replacements to apply. */
+export async function prepareFonts(fontsDir?: string): Promise<{ fontsDir: string; fontMap: Record<string, string> }> {
+  const dir = await ensureBundledFonts(path.resolve(fontsDir ?? defaultFontsDir()));
+  return { fontsDir: dir, fontMap: await missingFontReplacements(dir) };
+}
+
+/** A family name after replacement (`fontMap` keys are lowercase). */
+export const replaceFont = (family: string, fontMap?: Record<string, string>): string => fontMap?.[family.trim().toLowerCase()] ?? family;
 
 /** Font families available to the renderer: the system's and the fonts folder's, with where each comes from. */
 export async function listFontFamilies(fontsDir = defaultFontsDir()): Promise<{ family: string; styles: string[]; source: "system" | "installed" }[]> {
@@ -102,7 +179,7 @@ export async function listFontFamilies(fontsDir = defaultFontsDir()): Promise<{ 
       byFamily.set(f.family, e);
     }
   };
-  for (const d of systemFontDirs()) add(await fontsIn(d), "system");
+  for (const d of systemFontDirs()) add(await fontsIn(d, { recursive: true }), "system");
   add(await fontsIn(fontsDir), "installed");
   return [...byFamily.entries()].map(([family, e]) => ({ family, styles: [...e.styles].sort(), source: e.source })).sort((a, b) => a.family.localeCompare(b.family));
 }

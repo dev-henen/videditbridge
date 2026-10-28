@@ -292,7 +292,7 @@ _No parameters._
 | `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
 | `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
 | `style` | { fontFamily, fontSize, color, bold, italic, uppercase, outlineColor, outlineWidth, shadow, shadowColor, background, align, letterSpacing } |  |  |  |
-| `style.fontFamily` | string |  | `"Arial"` |  |
+| `style.fontFamily` | string |  | `"Arimo"` |  |
 | `style.fontSize` | number |  | `64` | Font size in output pixels (> 0) |
 | `style.color` | string |  | `"#FFFFFF"` |  |
 | `style.bold` | boolean |  | `true` |  |
@@ -1022,7 +1022,7 @@ _No parameters._
 
 ### list_fonts
 
-**read-only**. List the font families text can use: the ones installed on this computer and the ones added with install_font. Use the family name exactly as listed in a text style's fontFamily.
+**read-only**. List the font families text can use: the ones added with install_font, the bundled ones (Arimo, Archivo Black, Gelasio, Anton, Cousine, Comic Neue: the same on every computer, so prefer them and added fonts over system fonts) and the ones installed on this computer. Use the family name exactly as listed in a text style's fontFamily.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|

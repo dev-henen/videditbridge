@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { defaultModelsDir } from "../appdirs.js";
 import path from "node:path";
 import type { Fit, Position } from "../../core/schema.js";
 import { round3 } from "../../core/util.js";
@@ -41,7 +41,7 @@ export interface FaceFrame {
 }
 
 export interface FaceDetectorOptions extends FfmpegOptions {
-  /** Where the model is kept. Default $AVE_MODELS_DIR or ~/.cache/ai-video-editor/models. */
+  /** Where the model is kept. Default $AVE_MODELS_DIR, else the models folder in the app cache (see appDir). */
   modelsDir?: string;
   /** Called while the model downloads on first use (0..1). */
   onDownload?: (progress: number) => void;
@@ -93,7 +93,7 @@ export function decodeYunet(outputs: Record<string, ArrayLike<number>>, content:
 
 /** Models folder shared with the other local models. */
 export function modelsDir(opts: { modelsDir?: string } = {}): string {
-  return opts.modelsDir ?? process.env.AVE_MODELS_DIR ?? path.join(homedir(), ".cache", "ai-video-editor", "models");
+  return opts.modelsDir ?? defaultModelsDir();
 }
 
 /** A model file in the models folder, downloaded on first use. */

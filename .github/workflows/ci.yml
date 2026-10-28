@@ -1,0 +1,59 @@
+name: CI
+
+# Every push and pull request: typecheck, unit tests, generated docs and the FFmpeg self-test on
+# each target system. Nightly (and on demand): the render and model integration tests too.
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  engine:
+    name: Engine (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Windows x64, os: windows-latest }
+          - { name: macOS arm64, os: macos-14 }
+          - { name: macOS x64, os: macos-13 }
+          - { name: Ubuntu 22.04 x64, os: ubuntu-22.04 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Optional dependencies (ffmpeg-static, onnxruntime-node, resvg) must install on every target.
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - name: FFmpeg self-test
+        run: npx tsx src/cli.ts check
+      - run: npm run docs:check
+      - name: Unit tests
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        run: npx vitest run --exclude "**/*.integration.test.ts"
+      - name: All tests, with renders and models
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: npm test
+      - name: Keep test renders
+        if: failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: renders-${{ matrix.os }}
+          path: test/.output
+          if-no-files-found: ignore
+
+  app:
+    # The desktop app is WPF (Windows only) until the Avalonia port; then this becomes a matrix.
+    name: Desktop app (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet build app/VideoEditor
