@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:VideoEditor.Shared"
+             x:Class="VideoEditor.Projects.ProjectsScreen">
+  <!-- Covers the workspace: create a project, or open a recent one or a folder -->
+  <Border Background="{StaticResource Bg}">
+    <Grid MaxWidth="620" VerticalAlignment="Center" Margin="16,0">
+      <StackPanel>
+        <DockPanel Margin="0,0,0,4">
+          <Button DockPanel.Dock="Right" Click="OnHideProjects" ToolTip.Tip="Back to the open project" AutomationProperties.Name="Back to the open project"
+                  IsVisible="{Binding IsProjectOpen}">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Dismiss}"/>
+          </Button>
+          <TextBlock Text="Projects" FontSize="18" FontWeight="SemiBold"/>
+        </DockPanel>
+        <TextBlock Text="{Binding EngineError}" Foreground="{StaticResource Text}" TextWrapping="Wrap" Margin="0,0,0,8" IsVisible="{Binding HasEngineError}"/>
+        <DockPanel Margin="0,8,0,10">
+          <Button DockPanel.Dock="Right" Classes="primary" Click="OnCreateProject" Margin="6,0,0,0">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Add}" FontSize="14" Foreground="{StaticResource OnAccent}" Margin="0,0,6,0"/>
+              <TextBlock Text="New" Foreground="{StaticResource OnAccent}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            </StackPanel>
+          </Button>
+          <ComboBox DockPanel.Dock="Right" Width="80" Margin="6,0,0,0" ItemsSource="{Binding AspectRatios}" SelectedItem="{Binding NewProjectAspect}"/>
+          <TextBox Text="{Binding NewProjectName}"/>
+        </DockPanel>
+        <DockPanel Margin="0,4,0,4">
+          <Button DockPanel.Dock="Right" Click="OnOpenFolder" ToolTip.Tip="Open a project folder" AutomationProperties.Name="Open a project folder">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.FolderOpen}"/>
+          </Button>
+          <TextBlock Text="Recent" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center"/>
+        </DockPanel>
+        <ListBox x:Name="ProjectList" ItemsSource="{Binding Projects}" MaxHeight="220" DoubleTapped="OnProjectDoubleClick">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <DockPanel Margin="6,6">
+                <Button DockPanel.Dock="Right" Click="OnOpenProject" Tag="{Binding Dir}" ToolTip.Tip="Open" AutomationProperties.Name="Open">
+                  <TextBlock Classes="icon" Text="{x:Static shared:Icons.Open}" FontSize="14"/>
+                </Button>
+                <TextBlock DockPanel.Dock="Left" Classes="icon" Text="{x:Static shared:Icons.Folder}" Foreground="{StaticResource Muted}" Margin="0,0,10,0"/>
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Name}"/>
+                  <TextBlock Text="{Binding Updated}" FontSize="10" Foreground="{StaticResource Faint}"/>
+                </StackPanel>
+              </DockPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

@@ -4,7 +4,7 @@ coverage/
 .render/
 *.log
 test/.output/
-projects/
+/projects/
 ui/**/bin/
 ui/**/obj/
 native/target/
