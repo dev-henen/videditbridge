@@ -6,7 +6,8 @@ import { REFERENCE_DIR, generateDocs } from "../scripts/gen-docs.js";
 describe("generated reference docs", () => {
   it("match the code (run `npm run docs` if this fails)", async () => {
     for (const [name, content] of Object.entries(await generateDocs())) {
-      const onDisk = await readFile(path.join(REFERENCE_DIR, name), "utf8").catch(() => "");
+      // Git may check files out with CRLF on Windows; only the text matters.
+      const onDisk = (await readFile(path.join(REFERENCE_DIR, name), "utf8").catch(() => "")).replace(/\r\n/g, "\n");
       expect(onDisk, `docs/reference/${name} is out of date`).toBe(content);
     }
   });

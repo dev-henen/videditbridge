@@ -91,7 +91,8 @@ describe("file name case (B2)", () => {
     expect(fileOnDisk(path.join(dir, "Media", "missing.mp4"))).toBeUndefined();
     const p = addAsset(createProject({}), { type: "audio", id: "a", src: "media/clip.mp4", duration: 1 });
     const issues = validateProject(p, { baseDir: dir }).issues.filter((i) => i.path === "assets.0.src");
-    if (process.platform === "linux") expect(issues[0]).toMatchObject({ level: "error", message: expect.stringMatching(/not found/) });
+    // Linux file systems are case-sensitive, so there the file is missing (and the message names the one on disk).
+    if (process.platform === "linux") expect(issues[0]).toMatchObject({ level: "error", message: expect.stringMatching(/not found.*"Media\/Clip\.MP4"/) });
     else expect(issues[0]).toMatchObject({ level: "warning", message: expect.stringContaining('named "Media/Clip.MP4" on disk') });
   });
 });

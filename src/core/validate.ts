@@ -151,9 +151,12 @@ export function validateProject(input: unknown, opts: { baseDir?: string } = {})
     if (!opts.baseDir) return;
     const file = path.resolve(opts.baseDir, a.src.replace(/\\/g, "/"));
     const onDisk = fileOnDisk(file);
-    if (!onDisk) err(at, `File not found: ${a.src}`);
-    else if (onDisk !== file)
-      warn(at, `"${a.src}" is named "${path.relative(opts.baseDir, onDisk).replace(/\\/g, "/")}" on disk: only the case differs, which works on Windows and macOS but not on Linux`);
+    if (!onDisk) return err(at, `File not found: ${a.src}`);
+    if (onDisk === file) return;
+    const named = path.relative(opts.baseDir, onDisk).replace(/\\/g, "/");
+    // Systems that ignore case open the file anyway; Linux does not.
+    if (existsSync(file)) warn(at, `"${a.src}" is named "${named}" on disk: only the case differs, which works on Windows and macOS but not on Linux`);
+    else err(at, `File not found: ${a.src} (on disk it is "${named}"; letter case matters on this system)`);
   });
   return { ok: !issues.some((i) => i.level === "error"), issues };
 }

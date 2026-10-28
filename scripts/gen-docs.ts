@@ -233,7 +233,8 @@ if (isMain) {
   for (const [name, content] of Object.entries(files)) {
     const file = path.join(REFERENCE_DIR, name);
     const current = await readFile(file, "utf8").catch(() => "");
-    if (current === content) continue;
+    // Git may check files out with CRLF on Windows; only the text matters.
+    if (current.replace(/\r\n/g, "\n") === content) continue;
     if (check) {
       console.error(`out of date: docs/reference/${name}`);
       stale++;
