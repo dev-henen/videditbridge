@@ -32,7 +32,8 @@ const ctx = { width: 1080, height: 1920, fps: 30, duration: 4 };
 describe("effects", () => {
   it.each(EFFECTS.map((e) => [e.id, e]))("%s compiles with default params", (_id, e) => {
     if (e.id === "lut") return; // needs a file param
-    const f = effectToFilter({ type: e.id }, ctx);
+    // The sky matte the renderer gives effects that ask for it (skyReplace has no fallback without one).
+    const f = effectToFilter({ type: e.id }, { ...ctx, skyMask: () => "sky" });
     expect(f).toMatch(/^[a-z0-9]/);
     expect(f).not.toContain("undefined");
     expect(f).not.toContain("NaN");

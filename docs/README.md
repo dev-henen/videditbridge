@@ -18,6 +18,7 @@
 | [Faces, cutouts & reframing](guides/faces.md) | Local face detection and tracking, person cutout for background blur and replacement, reframing 16:9 for 9:16, text over faces |
 | [Selecting & tracking objects](guides/objects.md) | Select any object by box, point or name, follow it through the clips, and limit effects and grades to it |
 | [Tracking points & surfaces](guides/tracking.md) | Follow a point or a flat surface, pin layers to it, and put a new picture on a screen or sign |
+| [Sky masks & replacement](guides/sky.md) | Find the sky on every frame, grade it, and replace it with a picture or gradient that moves with the camera |
 | [Retouch & audio](guides/retouch-and-audio.md) | Beauty retouch, background blur, voice cleanup, audio effects, speed and volume |
 | [Editing raw footage](guides/raw-footage.md) | Sound maps (speech, silence, music), silence removal, shot detection, beat sync, moment effects and sound effects |
 | [Roadmap](roadmap.md) | Suggested improvements, in priority order, and why each matters |

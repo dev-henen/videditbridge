@@ -22,6 +22,14 @@ export interface EffectContext {
   faceMask?: () => string | undefined;
   /** Like personMask, for a tracked object (project.objects, by id), where the renderer prepared it. */
   objectMask?: (id: string) => string | undefined;
+  /** Like personMask, for the sky (255 = sky). */
+  skyMask?: () => string | undefined;
+  /**
+   * A picture asset the effect asked for (EffectDefinition.usesMedia): each call returns a new label
+   * of it at its own size, as yuv420p at the clip's frame rate, starting at the clip's start and
+   * repeating (stills held, videos looped) for the clip's duration. Undefined where not prepared.
+   */
+  media?: (assetId: string) => string | undefined;
 }
 
 export type EffectCategory = "light" | "color" | "grade" | "retouch" | "blur" | "stylize" | "motion" | "shake" | "distort" | "time";
@@ -42,6 +50,10 @@ export interface EffectDefinition<P extends z.ZodType = z.ZodType> {
   usesPersonMask?: (params: z.output<P>) => boolean;
   /** The effect wants masks that follow the faces (EffectContext.faceMask); the renderer then prepares them. */
   usesFaceMask?: (params: z.output<P>) => boolean;
+  /** The effect wants the clip's sky matte (EffectContext.skyMask); the renderer then prepares one. */
+  usesSkyMask?: (params: z.output<P>) => boolean;
+  /** Picture assets the effect reads (EffectContext.media), by id. */
+  usesMedia?: (params: z.output<P>) => string[];
   /** Returns a comma-separated FFmpeg filter chain. */
   toFilter(params: z.output<P>, ctx: EffectContext): string;
 }

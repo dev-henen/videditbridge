@@ -30,6 +30,20 @@ describe("keyframe values", () => {
     expect(numberExpr([k(1, 5)], "t")).toBe("5");
   });
 
+  it("keeps a tracked path of hundreds of keyframes within FFmpeg's nesting limit", () => {
+    const keys = Array.from({ length: 300 }, (_, i) => k(i / 30, Math.sin(i / 7)));
+    const expr = numberExpr(keys, "t");
+    let depth = 0;
+    let most = 0;
+    for (const c of expr) {
+      if (c === "(") most = Math.max(most, ++depth);
+      else if (c === ")") depth--;
+    }
+    expect(most).toBeLessThan(40);
+    // Keyframe times are written to the millisecond.
+    for (const t of [-1, 0, 0.51, 3.3, 7.77, 9.966, 12]) expect(evalExpr(expr, t)).toBeCloseTo(numberAt(keys, t), 2);
+  });
+
   it("smooths and simplifies a tracked path", () => {
     const path = [0, 0.5, 1, 1.5, 2, 2.5, 3].map((time, i) => ({ time, value: { x: 0.1 * i + (i % 2 ? 0.004 : -0.004), y: 0.5 }, easing: "linear" as const }));
     const smooth = smoothKeys(path, 1);

@@ -84,9 +84,9 @@ const range01 = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]);
 /** What a mask selects, without modifiers. */
 const maskSelection = {
   kind: z
-    .enum(["person", "face", "object", "key", "luma", "shape"])
+    .enum(["person", "face", "object", "sky", "key", "luma", "shape"])
     .describe(
-      "person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object (all three found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle",
+      "person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle",
     ),
   object: z.string().optional().describe("object: the id of a tracked object (project.objects, made with select_object)"),
   hue: z

@@ -137,6 +137,7 @@ Clips take `keyframes.focus`, the crop focus over time for `fit: "cover"`, so a 
 | `face` | Soft ellipses following every face (primary video clips only) |
 | `person` | The person's cutout (primary video clips only) |
 | `object` | A tracked object from `project.objects`, by `object: "<id>"` (primary clips of its video only; see [objects](objects.md)) |
+| `sky` | The sky, found by a model on every frame (primary video clips only; see [sky](sky.md)) |
 
 Every mask also takes `invert`, `feather` (edge softness as a fraction of frame height, default 0.01), `grow` (+ grows, - shrinks, fraction of frame height), `smooth` (average the matte over this many frames), `denoise` (median on key and luma mattes) and `combine`: more masks merged in order with `op` `add`, `intersect` or `subtract`.
 

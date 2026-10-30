@@ -104,6 +104,7 @@ A new `color` effect is inserted *before* stylize effects such as `letterbox`, s
 - **Combine** a key with a shape to keep the sky but not blue clothes, or subtract `face` from a luma key to keep skin out of a highlight change.
 - **Feather** of 0.01 (1% of the frame height) or more keeps the edge invisible; `grow` closes small holes before feathering; `smooth` (frames) stops a key from flickering on noisy footage, as does `denoise`.
 - **Objects**: select one with `select_object` (a box, a point or a name), check it with `track_object`, then grade it with mask `{ "kind": "object", "object": "<id>" }`. See [Selecting & tracking objects](objects.md).
+- **The sky**: mask `{ "kind": "sky" }` follows the sky found by a model on every frame, so a sky can be deepened without catching blue clothing or water. To put in a new sky, use `replace_sky`. See [Sky masks & replacement](sky.md).
 - Masks work on any effect, not only color: a `blur` outside a shape, `sharpen` on faces, a `glow` on one object. See [the project document](project-format.md) for the full mask format.
 
 ## Notes

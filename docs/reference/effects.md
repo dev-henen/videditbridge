@@ -2,7 +2,7 @@
 
 # Effects
 
-84 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+85 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -16,7 +16,7 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
 - **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe)
 - **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs), [custom](#custom)
-- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [maskView](#maskview), [denoise](#denoise)
+- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [skyReplace](#skyreplace), [maskView](#maskview), [denoise](#denoise)
 - **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur)
 - **motion**: [stabilize](#stabilize), [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat)
 - **distort**: [mirror](#mirror), [chromaKey](#chromakey), [tilt](#tilt)
@@ -606,6 +606,29 @@ _No parameters._
 | `subject.height` | number | yes |  | Ellipse height as a fraction of frame height (> 0, ≤ 2) |
 | `feather` | number |  | `0.25` | Softness of the person's edge (≥ 0.02, ≤ 1) |
 
+### skyReplace
+
+**Replace Sky**. Put a new sky (an image or video asset, or a gradient) where the sky is, found by a model on every frame of primary clips. The new sky moves with the camera, is softened to the scene's sharpness, gets the scene's horizon haze, and the scenery is tinted slightly toward it. Use replace_sky, which measures the camera motion and colors and sets this up; check the edge with render_frame where trees or buildings meet the sky.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `asset` | string |  |  | Image or video asset of the new sky; omit for a gradient |
+| `colors` | unknown[] |  | `["#3E7FD8","#A9CAEC"]` | Gradient top and bottom colors, used when there is no asset |
+| `focus` | { x, y } |  | `{"x":0.5,"y":0.5}` | Which part of the new sky picture shows when it is cropped to the frame (0 = left or top edge, 1 = right or bottom) |
+| `focus.x` | number | yes |  | (≥ 0, ≤ 1) |
+| `focus.y` | number | yes |  | (≥ 0, ≤ 1) |
+| `motion` | { time, x, y, scale, angle }[] |  | `[]` | The camera's motion, so the sky moves with the scene (replace_sky measures it) |
+| `cover` | number |  | `1.1` | How much larger than the frame the new sky is drawn, so moving it never shows its edges (replace_sky sets it from the motion) (≥ 1, ≤ 3) |
+| `gain` | number |  | `1` | Brightness of the new sky (replace_sky matches it to the old sky's) (≥ 0.25, ≤ 4) |
+| `blur` | number |  | `0.6` | Soften the new sky to the scene's sharpness, in pixels at 1080p (≥ 0, ≤ 20) |
+| `haze` | number |  | `0.35` | Horizon haze: the scene's horizon color over the new sky, fading up from the scenery (≥ 0, ≤ 1) |
+| `hazeColor` | string |  | `"#C8D3DE"` | Haze color (replace_sky uses the new sky's lowest part, paler) |
+| `hazeHeight` | number |  | `0.1` | How far up the haze reaches, as a fraction of frame height (≥ 0.01, ≤ 0.5) |
+| `relight` | number |  | `0.12` | Tint the scenery toward the new sky's color, so it seems lit by it (0.1 is subtle) (≥ 0, ≤ 1) |
+| `lightColor` | string |  | `"#9DB7D9"` | The new sky's color, for relight (replace_sky measures it) |
+| `edge` | number |  | `0.001` | Grow the new sky over the scenery's outline by this fraction of frame height (at least a pixel), covering the old sky that edge pixels still hold; negative shrinks it, 0 leaves the matte as found (≥ -0.02, ≤ 0.02) |
+| `feather` | number |  | `0.0015` | Edge softness as a fraction of frame height (≥ 0, ≤ 0.05) |
+
 ### maskView
 
 **Mask View**. Shows a mask in place of an effect, white on black (matte) or as a red tint over the picture (overlay), to check what the mask selects. render_mask uses it; it does not belong in a finished edit.
@@ -613,7 +636,7 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  | `{"kind":"shape","softness":0.2,"shape":{"type":"ellipse","x":0.5,"y":0.5,"width":0.5,"height":0.5},"invert":false,"feather":0.01,"grow":0,"smooth":0,"denoise":false}` | Limits an effect to part of the frame. Check it with render_mask before relying on it |
-| `mask.kind` | "person" \| "face" \| "object" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object (all three found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |

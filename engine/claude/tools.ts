@@ -42,7 +42,7 @@ import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
-import { render, renderContactSheet, renderFrame, trackObjectInClips } from "../tools/render/render.js";
+import { render, renderContactSheet, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
 import { effectsOf } from "../tools/render/compile.js";
 import { analyzeColor, channelLevels, matchingCurves, renderScopes } from "../tools/render/color-analysis.js";
 import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, frameFeatures, segmentLabel, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
@@ -1955,6 +1955,154 @@ export const TOOLS: ToolDefinition[] = [
     },
   }),
   tool({
+    name: "replace_sky",
+    description:
+      "Replace the sky in video clips with a picture or video (a sky photo, a sunset, a time-lapse of clouds) or a gradient. The sky is found by a model on this machine (a 176 MB model downloads once; about a second of work per second of footage) and followed through every frame. " +
+      "The new sky moves with the camera (measured from the distant scenery), is matched in brightness to the old sky, softened to the scene's sharpness, and gets the scene's own horizon haze, and the scenery is tinted slightly toward the new sky. Shows the result on a frame of each clip. " +
+      "Pick a new sky whose light suits the scene (a sunset sky over midday shadows looks wrong; grade the clip warmer to go with it). Check edges where trees, hair or buildings meet the sky with render_frame, and the sky's motion with render_preview. To fine-tune haze, relight or softening, call again with them; remove takes it out.",
+    input: z.object({
+      clipIds: z.array(z.string()).optional().describe("Clips to change (default: every primary video clip that shows sky)"),
+      assetId: z.string().optional().describe("Image or video asset for the new sky; omit for a gradient"),
+      colors: z.tuple([z.string(), z.string()]).optional().describe("Gradient top and bottom colors (#RRGGBB) when there is no picture, e.g. a deep blue over a pale one"),
+      focus: PositionSchema.optional().describe("Which part of the new sky picture shows when it is cropped (0 = left or top, 1 = right or bottom; default the middle)"),
+      follow: z.number().min(0).max(1).default(1).describe("How much the new sky moves with the camera: 1 like distant scenery (pans, tilts, zooms), 0 fixed"),
+      match: z.number().min(0).max(1).default(0.5).describe("Bring the new sky's brightness this far toward the old sky's (0 keeps it as it is)"),
+      haze: z.number().min(0).max(1).optional().describe("Horizon haze strength (default 0.35)"),
+      relight: z.number().min(0).max(1).optional().describe("Tint of the scenery toward the new sky (default 0.12, subtle)"),
+      blur: z.number().min(0).max(20).optional().describe("Softening of the new sky in pixels at 1080p (default 0.6)"),
+      remove: z.boolean().optional().describe("Take the sky replacement out of these clips"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const tl = computeTimeline(s.project);
+      const targets = (i.clipIds ?? tl.clips.filter((c) => c.asset.type === "video").map((c) => c.clip.id)).map((id) => tl.clips.find((c) => c.clip.id === id));
+      const missing = (i.clipIds ?? []).filter((id, k) => !targets[k]);
+      if (missing.length) return { text: `No primary clip ${missing.join(", ")}.`, isError: true };
+      const clips = targets.filter((c): c is NonNullable<typeof c> => !!c && c.asset.type === "video");
+      if (!clips.length) return { text: "No video clips to change; sky replacement works on primary video clips.", isError: true };
+      if (i.remove) {
+        let p = s.project;
+        for (const tc of clips) p = ops.updateClip(p, tc.clip.id, { effects: tc.clip.effects.filter((e) => e.type !== "skyReplace") });
+        return commit(s, p, "replace_sky", i, `Took the sky replacement out of ${clips.map((c) => c.clip.id).join(", ")}.`);
+      }
+      const plate = i.assetId ? s.project.assets.find((a) => a.id === i.assetId) : undefined;
+      if (i.assetId && (!plate || (plate.type !== "image" && plate.type !== "video"))) return { text: `${i.assetId} is not an image or video asset.`, isError: true };
+      const colors = (i.colors ?? ["#3E7FD8", "#A9CAEC"]) as [string, string];
+      if (colors.some((c) => !/^#[0-9a-fA-F]{6}$/.test(c))) return { text: "Colors are #RRGGBB.", isError: true };
+      // The new sky's mean color (for relight and matching brightness) and its lowest quarter's (the haze grows from it).
+      const hexToRgb = (h: string) => [1, 3, 5].map((o) => parseInt(h.slice(o, o + 2), 16));
+      let plateRgb: number[];
+      let plateLow: number[];
+      if (plate && "src" in plate) {
+        const r = await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", ...(plate.type === "video" ? ["-ss", "0.5"] : []), "-i", s.resolve(plate.src), "-frames:v", "1", "-vf", "scale=1:4:flags=area", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { ffmpegPath: s.options.ffmpegPath, binaryStdout: true });
+        const rows = Array.from(r.stdoutBuffer ?? Buffer.alloc(12, 160));
+        plateRgb = [0, 1, 2].map((c) => (rows[c]! + rows[3 + c]! + rows[6 + c]! + rows[9 + c]!) / 4);
+        plateLow = rows.slice(9, 12);
+      } else {
+        plateRgb = hexToRgb(colors[0]).map((v, k) => (v + hexToRgb(colors[1])[k]!) / 2);
+        plateLow = hexToRgb(colors[1]);
+      }
+      const toHex = (c: number[]) => `#${c.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+      const luma = (c: number[]) => 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!;
+
+      activity?.progress(0.02);
+      const found = await skyInClips(s.project, clips.map((c) => c.clip.id), { ...s.renderOptions, onProgress: (p) => activity?.progress(0.02 + 0.8 * p) });
+      const { width: W, height: H, fps } = s.project.settings;
+      let p = s.project;
+      const lines: string[] = [];
+      const changed: { clipId: string; time: number }[] = [];
+      for (const { clipId, track } of found) {
+        const tc = tl.clips.find((c) => c.clip.id === clipId)!;
+        const share = track.share.reduce((a, b) => a + b, 0) / Math.max(1, track.share.length);
+        if (share < 0.02) {
+          lines.push(`${clipId}: no sky found (left as it is).`);
+          continue;
+        }
+        // Camera motion, as how the point of the source under the frame's center moves, in frame fractions.
+        const asset = tc.asset as { width?: number; height?: number };
+        const source = { width: asset.width ?? track.width, height: asset.height ?? track.height };
+        const fitScale = (t: number) => {
+          const a = framePointToSource({ x: 0, y: 0 }, source, s.project.settings, tc, t);
+          const b = framePointToSource({ x: 1, y: 1 }, source, s.project.settings, tc, t);
+          return { sx: 1 / (b.x - a.x), sy: 1 / (b.y - a.y) };
+        };
+        const samples: { time: number; value: { x: number; y: number; scale: number; angle: number }; easing: "linear" }[] = [];
+        for (let f = 0; f < track.motion.length; f++) {
+          const t = round3(sourceToTimeline(tc, track.start + f / track.fps));
+          if (t < tc.start - 1e-6 || t > tc.end + 1e-6) continue;
+          const [a, nb, tx, b, , ty] = track.motion[f]!;
+          const c = framePointToSource({ x: 0.5, y: 0.5 }, source, s.project.settings, tc, t);
+          const [cx, cy] = [c.x * track.width, c.y * track.height];
+          const { sx, sy } = fitScale(t);
+          const dx = ((a! * cx + nb! * cy + tx! - cx) / track.width) * sx * i.follow;
+          const dy = ((b! * cx + a! * cy + ty! - cy) / track.height) * sy * i.follow;
+          const scale = 1 + (Math.hypot(a!, b!) - 1) * i.follow;
+          const angle = ((Math.atan2(b!, a!) * 180) / Math.PI) * i.follow;
+          samples.push({ time: round3(t - tc.start), value: { x: Math.round(dx * 1e5) / 1e5, y: Math.round(dy * 1e5) / 1e5, scale: Math.round(scale * 1e5) / 1e5, angle: Math.round(angle * 1e3) / 1e3 }, easing: "linear" });
+        }
+        // A centered average over 7 frames takes out the tracker's sub-pixel jitter without lag; then keep only the keyframes that matter.
+        const smooth = samples.map((sample, k) => {
+          // The window narrows evenly at the ends, so they are not pulled inward.
+          const r = Math.min(3, k, samples.length - 1 - k);
+          const win = samples.slice(k - r, k + r + 1);
+          const avg = (pick: (v: (typeof sample)["value"]) => number) => win.reduce((n, w) => n + pick(w.value), 0) / win.length;
+          return { ...sample, value: { x: avg((v) => v.x), y: avg((v) => v.y), scale: avg((v) => v.scale), angle: avg((v) => v.angle) } };
+        });
+        const motion = simplifyKeysBy(smooth, (v) => [v.x * W, v.y * H, (v.scale - 1) * H, (v.angle * H) / 57.3], 0.5).map((k) => ({
+          time: k.time,
+          x: Math.round(k.value.x * 1e5) / 1e5,
+          y: Math.round(k.value.y * 1e5) / 1e5,
+          scale: Math.round(k.value.scale * 1e5) / 1e5,
+          angle: Math.round(k.value.angle * 1e3) / 1e3,
+        }));
+        // Large enough that the moved, zoomed and turned sky still covers the frame.
+        let cover = 1.02;
+        for (const k of motion) {
+          const r = (Math.abs(k.angle) * Math.PI) / 180;
+          const fx = Math.cos(r) + (H / W) * Math.sin(r);
+          const fy = Math.cos(r) + (W / H) * Math.sin(r);
+          cover = Math.max(cover, (Math.max(fx * (1 + 2 * Math.abs(k.x)), fy * (1 + 2 * Math.abs(k.y))) / k.scale) * 1.02);
+        }
+        cover = round3(Math.min(3, cover));
+        const old = track.colors.sky ? hexToRgb(track.colors.sky) : plateRgb;
+        const gain = round3(Math.min(2, Math.max(0.5, (luma(old) / Math.max(8, luma(plateRgb))) ** i.match)));
+        const params = {
+          ...(plate ? { asset: plate.id } : { colors }),
+          ...(i.focus ? { focus: i.focus } : {}),
+          motion: motion.length > 1 ? motion : [],
+          cover,
+          gain,
+          ...(i.blur !== undefined ? { blur: i.blur } : {}),
+          ...(i.haze !== undefined ? { haze: i.haze } : {}),
+          // Haze is the new sky's own horizon, paler: air between the camera and the skyline scatters light.
+          hazeColor: toHex(plateLow.map((v) => v * gain + (255 - v * gain) * 0.35)),
+          ...(i.relight !== undefined ? { relight: i.relight } : {}),
+          lightColor: toHex(plateRgb.map((v) => v * gain)),
+        };
+        // First, so the clip's own grade applies to the new sky as well.
+        const effects = [{ type: "skyReplace", params, label: "sky" }, ...tc.clip.effects.filter((e) => e.type !== "skyReplace")];
+        p = ops.updateClip(p, clipId, { effects });
+        const most = Math.max(...motion.map((k) => Math.hypot(k.x * W, k.y * H)), 0);
+        const zooms = motion.map((k) => k.scale);
+        const turn = Math.max(...motion.map((k) => Math.abs(k.angle)), 0);
+        lines.push(
+          `${clipId} (${formatTime(tc.start)}-${formatTime(tc.end)}): sky ${Math.round(share * 100)}% of the frame; camera moves the sky up to ${Math.round(most)} px${zooms.length && Math.max(...zooms) - Math.min(...zooms) > 0.01 ? `, zoom ${Math.min(...zooms).toFixed(2)}-${Math.max(...zooms).toFixed(2)}` : ""}${turn > 0.2 ? `, turns up to ${turn.toFixed(1)} degrees` : ""}; brightness x${gain}, ${track.keyframes.length} frames looked at by the model.`,
+        );
+        changed.push({ clipId, time: round3((tc.start + tc.end) / 2) });
+      }
+      if (!changed.length) return { text: `No sky to replace.\n${lines.join("\n")}`, isError: true };
+      const res = commit(s, p, "replace_sky", { ...i }, `Replaced the sky${plate ? ` with ${plate.id}` : ` with a ${colors.join(" to ")} gradient`}:\n${lines.join("\n")}`);
+      const images: { path: string; mediaType: "image/png" }[] = [];
+      for (const c of changed.slice(0, 3)) {
+        const out = await s.outputPath(`sky-${c.clipId}-${Date.now().toString(36)}.png`);
+        await renderFrame(s.project, c.time, { output: out, scale: 0.5, proxies: true, ...s.renderOptions });
+        s.recordRender({ kind: "frame", path: out, time: c.time });
+        images.push({ path: out, mediaType: "image/png" });
+      }
+      return { ...res, text: `${res.text}\nThe image${images.length > 1 ? "s show" : " shows"} the middle of ${changed.slice(0, 3).map((c) => c.clipId).join(", ")}. Check edges against trees or buildings with render_frame at full scale.`, images };
+    },
+  }),
+  tool({
     name: "follow_face",
     description:
       "Make a layer (a name label, a callout, an arrow, a sticker) follow a person on screen: it finds the main face in the clips under the layer and sets position keyframes beside it (above, below, left, right, or on it), smoothed so it glides rather than jitters. " +
@@ -3359,6 +3507,8 @@ export function describeToolCall(name: string, input: unknown): string {
       return `Pinning ${quote(i.layerId)} to ${quote(i.trackId)}`;
     case "replace_screen":
       return `Putting ${quote(i.assetId)} on ${quote(i.trackId)}`;
+    case "replace_sky":
+      return i.remove ? "Taking out the new sky" : i.assetId ? `Replacing the sky with ${quote(i.assetId)}` : "Replacing the sky";
     case "render_mask":
       return `Rendering the mask on ${quote(i.target)}`;
     case "render_scopes":

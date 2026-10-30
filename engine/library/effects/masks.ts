@@ -9,15 +9,15 @@ import { labeler, type EffectContext } from "./helpers.js";
  */
 
 type Selection = Omit<MaskPart, "op">;
-type ModelKind = "person" | "face";
+type ModelKind = "person" | "face" | "sky";
 
 const parts = (mask: Mask): Selection[] => [mask, ...(mask.combine ?? [])];
 
 /** Which renderer stream a part reads: "person", "face", "object:<id>", or none for in-graph masks. */
 const modelKey = (m: Selection): string | undefined =>
-  m.kind === "person" || m.kind === "face" ? m.kind : m.kind === "object" ? `object:${m.object ?? ""}` : undefined;
+  m.kind === "person" || m.kind === "face" || m.kind === "sky" ? m.kind : m.kind === "object" ? `object:${m.object ?? ""}` : undefined;
 
-/** Whether a mask needs the clip's person cutout or face mask stream (at most one of each). */
+/** Whether a mask needs the clip's person cutout, face mask or sky stream (at most one of each). */
 export function maskNeeds(mask: Mask | undefined, kind: ModelKind): boolean {
   return !!mask && parts(mask).some((m) => m.kind === kind);
 }
@@ -128,9 +128,9 @@ export function buildMatte(ctx: EffectContext, mask: Mask): Matte {
   for (const key of new Set(parts(mask).map(modelKey).filter((k): k is string => !!k))) {
     const n = parts(mask).filter((m) => modelKey(m) === key).length;
     const id = key.startsWith("object:") ? key.slice(7) : undefined;
-    const stream = id !== undefined ? ctx.objectMask?.(id) : key === "person" ? ctx.personMask?.() : ctx.faceMask?.();
+    const stream = id !== undefined ? ctx.objectMask?.(id) : key === "person" ? ctx.personMask?.() : key === "sky" ? ctx.skyMask?.() : ctx.faceMask?.();
     const what = id !== undefined ? `object "${id}"` : key;
-    if (!stream) throw new Error(`${what} masks work on primary video clips of the object's video only (not on media layers or whole-video effects); use a key or shape mask there, or put the effect on each clip`);
+    if (!stream) throw new Error(`${what} masks work on primary video clips${id !== undefined ? " of the object's video" : ""} only (not on media layers or whole-video effects); use a key or shape mask there, or put the effect on each clip`);
     const copies = Array.from({ length: n }, () => label("mmd"));
     lines.push(`[${stream}]format=gray${n > 1 ? `,split=${n}` : ""}${copies.map((c) => `[${c}]`).join("")}`);
     model.set(key, copies);

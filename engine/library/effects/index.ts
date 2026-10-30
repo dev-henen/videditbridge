@@ -6,6 +6,7 @@ import { bakeColor, define, maskBranch, maskedBlend, num, personBlend, rampFilte
 import { motionEffects } from "./motion.js";
 import { customEffect } from "./custom.js";
 import { maskIsTemporal, maskNeeds, maskObjects, maskViewFilter, maskedEffect } from "./masks.js";
+import { SkyReplaceParams, skyReplaceFilter } from "./sky.js";
 
 export { CUSTOM_FILTERS, checkCustomFilter } from "./custom.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
@@ -13,6 +14,7 @@ import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js
 export * from "./color.js";
 export * from "./helpers.js";
 export * from "./masks.js";
+export * from "./sky.js";
 
 
 const GRADES: Record<string, { name: string; description: string; filter: string }> = {
@@ -240,6 +242,19 @@ export const EFFECTS: EffectDefinition[] = [
     },
   }),
 
+  define({
+    id: "skyReplace",
+    name: "Replace Sky",
+    category: "retouch",
+    perFrame: false, // the new sky moves over time
+    description:
+      "Put a new sky (an image or video asset, or a gradient) where the sky is, found by a model on every frame of primary clips. The new sky moves with the camera, is softened to the scene's sharpness, gets the scene's horizon haze, and the scenery is tinted slightly toward it. Use replace_sky, which measures the camera motion and colors and sets this up; check the edge with render_frame where trees or buildings meet the sky.",
+    params: SkyReplaceParams,
+    usesSkyMask: () => true,
+    usesMedia: (p) => (p.asset ? [p.asset] : []),
+    toFilter: (p, ctx) => skyReplaceFilter(p, ctx),
+  }),
+
   // --- blur & stylize -----------------------------------------------------------
   define({
     id: "maskView",
@@ -254,6 +269,7 @@ export const EFFECTS: EffectDefinition[] = [
     }),
     usesPersonMask: (p) => maskNeeds(p.mask, "person"),
     usesFaceMask: (p) => maskNeeds(p.mask, "face"),
+    usesSkyMask: (p) => maskNeeds(p.mask, "sky"),
     toFilter: (p, ctx) => maskViewFilter(ctx, p.mask, p.style),
   }),
   define({
@@ -585,9 +601,9 @@ export function effectsToFilter(effects: Effect[], ctx: EffectContext): string[]
  * How many copies of the clip's person cutout or face mask stream an effect takes: one per state of
  * a ramped effect that uses it itself (EffectDefinition.usesPersonMask), plus one for its mask.
  */
-export function maskStreams(effect: Effect, kind: "person" | "face"): number {
+export function maskStreams(effect: Effect, kind: "person" | "face" | "sky"): number {
   const def = byId.get(effect.type);
-  const uses = kind === "person" ? def?.usesPersonMask : def?.usesFaceMask;
+  const uses = kind === "person" ? def?.usesPersonMask : kind === "face" ? def?.usesFaceMask : def?.usesSkyMask;
   const parsed = uses && def!.params.safeParse(effect.params ?? {});
   const own = uses && parsed?.success && uses(parsed.data) ? effectStates(effect).length : 0;
   return own + (maskNeeds(effect.mask, kind) ? 1 : 0);
@@ -610,6 +626,20 @@ export function usesPersonMask(effect: Effect): boolean {
 /** Whether an effect wants masks that follow the clip's faces (see EffectDefinition.usesFaceMask and Effect.mask). */
 export function usesFaceMask(effect: Effect): boolean {
   return maskStreams(effect, "face") > 0;
+}
+
+/** Whether an effect wants the clip's sky matte (see EffectDefinition.usesSkyMask and Effect.mask). */
+export function usesSkyMask(effect: Effect): boolean {
+  return maskStreams(effect, "sky") > 0;
+}
+
+/** The picture assets an effect reads, one stream per state of a ramped effect (see EffectDefinition.usesMedia). */
+export function effectMedia(effect: Effect): string[] {
+  const def = byId.get(effect.type);
+  const parsed = def?.usesMedia && def.params.safeParse(effect.params ?? {});
+  if (!parsed?.success) return [];
+  const ids = def!.usesMedia!(parsed.data);
+  return effectStates(effect).flatMap(() => ids);
 }
 
 /** Whether an effect works frame by frame (see EffectDefinition.perFrame). Unknown effects are not. */

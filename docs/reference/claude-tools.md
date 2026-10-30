@@ -2,7 +2,7 @@
 
 # Claude tools
 
-102 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+103 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -1188,6 +1188,25 @@ _No parameters._
 | `effects` | { type, params, mask, label, keyframes }[] |  |  | Effects on the insert, e.g. a light blur or a color grade to match the scene |
 | `label` | string |  |  |  |
 
+### replace_sky
+
+**edits**. Replace the sky in video clips with a picture or video (a sky photo, a sunset, a time-lapse of clouds) or a gradient. The sky is found by a model on this machine (a 176 MB model downloads once; about a second of work per second of footage) and followed through every frame. The new sky moves with the camera (measured from the distant scenery), is matched in brightness to the old sky, softened to the scene's sharpness, and gets the scene's own horizon haze, and the scenery is tinted slightly toward the new sky. Shows the result on a frame of each clip. Pick a new sky whose light suits the scene (a sunset sky over midday shadows looks wrong; grade the clip warmer to go with it). Check edges where trees, hair or buildings meet the sky with render_frame, and the sky's motion with render_preview. To fine-tune haze, relight or softening, call again with them; remove takes it out.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipIds` | string[] |  |  | Clips to change (default: every primary video clip that shows sky) |
+| `assetId` | string |  |  | Image or video asset for the new sky; omit for a gradient |
+| `colors` | unknown[] |  |  | Gradient top and bottom colors (#RRGGBB) when there is no picture, e.g. a deep blue over a pale one |
+| `focus` | { x, y } |  |  | Which part of the new sky picture shows when it is cropped (0 = left or top, 1 = right or bottom; default the middle) |
+| `focus.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `focus.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `follow` | number |  | `1` | How much the new sky moves with the camera: 1 like distant scenery (pans, tilts, zooms), 0 fixed (≥ 0, ≤ 1) |
+| `match` | number |  | `0.5` | Bring the new sky's brightness this far toward the old sky's (0 keeps it as it is) (≥ 0, ≤ 1) |
+| `haze` | number |  |  | Horizon haze strength (default 0.35) (≥ 0, ≤ 1) |
+| `relight` | number |  |  | Tint of the scenery toward the new sky (default 0.12, subtle) (≥ 0, ≤ 1) |
+| `blur` | number |  |  | Softening of the new sky in pixels at 1080p (default 0.6) (≥ 0, ≤ 20) |
+| `remove` | boolean |  |  | Take the sky replacement out of these clips |
+
 ### follow_face
 
 **edits**. Make a layer (a name label, a callout, an arrow, a sticker) follow a person on screen: it finds the main face in the clips under the layer and sets position keyframes beside it (above, below, left, right, or on it), smoothed so it glides rather than jitters. The layer stays inside the frame. Where no face is found it holds its last spot.
@@ -1237,7 +1256,7 @@ _No parameters._
 | `target` | string | yes |  | A clip id, a media layer id, "all-clips", or "global" (whole video; key, luma and shape masks only) |
 | `label` | string | yes |  | Name of this correction, e.g. 'deeper sky' or 'lift faces' |
 | `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | What to grade; needed for a new correction, omit to keep the current mask |
-| `mask.kind` | "person" \| "face" \| "object" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object (all three found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
@@ -1335,7 +1354,7 @@ _No parameters._
 |---|---|---|---|---|
 | `target` | string | yes |  | The clip id, media layer id, or "global" the mask is (or will be) on |
 | `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | A mask to try |
-| `mask.kind` | "person" \| "face" \| "object" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object (all three found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |

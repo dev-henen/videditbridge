@@ -3,7 +3,7 @@ import type { Asset, BlendMode, Clip, Corners, Effect, Fit, Keyframe, MediaLayer
 import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
-import { effectObjects, effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, type EffectContext } from "../../library/effects/index.js";
+import { effectMedia, effectObjects, effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, type EffectContext } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
 import { overlayMotion } from "../../library/animations/index.js";
@@ -58,6 +58,8 @@ export interface CompileOptions {
   faceMasks?: Record<string, string>;
   /** Tracked object mask videos (clip id to object id to file), in the same form as `masks`. */
   objectMasks?: Record<string, Record<string, string>>;
+  /** Sky mask videos (255 = sky), in the same form as `masks`. */
+  skyMasks?: Record<string, string>;
   /** The FFmpeg build has the rubberband filter, used for speed ramps' sound (see rampTempo). */
   rubberband?: boolean;
   /** Encode the video on the graphics card instead of with x264, at matching quality. */
@@ -342,9 +344,19 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         g.add(`[${mfit}]format=gray${count > 1 ? `,split=${count}` : ""}${labels.map((l) => `[${l}]`).join("")}`);
         return labels;
       };
-      const streams = (kind: "person" | "face") => clip.effects.reduce((n, e) => n + maskStreams(e, kind), 0);
+      const streams = (kind: "person" | "face" | "sky") => clip.effects.reduce((n, e) => n + maskStreams(e, kind), 0);
       const personLabels = modelMasks(streams("person"), opts.masks?.[clip.id]);
       const faceLabels = modelMasks(streams("face"), opts.faceMasks?.[clip.id]);
+      const skyLabels = modelMasks(streams("sky"), opts.skyMasks?.[clip.id]);
+      // Pictures effects read (a new sky): one input per use, held or looped over the clip.
+      const mediaLabels = new Map<string, string[]>();
+      for (const id of clip.effects.flatMap(effectMedia)) {
+        const media = project.assets.find((a) => a.id === id);
+        if (!media || media.type === "audio") throw new Error(`Clip "${clip.id}" has an effect that shows "${id}", which is not a picture asset`);
+        const l = g.label("media");
+        g.add(`[${sourceInput(media, 0, tc.duration, media.type === "video")}:v]setpts=PTS-STARTPTS,fps=${F},format=yuv420p[${l}]`);
+        mediaLabels.set(id, [...(mediaLabels.get(id) ?? []), l]);
+      }
       // Tracked objects: one stream per effect that uses each.
       const objectLabels = new Map<string, string[]>();
       for (const id of new Set(clip.effects.flatMap(effectObjects))) {
@@ -356,9 +368,11 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         ...(personLabels.length ? { personMask: () => personLabels.shift() } : {}),
         ...(faceLabels.length ? { faceMask: () => faceLabels.shift() } : {}),
         ...(objectLabels.size ? { objectMask: (id: string) => objectLabels.get(id)?.shift() } : {}),
+        ...(skyLabels.length ? { skyMask: () => skyLabels.shift() } : {}),
+        ...(mediaLabels.size ? { media: (id: string) => mediaLabels.get(id)?.shift() } : {}),
       });
-      // Any mask an effect did not take still has to be consumed.
-      for (const l of [...personLabels, ...faceLabels, ...[...objectLabels.values()].flat()]) g.add(`[${l}]nullsink`);
+      // Any mask or picture an effect did not take still has to be consumed.
+      for (const l of [...personLabels, ...faceLabels, ...skyLabels, ...[...objectLabels.values(), ...mediaLabels.values()].flat()]) g.add(`[${l}]nullsink`);
       g.add(
         `[${fitted}]${chain([
           ...clipEffects,

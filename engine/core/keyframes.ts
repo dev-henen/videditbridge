@@ -53,22 +53,31 @@ export function positionAt(keys: Keyframe<Position>[], t: number): Position {
 }
 
 /**
- * A keyframed number as an FFmpeg expression of a time expression `t` (seconds from the start),
- * built as nested if()s, one per keyframe gap.
+ * A keyframed number as an FFmpeg expression of a time expression `t` (seconds from the start):
+ * one piece per keyframe gap, chosen by a balanced tree of if()s, so hundreds of keyframes (a
+ * tracked path) stay within FFmpeg's limit on nesting.
  */
 export function numberExpr(keys: Keyframe<number>[], t: string): string {
   const k = sorted(keys);
   // Values keep five decimals: a position in frame fractions rounded to three moves in 2 px steps at 1080p.
   const v = (x: number) => Math.round(x * 1e5) / 1e5;
-  let expr = String(v(k[k.length - 1]!.value));
-  for (let i = k.length - 1; i >= 1; i--) {
+  const n = k.length;
+  if (n === 1) return String(v(k[0]!.value));
+  // Piece 0 is before the first keyframe, piece i the gap from keyframe i-1 to i, piece n after the last.
+  const piece = (i: number) => {
+    if (i === 0) return String(v(k[0]!.value));
+    if (i === n) return String(v(k[n - 1]!.value));
     const [a, b] = [k[i - 1]!, k[i]!];
-    const span = Math.max(1e-6, b.time - a.time);
-    const u = `clip((${t}-${round3(a.time)})/${round3(span)},0,1)`;
-    const segment = `${v(a.value)}+${v(b.value - a.value)}*${easeExpr(u, b.easing)}`;
-    expr = `if(lt(${t},${round3(b.time)}),${segment},${expr})`;
-  }
-  return k.length > 1 ? `if(lt(${t},${round3(k[0]!.time)}),${v(k[0]!.value)},${expr})` : expr;
+    const u = `clip((${t}-${round3(a.time)})/${round3(Math.max(1e-6, b.time - a.time))},0,1)`;
+    return `${v(a.value)}+${v(b.value - a.value)}*${easeExpr(u, b.easing)}`;
+  };
+  // Pieces lo..hi, split where piece mid starts (at keyframe mid-1).
+  const tree = (lo: number, hi: number): string => {
+    if (lo === hi) return piece(lo);
+    const mid = (lo + hi + 1) >> 1;
+    return `if(lt(${t},${round3(k[mid - 1]!.time)}),${tree(lo, mid - 1)},${tree(mid, hi)})`;
+  };
+  return tree(0, n);
 }
 
 export function positionExpr(keys: Keyframe<Position>[], t: string): { x: string; y: string } {
