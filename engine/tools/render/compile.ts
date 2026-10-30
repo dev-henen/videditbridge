@@ -3,7 +3,7 @@ import type { Asset, BlendMode, Clip, Effect, Fit, Keyframe, MediaLayer, Positio
 import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
-import { effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, type EffectContext } from "../../library/effects/index.js";
+import { effectObjects, effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, type EffectContext } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
 import { overlayMotion } from "../../library/animations/index.js";
@@ -56,6 +56,8 @@ export interface CompileOptions {
   masks?: Record<string, string>;
   /** Face mask videos (soft ellipses following each face), in the same form as `masks`. */
   faceMasks?: Record<string, string>;
+  /** Tracked object mask videos (clip id to object id to file), in the same form as `masks`. */
+  objectMasks?: Record<string, Record<string, string>>;
   /** The FFmpeg build has the rubberband filter, used for speed ramps' sound (see rampTempo). */
   rubberband?: boolean;
   /** Encode the video on the graphics card instead of with x264, at matching quality. */
@@ -302,8 +304,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const fitted = fit(raw, clip.fit, W, H, false, clip.focus, clip.keyframes?.focus);
       // Person cutouts and face masks go through the same timing and fit as the picture, so they line up.
       // A ramped effect runs once per state, and each run (and the effect's mask) takes its own copy.
-      const modelMasks = (kind: "person" | "face", file: string | undefined): string[] => {
-        const count = clip.effects.reduce((n, e) => n + maskStreams(e, kind), 0);
+      const modelMasks = (count: number, file: string | undefined): string[] => {
         if (!count || !file) return [];
         const mraw = g.label("mraw");
         g.add(`${timing(`${g.addInput(["-i", file])}:v`)},format=gray[${mraw}]`);
@@ -312,15 +313,23 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         g.add(`[${mfit}]format=gray${count > 1 ? `,split=${count}` : ""}${labels.map((l) => `[${l}]`).join("")}`);
         return labels;
       };
-      const personLabels = modelMasks("person", opts.masks?.[clip.id]);
-      const faceLabels = modelMasks("face", opts.faceMasks?.[clip.id]);
+      const streams = (kind: "person" | "face") => clip.effects.reduce((n, e) => n + maskStreams(e, kind), 0);
+      const personLabels = modelMasks(streams("person"), opts.masks?.[clip.id]);
+      const faceLabels = modelMasks(streams("face"), opts.faceMasks?.[clip.id]);
+      // Tracked objects: one stream per effect that uses each.
+      const objectLabels = new Map<string, string[]>();
+      for (const id of new Set(clip.effects.flatMap(effectObjects))) {
+        const labels = modelMasks(clip.effects.filter((e) => effectObjects(e).includes(id)).length, opts.objectMasks?.[clip.id]?.[id]);
+        if (labels.length) objectLabels.set(id, labels);
+      }
       const clipEffects = effectsToFilter(clip.effects, {
         ...effectCtx(tc.duration),
         ...(personLabels.length ? { personMask: () => personLabels.shift() } : {}),
         ...(faceLabels.length ? { faceMask: () => faceLabels.shift() } : {}),
+        ...(objectLabels.size ? { objectMask: (id: string) => objectLabels.get(id)?.shift() } : {}),
       });
       // Any mask an effect did not take still has to be consumed.
-      for (const l of [...personLabels, ...faceLabels]) g.add(`[${l}]nullsink`);
+      for (const l of [...personLabels, ...faceLabels, ...[...objectLabels.values()].flat()]) g.add(`[${l}]nullsink`);
       g.add(
         `[${fitted}]${chain([
           ...clipEffects,

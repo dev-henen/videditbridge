@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { availableParallelism, tmpdir } from "node:os";
 import path from "node:path";
 import type { Project } from "../../core/schema.js";
@@ -8,7 +8,8 @@ import { compileProject, type CompileOptions, type CompiledRender } from "./comp
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
-import { usesFaceMask, usesPersonMask } from "../../library/effects/index.js";
+import { effectObjects, usesFaceMask, usesPersonMask } from "../../library/effects/index.js";
+import { ObjectSegmenter, objectMaskFile, writeObjectMask, type ObjectSpec, type ObjectTrack } from "../vision/objects.js";
 import { PersonSegmenter, maskFile } from "../vision/segment.js";
 import { faceMaskFile, writeFaceMask } from "../vision/facemask.js";
 import { FaceDetector } from "../vision/faces.js";
@@ -112,8 +113,14 @@ async function execute(compiled: CompiledRender, opts: RenderOptions, outputs = 
 }
 
 interface MaskJob {
-  kind: "person" | "face";
+  kind: "person" | "face" | "object";
   clipId: string;
+  /** Object masks: the tracked object and where its track goes. */
+  objectId?: string;
+  object?: ObjectSpec;
+  track?: string;
+  /** Progress of making this mask, 0..1. */
+  onProgress?: (p: number) => void;
   file: string;
   exists: boolean;
   src: string;
@@ -126,13 +133,16 @@ interface MaskJob {
  * and writeFaceMask), kept in the cache folder (or the system temp folder). Only names them; makeMasks
  * makes the missing ones.
  */
-async function planMasks(p: Project, opts: Omit<RenderOptions, "output">): Promise<MaskJob[]> {
+async function planMasks(p: Project, opts: Omit<RenderOptions, "output">, extra: { clipId: string; objectId: string }[] = []): Promise<MaskJob[]> {
   const jobs: MaskJob[] = [];
   const dir = path.join(opts.cacheDir ?? path.join(tmpdir(), "ave-cache"), "masks");
   for (const tc of computeTimeline(p).clips) {
     const person = tc.clip.effects.some(usesPersonMask);
     const face = tc.clip.effects.some(usesFaceMask);
-    if (tc.asset.type !== "video" || !(person || face)) continue;
+    // Objects selected in this clip's video (an object from another video has no mask here).
+    const wanted = extra.filter((x) => x.clipId === tc.clip.id).map((x) => x.objectId);
+    const objects = [...new Set([...tc.clip.effects.flatMap(effectObjects), ...wanted])].filter((id) => p.objects[id]?.assetId === tc.asset.id);
+    if (tc.asset.type !== "video" || !(person || face || objects.length)) continue;
     const src = /^[a-z]+:\/\//i.test(tc.asset.src) ? tc.asset.src : path.resolve(opts.baseDir ?? process.cwd(), tc.asset.src);
     // One mask frame per output frame, counted in source time.
     // A speed ramp needs the rate of its fastest moment.
@@ -142,8 +152,34 @@ async function planMasks(p: Project, opts: Omit<RenderOptions, "output">): Promi
     const clipId = tc.clip.id;
     if (person) jobs.push({ kind: "person", clipId, ...(await maskFile(dir, src, range, fps)), src, range, fps });
     if (face) jobs.push({ kind: "face", clipId, ...(await faceMaskFile(dir, src, range, fps)), src, range, fps });
+    for (const objectId of objects) {
+      const object = p.objects[objectId]!;
+      jobs.push({ kind: "object", clipId, objectId, object, ...(await objectMaskFile(dir, src, range, fps, object)), src, range, fps });
+    }
   }
   return jobs;
+}
+
+/**
+ * Track an object through primary clips of its video (all of them, or `clipIds`), into the same cache
+ * files renders use, so a later render with the object's mask does not track again. Returns each
+ * clip's track (boxes, confidence and keyframes, in the clip's source time).
+ */
+export async function trackObjectInClips(
+  project: Project,
+  objectId: string,
+  opts: Omit<RenderOptions, "output" | "range"> & { clipIds?: string[] },
+): Promise<{ clipId: string; file: string; track: ObjectTrack }[]> {
+  const p = await readyToRender(project, opts);
+  const object = p.objects[objectId];
+  if (!object) throw new Error(`No object "${objectId}"; make one with select_object`);
+  const clips = computeTimeline(p).clips.filter((tc) => tc.asset.id === object.assetId && (!opts.clipIds || opts.clipIds.includes(tc.clip.id)));
+  if (!clips.length) throw new Error(`No primary clip shows ${object.assetId}, the video "${objectId}" was selected in`);
+  const jobs = (await planMasks(p, opts, clips.map((tc) => ({ clipId: tc.clip.id, objectId })))).filter((j) => j.kind === "object" && j.objectId === objectId);
+  jobs.forEach((j, k) => (j.onProgress = opts.onProgress && ((f) => opts.onProgress!((k + f) / jobs.length))));
+  await makeMasks(jobs, jobs.map((j) => j.clipId), opts);
+  opts.onProgress?.(1);
+  return Promise.all(jobs.map(async (j) => ({ clipId: j.clipId, file: j.file, track: JSON.parse(await readFile(j.track!, "utf8")) as ObjectTrack })));
 }
 
 /** Make the missing masks of the clips in `only` (a few seconds per clip second on a laptop). */
@@ -151,9 +187,13 @@ async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<Ren
   const ids = new Set(only);
   let segmenter: PersonSegmenter | undefined;
   let detector: FaceDetector | undefined;
+  let objects: ObjectSegmenter | undefined;
   for (const job of jobs) {
     if (job.exists || !ids.has(job.clipId)) continue;
-    if (job.kind === "person") {
+    if (job.kind === "object") {
+      objects ??= new ObjectSegmenter();
+      await writeObjectMask(job.src, { file: job.file, track: job.track! }, { ...job.range, fps: job.fps, time: job.object!.time, prompt: job.object!, segmenter: objects, ffmpegPath: opts.ffmpegPath, signal: opts.signal, onProgress: job.onProgress });
+    } else if (job.kind === "person") {
       segmenter ??= new PersonSegmenter({ ffmpegPath: opts.ffmpegPath });
       await segmenter.writeMask(job.src, job.file, { ...job.range, fps: job.fps, signal: opts.signal });
     } else {
@@ -164,11 +204,13 @@ async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<Ren
   }
 }
 
-type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks">;
+type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks">;
 
 const maskFiles = (jobs: MaskJob[]): MaskFiles => {
   const of = (kind: MaskJob["kind"]) => Object.fromEntries(jobs.filter((j) => j.kind === kind).map((j) => [j.clipId, j.file]));
-  return { masks: of("person"), faceMasks: of("face") };
+  const objectMasks: Record<string, Record<string, string>> = {};
+  for (const j of jobs) if (j.kind === "object") (objectMasks[j.clipId] ??= {})[j.objectId!] = j.file;
+  return { masks: of("person"), faceMasks: of("face"), objectMasks };
 };
 
 /** Masks and cached clips for a render: `create` fills the cache; clips not taken from it get their masks made. */

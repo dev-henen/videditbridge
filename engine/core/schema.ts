@@ -84,10 +84,11 @@ const range01 = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]);
 /** What a mask selects, without modifiers. */
 const maskSelection = {
   kind: z
-    .enum(["person", "face", "key", "luma", "shape"])
+    .enum(["person", "face", "object", "key", "luma", "shape"])
     .describe(
-      "person = the person's cutout, face = soft ellipses following every face (both found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle",
+      "person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object (all three found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle",
     ),
+  object: z.string().optional().describe("object: the id of a tracked object (project.objects, made with select_object)"),
   hue: z
     .tuple([z.number().min(0).max(360), z.number().min(0).max(360)])
     .optional()
@@ -376,6 +377,21 @@ export const CaptionsSchema = z.object({
 // Project
 // ---------------------------------------------------------------------------
 
+/** A thing selected in a source video, followed through every clip of it (select_object). */
+export const TrackedObjectSchema = z
+  .object({
+    assetId: id.describe("The video asset it is in"),
+    time: time.describe("Source seconds of the frame it was selected on"),
+    point: PositionSchema.optional().describe("A point on it (frame fractions)"),
+    box: z
+      .object({ x0: z.number().min(0).max(1), y0: z.number().min(0).max(1), x1: z.number().min(0).max(1), y1: z.number().min(0).max(1) })
+      .optional()
+      .describe("A box around it (frame fractions); the most reliable prompt"),
+    text: z.string().optional().describe("What it is, e.g. 'the red car'; found by a detector when no point or box is given"),
+    label: z.string().optional(),
+  })
+  .refine((o) => o.point || o.box || o.text, "An object needs a point, a box or a text");
+
 export const SettingsSchema = z.object({
   width: z.number().int().min(16).max(7680).default(1080),
   height: z.number().int().min(16).max(7680).default(1920),
@@ -409,6 +425,7 @@ export const ProjectSchema = z.object({
   audioEffects: audioEffects("the final mix (master)"),
   captions: CaptionsSchema.optional(),
   transcripts: z.record(z.string(), TranscriptSchema).default({}).describe("Transcripts keyed by asset id"),
+  objects: z.record(z.string(), TrackedObjectSchema).default({}).describe("Tracked objects by id (select_object); masks use them with kind 'object'"),
   export: ExportSettingsSchema.default(ExportSettingsSchema.parse({})),
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
@@ -419,6 +436,7 @@ export type AudioAsset = z.infer<typeof AudioAssetSchema>;
 export type ImageAsset = z.infer<typeof ImageAssetSchema>;
 export type Effect = z.infer<typeof EffectSchema>;
 export type Mask = z.infer<typeof MaskSchema>;
+export type TrackedObject = z.infer<typeof TrackedObjectSchema>;
 export type MaskPart = z.infer<typeof MaskPartSchema>;
 export type BlendMode = z.infer<typeof BlendModeSchema>;
 export type Transition = z.infer<typeof TransitionSchema>;

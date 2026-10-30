@@ -612,8 +612,9 @@ _No parameters._
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `mask` | { kind, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  | `{"kind":"shape","softness":0.2,"shape":{"type":"ellipse","x":0.5,"y":0.5,"width":0.5,"height":0.5},"invert":false,"feather":0.01,"grow":0,"smooth":0,"denoise":false}` | Limits an effect to part of the frame. Check it with render_mask before relying on it |
-| `mask.kind` | "person" \| "face" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face (both found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  | `{"kind":"shape","softness":0.2,"shape":{"type":"ellipse","x":0.5,"y":0.5,"width":0.5,"height":0.5},"invert":false,"feather":0.01,"grow":0,"smooth":0,"denoise":false}` | Limits an effect to part of the frame. Check it with render_mask before relying on it |
+| `mask.kind` | "person" \| "face" \| "object" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object (all three found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
@@ -629,7 +630,7 @@ _No parameters._
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
 | `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
 | `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
-| `mask.combine` | { kind, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `mask.combine` | { kind, object, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
 | `style` | "matte" \| "overlay" |  | `"matte"` |  |
 
 ### denoise

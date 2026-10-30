@@ -18,7 +18,7 @@ import {
 } from "../core/schema.js";
 import * as ops from "../core/operations.js";
 import { computeTimeline, sourceToTimeline, timelineToSource } from "../core/timeline.js";
-import { isAnimated, simplifyKeys, smoothKeys } from "../core/keyframes.js";
+import { isAnimated, positionAt, simplifyKeys, smoothKeys } from "../core/keyframes.js";
 import { fileOnDisk, validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, isAbsolutePath, isUrl, newId, round3, type AspectRatio } from "../core/util.js";
@@ -35,13 +35,13 @@ import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
 import { replaceWords, vocabularySuggestions } from "../tools/transcript/fix.js";
 import { REVIEW_CHECKS, reviewEdit, textLayerBox } from "../tools/review/index.js";
-import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, personRegion, trackFaces, type ClipFaces } from "../tools/vision/index.js";
+import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, frameToSource, personRegion, selectObject, trackFaces, writeMaskOverlay, writeTrackPreview, type ClipFaces } from "../tools/vision/index.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
-import { render, renderContactSheet, renderFrame } from "../tools/render/render.js";
+import { render, renderContactSheet, renderFrame, trackObjectInClips } from "../tools/render/render.js";
 import { effectsOf } from "../tools/render/compile.js";
 import { analyzeColor, channelLevels, matchingCurves, renderScopes } from "../tools/render/color-analysis.js";
 import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, frameFeatures, segmentLabel, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
@@ -1563,6 +1563,134 @@ export const TOOLS: ToolDefinition[] = [
     },
   }),
   tool({
+    name: "select_object",
+    description:
+      "Select any object in a video clip (a phone, a car, a cup, a person, a sign, the sky) so effects and corrections can be limited to it: a glow on one object, a grade on one car, a blur on everything else. " +
+      "Point at it, give a box around it, or name it ('the red car'); positions are fractions of the edit's frame at the timeline time, as you see it in render_frame. A box is the most reliable prompt: a single point often selects only part of the object (a shirt for the person). " +
+      "Runs on this machine (SAM 2.1; a 155 MB model downloads once, plus a detector for names). It shows the selection in blue on the source frame; if it is wrong, select again with a box. " +
+      "The object is then followed through every clip of its video wherever a mask uses it: mask { kind: 'object', object: '<id>' } in grade_region, render_mask or any effect. Run track_object next to follow it through the clips and see how well it held.",
+    input: z.object({
+      time: z.number().min(0).describe("Timeline time of a frame the object is clearly visible in"),
+      point: PositionSchema.optional().describe("A point on the object (frame fractions)"),
+      box: z
+        .object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })
+        .optional()
+        .describe("A box around the whole object (frame fractions); the most reliable prompt"),
+      text: z.string().optional().describe("What the object is, e.g. 'the red car', when you give no point or box"),
+      label: z.string().optional().describe("A short name, e.g. 'phone'; also the id when no id is given"),
+      id: z.string().optional().describe("Reselect an existing object under this id"),
+      remove: z.boolean().optional().describe("Forget the object with this id"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      if (i.remove) {
+        if (!i.id || !s.project.objects[i.id]) return { text: `No object "${i.id ?? ""}" to remove.`, isError: true };
+        const { [i.id]: _, ...rest } = s.project.objects;
+        return commit(s, { ...s.project, objects: rest }, "select_object", i, `Forgot object "${i.id}". Masks that still use it will fail to render; remove them.`);
+      }
+      if (!i.point && !i.box && !i.text) return { text: "Give a point, a box or a text naming the object.", isError: true };
+      const tl = computeTimeline(s.project);
+      const tc = tl.clips.find((c) => i.time >= c.start && i.time < c.end);
+      if (!tc || tc.asset.type !== "video") return { text: `No video clip plays at ${i.time}s on the primary track.`, isError: true };
+      const asset = tc.asset;
+      const file = s.resolve(asset.src);
+      const info = asset.width && asset.height ? { width: asset.width, height: asset.height } : await probe(file, { ffmpegPath: s.options.ffmpegPath });
+      const src = { width: info.width ?? 1920, height: info.height ?? 1080 };
+      const focus = tc.clip.keyframes?.focus?.length ? positionAt(tc.clip.keyframes.focus, i.time - tc.start) : tc.clip.focus;
+      const toSource = (b: { x0: number; y0: number; x1: number; y1: number }) => frameToSource(b, src, s.project.settings, tc.clip.fit, focus);
+      const box = i.box ? toSource(i.box) : undefined;
+      const pt = i.point ? toSource({ x0: i.point.x, y0: i.point.y, x1: i.point.x, y1: i.point.y }) : undefined;
+      const time = round3(timelineToSource(tc, i.time));
+      activity?.progress(0.05);
+      const r = await selectObject(file, {
+        time,
+        prompt: { ...(box ? { box } : {}), ...(pt ? { point: { x: pt.x0, y: pt.y0 } } : {}), ...(i.text && !box && !pt ? { text: i.text } : {}) },
+        ffmpegPath: s.options.ffmpegPath,
+        onDownload: (p) => activity?.progress(0.05 + 0.8 * p),
+      });
+      if (!r.box) return { text: "Nothing was selected there. Try a box around the whole object, or a point nearer its middle.", isError: true };
+      const base = (i.id ?? i.label ?? i.text ?? "object").toLowerCase().replace(/^(a|an|the)\s+/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "object";
+      let id = i.id ?? base;
+      for (let n = 2; !i.id && s.project.objects[id]; n++) id = `${base}-${n}`;
+      // A name is turned into the box it was found at, so renders do not run the detector again.
+      const pad = 0.02;
+      const found = i.text && !box && !pt ? { x0: Math.max(0, r.box.x0 - pad), y0: Math.max(0, r.box.y0 - pad), x1: Math.min(1, r.box.x1 + pad), y1: Math.min(1, r.box.y1 + pad) } : undefined;
+      const object = {
+        assetId: asset.id,
+        time,
+        ...(box ? { box } : found ? { box: found } : {}),
+        ...(pt ? { point: { x: pt.x0, y: pt.y0 } } : {}),
+        ...(i.text ? { text: i.text } : {}),
+        ...(i.label ? { label: i.label } : {}),
+      };
+      const out = await s.outputPath(`object-${id}-${Date.now().toString(36)}.png`);
+      await writeMaskOverlay(out, r.rgb, r.mask, r.width, r.height, { ffmpegPath: s.options.ffmpegPath });
+      s.recordRender({ kind: "frame", path: out, time: i.time });
+      const res = commit(
+        s,
+        { ...s.project, objects: { ...s.project.objects, [id]: object } },
+        "select_object",
+        i,
+        `Selected object "${id}" in ${asset.id} at ${time}s of the source: box ${fmtBox(r.box)} of the source frame, model score ${r.score}. Blue in the image is the selection. If it is wrong or partial, select again with id "${id}" and a box. Next: track_object { objectId: "${id}" } to follow it through the clips, then use mask { kind: "object", object: "${id}" }.`,
+      );
+      return { ...res, images: [{ path: out, mediaType: "image/png" }] };
+    },
+  }),
+  tool({
+    name: "track_object",
+    description:
+      "Follow a selected object (select_object) through every primary clip of its video, or the given clips, and report how well it held: per clip the frames, how many keyframes the model segmented, confidence, and the timeline ranges where the object was lost or unsure. Shows the mask in blue on a few frames, including the least sure one. " +
+      "Slow on a laptop (about a minute per 10 s of footage, on this machine), and done once: renders reuse the result. Run it before relying on an object mask, and check the unsure ranges with render_mask.",
+    input: z.object({
+      objectId: z.string(),
+      clipIds: z.array(z.string()).optional().describe("Only these clips (default: every primary clip of the object's video)"),
+    }),
+    mutates: false,
+    run: async (s, i, activity) => {
+      const object = s.project.objects[i.objectId];
+      if (!object) return { text: `No object "${i.objectId}". Objects: ${Object.keys(s.project.objects).join(", ") || "(none; make one with select_object)"}`, isError: true };
+      const results = await trackObjectInClips(s.project, i.objectId, { ...s.renderOptions, clipIds: i.clipIds, onProgress: (p) => activity?.progress(p) });
+      const tl = computeTimeline(s.project);
+      const lines: string[] = [];
+      let worst: { clipId: string; file: string; track: (typeof results)[number]["track"]; frame: number; conf: number } | undefined;
+      for (const r of results) {
+        const tc = tl.clips.find((c) => c.clip.id === r.clipId)!;
+        const t = r.track;
+        const at = (f: number) => round3(sourceToTimeline(tc, t.start + f / t.fps));
+        const conf = t.confidence;
+        const mean = conf.reduce((a, b) => a + b, 0) / Math.max(1, conf.length);
+        // Runs of unsure or missing frames, as timeline ranges.
+        const weak: string[] = [];
+        for (let f = 0; f < conf.length; ) {
+          if (conf[f]! >= 0.4 && t.boxes[f]) {
+            f++;
+            continue;
+          }
+          const g0 = f;
+          while (f < conf.length && (conf[f]! < 0.4 || !t.boxes[f])) f++;
+          weak.push(`${formatTime(at(g0))}-${formatTime(at(f - 1))}${t.boxes.slice(g0, f).some((b) => !b) ? " (not seen)" : ""}`);
+        }
+        const k = conf.indexOf(Math.min(...conf));
+        if (!worst || conf[k]! < worst.conf) worst = { ...r, frame: k, conf: conf[k]! };
+        lines.push(
+          `${r.clipId} (${formatTime(tc.start)}-${formatTime(tc.end)}): ${conf.length} frames, ${t.keyframes.length} segmented by the model, confidence mean ${mean.toFixed(2)}, lowest ${Math.min(...conf).toFixed(2)} at ${formatTime(at(k))}${weak.length ? `; unsure: ${weak.slice(0, 6).join(", ")}${weak.length > 6 ? ", ..." : ""}` : ""}`,
+        );
+      }
+      const images: { path: string; mediaType: "image/png" }[] = [];
+      if (worst) {
+        const n = worst.track.boxes.length;
+        const out = await s.outputPath(`track-${i.objectId}-${Date.now().toString(36)}.png`);
+        const asset = s.project.assets.find((a) => a.id === object.assetId)! as { src: string };
+        await writeTrackPreview(s.resolve(asset.src), worst.file, worst.track, [0, worst.frame, n / 2, n - 1], out, { ffmpegPath: s.options.ffmpegPath });
+        images.push({ path: out, mediaType: "image/png" });
+      }
+      return {
+        text: `Tracked "${i.objectId}":\n${lines.join("\n")}${worst ? `\nThe image shows ${worst.clipId} at its start, its least sure frame, its middle and its end (source frames).` : ""}`,
+        images,
+      };
+    },
+  }),
+  tool({
     name: "follow_face",
     description:
       "Make a layer (a name label, a callout, an arrow, a sticker) follow a person on screen: it finds the main face in the clips under the layer and sets position keyframes beside it (above, below, left, right, or on it), smoothed so it glides rather than jitters. " +
@@ -2519,8 +2647,10 @@ export const TOOLS: ToolDefinition[] = [
       if (!targets.length) return { text: "There are no clips to grade.", isError: true };
       let p = s.project;
       if (i.remove) {
-        for (const target of targets) p = ops.setMaskedEffect(p, target, i.label, null);
-        return commit(s, p, "grade_region", i, `Removed "${i.label}" from ${i.target}.`);
+        const having = targets.filter((t) => ops.maskedEffects(p, t).some((e) => e.label === i.label));
+        if (!having.length) return { text: `No correction "${i.label}" on ${i.target}.`, isError: true };
+        for (const target of having) p = ops.setMaskedEffect(p, target, i.label, null);
+        return commit(s, p, "grade_region", i, `Removed "${i.label}" from ${having.join(", ")}.`);
       }
       let summary = "";
       for (const target of targets) {
@@ -2528,8 +2658,18 @@ export const TOOLS: ToolDefinition[] = [
         const mask = i.mask ? MaskSchema.parse(i.mask) : current?.mask;
         if (!mask) return { text: `"${i.label}" is new on ${target}: give it a mask.`, isError: true };
         const onClip = s.project.clips.some((c) => c.id === target);
-        const model = [mask, ...(mask.combine ?? [])].find((m) => m.kind === "person" || m.kind === "face");
+        const all = [mask, ...(mask.combine ?? [])];
+        const model = all.find((m) => m.kind === "person" || m.kind === "face" || m.kind === "object");
         if (model && !onClip) return { text: `${model.kind} masks work on primary video clips only; target a clip or "all-clips", or use a key or shape mask.`, isError: true };
+        const objects = all.filter((x) => x.kind === "object").map((m) => ({ id: m.object ?? "", spec: m.object ? s.project.objects[m.object] : undefined }));
+        const unknown = objects.find((o) => !o.spec);
+        if (unknown) return { text: `No object "${unknown.id}"; select one first with select_object.`, isError: true };
+        const elsewhere = objects.find((o) => s.project.clips.find((c) => c.id === target)?.assetId !== o.spec!.assetId);
+        if (elsewhere) {
+          // With all-clips, only the clips of the object's video get the correction.
+          if (i.target === "all-clips") continue;
+          return { text: `Object "${elsewhere.id}" is in ${elsewhere.spec!.assetId}, not in the video of ${target}.`, isError: true };
+        }
         const base = i.reset?.includes("all") || current?.type !== "color" ? {} : ((current.params ?? {}) as ColorSettings);
         const cleared = Object.fromEntries((i.reset ?? []).filter((k) => k !== "all").map((k) => [k, null]));
         const color = mergeColorSettings(base, { ...cleared, ...(i.color ?? {}) });
@@ -2945,6 +3085,10 @@ export function describeToolCall(name: string, input: unknown): string {
       return "Measuring color and exposure";
     case "grade_region":
       return i.remove ? `Removing the ${quote(i.label)} correction` : `Grading ${quote(i.label)}`;
+    case "select_object":
+      return i.remove ? `Forgetting object ${quote(i.id)}` : `Selecting ${quote(i.label ?? i.text ?? "an object")}`;
+    case "track_object":
+      return `Following ${quote(i.objectId)} through the clips`;
     case "render_mask":
       return `Rendering the mask on ${quote(i.target)}`;
     case "render_scopes":

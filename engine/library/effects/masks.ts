@@ -3,9 +3,9 @@ import { clamp, round3 } from "../../core/util.js";
 import { labeler, type EffectContext } from "./helpers.js";
 
 /**
- * Masks limit an effect to part of the frame (see MaskSchema). Model masks (person, face) come from
- * the renderer as gray streams through EffectContext; key, luma and shape masks are built in the graph.
- * Everything here works on gray mattes: 255 = selected.
+ * Masks limit an effect to part of the frame (see MaskSchema). Model masks (person, face, tracked
+ * objects) come from the renderer as gray streams through EffectContext; key, luma and shape masks
+ * are built in the graph. Everything here works on gray mattes: 255 = selected.
  */
 
 type Selection = Omit<MaskPart, "op">;
@@ -13,9 +13,18 @@ type ModelKind = "person" | "face";
 
 const parts = (mask: Mask): Selection[] => [mask, ...(mask.combine ?? [])];
 
+/** Which renderer stream a part reads: "person", "face", "object:<id>", or none for in-graph masks. */
+const modelKey = (m: Selection): string | undefined =>
+  m.kind === "person" || m.kind === "face" ? m.kind : m.kind === "object" ? `object:${m.object ?? ""}` : undefined;
+
 /** Whether a mask needs the clip's person cutout or face mask stream (at most one of each). */
 export function maskNeeds(mask: Mask | undefined, kind: ModelKind): boolean {
   return !!mask && parts(mask).some((m) => m.kind === kind);
+}
+
+/** The tracked objects a mask uses (each needs one stream of that object's mask). */
+export function maskObjects(mask: Mask | undefined): string[] {
+  return mask ? [...new Set(parts(mask).filter((m) => m.kind === "object").map((m) => m.object ?? ""))] : [];
 }
 
 /** Whether the matte changes over time by itself (temporal smoothing). */
@@ -27,6 +36,7 @@ export function maskIsTemporal(mask: Mask | undefined): boolean {
 export function describeMask(mask: Mask): string {
   const one = (m: Selection): string => {
     const bits: string[] = [];
+    if (m.kind === "object") bits.push(`"${m.object ?? ""}"`);
     if (m.kind === "shape" && m.shape) bits.push(`${m.shape.type} at (${m.shape.x}, ${m.shape.y}) ${m.shape.width}x${m.shape.height}`);
     if (m.hue) bits.push(`hue ${m.hue[0]}-${m.hue[1]}`);
     if (m.saturation) bits.push(`sat ${m.saturation[0]}-${m.saturation[1]}`);
@@ -113,23 +123,25 @@ export function buildMatte(ctx: EffectContext, mask: Mask): Matte {
   const picture: string[] = [];
   const { width: W, height: H, fps: F } = ctx;
 
-  // Model masks come once per effect from the renderer; split when several parts use the same one.
-  const model: Partial<Record<ModelKind, string[]>> = {};
-  for (const kind of ["person", "face"] as const) {
-    const n = parts(mask).filter((m) => m.kind === kind).length;
-    if (!n) continue;
-    const stream = kind === "person" ? ctx.personMask?.() : ctx.faceMask?.();
-    if (!stream) throw new Error(`${kind} masks work on primary video clips only (not on media layers or whole-video effects); use a key or shape mask there, or put the effect on each clip`);
+  // Model masks come once per effect (and object) from the renderer; split when several parts use the same one.
+  const model = new Map<string, string[]>();
+  for (const key of new Set(parts(mask).map(modelKey).filter((k): k is string => !!k))) {
+    const n = parts(mask).filter((m) => modelKey(m) === key).length;
+    const id = key.startsWith("object:") ? key.slice(7) : undefined;
+    const stream = id !== undefined ? ctx.objectMask?.(id) : key === "person" ? ctx.personMask?.() : ctx.faceMask?.();
+    const what = id !== undefined ? `object "${id}"` : key;
+    if (!stream) throw new Error(`${what} masks work on primary video clips of the object's video only (not on media layers or whole-video effects); use a key or shape mask there, or put the effect on each clip`);
     const copies = Array.from({ length: n }, () => label("mmd"));
     lines.push(`[${stream}]format=gray${n > 1 ? `,split=${n}` : ""}${copies.map((c) => `[${c}]`).join("")}`);
-    model[kind] = copies;
+    model.set(key, copies);
   }
 
   const select = (m: Selection): string => {
     const out = label("mms");
     let source: string;
-    if (m.kind === "person" || m.kind === "face") {
-      source = `[${model[m.kind]!.shift()}]null`;
+    const key = modelKey(m);
+    if (key) {
+      source = `[${model.get(key)!.shift()}]null`;
     } else if (m.kind === "shape") {
       // Drawn once; every consumer holds the last frame.
       source = `nullsrc=s=${W}x${H}:r=${F},trim=end_frame=1,format=gray,geq=lum='255*${shapeExpr(m)}'`;

@@ -20,6 +20,8 @@ export interface EffectContext {
   personMask?: () => string | undefined;
   /** Like personMask, for soft ellipses that follow every face in the clip (255 = face). */
   faceMask?: () => string | undefined;
+  /** Like personMask, for a tracked object (project.objects, by id), where the renderer prepared it. */
+  objectMask?: (id: string) => string | undefined;
 }
 
 export type EffectCategory = "light" | "color" | "grade" | "retouch" | "blur" | "stylize" | "motion" | "shake" | "distort" | "time";

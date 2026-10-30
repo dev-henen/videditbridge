@@ -5,7 +5,7 @@ import { clamp, round3, toFfmpegColor } from "../../core/util.js";
 import { bakeColor, define, maskBranch, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
 import { motionEffects } from "./motion.js";
 import { customEffect } from "./custom.js";
-import { maskIsTemporal, maskNeeds, maskViewFilter, maskedEffect } from "./masks.js";
+import { maskIsTemporal, maskNeeds, maskObjects, maskViewFilter, maskedEffect } from "./masks.js";
 
 export { CUSTOM_FILTERS, checkCustomFilter } from "./custom.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
@@ -591,6 +591,15 @@ export function maskStreams(effect: Effect, kind: "person" | "face"): number {
   const parsed = uses && def!.params.safeParse(effect.params ?? {});
   const own = uses && parsed?.success && uses(parsed.data) ? effectStates(effect).length : 0;
   return own + (maskNeeds(effect.mask, kind) ? 1 : 0);
+}
+
+/**
+ * The tracked objects an effect needs streams of (one stream each): those its mask uses, and for
+ * maskView those of the mask it shows.
+ */
+export function effectObjects(effect: Effect): string[] {
+  const shown = effect.type === "maskView" ? MaskSchema.safeParse((effect.params as { mask?: unknown } | undefined)?.mask) : undefined;
+  return [...new Set([...maskObjects(effect.mask), ...(shown?.success ? maskObjects(shown.data) : [])])];
 }
 
 /** Whether an effect wants the clip's person cutout (see EffectDefinition.usesPersonMask and Effect.mask). */

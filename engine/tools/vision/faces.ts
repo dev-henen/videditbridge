@@ -446,6 +446,13 @@ export function sourceToFrame(box: Box, src: { width: number; height: number }, 
   return { x0: round3(b.x0), y0: round3(b.y0), x1: round3(b.x1), y1: round3(b.y1) };
 }
 
+/** The inverse of sourceToFrame: a box in output frame fractions as source fractions (clamped to the source). */
+export function frameToSource(box: Box, src: { width: number; height: number }, out: { width: number; height: number }, fit: Fit, focus?: Position): Box {
+  const t = fitTransform(src, out, fit, focus);
+  const c = (v: number) => round3(Math.min(1, Math.max(0, v)));
+  return { x0: c((box.x0 - t.ox) / t.sx), y0: c((box.y0 - t.oy) / t.sy), x1: c((box.x1 - t.ox) / t.sx), y1: c((box.y1 - t.oy) / t.sy) };
+}
+
 /**
  * The cover-fit focus that keeps `box` (source fractions) in frame, centered where the crop allows.
  * When the box is wider than what the crop shows, it centers the box.

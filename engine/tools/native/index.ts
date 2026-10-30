@@ -9,6 +9,22 @@ import path from "node:path";
 export interface NativeKernels {
   /** Per-frame level (dBFS), zero-crossing rate, spectral flux and flatness of 16 kHz mono samples. */
   frameFeatures(samples: Float32Array): Promise<{ level: Float32Array; zcr: Float32Array; flux: Float32Array; flatness: Float32Array }>;
+  /**
+   * Follow a region (non-zero bytes of `region` on the first frame) through `count` gray frames
+   * packed in `frames`: one 3x3 row-major transform per frame, from the first frame's pixels.
+   */
+  trackRegion(
+    frames: Uint8Array,
+    width: number,
+    height: number,
+    count: number,
+    region: Uint8Array,
+    options?: { model?: "translation" | "similarity" | "affine" | "homography"; maxPoints?: number; inset?: number },
+  ): Promise<{ matrices: Float64Array; inliers: Uint32Array; errors: Float32Array; redetected: Uint8Array }>;
+  /** Snap mask edges (0..255) to a gray guide of the same size; several frames may be packed back to back. */
+  guidedFilter(guide: Uint8Array, mask: Uint8Array, width: number, height: number, radius: number, eps: number): Promise<Uint8Array>;
+  /** Warp a mask by each transform (9 numbers each, from the mask's pixels): one mask per transform, back to back. */
+  warpMasks(mask: Uint8Array, width: number, height: number, matrices: Float64Array): Promise<Uint8Array>;
   version(): string;
 }
 

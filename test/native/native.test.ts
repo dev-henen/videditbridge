@@ -64,6 +64,33 @@ describe("native kernels (ave-native)", () => {
     for (const file of [fx.music, fx.talk]) await expectParity(file, await decodeAudio(file));
   });
 
+  it("tracks a sliding region, warps a mask along, and snaps edges", async () => {
+    const [w, h, n] = [96, 64, 6];
+    // A textured patch moving 2 px right and 1 px down per frame over a flat background.
+    const tex = (x: number, y: number) => 128 + 60 * Math.sin(x * 0.7) * Math.cos(y * 0.9) + 30 * Math.sin((x + y) * 0.31);
+    const frames = new Uint8Array(w * h * n);
+    for (let f = 0; f < n; f++)
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) {
+          const [u, v] = [x - 2 * f, y - f];
+          frames[f * w * h + y * w + x] = u >= 20 && u < 60 && v >= 15 && v < 45 ? tex(u, v) : 40;
+        }
+    const region = new Uint8Array(w * h);
+    for (let y = 15; y < 45; y++) for (let x = 20; x < 60; x++) region[y * w + x] = 1;
+    const r = await native().trackRegion(frames, w, h, n, region, { model: "translation" });
+    expect(r.matrices.length).toBe(9 * n);
+    for (let f = 1; f < n; f++) {
+      expect(r.matrices[f * 9 + 2]).toBeCloseTo(2 * f, 0);
+      expect(r.matrices[f * 9 + 5]).toBeCloseTo(f, 0);
+    }
+    const mask = Uint8Array.from(region, (v) => v * 255);
+    const warped = await native().warpMasks(mask, w, h, r.matrices);
+    expect(warped[(n - 1) * w * h + (15 + n - 1) * w + 20 + 2 * (n - 1)]).toBeGreaterThan(200);
+    const snapped = await native().guidedFilter(frames.subarray(0, w * h), mask, w, h, 3, 1e-3);
+    expect(snapped.length).toBe(w * h);
+    await expect(native().trackRegion(frames, w, h, n + 1, region)).rejects.toThrow(/count frames/);
+  });
+
   it("does not block the JavaScript thread", async () => {
     const x = make(120, (t) => 0.3 * Math.sin(2 * Math.PI * 220 * t));
     let ticks = 0;

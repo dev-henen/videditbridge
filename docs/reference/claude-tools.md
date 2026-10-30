@@ -2,7 +2,7 @@
 
 # Claude tools
 
-97 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+99 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -1103,6 +1103,35 @@ _No parameters._
 | `rotateY` | { time, value, easing }[] \| null |  |  | 3D turn in degrees, media and graphic layers (+ turns the right side away; 0 to 360 is a full spin) |
 | `relative` | boolean |  | `false` | Times count from the layer's start instead of the timeline |
 
+### select_object
+
+**edits**. Select any object in a video clip (a phone, a car, a cup, a person, a sign, the sky) so effects and corrections can be limited to it: a glow on one object, a grade on one car, a blur on everything else. Point at it, give a box around it, or name it ('the red car'); positions are fractions of the edit's frame at the timeline time, as you see it in render_frame. A box is the most reliable prompt: a single point often selects only part of the object (a shirt for the person). Runs on this machine (SAM 2.1; a 155 MB model downloads once, plus a detector for names). It shows the selection in blue on the source frame; if it is wrong, select again with a box. The object is then followed through every clip of its video wherever a mask uses it: mask { kind: 'object', object: '<id>' } in grade_region, render_mask or any effect. Run track_object next to follow it through the clips and see how well it held.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `time` | number | yes |  | Timeline time of a frame the object is clearly visible in (≥ 0) |
+| `point` | { x, y } |  |  | A point on the object (frame fractions) |
+| `point.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `point.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `box` | { x0, y0, x1, y1 } |  |  | A box around the whole object (frame fractions); the most reliable prompt |
+| `box.x0` | number | yes |  |  |
+| `box.y0` | number | yes |  |  |
+| `box.x1` | number | yes |  |  |
+| `box.y1` | number | yes |  |  |
+| `text` | string |  |  | What the object is, e.g. 'the red car', when you give no point or box |
+| `label` | string |  |  | A short name, e.g. 'phone'; also the id when no id is given |
+| `id` | string |  |  | Reselect an existing object under this id |
+| `remove` | boolean |  |  | Forget the object with this id |
+
+### track_object
+
+**read-only**. Follow a selected object (select_object) through every primary clip of its video, or the given clips, and report how well it held: per clip the frames, how many keyframes the model segmented, confidence, and the timeline ranges where the object was lost or unsure. Shows the mask in blue on a few frames, including the least sure one. Slow on a laptop (about a minute per 10 s of footage, on this machine), and done once: renders reuse the result. Run it before relying on an object mask, and check the unsure ranges with render_mask.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `objectId` | string | yes |  |  |
+| `clipIds` | string[] |  |  | Only these clips (default: every primary clip of the object's video) |
+
 ### follow_face
 
 **edits**. Make a layer (a name label, a callout, an arrow, a sticker) follow a person on screen: it finds the main face in the clips under the layer and sets position keyframes beside it (above, below, left, right, or on it), smoothed so it glides rather than jitters. The layer stays inside the frame. Where no face is found it holds its last spot.
@@ -1151,8 +1180,9 @@ _No parameters._
 |---|---|---|---|---|
 | `target` | string | yes |  | A clip id, a media layer id, "all-clips", or "global" (whole video; key, luma and shape masks only) |
 | `label` | string | yes |  | Name of this correction, e.g. 'deeper sky' or 'lift faces' |
-| `mask` | { kind, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | What to grade; needed for a new correction, omit to keep the current mask |
-| `mask.kind` | "person" \| "face" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face (both found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | What to grade; needed for a new correction, omit to keep the current mask |
+| `mask.kind` | "person" \| "face" \| "object" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object (all three found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
@@ -1168,7 +1198,7 @@ _No parameters._
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
 | `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
 | `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
-| `mask.combine` | { kind, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `mask.combine` | { kind, object, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
 | `color` | { exposure, brightness, contrast, highlights, shadows, whites, blacks, brilliance, temperature, tint, hue, saturation, vibrance, hsl, curves, wheels, fade, clarity, sharpen, vignette, grain, autoCorrect } |  |  | Color settings inside the mask (merged into the correction's current ones) |
 | `color.exposure` | number |  |  | Exposure in stops (-3..3) (≥ -3, ≤ 3) |
 | `color.brightness` | number |  |  | Overall brightness (≥ -100, ≤ 100) |
@@ -1248,8 +1278,9 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `target` | string | yes |  | The clip id, media layer id, or "global" the mask is (or will be) on |
-| `mask` | { kind, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | A mask to try |
-| `mask.kind` | "person" \| "face" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face (both found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | A mask to try |
+| `mask.kind` | "person" \| "face" \| "object" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object (all three found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
@@ -1265,7 +1296,7 @@ _No parameters._
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
 | `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
 | `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
-| `mask.combine` | { kind, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `mask.combine` | { kind, object, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
 | `label` | string |  |  | Label of a masked effect already on the target |
 | `time` | number |  |  | Timeline time; defaults to the middle of the target (≥ 0) |
 | `style` | "matte" \| "overlay" |  | `"matte"` |  |

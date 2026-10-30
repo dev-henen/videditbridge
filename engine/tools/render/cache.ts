@@ -30,7 +30,7 @@ export function segmentProject(project: Project, clip: Clip): Project {
  */
 export async function planSegments(
   project: Project,
-  opts: { cacheDir: string; baseDir?: string; fontsDir?: string; scale?: number; masks?: Record<string, string>; faceMasks?: Record<string, string> },
+  opts: { cacheDir: string; baseDir?: string; fontsDir?: string; scale?: number; masks?: Record<string, string>; faceMasks?: Record<string, string>; objectMasks?: Record<string, Record<string, string>> },
 ): Promise<SegmentPlan[]> {
   const timeline = computeTimeline(project);
   const baseDir = opts.baseDir ?? process.cwd();
@@ -42,7 +42,7 @@ export async function planSegments(
         const st = await stat(path.resolve(baseDir, asset.src)).catch(() => undefined);
         source = { bytes: st?.size, mtime: st?.mtimeMs };
       }
-      const compiled = compileProject(segmentProject(project, clip), { output: "", scale: opts.scale, baseDir, fontsDir: opts.fontsDir, segment: true, masks: opts.masks, faceMasks: opts.faceMasks });
+      const compiled = compileProject(segmentProject(project, clip), { output: "", scale: opts.scale, baseDir, fontsDir: opts.fontsDir, segment: true, masks: opts.masks, faceMasks: opts.faceMasks, objectMasks: opts.objectMasks });
       // The last argument is the output path, which is not part of what the clip looks like.
       const key = { v: SEGMENT_VERSION, source, args: compiled.args.slice(0, -1), graph: compiled.filterGraph };
       const hash = createHash("sha256").update(JSON.stringify(key)).digest("hex").slice(0, 32);
