@@ -169,6 +169,14 @@ export const PositionSchema = z.object({
   y: z.number().describe("Vertical center, 0 = top edge, 1 = bottom edge"),
 });
 
+/** Four corners of a flat surface (a screen, a sign), as it appears in a frame. */
+export const CornersSchema = z.object({
+  tl: PositionSchema.describe("Top-left corner"),
+  tr: PositionSchema.describe("Top-right corner"),
+  br: PositionSchema.describe("Bottom-right corner"),
+  bl: PositionSchema.describe("Bottom-left corner"),
+});
+
 /** A value at a moment, reached from the previous keyframe with `easing`. */
 export const keyframe = <T extends z.ZodType>(value: T) =>
   z.object({
@@ -185,6 +193,10 @@ export const LayerKeyframesSchema = z
     opacity: z.array(keyframe(z.number().min(0).max(1))).optional().describe("Multiplies the layer's opacity over time"),
     rotateX: z.array(keyframe(z.number().min(-3600).max(3600))).optional().describe("3D tilt in degrees over time (media and graphic layers): + tips the top away"),
     rotateY: z.array(keyframe(z.number().min(-3600).max(3600))).optional().describe("3D turn in degrees over time (media and graphic layers): + turns the right side away"),
+    corners: z
+      .array(keyframe(CornersSchema))
+      .optional()
+      .describe("Corner pin over time (media and graphic layers): where the layer's four corners land, in frame fractions. Replaces position, scale, rotation and 3D while set; replace_screen makes it from a track"),
   })
   .describe("Properties that change over time. Before the first keyframe a property holds its first value, after the last its last value");
 
@@ -392,6 +404,23 @@ export const TrackedObjectSchema = z
   })
   .refine((o) => o.point || o.box || o.text, "An object needs a point, a box or a text");
 
+/** A point or a flat surface followed through every clip of a source video (track_points). */
+export const TrackSchema = z
+  .object({
+    assetId: id.describe("The video asset it is in"),
+    time: time.describe("Source seconds of the frame it was marked on"),
+    point: PositionSchema.optional().describe("A point to follow (source frame fractions), with the area around it"),
+    radius: z.number().positive().max(0.5).default(0.04).describe("point: half the size of the square around it that is tracked, as a fraction of the source's long side"),
+    corners: CornersSchema.optional().describe("The four corners of a flat surface (source frame fractions): a screen, a sign, a wall"),
+    margin: z.number().min(0).max(1).default(0).describe("corners: also track this much around them (a fraction of the surface's size), e.g. a screen's bezel when the screen shows moving content"),
+    motion: z
+      .enum(["translation", "similarity", "perspective"])
+      .optional()
+      .describe("How it may move: translation (position only), similarity (position, scale, rotation), perspective (a flat surface seen at any angle). Default perspective for corners, similarity for a point"),
+    label: z.string().optional(),
+  })
+  .refine((t) => !!t.point !== !!t.corners, "A track needs a point or corners, not both");
+
 export const SettingsSchema = z.object({
   width: z.number().int().min(16).max(7680).default(1080),
   height: z.number().int().min(16).max(7680).default(1920),
@@ -426,6 +455,7 @@ export const ProjectSchema = z.object({
   captions: CaptionsSchema.optional(),
   transcripts: z.record(z.string(), TranscriptSchema).default({}).describe("Transcripts keyed by asset id"),
   objects: z.record(z.string(), TrackedObjectSchema).default({}).describe("Tracked objects by id (select_object); masks use them with kind 'object'"),
+  tracks: z.record(z.string(), TrackSchema).default({}).describe("Tracked points and surfaces by id (track_points); pin_layer and replace_screen use them"),
   export: ExportSettingsSchema.default(ExportSettingsSchema.parse({})),
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
@@ -437,6 +467,8 @@ export type ImageAsset = z.infer<typeof ImageAssetSchema>;
 export type Effect = z.infer<typeof EffectSchema>;
 export type Mask = z.infer<typeof MaskSchema>;
 export type TrackedObject = z.infer<typeof TrackedObjectSchema>;
+export type Track = z.infer<typeof TrackSchema>;
+export type Corners = z.infer<typeof CornersSchema>;
 export type MaskPart = z.infer<typeof MaskPartSchema>;
 export type BlendMode = z.infer<typeof BlendModeSchema>;
 export type Transition = z.infer<typeof TransitionSchema>;

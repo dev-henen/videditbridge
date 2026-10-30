@@ -58,15 +58,17 @@ export function positionAt(keys: Keyframe<Position>[], t: number): Position {
  */
 export function numberExpr(keys: Keyframe<number>[], t: string): string {
   const k = sorted(keys);
-  let expr = String(round3(k[k.length - 1]!.value));
+  // Values keep five decimals: a position in frame fractions rounded to three moves in 2 px steps at 1080p.
+  const v = (x: number) => Math.round(x * 1e5) / 1e5;
+  let expr = String(v(k[k.length - 1]!.value));
   for (let i = k.length - 1; i >= 1; i--) {
     const [a, b] = [k[i - 1]!, k[i]!];
     const span = Math.max(1e-6, b.time - a.time);
     const u = `clip((${t}-${round3(a.time)})/${round3(span)},0,1)`;
-    const segment = `${round3(a.value)}+${round3(b.value - a.value)}*${easeExpr(u, b.easing)}`;
+    const segment = `${v(a.value)}+${v(b.value - a.value)}*${easeExpr(u, b.easing)}`;
     expr = `if(lt(${t},${round3(b.time)}),${segment},${expr})`;
   }
-  return k.length > 1 ? `if(lt(${t},${round3(k[0]!.time)}),${round3(k[0]!.value)},${expr})` : expr;
+  return k.length > 1 ? `if(lt(${t},${round3(k[0]!.time)}),${v(k[0]!.value)},${expr})` : expr;
 }
 
 export function positionExpr(keys: Keyframe<Position>[], t: string): { x: string; y: string } {
@@ -105,8 +107,17 @@ export function layerStateAt(layer: Layer, t: number): LayerState {
  * path sampled from tracking (a point every half second) becomes a few smooth moves.
  */
 export function simplifyKeys(keys: Keyframe<Position>[], tolerance = 0.01): Keyframe<Position>[] {
+  return simplifyKeysBy(keys, (v) => [v.x, v.y], tolerance);
+}
+
+/**
+ * simplifyKeys for any value with numeric parts (`parts`): a keyframe stays when the line between its
+ * neighbours misses it by more than `tolerance` (distance over all parts).
+ */
+export function simplifyKeysBy<T>(keys: Keyframe<T>[], parts: (value: T) => number[], tolerance: number): Keyframe<T>[] {
   const k = sorted(keys);
   if (k.length <= 2) return k;
+  const v = k.map((key) => parts(key.value));
   const keep = new Array<boolean>(k.length).fill(false);
   keep[0] = keep[k.length - 1] = true;
   const walk = (a: number, b: number) => {
@@ -114,9 +125,7 @@ export function simplifyKeys(keys: Keyframe<Position>[], tolerance = 0.01): Keyf
     let at = -1;
     for (let i = a + 1; i < b; i++) {
       const u = (k[i]!.time - k[a]!.time) / Math.max(1e-9, k[b]!.time - k[a]!.time);
-      const x = k[a]!.value.x + (k[b]!.value.x - k[a]!.value.x) * u;
-      const y = k[a]!.value.y + (k[b]!.value.y - k[a]!.value.y) * u;
-      const d = Math.hypot(k[i]!.value.x - x, k[i]!.value.y - y);
+      const d = Math.hypot(...v[i]!.map((p, j) => p - (v[a]![j]! + (v[b]![j]! - v[a]![j]!) * u)));
       if (d > worst) [worst, at] = [d, i];
     }
     if (worst > tolerance) {

@@ -427,7 +427,7 @@ export function trackFaces(frames: FaceFrame[], opts: { maxGap?: number } = {}):
 // ---------------------------------------------------------------------------
 
 /** How a source picture lands in the output frame for a clip's fit (scale and offset per axis, in output fractions). */
-function fitTransform(src: { width: number; height: number }, out: { width: number; height: number }, fit: Fit, focus?: Position) {
+export function fitTransform(src: { width: number; height: number }, out: { width: number; height: number }, fit: Fit, focus?: Position) {
   if (fit === "stretch") return { sx: 1, sy: 1, ox: 0, oy: 0 };
   const k = fit === "cover" ? Math.max(out.width / src.width, out.height / src.height) : Math.min(out.width / src.width, out.height / src.height);
   const sx = (src.width * k) / out.width;

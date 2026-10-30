@@ -41,27 +41,28 @@ impl Image {
     fn half(&self) -> Self {
         let (w, h) = ((self.w + 1) / 2, (self.h + 1) / 2);
         let k = [1.0, 4.0, 6.0, 4.0, 1.0];
+        // Rows in parallel: down the columns, then across.
         let mut tmp = vec![0.0f32; self.w * h];
-        for y in 0..h {
-            for x in 0..self.w {
+        tmp.par_chunks_mut(self.w).enumerate().for_each(|(y, row)| {
+            for (x, out) in row.iter_mut().enumerate() {
                 let mut s = 0.0;
                 for (i, kv) in k.iter().enumerate() {
                     s += kv * self.at(x as isize, (2 * y) as isize + i as isize - 2);
                 }
-                tmp[y * self.w + x] = s / 16.0;
+                *out = s / 16.0;
             }
-        }
+        });
         let tmp = Image { w: self.w, h, px: tmp };
         let mut px = vec![0.0f32; w * h];
-        for y in 0..h {
-            for x in 0..w {
+        px.par_chunks_mut(w).enumerate().for_each(|(y, row)| {
+            for (x, out) in row.iter_mut().enumerate() {
                 let mut s = 0.0;
                 for (i, kv) in k.iter().enumerate() {
                     s += kv * tmp.at((2 * x) as isize + i as isize - 2, y as isize);
                 }
-                px[y * w + x] = s / 16.0;
+                *out = s / 16.0;
             }
-        }
+        });
         Image { w, h, px }
     }
 }
@@ -81,17 +82,20 @@ impl Pyramid {
         let levels = imgs
             .into_iter()
             .map(|im| {
-                let (mut gx, mut gy) = (vec![0.0; im.w * im.h], vec![0.0; im.w * im.h]);
-                for y in 0..im.h as isize {
-                    for x in 0..im.w as isize {
-                        // Scharr, scaled to a unit step.
-                        let i = y as usize * im.w + x as usize;
-                        gx[i] = (3.0 * (im.at(x + 1, y - 1) - im.at(x - 1, y - 1)) + 10.0 * (im.at(x + 1, y) - im.at(x - 1, y)) + 3.0 * (im.at(x + 1, y + 1) - im.at(x - 1, y + 1))) / 32.0;
-                        gy[i] = (3.0 * (im.at(x - 1, y + 1) - im.at(x - 1, y - 1)) + 10.0 * (im.at(x, y + 1) - im.at(x, y - 1)) + 3.0 * (im.at(x + 1, y + 1) - im.at(x + 1, y - 1))) / 32.0;
-                    }
-                }
                 let (w, h) = (im.w, im.h);
-                (im, Image { w, h, px: gx }, Image { w, h, px: gy })
+                // Scharr, scaled to a unit step; rows in parallel.
+                let (gx, gy): (Vec<Vec<f32>>, Vec<Vec<f32>>) = (0..h as isize)
+                    .into_par_iter()
+                    .map(|y| {
+                        let (mut rx, mut ry) = (vec![0.0f32; w], vec![0.0f32; w]);
+                        for x in 0..w as isize {
+                            rx[x as usize] = (3.0 * (im.at(x + 1, y - 1) - im.at(x - 1, y - 1)) + 10.0 * (im.at(x + 1, y) - im.at(x - 1, y)) + 3.0 * (im.at(x + 1, y + 1) - im.at(x - 1, y + 1))) / 32.0;
+                            ry[x as usize] = (3.0 * (im.at(x - 1, y + 1) - im.at(x - 1, y - 1)) + 10.0 * (im.at(x, y + 1) - im.at(x, y - 1)) + 3.0 * (im.at(x + 1, y + 1) - im.at(x + 1, y - 1))) / 32.0;
+                        }
+                        (rx, ry)
+                    })
+                    .unzip();
+                (im, Image { w, h, px: gx.concat() }, Image { w, h, px: gy.concat() })
             })
             .collect();
         Self { levels }
@@ -184,6 +188,7 @@ pub fn good_features(p: &Pyramid, region: Option<&[u8]>, max: usize, min_dist: f
 }
 
 const WIN: isize = 7;
+const PATCH: usize = ((2 * WIN + 1) * (2 * WIN + 1)) as usize;
 
 /// Pyramidal Lucas-Kanade: where each point of `a` went in `b` (None when lost).
 pub fn lucas_kanade(a: &Pyramid, b: &Pyramid, pts: &[(f32, f32)]) -> Vec<Option<(f32, f32)>> {
@@ -196,10 +201,16 @@ pub fn lucas_kanade(a: &Pyramid, b: &Pyramid, pts: &[(f32, f32)]) -> Vec<Option<
                 let (ia, ax, ay) = &a.levels[l];
                 let (ib, _, _) = &b.levels[l];
                 let (x, y) = (px / s, py / s);
+                // The window in `a` and its gradients stay the same through the iterations: sample them once.
+                let mut patch = [(0.0f32, 0.0f32, 0.0f32); PATCH];
                 let (mut sxx, mut sxy, mut syy) = (0.0f32, 0.0f32, 0.0f32);
+                let mut k = 0;
                 for dy in -WIN..=WIN {
                     for dx in -WIN..=WIN {
-                        let (u, v) = (ax.sample(x + dx as f32, y + dy as f32), ay.sample(x + dx as f32, y + dy as f32));
+                        let (qx, qy) = (x + dx as f32, y + dy as f32);
+                        let (u, v) = (ax.sample(qx, qy), ay.sample(qx, qy));
+                        patch[k] = (ia.sample(qx, qy), u, v);
+                        k += 1;
                         sxx += u * u;
                         sxy += u * v;
                         syy += v * v;
@@ -212,12 +223,15 @@ pub fn lucas_kanade(a: &Pyramid, b: &Pyramid, pts: &[(f32, f32)]) -> Vec<Option<
                 let mut d = (0.0f32, 0.0f32);
                 for _ in 0..20 {
                     let (mut bx, mut by) = (0.0f32, 0.0f32);
+                    let mut k = 0;
                     for dy in -WIN..=WIN {
                         for dx in -WIN..=WIN {
                             let (qx, qy) = (x + dx as f32, y + dy as f32);
-                            let diff = ia.sample(qx, qy) - ib.sample(qx + gxy.0 + d.0, qy + gxy.1 + d.1);
-                            bx += diff * ax.sample(qx, qy);
-                            by += diff * ay.sample(qx, qy);
+                            let (va, u, v) = patch[k];
+                            k += 1;
+                            let diff = va - ib.sample(qx + gxy.0 + d.0, qy + gxy.1 + d.1);
+                            bx += diff * u;
+                            by += diff * v;
                         }
                     }
                     let step = ((syy * bx - sxy * by) / det, (sxx * by - sxy * bx) / det);

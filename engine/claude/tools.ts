@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   AnimationSchema,
   BlendModeSchema,
+  CornersSchema,
   EasingSchema,
   EffectSchema,
   MaskSchema,
@@ -18,7 +19,7 @@ import {
 } from "../core/schema.js";
 import * as ops from "../core/operations.js";
 import { computeTimeline, sourceToTimeline, timelineToSource } from "../core/timeline.js";
-import { isAnimated, positionAt, simplifyKeys, smoothKeys } from "../core/keyframes.js";
+import { isAnimated, layerStateAt, positionAt, simplifyKeys, simplifyKeysBy, smoothKeys } from "../core/keyframes.js";
 import { fileOnDisk, validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, isAbsolutePath, isUrl, newId, round3, type AspectRatio } from "../core/util.js";
@@ -35,7 +36,7 @@ import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
 import { replaceWords, vocabularySuggestions } from "../tools/transcript/fix.js";
 import { REVIEW_CHECKS, reviewEdit, textLayerBox } from "../tools/review/index.js";
-import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, frameToSource, personRegion, selectObject, trackFaces, writeMaskOverlay, writeTrackPreview, type ClipFaces } from "../tools/vision/index.js";
+import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, frameToSource, personRegion, selectObject, trackFaces, writeMaskOverlay, writeTrackPreview, framePointToSource, quadCenter, quadOf, trackPointsInClips, trackSampler, writeCornersPreview, type ClipFaces } from "../tools/vision/index.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
@@ -1691,6 +1692,269 @@ export const TOOLS: ToolDefinition[] = [
     },
   }),
   tool({
+    name: "track_points",
+    description:
+      "Follow a point or a flat surface through a video, to attach graphics to it (pin_layer) or put a new picture on a screen or sign (replace_screen). " +
+      "Mark it on a frame where it is clearly visible, in fractions of the edit's frame at a timeline time as in render_frame: the four corners of a surface (a phone or monitor screen, a sign, a poster, a picture frame, a wall), or a point with the square around it (a logo on a shirt, a car door, a spot on a table). " +
+      "Pick something rigid with texture or edges; plain areas, reflections and things that bend track badly. A screen that shows moving content tracks badly by itself: set margin (e.g. 0.15) so the bezel around it is tracked too. " +
+      "Runs on this machine in seconds (no model). Follows it through every primary clip of that video, reports per clip how sure the tracking is and the unsure ranges, and shows the corners in blue on the marked clip's start, least sure frame, middle and end. Mark again under the same id to fix it; remove forgets it.",
+    input: z.object({
+      time: z.number().min(0).describe("Timeline time of a frame where it is clearly visible"),
+      corners: CornersSchema.optional().describe("Corners of a flat surface (frame fractions), top-left, top-right, bottom-right, bottom-left as seen in the frame"),
+      point: PositionSchema.optional().describe("A point to follow (frame fractions)"),
+      radius: z.number().positive().max(0.5).optional().describe("point: half the size of the tracked square around it, as a fraction of the source's long side (default 0.04); cover the thing that moves with the point, not the background"),
+      margin: z.number().min(0).max(1).optional().describe("corners: also track this much around the surface (a fraction of its size, default 0): a screen's bezel, a sign's frame"),
+      motion: z.enum(["translation", "similarity", "perspective"]).optional().describe("translation (position only), similarity (also size and turn), perspective (a flat surface at any angle). Default perspective for corners, similarity for a point"),
+      label: z.string().optional().describe("A short name, e.g. 'phone screen'; also the id when no id is given"),
+      id: z.string().optional().describe("Mark an existing track again under this id"),
+      remove: z.boolean().optional().describe("Forget the track with this id"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      if (i.remove) {
+        if (!i.id || !s.project.tracks[i.id]) return { text: `No track "${i.id ?? ""}" to remove.`, isError: true };
+        const { [i.id]: _, ...rest } = s.project.tracks;
+        return commit(s, { ...s.project, tracks: rest }, "track_points", i, `Forgot track "${i.id}". Layers pinned to it keep their keyframes.`);
+      }
+      if (!i.corners === !i.point) return { text: "Give the corners of a surface or a point, not both.", isError: true };
+      const tl = computeTimeline(s.project);
+      const tc = tl.clips.find((c) => i.time >= c.start && i.time < c.end);
+      if (!tc || tc.asset.type !== "video") return { text: `No video clip plays at ${i.time}s on the primary track.`, isError: true };
+      const asset = tc.asset;
+      const file = s.resolve(asset.src);
+      const info = asset.width && asset.height ? { width: asset.width, height: asset.height } : await probe(file, { ffmpegPath: s.options.ffmpegPath });
+      const src = { width: info.width ?? 1920, height: info.height ?? 1080 };
+      const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+      const toSource = (p: { x: number; y: number }) => {
+        const q = framePointToSource(p, src, s.project.settings, tc, i.time);
+        return { x: r4(q.x), y: r4(q.y) };
+      };
+      const corners = i.corners && { tl: toSource(i.corners.tl), tr: toSource(i.corners.tr), br: toSource(i.corners.br), bl: toSource(i.corners.bl) };
+      const point = i.point && toSource(i.point);
+      const pts = corners ? Object.values(corners) : [point!];
+      if (pts.every((p) => p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1)) return { text: "That is outside the source picture.", isError: true };
+      const base = (i.id ?? i.label ?? (corners ? "surface" : "point")).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "track";
+      let id = i.id ?? base;
+      for (let n = 2; !i.id && s.project.tracks[id]; n++) id = `${base}-${n}`;
+      const spec = {
+        assetId: asset.id,
+        time: round3(timelineToSource(tc, i.time)),
+        ...(corners ? { corners } : { point }),
+        radius: i.radius ?? 0.04,
+        margin: i.margin ?? 0,
+        ...(i.motion ? { motion: i.motion } : {}),
+        ...(i.label ? { label: i.label } : {}),
+      };
+      const project = { ...s.project, tracks: { ...s.project.tracks, [id]: spec } };
+      activity?.progress(0.05);
+      const results = await trackPointsInClips(project, id, { ...s.renderOptions, onProgress: (p) => activity?.progress(0.05 + 0.85 * p) });
+      const lines: string[] = [];
+      for (const r of results) {
+        const rc = tl.clips.find((c) => c.clip.id === r.clipId)!;
+        const t = r.track;
+        const at = (f: number) => round3(sourceToTimeline(rc, t.start + f / t.fps));
+        const conf = t.confidence;
+        const mean = conf.reduce((a, b) => a + b, 0) / Math.max(1, conf.length);
+        const weak: string[] = [];
+        for (let f = 0; f < conf.length; ) {
+          if (conf[f]! >= 0.4) {
+            f++;
+            continue;
+          }
+          const g0 = f;
+          while (f < conf.length && conf[f]! < 0.4) f++;
+          weak.push(`${formatTime(at(g0))}-${formatTime(at(f - 1))}${conf.slice(g0, f).some((c) => c === 0) ? " (lost)" : ""}`);
+        }
+        const k = conf.indexOf(Math.min(...conf));
+        lines.push(
+          `${r.clipId} (${formatTime(rc.start)}-${formatTime(rc.end)}): ${conf.length} frames, sureness mean ${mean.toFixed(2)}, lowest ${conf[k]!.toFixed(2)} at ${formatTime(at(k))}${t.redetected.length ? `, points found again ${t.redetected.length} times` : ""}${weak.length ? `; unsure: ${weak.slice(0, 6).join(", ")}${weak.length > 6 ? ", ..." : ""}` : ""}`,
+        );
+      }
+      const images: { path: string; mediaType: "image/png" }[] = [];
+      const marked = results.find((r) => r.clipId === tc.clip.id);
+      if (marked) {
+        const t = marked.track;
+        const n = t.corners.length;
+        const out = await s.outputPath(`track-${id}-${Date.now().toString(36)}.png`);
+        await writeCornersPreview(file, t, [0, t.confidence.indexOf(Math.min(...t.confidence)), n / 2, n - 1], out, { ffmpegPath: s.options.ffmpegPath });
+        s.recordRender({ kind: "frame", path: out, time: i.time });
+        images.push({ path: out, mediaType: "image/png" });
+      }
+      const res = commit(
+        s,
+        project,
+        "track_points",
+        i,
+        `Tracked "${id}" (${spec.motion ?? (corners ? "perspective" : "similarity")}) in ${asset.id} from ${spec.time}s of the source:\n${lines.join("\n")}\n` +
+          `The image shows ${tc.clip.id} at its start, its least sure frame, its middle and its end, with the corners in blue. If they slide off, mark again with id "${id}" on a clearer frame, with a margin, or with a larger radius. ` +
+          `Next: ${corners ? `replace_screen { trackId: "${id}", assetId } to put a picture on it, or ` : ""}pin_layer { layerId, trackId: "${id}" } to attach a layer.`,
+      );
+      return { ...res, images };
+    },
+  }),
+  tool({
+    name: "pin_layer",
+    description:
+      "Attach a layer (a label, an arrow, a sticker, a graphic, a media overlay) to a tracked point or surface (track_points), so it moves with it: position, and for similarity and perspective tracks also size and turn. " +
+      "Place the layer where it should sit first; it keeps that offset from the tracked thing as it is at the layer's first tracked moment. Sets position, scale and rotation keyframes (replacing those properties' keyframes); where the track does not cover the layer, it holds still. " +
+      "Check with render_frame at the start, middle and end, or render_preview.",
+    input: z.object({
+      layerId: z.string(),
+      trackId: z.string(),
+      follow: z
+        .array(z.enum(["position", "scale", "rotation"]))
+        .min(1)
+        .optional()
+        .describe("What to follow (default: position for translation tracks; position, scale and rotation otherwise)"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const layer = s.project.layers.find((l) => l.id === i.layerId);
+      if (!layer) return { text: `No layer "${i.layerId}".`, isError: true };
+      const spec = s.project.tracks[i.trackId];
+      if (!spec) return { text: `No track "${i.trackId}". Tracks: ${Object.keys(s.project.tracks).join(", ") || "(none; make one with track_points)"}`, isError: true };
+      if (layer.keyframes?.corners?.length) return { text: `${i.layerId} is corner-pinned (replace_screen); it already follows its track.`, isError: true };
+      const motion = spec.motion ?? (spec.corners ? "perspective" : "similarity");
+      const follow = new Set(i.follow ?? (motion === "translation" ? ["position"] : ["position", "scale", "rotation"]));
+      const sample = trackSampler(s.project, await trackPointsInClips(s.project, i.trackId, { ...s.renderOptions, onProgress: (p) => activity?.progress(0.9 * p) }));
+      const { width: W, height: H, fps } = s.project.settings;
+      const end = layer.start + layer.duration;
+      // The tracked quad in pixels at each output frame under the layer.
+      const seen: { time: number; quad: [number, number][] }[] = [];
+      for (let f = 0; layer.start + f / fps <= end + 1e-6; f++) {
+        const t = layer.start + f / fps;
+        const at = sample(t);
+        if (at) seen.push({ time: round3(t - layer.start), quad: quadOf(at.corners, W, H) });
+      }
+      if (seen.length < 2) return { text: `"${i.trackId}" is not tracked while ${i.layerId} is on screen (${round3(layer.start)}-${round3(end)}s). Move the layer over a clip of ${spec.assetId}.`, isError: true };
+      const first = layerStateAt(layer, seen[0]!.time);
+      const c0 = quadCenter(seen[0]!.quad);
+      const offset = [first.position.x * W - c0[0], first.position.y * H - c0[1]];
+      const spread = (q: [number, number][], c: [number, number]) => q.reduce((n, p) => n + Math.hypot(p[0] - c[0], p[1] - c[1]), 0) / q.length;
+      const r0 = spread(seen[0]!.quad, c0);
+      const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+      let turn = 0;
+      const position: { time: number; value: { x: number; y: number }; easing: "linear" }[] = [];
+      const scale: { time: number; value: number; easing: "linear" }[] = [];
+      const rotation: { time: number; value: number; easing: "linear" }[] = [];
+      seen.forEach(({ time, quad }, k) => {
+        const c = quadCenter(quad);
+        // Turn: the corners' mean change of angle around the center since the previous frame (y down, so clockwise).
+        if (k > 0) {
+          const [pq, pc] = [seen[k - 1]!.quad, quadCenter(seen[k - 1]!.quad)];
+          turn += quad.reduce((n, p, j) => n + wrap(Math.atan2(p[1] - c[1], p[0] - c[0]) - Math.atan2(pq[j]![1] - pc[1], pq[j]![0] - pc[0])), 0) / quad.length;
+        }
+        const grow = follow.has("scale") ? spread(quad, c) / r0 : 1;
+        const a = follow.has("rotation") ? turn : 0;
+        const [ox, oy] = [offset[0]! * grow, offset[1]! * grow];
+        const x = c[0] + ox * Math.cos(a) - oy * Math.sin(a);
+        const y = c[1] + ox * Math.sin(a) + oy * Math.cos(a);
+        position.push({ time, value: { x: Math.round((x / W) * 1e4) / 1e4, y: Math.round((y / H) * 1e4) / 1e4 }, easing: "linear" });
+        scale.push({ time, value: Math.round(first.scale * grow * 1e4) / 1e4, easing: "linear" });
+        rotation.push({ time, value: Math.round((first.rotation + (a * 180) / Math.PI) * 100) / 100, easing: "linear" });
+      });
+      const keyframes: Record<string, unknown> = { ...(layer.keyframes ?? {}) };
+      const notes: string[] = [];
+      if (follow.has("position")) {
+        // About half a pixel at 1080p.
+        keyframes.position = simplifyKeys(position, 0.4 / Math.max(W, H));
+        notes.push(`${(keyframes.position as unknown[]).length} position`);
+      }
+      if (follow.has("scale")) {
+        keyframes.scale = simplifyKeysBy(scale, (v) => [v], 0.002);
+        notes.push(`${(keyframes.scale as unknown[]).length} scale`);
+      }
+      if (follow.has("rotation")) {
+        keyframes.rotation = simplifyKeysBy(rotation, (v) => [v], 0.1);
+        notes.push(`${(keyframes.rotation as unknown[]).length} rotation`);
+      }
+      const covered = seen.length / (Math.floor(layer.duration * fps + 1e-6) + 1);
+      const p = ops.updateLayer(s.project, i.layerId, { keyframes });
+      return commit(
+        s,
+        p,
+        "pin_layer",
+        i,
+        `Pinned ${i.layerId} to "${i.trackId}": ${notes.join(", ")} keyframes from ${seen.length} tracked frames${covered < 0.98 ? ` (the track covers ${Math.round(covered * 100)}% of the layer; it holds still elsewhere)` : ""}. Check it with render_frame at a few times.`,
+      );
+    },
+  }),
+  tool({
+    name: "replace_screen",
+    description:
+      "Put an image or video on a tracked flat surface (track_points with corners): a phone or monitor screen, a TV, a billboard, a sign, a picture frame. The insert is corner-pinned to the four tracked corners on every frame, so it stays on the surface as the camera or the surface moves. " +
+      "By default it covers the clip the surface was marked in, cropped to the surface's shape (fit cover). Check the corners at the start, middle, end and fastest motion with render_frame; a slightly soft insert (a blur effect of about 0.5) and a grade toward the scene's color make it sit in the shot. " +
+      "Things passing in front of the surface (a finger) are covered by the insert.",
+    input: z.object({
+      trackId: z.string().describe("A track made with track_points from corners"),
+      assetId: z.string().describe("The image or video to show on the surface"),
+      start: z.number().min(0).optional().describe("Timeline start (default: the start of the clip the surface was marked in)"),
+      duration: z.number().positive().optional().describe("Seconds (default: to the end of that clip)"),
+      in: z.number().min(0).optional().describe("Seconds into a video insert to start from"),
+      fit: FitSchema.optional().describe("How the insert fills the surface (default cover: fill and crop)"),
+      opacity: z.number().min(0).max(1).optional(),
+      effects: z.array(EffectSchema).optional().describe("Effects on the insert, e.g. a light blur or a color grade to match the scene"),
+      label: z.string().optional(),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const spec = s.project.tracks[i.trackId];
+      if (!spec) return { text: `No track "${i.trackId}". Tracks: ${Object.keys(s.project.tracks).join(", ") || "(none; make one with track_points)"}`, isError: true };
+      if (!spec.corners) return { text: `"${i.trackId}" follows a point; a screen insert needs a track made from the surface's four corners.`, isError: true };
+      const asset = s.project.assets.find((a) => a.id === i.assetId);
+      if (!asset || asset.type === "audio") return { text: `${i.assetId} is not a picture (an image, video, color or gradient asset).`, isError: true };
+      const results = await trackPointsInClips(s.project, i.trackId, { ...s.renderOptions, onProgress: (p) => activity?.progress(0.9 * p) });
+      const tl = computeTimeline(s.project);
+      const clips = results.map((r) => tl.clips.find((c) => c.clip.id === r.clipId)!);
+      const home = clips.find((c) => spec.time >= c.clip.in && spec.time < c.clip.in + c.sourceDuration) ?? clips[0]!;
+      const start = round3(i.start ?? home.start);
+      const under = clips.find((c) => start >= c.start && start < c.end) ?? home;
+      const duration = round3(i.duration ?? Math.max(0.1, under.end - start));
+      const sample = trackSampler(s.project, results);
+      const { width: W, height: H, fps } = s.project.settings;
+      const seen: { time: number; value: NonNullable<ReturnType<typeof sample>>["corners"]; conf: number }[] = [];
+      for (let f = 0; f / fps <= duration + 1e-6; f++) {
+        const at = sample(start + f / fps);
+        if (at) seen.push({ time: round3(f / fps), value: at.corners, conf: at.confidence });
+      }
+      if (seen.length < 1) return { text: `"${i.trackId}" is not tracked between ${start}s and ${round3(start + duration)}s.`, isError: true };
+      // About half a pixel, over all eight coordinates.
+      const corners = simplifyKeysBy(
+        seen.map((k) => ({ time: k.time, value: k.value, easing: "linear" as const })),
+        (c) => [c.tl, c.tr, c.br, c.bl].flatMap((p) => [p.x * W, p.y * H]),
+        0.5,
+      );
+      // The layer's own size: the surface's mean edge lengths on the first frame, so fit crops the insert to its shape.
+      const q = quadOf(seen[0]!.value, W, H);
+      const len = (a: number, b: number) => Math.hypot(q[a]![0] - q[b]![0], q[a]![1] - q[b]![1]);
+      const size = { width: round3(Math.max(0.01, (len(0, 1) + len(3, 2)) / 2 / W)), height: round3(Math.max(0.01, (len(0, 3) + len(1, 2)) / 2 / H)) };
+      const id = newId("screen");
+      const p = ops.addLayer(s.project, {
+        type: "media",
+        id,
+        assetId: i.assetId,
+        start,
+        duration,
+        size,
+        ...(i.in !== undefined ? { in: i.in } : {}),
+        ...(i.fit ? { fit: i.fit } : {}),
+        ...(i.opacity !== undefined ? { opacity: i.opacity } : {}),
+        ...(i.effects ? { effects: i.effects } : {}),
+        ...(i.label ? { label: i.label } : {}),
+        keyframes: { corners },
+      });
+      const covered = seen.length / (Math.floor(duration * fps + 1e-6) + 1);
+      const worst = seen.reduce((a, b) => (b.conf < a.conf ? b : a));
+      return commit(
+        s,
+        p,
+        "replace_screen",
+        i,
+        `Added ${id}: ${i.assetId} pinned to "${i.trackId}" from ${formatTime(start)} to ${formatTime(start + duration)}, ${corners.length} corner keyframes from ${seen.length} tracked frames; tracking least sure at ${formatTime(start + worst.time)} (${worst.conf.toFixed(2)})${covered < 0.98 ? `; the track covers only ${Math.round(covered * 100)}% of that time and the insert holds still elsewhere` : ""}. Check it with render_frame at the start, ${formatTime(start + worst.time)} and the end.`,
+      );
+    },
+  }),
+  tool({
     name: "follow_face",
     description:
       "Make a layer (a name label, a callout, an arrow, a sticker) follow a person on screen: it finds the main face in the clips under the layer and sets position keyframes beside it (above, below, left, right, or on it), smoothed so it glides rather than jitters. " +
@@ -3089,6 +3353,12 @@ export function describeToolCall(name: string, input: unknown): string {
       return i.remove ? `Forgetting object ${quote(i.id)}` : `Selecting ${quote(i.label ?? i.text ?? "an object")}`;
     case "track_object":
       return `Following ${quote(i.objectId)} through the clips`;
+    case "track_points":
+      return i.remove ? `Forgetting track ${quote(i.id)}` : `Tracking ${quote(i.label ?? (i.corners ? "a surface" : "a point"))}`;
+    case "pin_layer":
+      return `Pinning ${quote(i.layerId)} to ${quote(i.trackId)}`;
+    case "replace_screen":
+      return `Putting ${quote(i.assetId)} on ${quote(i.trackId)}`;
     case "render_mask":
       return `Rendering the mask on ${quote(i.target)}`;
     case "render_scopes":

@@ -99,6 +99,8 @@ Any layer can change over time with `keyframes`. Each property is a list of `{ t
 | `scale` | number | Multiplies the layer's size (text: its font size) |
 | `rotation` | degrees | Clockwise |
 | `opacity` | 0..1 | Multiplies the layer's opacity |
+| `rotateX`, `rotateY` | degrees | 3D tilt and turn (media and graphic layers) |
+| `corners` | `{ tl, tr, br, bl }` of `{ x, y }` | Corner pin (media and graphic layers): where the layer's corners land. Replaces position, scale, rotation and 3D while set; `replace_screen` makes it from a tracked surface (see [tracking](tracking.md)) |
 
 ```json
 { "type": "text", "id": "label", "text": "NEW", "start": 2, "duration": 3,

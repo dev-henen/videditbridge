@@ -2,7 +2,7 @@
 
 # Claude tools
 
-99 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+102 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -1131,6 +1131,62 @@ _No parameters._
 |---|---|---|---|---|
 | `objectId` | string | yes |  |  |
 | `clipIds` | string[] |  |  | Only these clips (default: every primary clip of the object's video) |
+
+### track_points
+
+**edits**. Follow a point or a flat surface through a video, to attach graphics to it (pin_layer) or put a new picture on a screen or sign (replace_screen). Mark it on a frame where it is clearly visible, in fractions of the edit's frame at a timeline time as in render_frame: the four corners of a surface (a phone or monitor screen, a sign, a poster, a picture frame, a wall), or a point with the square around it (a logo on a shirt, a car door, a spot on a table). Pick something rigid with texture or edges; plain areas, reflections and things that bend track badly. A screen that shows moving content tracks badly by itself: set margin (e.g. 0.15) so the bezel around it is tracked too. Runs on this machine in seconds (no model). Follows it through every primary clip of that video, reports per clip how sure the tracking is and the unsure ranges, and shows the corners in blue on the marked clip's start, least sure frame, middle and end. Mark again under the same id to fix it; remove forgets it.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `time` | number | yes |  | Timeline time of a frame where it is clearly visible (≥ 0) |
+| `corners` | { tl, tr, br, bl } |  |  | Corners of a flat surface (frame fractions), top-left, top-right, bottom-right, bottom-left as seen in the frame |
+| `corners.tl` | { x, y } | yes |  | Top-left corner |
+| `corners.tl.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `corners.tl.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `corners.tr` | { x, y } | yes |  | Top-right corner |
+| `corners.tr.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `corners.tr.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `corners.br` | { x, y } | yes |  | Bottom-right corner |
+| `corners.br.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `corners.br.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `corners.bl` | { x, y } | yes |  | Bottom-left corner |
+| `corners.bl.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `corners.bl.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `point` | { x, y } |  |  | A point to follow (frame fractions) |
+| `point.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `point.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `radius` | number |  |  | point: half the size of the tracked square around it, as a fraction of the source's long side (default 0.04); cover the thing that moves with the point, not the background (> 0, ≤ 0.5) |
+| `margin` | number |  |  | corners: also track this much around the surface (a fraction of its size, default 0): a screen's bezel, a sign's frame (≥ 0, ≤ 1) |
+| `motion` | "translation" \| "similarity" \| "perspective" |  |  | translation (position only), similarity (also size and turn), perspective (a flat surface at any angle). Default perspective for corners, similarity for a point |
+| `label` | string |  |  | A short name, e.g. 'phone screen'; also the id when no id is given |
+| `id` | string |  |  | Mark an existing track again under this id |
+| `remove` | boolean |  |  | Forget the track with this id |
+
+### pin_layer
+
+**edits**. Attach a layer (a label, an arrow, a sticker, a graphic, a media overlay) to a tracked point or surface (track_points), so it moves with it: position, and for similarity and perspective tracks also size and turn. Place the layer where it should sit first; it keeps that offset from the tracked thing as it is at the layer's first tracked moment. Sets position, scale and rotation keyframes (replacing those properties' keyframes); where the track does not cover the layer, it holds still. Check with render_frame at the start, middle and end, or render_preview.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `trackId` | string | yes |  |  |
+| `follow` | "position" \| "scale" \| "rotation"[] |  |  | What to follow (default: position for translation tracks; position, scale and rotation otherwise) |
+
+### replace_screen
+
+**edits**. Put an image or video on a tracked flat surface (track_points with corners): a phone or monitor screen, a TV, a billboard, a sign, a picture frame. The insert is corner-pinned to the four tracked corners on every frame, so it stays on the surface as the camera or the surface moves. By default it covers the clip the surface was marked in, cropped to the surface's shape (fit cover). Check the corners at the start, middle, end and fastest motion with render_frame; a slightly soft insert (a blur effect of about 0.5) and a grade toward the scene's color make it sit in the shot. Things passing in front of the surface (a finger) are covered by the insert.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `trackId` | string | yes |  | A track made with track_points from corners |
+| `assetId` | string | yes |  | The image or video to show on the surface |
+| `start` | number |  |  | Timeline start (default: the start of the clip the surface was marked in) (≥ 0) |
+| `duration` | number |  |  | Seconds (default: to the end of that clip) (> 0) |
+| `in` | number |  |  | Seconds into a video insert to start from (≥ 0) |
+| `fit` | "cover" \| "contain" \| "stretch" \| "blur" |  |  | How the insert fills the surface (default cover: fill and crop) |
+| `opacity` | number |  |  | (≥ 0, ≤ 1) |
+| `effects` | { type, params, mask, label, keyframes }[] |  |  | Effects on the insert, e.g. a light blur or a color grade to match the scene |
+| `label` | string |  |  |  |
 
 ### follow_face
 

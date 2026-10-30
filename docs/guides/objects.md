@@ -73,4 +73,4 @@ The design's budget is a 10 s clip at 30 fps in under 60 s. Easy shots meet it; 
 - Accuracy against hand-made mattes on real clips (cars, people, a phone, a cup), and the identity test with two similar objects crossing, wait for the test clips of the design's section 11.
 - SAM's mask is 256 x 256 before refinement, so very thin parts (a bicycle's spokes) are partly lost even after the guided filter.
 - An object hidden for longer than a keyframe span is kept at its predicted place with low confidence; `track_object` lists those ranges.
-- Graphics cannot follow an object yet (that comes with `pin_layer`).
+- Graphics follow rigid things through [point and surface tracking](tracking.md) (`track_points`, then `pin_layer`), not through an object's mask.

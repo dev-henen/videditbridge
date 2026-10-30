@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { Asset, BlendMode, Clip, Effect, Fit, Keyframe, MediaLayer, Position, Project } from "../../core/schema.js";
+import type { Asset, BlendMode, Clip, Corners, Effect, Fit, Keyframe, MediaLayer, Position, Project } from "../../core/schema.js";
 import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
@@ -168,6 +168,35 @@ class GraphBuilder {
   add(line: string): void {
     this.lines.push(line);
   }
+}
+
+/** Clear pixels around a corner-pinned layer, so the edges perspective repeats outward stay clear. */
+const PIN_PAD = 4;
+
+/** The 3x3 transform (row major) taking the corners of a `w` x `h` rectangle to `q` (top-left, top-right, bottom-right, bottom-left, pixels). */
+export function rectToQuad(w: number, h: number, q: [number, number][]): number[] {
+  // The unit square to the quad (Heckbert's closed form), then scaled from the rectangle.
+  const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q as [[number, number], [number, number], [number, number], [number, number]];
+  const [sx, sy] = [x0 - x1 + x2 - x3, y0 - y1 + y2 - y3];
+  let [g, h2] = [0, 0];
+  if (Math.abs(sx) > 1e-12 || Math.abs(sy) > 1e-12) {
+    const [dx1, dx2, dy1, dy2] = [x1 - x2, x3 - x2, y1 - y2, y3 - y2];
+    const den = dx1 * dy2 - dx2 * dy1;
+    g = (sx * dy2 - dx2 * sy) / den;
+    h2 = (dx1 * sy - sx * dy1) / den;
+  }
+  const [a, b, d, e] = [x1 - x0 + g * x1, x3 - x0 + h2 * x3, y1 - y0 + g * y1, y3 - y0 + h2 * y3];
+  return [a / w, b / h, x0, d / w, e / h, y0, g / w, h2 / h, 1];
+}
+
+/** A corner pin's corners (frame fractions of a `w` x `h` frame) moved outward by `pad` pixels through the same perspective, in pixels. */
+export function padCorners(c: Corners, w: number, h: number, pad: number): [number, number][] {
+  const m = rectToQuad(w, h, [c.tl, c.tr, c.br, c.bl].map((p): [number, number] => [p.x * w, p.y * h]));
+  const at = (x: number, y: number): [number, number] => {
+    const z = m[6]! * x + m[7]! * y + m[8]!;
+    return [(m[0]! * x + m[1]! * y + m[2]!) / z, (m[3]! * x + m[4]! * y + m[5]!) / z];
+  };
+  return [at(-pad, -pad), at(w + pad, -pad), at(w + pad, h + pad), at(-pad, h + pad)];
 }
 
 /** Compile a project into ffmpeg arguments plus support files. Pure: does not touch the filesystem. */
@@ -461,14 +490,17 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     // Position keyframes count from the layer's start; overlay's t is timeline time.
     const keys = layer.keyframes?.position;
     const moving = keys?.length ? positionExpr(keys, `(t-${layer.start})`) : undefined;
-    const motion = overlayMotion(
-      `main_w*${moving ? `(${moving.x})` : layer.position.x}-overlay_w/2`,
-      `main_h*${moving ? `(${moving.y})` : layer.position.y}-overlay_h/2`,
-      layer.start,
-      end,
-      layer.animationIn,
-      layer.animationOut,
-    );
+    // A corner-pinned layer is already drawn in place on a padded frame-size canvas.
+    const motion = layer.keyframes?.corners?.length
+      ? { x: String(-PIN_PAD), y: String(-PIN_PAD) }
+      : overlayMotion(
+          `main_w*${moving ? `(${moving.x})` : layer.position.x}-overlay_w/2`,
+          `main_h*${moving ? `(${moving.y})` : layer.position.y}-overlay_h/2`,
+          layer.start,
+          end,
+          layer.animationIn,
+          layer.animationOut,
+        );
     const enable = `enable='between(t,${layer.start},${end})'`;
     if (layer.blend === "normal") {
       g.add(`[${vCur}][${v}]overlay=x='${motion.x}':y='${motion.y}':${enable}:eof_action=pass[${out}]`);
@@ -519,8 +551,26 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       g.add(`[${colorPart}][${merged}]alphamerge[${out}]`);
       styled = out;
     }
+    const pinKeys = layer.keyframes?.corners;
+    // Corner pin: stretch the layer to the frame, pad it with clear pixels (perspective repeats the
+    // edge pixels outward, and those stay clear), and send the padded corners where the layer's
+    // corners, extended by the same perspective, land. Replaces placement, shadow, 3D and scale.
+    if (pinKeys?.length) {
+      const P = PIN_PAD;
+      const [out, padded] = [g.label("lcp"), g.label("lcq")];
+      const outer = pinKeys.map((key) => ({ ...key, value: padCorners(key.value, W, H, P) }));
+      const coord = (c: number, axis: 0 | 1) => {
+        const keys = outer.map((key) => ({ ...key, value: key.value[c]![axis] + P }));
+        return keys.length > 1 ? numberExpr(keys, `(on/${F})`) : String(round3(keys[0]!.value));
+      };
+      // perspective's corner order: top-left, top-right, bottom-left, bottom-right.
+      const coords = [0, 1, 3, 2].flatMap((c, i) => [`x${i}='${coord(c, 0)}'`, `y${i}='${coord(c, 1)}'`]).join(":");
+      g.add(`[${styled}]scale=${W}:${H},format=yuva420p,pad=${W + 2 * P}:${H + 2 * P}:${P}:${P}:color=black@0[${padded}]`);
+      g.add(`[${padded}]perspective=${coords}:sense=destination:interpolation=linear:eval=${pinKeys.length > 1 ? "frame" : "init"}[${out}]`);
+      styled = out;
+    }
     // Drop shadow: a blurred black silhouette, offset down, under the layer. Padding keeps the center in place.
-    const shadow = Math.round(layer.shadow * k);
+    const shadow = pinKeys?.length ? 0 : Math.round(layer.shadow * k);
     if (shadow > 0) {
       const pad = shadow * 3;
       const [padded, top, sil, out] = [g.label("lsp"), g.label("lst"), g.label("lss"), g.label("lsh")];
@@ -534,7 +584,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     // 3D: turn the layer in space and project it through a camera `perspective` layer widths away.
     // Padding leaves room for the near side, which grows as it comes toward the viewer.
     const { rotateX: tiltKeys, rotateY: turnKeys } = layer.keyframes ?? {};
-    if (layer.rotateX || layer.rotateY || tiltKeys?.length || turnKeys?.length) {
+    if (!pinKeys?.length && (layer.rotateX || layer.rotateY || tiltKeys?.length || turnKeys?.length)) {
       const [pw, ph] = [even(w * 1.8), even(h * 1.8)];
       const [padded, out] = [g.label("l3p"), g.label("l3d")];
       const deg = (keys: typeof tiltKeys, value: number) => `((${keys?.length ? numberExpr(keys, `(on/${F})`) : value})*PI/180)`;
@@ -554,7 +604,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       styled = out;
     }
     const v = g.label("lv");
-    const { rotation: rotationKeys, scale: scaleKeys, opacity: opacityKeys } = layer.keyframes ?? {};
+    const { rotation: rotationKeys, scale: scaleKeys, opacity: opacityKeys } = pinKeys?.length ? { opacity: layer.keyframes?.opacity } : (layer.keyframes ?? {});
     const fadeIn = layer.animationIn && layer.animationIn.type !== "none" ? layer.animationIn.duration : 0;
     const fadeOut = layer.animationOut && layer.animationOut.type !== "none" ? layer.animationOut.duration : 0;
     g.add(

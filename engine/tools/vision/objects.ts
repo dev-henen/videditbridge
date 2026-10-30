@@ -233,7 +233,7 @@ function sizes(width: number, height: number) {
 }
 
 /** Frames of a source range at `fps`, as raw bytes of `w` x `h` (gray or rgb24). `pick` keeps only those frame numbers. */
-async function decode(src: string, range: { start: number; end: number }, fps: number, size: { w: number; h: number }, fmt: "gray" | "rgb24", opts: FfmpegOptions & { signal?: AbortSignal }, pick?: number[]): Promise<Uint8Array[]> {
+export async function decodeFrames(src: string, range: { start: number; end: number }, fps: number, size: { w: number; h: number }, fmt: "gray" | "rgb24", opts: FfmpegOptions & { signal?: AbortSignal }, pick?: number[]): Promise<Uint8Array[]> {
   const select = pick ? `,select='${pick.map((n) => `eq(n\\,${n})`).join("+")}'` : "";
   const res = await runFfmpegOrThrow(
     [
@@ -284,8 +284,8 @@ export async function selectObject(
   if (!info.width || !info.height) throw new Error(`Could not read the picture size of ${src}`);
   const { mask: ms, key: ks } = sizes(info.width, info.height);
   const range = { start: Math.max(0, opts.time), end: opts.time + 0.5 };
-  const [key] = await decode(src, range, 30, ks, "rgb24", opts, [0]);
-  const [small] = await decode(src, range, 30, ms, "rgb24", opts, [0]);
+  const [key] = await decodeFrames(src, range, 30, ks, "rgb24", opts, [0]);
+  const [small] = await decodeFrames(src, range, 30, ms, "rgb24", opts, [0]);
   if (!key || !small) throw new Error(`No frame at ${round3(opts.time)}s of ${src}`);
   const prompt = await promptPixels(opts.prompt, key, ks, opts.time, () => opts.detector ?? new ObjectDetector(opts));
   const r = await (opts.segmenter ?? new ObjectSegmenter(opts)).segment(key, ks.w, ks.h, prompt, ms);
@@ -324,8 +324,8 @@ export async function writeTrackPreview(src: string, maskFile: string, track: Ob
   const size = { w: track.width, h: track.height };
   const range = { start: track.start, end: track.start + (track.boxes.length + 1) / track.fps };
   const picks = [...new Set(frames.map((f) => Math.min(track.boxes.length - 1, Math.max(0, Math.round(f)))))].sort((a, b) => a - b);
-  const rgb = await decode(src, range, track.fps, size, "rgb24", opts, picks);
-  const masks = await decode(maskFile, { start: 0, end: (track.boxes.length + 1) / track.fps }, track.fps, size, "gray", opts, picks);
+  const rgb = await decodeFrames(src, range, track.fps, size, "rgb24", opts, picks);
+  const masks = await decodeFrames(maskFile, { start: 0, end: (track.boxes.length + 1) / track.fps }, track.fps, size, "gray", opts, picks);
   const n = Math.min(rgb.length, masks.length);
   if (!n) throw new Error(`Could not read frames ${picks.join(", ")} of the track`);
   // Tiles side by side, with a 4 px dark gap.
@@ -385,7 +385,7 @@ export async function trackObject(
   const still = info.isImage || info.duration === undefined;
   const from = still ? 0 : Math.max(0, Math.min(opts.start, opts.time));
   const to = still ? 0.04 : Math.min(info.duration!, Math.max(opts.end, opts.time + 1 / opts.fps));
-  const gray = await decode(src, { start: from, end: to }, opts.fps, ms, "gray", opts);
+  const gray = await decodeFrames(src, { start: from, end: to }, opts.fps, ms, "gray", opts);
   const n = gray.length;
   if (!n) throw new Error(`No frames between ${from}s and ${to}s of ${src}`);
   const kp = Math.min(n - 1, Math.max(0, Math.round((opts.time - from) * opts.fps)));
@@ -403,7 +403,7 @@ export async function trackObject(
   for (let f = kp % fine; f < n; f += fine) candidates.add(f);
   const pickList = [...candidates].sort((a, b) => a - b);
   const rgb = new Map<number, Uint8Array>();
-  const decoded = await decode(src, { start: from, end: to }, opts.fps, ks, "rgb24", opts, pickList);
+  const decoded = await decodeFrames(src, { start: from, end: to }, opts.fps, ks, "rgb24", opts, pickList);
   pickList.forEach((f, i) => decoded[i] && rgb.set(f, decoded[i]!));
 
   const segmenter = opts.segmenter ?? new ObjectSegmenter(opts);
