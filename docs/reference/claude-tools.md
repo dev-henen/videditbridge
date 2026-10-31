@@ -339,6 +339,7 @@ _No parameters._
 | `rotateX` | number |  |  | 3D tilt in degrees (+ tips the top away) (≥ -89, ≤ 89) |
 | `rotateY` | number |  |  | 3D turn in degrees (+ turns the right side away) (≥ -89, ≤ 89) |
 | `perspective` | number |  |  | Camera distance in layer widths for 3D (default 2; smaller is stronger) (≥ 0.5, ≤ 20) |
+| `behindSubject` | boolean |  |  | Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them |
 | `volume` | number |  |  |  |
 | `effects` | { type, params, mask, label, keyframes }[] |  |  |  |
 | `animationIn` | { type, duration, easing } |  |  |  |
@@ -394,7 +395,7 @@ _No parameters._
 
 ### update_layer
 
-**edits**. Change a layer's properties (text, start, duration, position, style, size, opacity, animations…). Text style is merged. Media and graphic layers take blend: "screen" or "add" for fire, sparks, light leaks and flares shot on black (the black disappears), "multiply" for textures on white, "overlay" or "softlight" for texture and contrast, also lighten, darken, colordodge, difference, and "normal" to undo. Check a blend with render_frame on a dark and a bright moment.
+**edits**. Change a layer's properties (text, start, duration, position, style, size, opacity, animations…). Text style is merged. Media and graphic layers take behindSubject: true to go behind the people in the video. They also take blend: "screen" or "add" for fire, sparks, light leaks and flares shot on black (the black disappears), "multiply" for textures on white, "overlay" or "softlight" for texture and contrast, also lighten, darken, colordodge, difference, and "normal" to undo. Check a blend with render_frame on a dark and a bright moment.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -1068,6 +1069,7 @@ _No parameters._
 | `rotateX` | number |  |  | 3D tilt in degrees (≥ -89, ≤ 89) |
 | `rotateY` | number |  |  | 3D turn in degrees (≥ -89, ≤ 89) |
 | `perspective` | number |  |  | Camera distance in widths for 3D (default 2) (≥ 0.5, ≤ 20) |
+| `behindSubject` | boolean |  |  | Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them |
 | `animationIn` | { type, duration, easing } |  |  |  |
 | `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
 | `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
