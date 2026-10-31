@@ -599,7 +599,8 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     // Padding leaves room for the near side, which grows as it comes toward the viewer.
     const { rotateX: tiltKeys, rotateY: turnKeys } = layer.keyframes ?? {};
     if (!pinKeys?.length && (layer.rotateX || layer.rotateY || tiltKeys?.length || turnKeys?.length)) {
-      const [pw, ph] = [even(w * 1.8), even(h * 1.8)];
+      // Size from the layer as it is now: a drop shadow has already padded it by 3 shadows a side.
+      const [pw, ph] = [even((w + 6 * shadow) * 1.8), even((h + 6 * shadow) * 1.8)];
       const [padded, out] = [g.label("l3p"), g.label("l3d")];
       const deg = (keys: typeof tiltKeys, value: number) => `((${keys?.length ? numberExpr(keys, `(on/${F})`) : value})*PI/180)`;
       const [a, b] = [deg(tiltKeys, layer.rotateX), deg(turnKeys, layer.rotateY)];

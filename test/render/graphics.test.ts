@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { parseProject } from "../../engine/core/index.js";
+import { compileProject } from "../../engine/tools/index.js";
 import { evalExpression, fillGraphic, isAnimatedGraphic } from "../../engine/tools/graphics/index.js";
 import { checkCustomFilter } from "../../engine/library/effects/index.js";
 import { customIsTimed } from "../../engine/library/effects/custom.js";
@@ -38,5 +40,20 @@ describe("custom effects", () => {
     expect(customIsTimed("eq=contrast=1.2")).toBe(false);
     expect(customIsTimed("lagfun=decay=0.9")).toBe(true);
     expect(customIsTimed("hue=h=360*t")).toBe(true);
+  });
+});
+
+describe("3D layers", () => {
+  it("leaves room for a drop shadow when turning a narrow layer in space", () => {
+    const p = parseProject({
+      settings: { width: 1920, height: 1080, fps: 25 },
+      assets: [{ type: "image", id: "chair", src: "chair.png", width: 300, height: 600 }],
+      clips: [],
+      layers: [{ type: "media", id: "m", assetId: "chair", start: 0, duration: 2, size: { width: 0.075 }, shadow: 20, rotateY: 30 }],
+    });
+    const graph = compileProject(p, { output: "x.mp4" }).filterGraph;
+    const [, shadowW] = graph.match(/\]pad=(\d+):\d+:\d+:\d+:color=black@0,split/)!.map(Number);
+    const [, turnW] = graph.match(/\]pad=(\d+):\d+:\(ow-iw\)\/2/)!.map(Number);
+    expect(turnW).toBeGreaterThanOrEqual(shadowW!);
   });
 });
