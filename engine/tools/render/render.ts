@@ -247,7 +247,8 @@ async function prepare(original: Project, opts: Omit<RenderOptions, "output">, c
   const rubberband = p.clips.some((c) => c.keyframes?.speed?.length) && (await hasFilter("rubberband", opts));
   // Always give libass the fonts folder with the bundled fonts, and replace system fonts this machine lacks.
   const fonts = await prepareFonts(opts.fontsDir, p);
-  const subjectMask = await subjectMatte(p, opts);
+  // From the originals, like the other masks, so previews (on proxies) and exports share it.
+  const subjectMask = await subjectMatte(original, opts);
   return { project: p, segments, share, masks: { ...maskFiles(jobs), subjectMask }, rubberband, fonts };
 }
 
@@ -268,7 +269,8 @@ async function subjectMatte(p: Project, opts: Omit<RenderOptions, "output">): Pr
   await mkdir(dir, { recursive: true });
   const picture = path.join(dir, `subject-${key}-plate.mp4`);
   const plate: Project = { ...p, layers: [], audio: [] };
-  const { duration } = await render(plate, { ...opts, output: picture, scale: 0.5, range: undefined, onProgress: undefined, hardware: false });
+  // Only looked at by the model, so made the quick way: half size, from proxies, fast encode.
+  const { duration } = await render(plate, { ...opts, output: picture, scale: 0.5, proxies: true, preset: "ultrafast", range: undefined, onProgress: undefined, hardware: false });
   try {
     await new PersonSegmenter({ ffmpegPath: opts.ffmpegPath }).writeMask(picture, file, { start: 0, end: duration, fps: p.settings.fps, signal: opts.signal });
   } finally {
