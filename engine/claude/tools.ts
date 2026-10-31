@@ -732,7 +732,7 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "add_clip",
-    description: "Add a clip to the primary track (clips play back-to-back). Use `in`/`duration` (source seconds) to trim. Images/colors need a duration.",
+    description: "Add a clip to the primary track (clips play back-to-back). Use `in`/`duration` (source seconds) to trim. Images/colors need a duration. Add shots, not whole recordings: pick the moment worth showing, and for a montage or music video add many short shots that alternate sources and framings, timed to the bar grid of the music.",
     input: z.object({
       assetId: z.string(),
       in: z.number().min(0).optional(),
@@ -854,7 +854,7 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "set_transition",
     description:
-      "Set the transition into a clip (or between all clips with all=true). type 'none' removes it. sound: true adds the sound that matches the motion (swoosh for slides and wipes, whoosh for whips and zooms, glitch for glitch cuts), peaking in the middle of the transition; or name a sound effect. Changing or removing the transition replaces its sound.",
+      "Set the transition into a clip (or between all clips with all=true). type 'none' removes it. sound: true adds the sound that matches the motion (swoosh for slides and wipes, whoosh for whips and zooms, glitch for glitch cuts), peaking in the middle of the transition; or name a sound effect. Changing or removing the transition replaces its sound. Use them sparingly: hard cuts carry most edits; put transitions on phrase changes or shifts in place or mood, keep to one or two kinds per video, and center them on a beat when there is music.",
     input: z.object({
       clipId: z.string().optional(),
       all: z.boolean().default(false),

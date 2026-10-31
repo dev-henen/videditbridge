@@ -153,7 +153,7 @@ _No parameters._
 
 ### add_clip
 
-**edits**. Add a clip to the primary track (clips play back-to-back). Use `in`/`duration` (source seconds) to trim. Images/colors need a duration.
+**edits**. Add a clip to the primary track (clips play back-to-back). Use `in`/`duration` (source seconds) to trim. Images/colors need a duration. Add shots, not whole recordings: pick the moment worth showing, and for a montage or music video add many short shots that alternate sources and framings, timed to the bar grid of the music.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -232,7 +232,7 @@ _No parameters._
 
 ### set_transition
 
-**edits**. Set the transition into a clip (or between all clips with all=true). type 'none' removes it. sound: true adds the sound that matches the motion (swoosh for slides and wipes, whoosh for whips and zooms, glitch for glitch cuts), peaking in the middle of the transition; or name a sound effect. Changing or removing the transition replaces its sound.
+**edits**. Set the transition into a clip (or between all clips with all=true). type 'none' removes it. sound: true adds the sound that matches the motion (swoosh for slides and wipes, whoosh for whips and zooms, glitch for glitch cuts), peaking in the middle of the transition; or name a sound effect. Changing or removing the transition replaces its sound. Use them sparingly: hard cuts carry most edits; put transitions on phrase changes or shifts in place or mood, keep to one or two kinds per video, and center them on a beat when there is music.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
