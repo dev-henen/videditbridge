@@ -304,6 +304,10 @@ export const MediaLayerSchema = z.object({
   rotateX: z.number().min(-89).max(89).default(0).describe("3D tilt in degrees: + tips the top away from the viewer"),
   rotateY: z.number().min(-89).max(89).default(0).describe("3D turn in degrees: + turns the right side away from the viewer"),
   perspective: z.number().min(0.5).max(20).default(2).describe("Camera distance in layer widths for 3D rotation: smaller is a stronger 3D look"),
+  behindSubject: z
+    .boolean()
+    .default(false)
+    .describe("Draw the layer behind the people in the main video (smoke, props or light beams behind a dancer); they are found frame by frame in the finished picture"),
   volume: z.number().min(0).max(4).default(0).describe("Overlay audio volume (0 = muted)"),
   audioEffects: audioEffects("the overlay's audio"),
   effects: z.array(EffectSchema).default([]),

@@ -57,3 +57,28 @@ describe("3D layers", () => {
     expect(turnW).toBeGreaterThanOrEqual(shadowW!);
   });
 });
+
+describe("layers behind the subject", () => {
+  const project = (behindSubject: boolean) =>
+    parseProject({
+      settings: { width: 320, height: 180, fps: 25 },
+      assets: [
+        { type: "video", id: "v", src: "v.mp4", duration: 4, hasAudio: false, width: 320, height: 180 },
+        { type: "image", id: "smoke", src: "smoke.png", width: 320, height: 180 },
+      ],
+      clips: [{ id: "a", assetId: "v", in: 0, duration: 4 }],
+      layers: [{ type: "media", id: "m", assetId: "smoke", start: 1, duration: 2, behindSubject }],
+    });
+
+  it("puts the picture from before the layer back where the people are", () => {
+    const graph = compileProject(project(true), { output: "x.mp4", subjectMask: "subject.mkv" }).filterGraph;
+    const [, keep] = graph.match(/split=2\[lsb\d+\]\[(lsk\d+)\]/)!;
+    expect(graph).toContain(`[${keep}][${graph.match(/\[(subj\d+)\];/)![1]}]alphamerge`);
+    expect(graph).toMatch(/\[lsc\d+\]overlay=format=auto:shortest=1:enable='between\(t,1,3\)'/);
+  });
+
+  it("draws on top without a cutout, and ignores the cutout for other layers", () => {
+    expect(compileProject(project(true), { output: "x.mp4" }).filterGraph).not.toMatch(/alphamerge/);
+    expect(compileProject(project(false), { output: "x.mp4", subjectMask: "subject.mkv" }).filterGraph).not.toMatch(/subj|alphamerge/);
+  });
+});

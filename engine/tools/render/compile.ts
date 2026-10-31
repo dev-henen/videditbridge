@@ -60,6 +60,11 @@ export interface CompileOptions {
   objectMasks?: Record<string, Record<string, string>>;
   /** Sky mask videos (255 = sky), in the same form as `masks`. */
   skyMasks?: Record<string, string>;
+  /**
+   * Person cutout of the finished main picture (clips, transitions and whole-video effects, no layers),
+   * in timeline time, for media layers drawn behind the subject. Without it those layers go on top.
+   */
+  subjectMask?: string;
   /** The FFmpeg build has the rubberband filter, used for speed ramps' sound (see rampTempo). */
   rubberband?: boolean;
   /** Encode the video on the graphics card instead of with x264, at matching quality. */
@@ -494,8 +499,26 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // Media overlays
   // -------------------------------------------------------------------------
   const overlayAudio: string[] = [];
+  // Layers behind the subject: after each one, the picture from just before it comes back where the
+  // people are, so they stay in front of it (and of nothing else that was not already there).
+  const behind = opts.subjectMask && !opts.segment ? project.layers.filter((l) => l.type === "media" && l.behindSubject).map((l) => l.id) : [];
+  const subjectLabels = new Map(behind.map((id) => [id, g.label("subj")]));
+  if (behind.length) {
+    // A little grown and softened: the model's outline runs tight on hands and hair.
+    g.add(
+      `[${g.addInput(["-i", opts.subjectMask!])}:v]setpts=PTS-STARTPTS,fps=${F},format=gray,scale=${W}:${H},dilation,dilation,gblur=sigma=${round3(2 * k)},` +
+        `tpad=stop_mode=clone:stop=-1,trim=duration=${round3(total)}${behind.length > 1 ? `,split=${behind.length}` : ""}${behind.map((id) => `[${subjectLabels.get(id)}]`).join("")}`,
+    );
+  }
   project.layers.forEach((layer) => {
     if (layer.type !== "media") return;
+    const subject = subjectLabels.get(layer.id);
+    const keep = subject && g.label("lsk");
+    if (keep) {
+      const below = g.label("lsb");
+      g.add(`[${vCur}]split=2[${below}][${keep}]`);
+      vCur = below;
+    }
     const asset = project.assets.find((a) => a.id === layer.assetId);
     if (!asset) throw new Error(`Layer "${layer.id}" references unknown asset "${layer.assetId}"`);
     const { v, a } = mediaLayerStream(layer, asset);
@@ -536,6 +559,12 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       g.add(`[${base}][${shown}]overlay=format=auto:shortest=1:${enable},format=yuv420p[${out}]`);
     }
     vCur = out;
+    if (keep) {
+      const [cut, front] = [g.label("lsc"), g.label("lsf")];
+      g.add(`[${keep}][${subject}]alphamerge[${cut}]`);
+      g.add(`[${out}][${cut}]overlay=format=auto:shortest=1:${enable},format=yuv420p[${front}]`);
+      vCur = front;
+    }
     if (a) overlayAudio.push(a);
   });
 

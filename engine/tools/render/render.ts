@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { availableParallelism, tmpdir } from "node:os";
 import path from "node:path";
 import type { Project } from "../../core/schema.js";
@@ -226,7 +227,7 @@ async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<Ren
   }
 }
 
-type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks">;
+type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "subjectMask">;
 
 const maskFiles = (jobs: MaskJob[]): MaskFiles => {
   const of = (kind: MaskJob["kind"]) => Object.fromEntries(jobs.filter((j) => j.kind === kind).map((j) => [j.clipId, j.file]));
@@ -246,7 +247,34 @@ async function prepare(original: Project, opts: Omit<RenderOptions, "output">, c
   const rubberband = p.clips.some((c) => c.keyframes?.speed?.length) && (await hasFilter("rubberband", opts));
   // Always give libass the fonts folder with the bundled fonts, and replace system fonts this machine lacks.
   const fonts = await prepareFonts(opts.fontsDir, p);
-  return { project: p, segments, share, masks: maskFiles(jobs), rubberband, fonts };
+  const subjectMask = await subjectMatte(p, opts);
+  return { project: p, segments, share, masks: { ...maskFiles(jobs), subjectMask }, rubberband, fonts };
+}
+
+/**
+ * The person cutout of the finished main picture (clips, transitions and whole-video effects, without
+ * layers or sound), for media layers drawn behind the subject: the picture is rendered once at half
+ * size and segmented, and the cutout is kept in the cache until the main picture changes.
+ */
+async function subjectMatte(p: Project, opts: Omit<RenderOptions, "output">): Promise<string | undefined> {
+  if (!p.layers.some((l) => l.type === "media" && l.behindSubject)) return undefined;
+  const dir = path.join(opts.cacheDir ?? path.join(tmpdir(), "ave-cache"), "masks");
+  const key = createHash("sha256")
+    .update(JSON.stringify({ v: 1, settings: p.settings, assets: p.assets, clips: p.clips, effects: p.effects, customEffects: p.customEffects }))
+    .digest("hex")
+    .slice(0, 32);
+  const file = path.join(dir, `subject-${key}.mkv`);
+  if (await stat(file).then((s) => s.size > 0, () => false)) return file;
+  await mkdir(dir, { recursive: true });
+  const picture = path.join(dir, `subject-${key}-plate.mp4`);
+  const plate: Project = { ...p, layers: [], audio: [] };
+  const { duration } = await render(plate, { ...opts, output: picture, scale: 0.5, range: undefined, onProgress: undefined, hardware: false });
+  try {
+    await new PersonSegmenter({ ffmpegPath: opts.ffmpegPath }).writeMask(picture, file, { start: 0, end: duration, fps: p.settings.fps, signal: opts.signal });
+  } finally {
+    await rm(picture, { force: true });
+  }
+  return file;
 }
 
 /** Clips rendered into the cache at once. Filters already use several threads, so this stays small. */

@@ -84,6 +84,8 @@ function tool<S extends z.ZodType>(def: ToolDefinition<S>): ToolDefinition {
 const ok = (text: string, data?: unknown): ToolResult => ({ text, ...(data !== undefined ? { data } : {}) });
 const aspect = z.enum(Object.keys(ASPECT_RATIOS) as [AspectRatio, ...AspectRatio[]]);
 const empty = z.object({});
+const BEHIND_SUBJECT =
+  "Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them";
 
 /** Commit a change and describe it briefly. */
 function commit(session: EditorSession, project: Project, action: string, input: unknown, message: string): ToolResult {
@@ -1395,6 +1397,7 @@ export const TOOLS: ToolDefinition[] = [
       rotateX: z.number().min(-89).max(89).optional().describe("3D tilt in degrees (+ tips the top away)"),
       rotateY: z.number().min(-89).max(89).optional().describe("3D turn in degrees (+ turns the right side away)"),
       perspective: z.number().min(0.5).max(20).optional().describe("Camera distance in layer widths for 3D (default 2; smaller is stronger)"),
+      behindSubject: z.boolean().optional().describe(BEHIND_SUBJECT),
       volume: z.number().optional(),
       effects: z.array(EffectSchema).optional(),
       animationIn: AnimationSchema.optional(),
@@ -1427,6 +1430,7 @@ export const TOOLS: ToolDefinition[] = [
       rotateX: z.number().min(-89).max(89).optional().describe("3D tilt in degrees"),
       rotateY: z.number().min(-89).max(89).optional().describe("3D turn in degrees"),
       perspective: z.number().min(0.5).max(20).optional().describe("Camera distance in widths for 3D (default 2)"),
+      behindSubject: z.boolean().optional().describe(BEHIND_SUBJECT),
       animationIn: AnimationSchema.optional(),
       animationOut: AnimationSchema.optional(),
       label: z.string().optional(),
@@ -1500,7 +1504,8 @@ export const TOOLS: ToolDefinition[] = [
     name: "update_layer",
     description:
       "Change a layer's properties (text, start, duration, position, style, size, opacity, animations…). Text style is merged. " +
-      'Media and graphic layers take blend: "screen" or "add" for fire, sparks, light leaks and flares shot on black (the black disappears), "multiply" for textures on white, "overlay" or "softlight" for texture and contrast, also lighten, darken, colordodge, difference, and "normal" to undo. Check a blend with render_frame on a dark and a bright moment.',
+      "Media and graphic layers take behindSubject: true to go behind the people in the video. " +
+      'They also take blend: "screen" or "add" for fire, sparks, light leaks and flares shot on black (the black disappears), "multiply" for textures on white, "overlay" or "softlight" for texture and contrast, also lighten, darken, colordodge, difference, and "normal" to undo. Check a blend with render_frame on a dark and a bright moment.',
     input: z.object({ layerId: z.string(), patch: z.record(z.string(), z.unknown()) }),
     mutates: true,
     run: async (s, i) => commit(s, ops.updateLayer(s.project, i.layerId, i.patch), "update_layer", i, `Updated ${i.layerId}.`),
