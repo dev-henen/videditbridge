@@ -66,7 +66,7 @@ const round = (v: number) => Math.round(v * 1000) / 1000;
  * `crop=w:h:x:y` for the picture area inside letterbox/pillarbox bars, or undefined when there are none.
  * Rows and columns are averaged, so bars that contain a little text (subtitles) still count as bars.
  */
-async function detectPictureArea(imagePath: string, opts: FfmpegOptions): Promise<string | undefined> {
+export async function detectPictureArea(imagePath: string, opts: FfmpegOptions): Promise<string | undefined> {
   const probe = await runFfmpeg(["-hide_banner", "-i", imagePath], opts);
   const size = /, (\d{2,5})x(\d{2,5})[, [\r\n]/.exec(probe.stderr.split("\n").find((l) => l.includes("Video:")) ?? "");
   if (!size) return undefined;

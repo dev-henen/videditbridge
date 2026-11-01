@@ -2,7 +2,7 @@
 
 # Claude tools
 
-103 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+104 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_scene](#grade_scene), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -1241,13 +1241,25 @@ _No parameters._
 
 ### match_color
 
-**edits**. Make clips look like a reference clip: their red, green and blue levels are measured against the reference's and matched with per-channel curves (exposure, contrast and color cast together), before any whole-video grade. Use when shots from different cameras or lighting cut together badly. The match is a curves effect at the end of each clip (re-running replaces it); check with render_frame, and lower strength if it overshoots.
+**edits**. Make clips look like a reference clip, so shots from different cameras or lighting cut together. Each shot's colors are measured on three frames and matched to the reference's as one color transfer (lightness, cast, saturation and hue together, with skin kept on the skin line), or with per-channel curves when those match better; the method that comes closest on a held-out frame wins. The match is a colorMatch effect at the end of each clip (re-running replaces it), before any whole-video grade. For several scenes at once, or a reference still, use grade_scene. Check with render_frame, and lower strength if it overshoots.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `clipIds` | string[] | yes |  | Clips to change, or ["all-clips"] for every clip except the reference |
 | `referenceClipId` | string | yes |  | Clip whose look to match |
 | `strength` | number |  | `0.85` | (≥ 0, ≤ 1) |
+| `method` | "auto" \| "transfer" \| "reinhard" \| "curves" |  | `"auto"` | auto tries each and keeps the closest; transfer (Oklab color transfer), reinhard (mean and spread), curves (per-channel) |
+
+### grade_scene
+
+**edits**. Match shots to a hero shot or a reference still, one scene at a time: for each scene, every listed clip is matched to its reference (a clip id, or the id of an imported image such as a frame from a film the user names). Use after detect_scenes and a look at the shots (render_contact_sheet): pick the best-looking shot of each scene as its reference, grade that one first with color_adjust, then match the rest to it. Each shot's colors are measured on three frames and three methods are fitted (an Oklab color transfer, a Reinhard mean and spread transfer, per-channel curves); the one closest to the reference on a held-out frame wins, hue turns are held to maxHueShift, and skin found by face detection stays on the vectorscope skin line. The report gives each shot's color difference to its reference (ΔE 2000; under 2 is a close match, over 6 a clear mismatch) before and after. Check the result with render_frame or render_scopes; lower strength if a match looks forced.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `scenes` | { reference, clips }[] | yes |  |  |
+| `strength` | number |  | `0.85` | (≥ 0, ≤ 1) |
+| `method` | "auto" \| "transfer" \| "reinhard" \| "curves" |  | `"auto"` | auto tries each and keeps the closest; transfer (Oklab color transfer), reinhard (mean and spread), curves (per-channel) |
+| `maxHueShift` | number |  | `15` | Largest hue turn allowed, degrees (raise only when asked for a strong color change) (≥ 0, ≤ 180) |
 
 ### grade_region
 

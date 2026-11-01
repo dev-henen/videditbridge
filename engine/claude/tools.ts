@@ -18,12 +18,12 @@ import {
   type Transcript,
 } from "../core/schema.js";
 import * as ops from "../core/operations.js";
-import { computeTimeline, sourceToTimeline, timelineToSource } from "../core/timeline.js";
+import { computeTimeline, sourceToTimeline, timelineToSource, type TimedClip } from "../core/timeline.js";
 import { isAnimated, layerStateAt, positionAt, simplifyKeys, simplifyKeysBy, smoothKeys } from "../core/keyframes.js";
 import { fileOnDisk, validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, isAbsolutePath, isUrl, newId, round3, type AspectRatio } from "../core/util.js";
-import { CUSTOM_FILTERS, ColorSettingsSchema, SubjectRegionSchema, checkCustomFilter, describeColorSettings, describeMask, effectStates, getEffect, listEffects, mergeColorSettings, type ColorSettings } from "../library/effects/index.js";
+import { CUSTOM_FILTERS, ColorSettingsSchema, SubjectRegionSchema, checkCustomFilter, describeColorSettings, describeMask, effectStates, getEffect, listEffects, mergeColorSettings, SKIN_LINE, type ColorSettings, type Vec3 } from "../library/effects/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { getTransition, listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
@@ -44,7 +44,8 @@ import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { render, renderContactSheet, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
 import { effectsOf } from "../tools/render/compile.js";
-import { analyzeColor, channelLevels, matchingCurves, renderScopes } from "../tools/render/color-analysis.js";
+import { analyzeColor, renderScopes } from "../tools/render/color-analysis.js";
+import { matchShot, pixelsIn, readPixels, type MatchMethod } from "../tools/render/color-transfer.js";
 import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, frameFeatures, segmentLabel, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
 import { SoundClassifier } from "../tools/audio/classify.js";
 import { GRAPHIC_EXPRESSIONS, renderGraphic } from "../tools/graphics/index.js";
@@ -438,6 +439,93 @@ async function finishTemplate(s: EditorSession, tpl: TemplateSpec, p: Project, i
 }
 
 /** The local face detector, reporting the first-use model download on the activity. */
+const MATCH_METHOD = z
+  .enum(["auto", "transfer", "reinhard", "curves"])
+  .default("auto")
+  .describe("auto tries each and keeps the closest; transfer (Oklab color transfer), reinhard (mean and spread), curves (per-channel)");
+
+/**
+ * Match clips to references (clips or image assets) with colorMatch effects. Shots are measured as they
+ * come out of their clips: without the whole-video grade and without their earlier match.
+ */
+async function matchScenes(
+  s: EditorSession,
+  scenes: { reference: string; clips: string[] }[],
+  o: { strength: number; method: MatchMethod | "auto"; maxHueShift?: number },
+  activity?: ActivityHandle,
+): Promise<{ project: Project; report: string } | { error: string }> {
+  const tl = computeTimeline(s.project);
+  const clipOf = (id: string) => tl.clips.find((c) => c.clip.id === id);
+  const plan: { reference: string; ids: string[] }[] = [];
+  for (const scene of scenes) {
+    const asset = s.project.assets.find((a) => a.id === scene.reference);
+    if (!clipOf(scene.reference) && asset?.type !== "image") return { error: `"${scene.reference}" is neither a clip nor an image asset.` };
+    const ids = scene.clips.includes("all-clips") ? tl.clips.map((c) => c.clip.id).filter((id) => id !== scene.reference) : scene.clips;
+    const missing = ids.filter((id) => !clipOf(id));
+    if (missing.length) return { error: `No clip with id ${missing.map((m) => `"${m}"`).join(", ")}.` };
+    plan.push({ reference: scene.reference, ids });
+  }
+  const targets = new Set(plan.flatMap((x) => x.ids));
+  const ungraded: Project = { ...s.project, effects: [], clips: s.project.clips.map((c) => (targets.has(c.id) ? { ...c, effects: c.effects.filter((e) => e.type !== "colorMatch") } : c)) };
+  const ff = { ffmpegPath: s.options.ffmpegPath };
+  // Three frames of each shot: the middle one is held out to choose the method.
+  const AT = [1 / 6, 1 / 2, 5 / 6];
+  const frame = async (tc: TimedClip, at: number) => {
+    const out = await s.outputPath(`match-${tc.clip.id}-${Math.round(at * 100)}.png`);
+    await renderFrame(ungraded, round3(tc.start + tc.duration * at), { output: out, scale: 0.4, ...s.renderOptions });
+    return out;
+  };
+  const references = new Map<string, Vec3[]>();
+  const referenceColors = async (id: string) => {
+    if (!references.has(id)) {
+      const tc = clipOf(id);
+      const asset = s.project.assets.find((a) => a.id === id);
+      const files = tc ? await Promise.all(AT.map((at) => frame(tc, at))) : [s.resolve((asset as { src: string }).src)];
+      references.set(id, (await Promise.all(files.map((f) => readPixels(f, 192, ff)))).flatMap((x) => x.colors));
+    }
+    return references.get(id)!;
+  };
+  let detector: FaceDetector | undefined;
+  let p = s.project;
+  const lines: string[] = [];
+  const total = plan.reduce((n, x) => n + x.ids.length, 0);
+  let done = 0;
+  for (const scene of plan) {
+    const reference = await referenceColors(scene.reference);
+    for (const id of scene.ids) {
+      const tc = clipOf(id)!;
+      const files = await Promise.all(AT.map((at) => frame(tc, at)));
+      const frames = (await Promise.all(files.map((f) => readPixels(f, 192, ff)))).map((x) => x.colors);
+      // Skin from the faces in the middle frame, sampled inside each face (cheeks and forehead, not hair).
+      let skin: Vec3[] = [];
+      try {
+        detector ??= faceDetector(s);
+        const faces = (await detector.detectFile(files[1]!)).frames[0]?.faces ?? [];
+        if (faces.length) {
+          const whole = await readPixels(files[1]!, 384, { ...ff, crop: false });
+          for (const f of faces) {
+            const [w, h] = [f.x1 - f.x0, f.y1 - f.y0];
+            skin.push(...pixelsIn(whole, { x0: f.x0 + w * 0.25, x1: f.x1 - w * 0.25, y0: f.y0 + h * 0.3, y1: f.y1 - h * 0.2 }));
+          }
+        }
+      } catch {
+        skin = [];
+      }
+      const m = matchShot({ frames, ...(skin.length ? { skin } : {}) }, reference, { strength: o.strength, method: o.method, maxHueShift: o.maxHueShift ?? 15 });
+      p = ops.removeEffect(p, id, "colorMatch");
+      p = ops.addEffect(p, id, { type: "colorMatch", params: { ...m.params, reference: scene.reference } });
+      const others = (Object.entries(m.scores) as [string, number][]).filter(([k]) => k !== "unchanged" && k !== m.method).map(([k, v]) => `${k} ${v}`);
+      lines.push(
+        `${id} to ${scene.reference}: ${m.method}, ΔE ${m.scores.unchanged} to ${m.scores[m.method]}${others.length ? ` (${others.join(", ")})` : ""}` +
+          (m.skin ? `; skin ${m.skin.before}° to ${m.skin.after}° (line ${SKIN_LINE}°)` : "") +
+          (m.hueLimited ? `; hue change held to ${o.maxHueShift ?? 15}°` : ""),
+      );
+      activity?.progress(++done / total);
+    }
+  }
+  return { project: p, report: `Matched ${total} clip${total > 1 ? "s" : ""} (strength ${o.strength}; ΔE 2000 to the reference, before to after):\n${lines.join("\n")}` };
+}
+
 function faceDetector(s: EditorSession, activity?: ActivityHandle): FaceDetector {
   return new FaceDetector({ ffmpegPath: s.options.ffmpegPath, onDownload: (p) => activity?.progress(p * 0.2) });
 }
@@ -2996,41 +3084,44 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "match_color",
     description:
-      "Make clips look like a reference clip: their red, green and blue levels are measured against the reference's and matched with per-channel curves (exposure, contrast and color cast together), before any whole-video grade. " +
-      "Use when shots from different cameras or lighting cut together badly. The match is a curves effect at the end of each clip (re-running replaces it); check with render_frame, and lower strength if it overshoots.",
+      "Make clips look like a reference clip, so shots from different cameras or lighting cut together. Each shot's colors are measured on three frames and matched to the reference's as one color transfer (lightness, cast, saturation and hue together, with skin kept on the skin line), or with per-channel curves when those match better; the method that comes closest on a held-out frame wins. " +
+      "The match is a colorMatch effect at the end of each clip (re-running replaces it), before any whole-video grade. For several scenes at once, or a reference still, use grade_scene. Check with render_frame, and lower strength if it overshoots.",
     input: z.object({
       clipIds: z.array(z.string()).min(1).describe('Clips to change, or ["all-clips"] for every clip except the reference'),
       referenceClipId: z.string().describe("Clip whose look to match"),
       strength: z.number().min(0).max(1).default(0.85),
+      method: MATCH_METHOD,
     }),
     mutates: true,
     run: async (s, i, activity) => {
-      const tl = computeTimeline(s.project);
-      const ref = tl.clips.find((c) => c.clip.id === i.referenceClipId);
-      if (!ref) return { text: `No clip with id "${i.referenceClipId}".`, isError: true };
-      const ids = i.clipIds.includes("all-clips") ? tl.clips.map((c) => c.clip.id).filter((id) => id !== ref.clip.id) : i.clipIds;
-      const missing = ids.filter((id) => !tl.clips.some((c) => c.clip.id === id));
-      if (missing.length) return { text: `No clip with id ${missing.map((m) => `"${m}"`).join(", ")}.`, isError: true };
-      // Compare the shots as they come out of their clips, before the whole-video grade and any earlier match.
-      const ungraded: Project = { ...s.project, effects: [], clips: s.project.clips.map((c) => (ids.includes(c.id) ? { ...c, effects: c.effects.filter((e) => e.type !== "curves") } : c)) };
-      const frameOf = async (tc: (typeof tl.clips)[number]) => {
-        const out = await s.outputPath(`match-${tc.clip.id}.png`);
-        await renderFrame(ungraded, round3(tc.start + tc.duration / 2), { output: out, scale: 0.4, ...s.renderOptions });
-        return channelLevels(out, { ffmpegPath: s.options.ffmpegPath });
-      };
-      const reference = await frameOf(ref);
-      let p = s.project;
-      const done: string[] = [];
-      for (const [k, id] of ids.entries()) {
-        const tc = tl.clips.find((c) => c.clip.id === id)!;
-        const curves = matchingCurves(await frameOf(tc), reference, i.strength);
-        // Its own curves effect, last on the clip, so it corrects what the clip's other effects produce.
-        if (tc.clip.effects.some((e) => e.type === "curves" && !e.mask)) p = ops.removeEffect(p, id, "curves");
-        p = ops.addEffect(p, id, { type: "curves", params: curves });
-        done.push(id);
-        activity?.progress((k + 1) / ids.length);
-      }
-      return commit(s, p, "match_color", i, `Matched ${done.join(", ")} to ${ref.clip.id} (strength ${i.strength}).`);
+      const r = await matchScenes(s, [{ reference: i.referenceClipId, clips: i.clipIds }], { strength: i.strength, method: i.method }, activity);
+      return "error" in r ? { text: r.error, isError: true } : commit(s, r.project, "match_color", i, r.report);
+    },
+  }),
+  tool({
+    name: "grade_scene",
+    description:
+      "Match shots to a hero shot or a reference still, one scene at a time: for each scene, every listed clip is matched to its reference (a clip id, or the id of an imported image such as a frame from a film the user names). " +
+      "Use after detect_scenes and a look at the shots (render_contact_sheet): pick the best-looking shot of each scene as its reference, grade that one first with color_adjust, then match the rest to it. " +
+      "Each shot's colors are measured on three frames and three methods are fitted (an Oklab color transfer, a Reinhard mean and spread transfer, per-channel curves); the one closest to the reference on a held-out frame wins, hue turns are held to maxHueShift, and skin found by face detection stays on the vectorscope skin line. " +
+      "The report gives each shot's color difference to its reference (ΔE 2000; under 2 is a close match, over 6 a clear mismatch) before and after. Check the result with render_frame or render_scopes; lower strength if a match looks forced.",
+    input: z.object({
+      scenes: z
+        .array(
+          z.object({
+            reference: z.string().describe("Hero clip id, or an image asset id for a reference still"),
+            clips: z.array(z.string()).min(1).describe('Clips to match to it, or ["all-clips"] for every clip except the reference'),
+          }),
+        )
+        .min(1),
+      strength: z.number().min(0).max(1).default(0.85),
+      method: MATCH_METHOD,
+      maxHueShift: z.number().min(0).max(180).default(15).describe("Largest hue turn allowed, degrees (raise only when asked for a strong color change)"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const r = await matchScenes(s, i.scenes, i, activity);
+      return "error" in r ? { text: r.error, isError: true } : commit(s, r.project, "grade_scene", i, r.report);
     },
   }),
   tool({
@@ -3500,6 +3591,12 @@ export function describeToolCall(name: string, input: unknown): string {
     }
     case "analyze_color":
       return "Measuring color and exposure";
+    case "match_color":
+      return `Matching color to ${quote(i.referenceClipId)}`;
+    case "grade_scene": {
+      const scenes = (i.scenes as unknown[] | undefined)?.length ?? 0;
+      return scenes > 1 ? `Matching shots in ${scenes} scenes` : "Matching shots to the reference";
+    }
     case "grade_region":
       return i.remove ? `Removing the ${quote(i.label)} correction` : `Grading ${quote(i.label)}`;
     case "select_object":

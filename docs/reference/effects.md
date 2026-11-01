@@ -2,7 +2,7 @@
 
 # Effects
 
-85 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+86 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -12,7 +12,7 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 
 ## Contents
 
-- **color**: [adjust](#adjust), [temperature](#temperature), [grayscale](#grayscale), [sepia](#sepia), [invert](#invert), [hueShift](#hueshift), [tint](#tint), [color](#color), [saturation](#saturation), [vibrance](#vibrance), [hue](#hue), [whiteBalance](#whitebalance), [hsl](#hsl), [autoCorrect](#autocorrect)
+- **color**: [adjust](#adjust), [temperature](#temperature), [grayscale](#grayscale), [sepia](#sepia), [invert](#invert), [hueShift](#hueshift), [tint](#tint), [color](#color), [saturation](#saturation), [vibrance](#vibrance), [hue](#hue), [whiteBalance](#whitebalance), [hsl](#hsl), [autoCorrect](#autocorrect), [colorMatch](#colormatch)
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
 - **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe)
 - **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs), [custom](#custom)
@@ -231,6 +231,30 @@ _No parameters._
 **Auto Correct**. Automatic levels and white balance: stretches contrast and neutralizes color casts.
 
 _No parameters._
+
+### colorMatch
+
+**Color Match**. Makes a shot look like a reference shot or still: lightness, color cast, saturation and hue moved together as one color transfer (or per-channel curves), fitted from the colors of both. Set up by match_color and grade_scene, which measure the shots and pick the method that matches best; it goes last on the clip.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `method` | "transfer" \| "reinhard" \| "curves" |  | `"transfer"` | How the match was fitted (see grade_scene) |
+| `transfer` | { lightness, matrix, from, to, skin } |  |  | transfer and reinhard: the color transfer in Oklab |
+| `transfer.lightness` | unknown[][] | yes |  | Oklab lightness curve as [in, out] points, inputs increasing from 0 to 1 |
+| `transfer.matrix` | unknown[] | yes |  | 2x2 map of the Oklab a and b plane (row-major), around `from` |
+| `transfer.from` | unknown[] | yes |  | Center of the shot's colors in Oklab a, b |
+| `transfer.to` | unknown[] | yes |  | Where that center goes |
+| `transfer.skin` | { hue, width, rotate } |  |  | Turns skin hues back onto the skin line |
+| `transfer.skin.hue` | number | yes |  | Oklab hue of the skin after the transfer, degrees |
+| `transfer.skin.width` | number | yes |  | How far around that hue the correction reaches, degrees (> 0) |
+| `transfer.skin.rotate` | number | yes |  | Hue turn applied there, degrees |
+| `curves` | { master, red, green, blue, preset } |  |  | curves: per-channel curves |
+| `curves.master` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `curves.red` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `curves.green` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `curves.blue` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
+| `curves.preset` | "increase_contrast" \| "medium_contrast" \| "strong_contrast" \| "linear_contrast" \| "lighter" \| "darker" \| "vintage" \| "cross_process" \| "color_negative" \| "negative" |  |  | Built-in curve shape (applied before custom points) |
+| `reference` | string |  |  | The clip or image matched to, for the record |
 
 ## Grade
 

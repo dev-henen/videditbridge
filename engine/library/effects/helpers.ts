@@ -80,7 +80,7 @@ export function zoompan(ctx: EffectContext, zoomExpr: string, xExpr = "iw/2-(iw/
 }
 
 /** Rough cost of per-pixel color filters, in ms per 1080p frame on a laptop CPU (unknown filters: 3). */
-const COLOR_COST: Record<string, number> = { colorbalance: 30, vibrance: 12, colortemperature: 11.5, exposure: 11.5, huesaturation: 10.5, curves: 2.7, hue: 0.5, eq: 0.3, format: 0 };
+const COLOR_COST: Record<string, number> = { geq: 400, colorbalance: 30, vibrance: 12, colortemperature: 11.5, exposure: 11.5, huesaturation: 10.5, curves: 2.7, hue: 0.5, eq: 0.3, format: 0 };
 /** Cost of applying a baked lookup table, including the conversion to RGB and back. */
 const BAKED_COST = 28;
 
@@ -90,7 +90,12 @@ const BAKED_COST = 28;
  * filters must not depend on position or time. Returns a graph fragment reading and writing one stream.
  */
 export function bakeColor(ctx: EffectContext, filters: string[]): string {
-  const cost = filters.reduce((n, f) => n + (COLOR_COST[f.split("=")[0]!] ?? 3), 0);
+  // An entry can be a short chain ("format=gbrp,geq=..."): count every filter in it.
+  const names = (f: string) => {
+    const found = [...f.matchAll(/(?:^|,)(\w+)=/g)].map((m) => m[1]!);
+    return found.length ? found : [f.split("=")[0]!];
+  };
+  const cost = filters.flatMap(names).reduce((n, name) => n + (COLOR_COST[name] ?? 3), 0);
   // Only bake a clear win: the estimates are rough.
   if (cost < BAKED_COST * 1.3) return filters.join(",");
   const label = labeler(ctx);

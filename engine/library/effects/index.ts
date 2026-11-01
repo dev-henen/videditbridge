@@ -15,6 +15,8 @@ export * from "./color.js";
 export * from "./helpers.js";
 export * from "./masks.js";
 export * from "./sky.js";
+export * from "./color-match.js";
+import { ColorMatchParams, colorMatchFilter } from "./color-match.js";
 
 
 const GRADES: Record<string, { name: string; description: string; filter: string }> = {
@@ -253,6 +255,16 @@ export const EFFECTS: EffectDefinition[] = [
     usesSkyMask: () => true,
     usesMedia: (p) => (p.asset ? [p.asset] : []),
     toFilter: (p, ctx) => skyReplaceFilter(p, ctx),
+  }),
+  define({
+    id: "colorMatch",
+    name: "Color Match",
+    category: "color",
+    perFrame: true,
+    description:
+      "Makes a shot look like a reference shot or still: lightness, color cast, saturation and hue moved together as one color transfer (or per-channel curves), fitted from the colors of both. Set up by match_color and grade_scene, which measure the shots and pick the method that matches best; it goes last on the clip.",
+    params: ColorMatchParams,
+    toFilter: (p, ctx) => colorMatchFilter(p, ctx),
   }),
 
   // --- blur & stylize -----------------------------------------------------------
