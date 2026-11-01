@@ -79,6 +79,8 @@ So setting values in a different order gives the same result.
 | `render_scopes` | Histogram, luma waveform, RGB parade and vectorscope as an image Claude can look at |
 | `grade_region` | A secondary correction: color settings inside a mask (HSL key, luma range, shape, faces or the person), by label. The same label updates it; `remove: true` deletes it |
 | `render_mask` | The frame with a mask as white on black, or as a red tint over the picture, to check a selection before and after grading |
+| `match_color` | Match clips to one reference clip (see [Matching shots](#matching-shots)) |
+| `grade_scene` | Match each scene's shots to its hero shot, or to a reference still (an imported image), several scenes in one call |
 
 A colorist's loop for Claude:
 
@@ -106,6 +108,32 @@ A new `color` effect is inserted *before* stylize effects such as `letterbox`, s
 - **Objects**: select one with `select_object` (a box, a point or a name), check it with `track_object`, then grade it with mask `{ "kind": "object", "object": "<id>" }`. See [Selecting & tracking objects](objects.md).
 - **The sky**: mask `{ "kind": "sky" }` follows the sky found by a model on every frame, so a sky can be deepened without catching blue clothing or water. To put in a new sky, use `replace_sky`. See [Sky masks & replacement](sky.md).
 - Masks work on any effect, not only color: a `blur` outside a shape, `sharpen` on faces, a `glow` on one object. See [the project document](project-format.md) for the full mask format.
+
+### Matching shots
+
+Shots from different cameras, or from the same camera under different light, cut together badly. `match_color` and `grade_scene` make them look like a reference: a hero shot of the scene (grade it first with `color_adjust`), or a still such as a frame from a film the user names.
+
+```json
+{ "scenes": [
+    { "reference": "clip_hero_kitchen", "clips": ["clip_2", "clip_3"] },
+    { "reference": "still_blade_runner", "clips": ["clip_7", "clip_8"] } ],
+  "strength": 0.85 }
+```
+
+How a shot is matched ([engine/tools/render/color-transfer.ts](../../engine/tools/render/color-transfer.ts)):
+
+1. Three frames of the shot (at a sixth, half and five sixths of it) and of the hero shot are rendered as they come out of their clips: without the whole-video grade and without an earlier match.
+2. Three methods are fitted from the colors of two of the shot's frames:
+   - **transfer**: in Oklab, lightness moved quantile by quantile onto the reference's, and the color plane (a, b) moved by the linear Monge-Kantorovich map between the two color spreads, which carries cast, saturation and the direction of the spread together;
+   - **reinhard**: each Oklab channel's mean and spread moved onto the reference's;
+   - **curves**: per-channel RGB curves through matched percentiles (the method `match_color` used before).
+3. Each is scored on the held-out middle frame: the ΔE 2000 between CIELAB quantiles of the matched frame and of the reference (a measure of the colors, not the layout, so different shots compare). The lowest wins.
+4. Plausibility: the chroma part is eased off until the colorful pixels turn at most `maxHueShift` degrees (15 by default, 90% of them), and saturation scales stay between 0.4x and 2.5x.
+5. Skin: faces found by face detection are sampled (inside the face, not hair). When the match leaves the average skin color more than 5 degrees off the vectorscope skin line (123 degrees), a hue turn limited to skin hues brings it back inside. Curves cannot do this, so they only win when they leave skin on the line.
+
+The result is a `colorMatch` effect at the end of the clip, holding the fitted numbers. A transfer renders as a lookup table built once per render (`geq` on a Hald identity image, through `bakeColor`), so it costs the same as any baked grade. Running a match again replaces it. The report gives each shot's ΔE to the reference before and after, and each method's score: under 2 is a close match, over 6 a clear mismatch.
+
+Measured: a test scene darkened, warmed and desaturated by known amounts comes back within 1 to 1.9 ΔE 2000 of the original, pixel by pixel; through the renderer, a regraded shot of the same footage went from 21.6 to 1.4 ΔE against its hero shot (`test/render/color-match.test.ts`, `test/render/color-match.integration.test.ts`).
 
 ## Notes
 

@@ -111,6 +111,8 @@ Polished review channels lean on a small set of graphics. The library has each o
 | A dark pill label under the subject ("TOUCH ID") | `add_shape` with a `roundedRect` whose radius is half its height, plus `add_text` on top |
 | A phone screen or screenshot floating over b-roll | `add_media_overlay` with `cornerRadius` and `shadow` |
 | A UI on a green-screen phone | `chromaKey` effect (measure the screen with `sample_color` first: real screens are rarely pure green), then shapes and text on the screen |
+| A person or character shot on a green screen, put in a place | `chromaKey` with `backdrop` (an image or video asset) on each clip: keyed by how green a pixel is, so shadows on the screen fall on the backdrop (`shadows`) |
+| Smoke, light or props behind the person | `add_media_overlay` or `create_graphic` with `behindSubject: true` |
 | A title that must read over a busy shot | a full-frame black `add_shape` at about 35% opacity, moved under the title with `reorder_layer` |
 
 Pair motion with sound: `set_transition` and `add_moment_effect` take `sound: true`, and a `section-card` reads best with a whoosh peaking as the bubble fills the frame (`add_sound_effect` with the default `align: "peak"`).

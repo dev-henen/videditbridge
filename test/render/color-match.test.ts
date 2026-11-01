@@ -105,6 +105,23 @@ describe("shot matching", () => {
     }
   });
 
+  it("keeps skin on the skin line when the reference pulls it off", () => {
+    // A heavy green-teal reference look: matched plainly, the face would go green.
+    const teal = ([r, g, b]: Vec3): Vec3 => [r * 0.72, Math.min(1, g * 1.12 + 0.03), Math.min(1, b * 1.05 + 0.04)];
+    const look = original.flatMap((f) => f.colors.map(teal));
+    const shot = { frames: original.map((f) => f.colors), skin: original[1]!.skin };
+    const hueOf = (colors: Vec3[]) => vectorscopeHue([0, 1, 2].map((k) => colors.reduce((s, c) => s + c[k]!, 0) / colors.length) as Vec3);
+    const plain = matchShot({ frames: shot.frames }, look, { method: "transfer" });
+    const plainSkin = hueOf(shot.skin.map((c) => transferRgb(plain.params.transfer!, c)));
+    expect(Math.abs(plainSkin - SKIN_LINE)).toBeGreaterThan(5);
+    const kept = matchShot(shot, look, { method: "transfer" });
+    expect(kept.skin!.before).toBeCloseTo(plainSkin, 0);
+    expect(Math.abs(hueOf(shot.skin.map((c) => transferRgb(kept.params.transfer!, c))) - SKIN_LINE)).toBeLessThan(5);
+    // Only skin hues turn: the rest of the picture keeps the look.
+    const rest = original[1]!.colors.filter((c) => Math.abs(vectorscopeHue(c) - 125) > 40);
+    expect(meanDeltaE(rest.map((c) => transferRgb(kept.params.transfer!, c)), rest.map((c) => transferRgb(plain.params.transfer!, c)))).toBeLessThan(1);
+  });
+
   it("turns hues at most 15 degrees unless allowed more", () => {
     // A shot whose colors sit a quarter turn away from the reference's.
     const shot = reference.map(([r, g, b]) => [g, b, r] as Vec3);

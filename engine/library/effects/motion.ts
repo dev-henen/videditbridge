@@ -381,19 +381,57 @@ export function motionEffects(): EffectDefinition[] {
       name: "Green Screen / Chroma Key",
       category: "distort",
       description:
-        "Key out a green (or blue) screen: replace it with a solid color to draw a UI or label on (phone screens, monitors), or make it transparent on a media overlay so whatever is underneath shows through. Removes green spill from edges and fingers.",
+        "Key out a green (or blue) screen: put a picture behind the subject (backdrop: a set, a stage, a place, an image or video asset), replace it with a solid color to draw a UI or label on (phone screens, monitors), or make it transparent on a media overlay so whatever is underneath shows through. Removes green spill from edges and fingers. " +
+        "With a backdrop, shadows the subject casts on the screen darken it (shadows), so they stand on it instead of floating. Runs at full speed: prefer it to a custom filter for any green screen work.",
       params: z.object({
         color: z.string().default("#00FF00").describe("Screen color to remove, #RRGGBB. Measure it with sample_color: real screens are rarely pure green"),
         similarity: num(0.1, 0.01, 0.6, "How far from the key color still counts as screen (raise slowly if green remains)"),
         blend: num(0.04, 0, 0.5, "Edge softness"),
         replace: z.string().default("#111216").describe('Color to fill the keyed area with, or "transparent" (media overlays only)'),
+        backdrop: z.string().optional().describe("Image or video asset id shown behind the subject instead of the replace color (primary clips), filling the frame"),
+        shadows: num(0.7, 0, 1, "With a backdrop: how much shadows on the screen darken it (0 = none, 1 = as dark as on the screen)"),
       }),
+      usesMedia: (p) => (p.backdrop ? [p.backdrop] : []),
       toFilter: (p, ctx) => {
         // colorkey compares full RGB (brightness included): pale, desaturated screens (often lime or
         // mint on phones) stay apart from beige wood and skin, which chromakey's UV-only distance confuses.
-        const key = `format=rgba,colorkey=color=0x${p.color.replace(/^#/, "").slice(0, 6)}:similarity=${p.similarity}:blend=${p.blend},despill=type=${/^#?0000/i.test(p.color) ? "blue" : "green"}`;
+        const hex = p.color.replace(/^#/, "").slice(0, 6);
+        const blue = /^#?0000/i.test(p.color);
+        const key = `format=rgba,colorkey=color=0x${hex}:similarity=${p.similarity}:blend=${p.blend},despill=type=${blue ? "blue" : "green"}`;
         if (p.replace === "transparent") return `${key},format=yuva420p`;
         const label = labeler(ctx);
+        const backdrop = p.backdrop ? ctx.media?.(p.backdrop) : undefined;
+        if (p.backdrop && !backdrop) throw new Error("A chroma key backdrop works on primary video clips only; on a media layer, key to transparent and put the backdrop under it");
+        if (backdrop) {
+          // Keyed by how far the screen channel exceeds the brighter of the other two, not by distance
+          // to one color: a shadow on the screen is darker but still green, so it counts as screen and
+          // shows as a shadow on the backdrop instead of a dark blob. Planes, blend and lookup tables
+          // only, so it runs at copying speed.
+          const [r, g, b] = [0, 2, 4].map((k) => parseInt(hex.slice(k, k + 2), 16) || 0) as [number, number, number];
+          const [level, excess] = blue ? [b, b - Math.max(r, g)] : [g, g - Math.max(r, b)];
+          // Fully screen above `hi`, fully subject below `lo` (similarity widens the screen, blend the edge).
+          const lo = Math.max(2, Math.round(excess * Math.max(0.02, 0.22 - p.similarity)));
+          const hi = lo + Math.max(8, Math.round(excess * p.blend * 8));
+          const [src, mk, sh, k1, o1, o2, mx, ex, alpha, fg, shade, bd, lit] = ["fks", "fkm", "fkh", "fkk", "fko", "fkp", "fkx", "fke", "fka", "fkf", "fkd", "fkb", "fkl"].map((x) => label(x));
+          const [keyPlane, others] = blue ? ["b", "r+g"] : ["g", "r+b"];
+          // Shadows: the screen channel against the screen's level, as a gray shade multiplied into the backdrop.
+          const shadeExpr = `255*(1-${round3(p.shadows)}*(1-clip(val/${level || 255},0,1)))`;
+          return [
+            `format=gbrp,split=3[${src}][${mk}][${sh}]`,
+            `[${mk}]split=2[${k1}][${o1}]`,
+            `[${o1}]extractplanes=${others}[${o2}][${mx}]`,
+            `[${o2}][${mx}]blend=all_mode=lighten[${ex}]`,
+            `[${k1}]extractplanes=${keyPlane}[${k1}k]`,
+            `[${k1}k][${ex}]blend=all_mode=subtract,format=gray,lut=y='255*(1-clip((val-${lo})/${hi - lo},0,1))',format=gray[${alpha}]`,
+            `[${src}]format=rgba,despill=type=${blue ? "blue" : "green"},format=gbrap[${src}d]`,
+            `[${src}d][${alpha}]alphamerge[${fg}]`,
+            `[${sh}]extractplanes=${keyPlane},format=gray,lut=y='${shadeExpr}',format=gray,format=gbrp[${shade}]`,
+            // overlay pairs frames by time: the backdrop starts with the clip, whatever its own timestamps.
+            `[${backdrop}]setpts=PTS-STARTPTS,scale=${ctx.width}:${ctx.height}:force_original_aspect_ratio=increase,crop=${ctx.width}:${ctx.height},setsar=1,format=gbrp[${bd}]`,
+            `[${bd}][${shade}]blend=all_mode=multiply:shortest=1[${lit}]`,
+            `[${lit}][${fg}]overlay=shortest=1,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+          ].join(";");
+        }
         const [fg, bg] = [label("fkf"), label("fkb")];
         return [
           `${key}[${fg}]`,

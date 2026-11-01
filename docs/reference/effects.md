@@ -846,7 +846,7 @@ _No parameters._
 
 ### chromaKey
 
-**Green Screen / Chroma Key**. Key out a green (or blue) screen: replace it with a solid color to draw a UI or label on (phone screens, monitors), or make it transparent on a media overlay so whatever is underneath shows through. Removes green spill from edges and fingers.
+**Green Screen / Chroma Key**. Key out a green (or blue) screen: put a picture behind the subject (backdrop: a set, a stage, a place, an image or video asset), replace it with a solid color to draw a UI or label on (phone screens, monitors), or make it transparent on a media overlay so whatever is underneath shows through. Removes green spill from edges and fingers. With a backdrop, shadows the subject casts on the screen darken it (shadows), so they stand on it instead of floating. Runs at full speed: prefer it to a custom filter for any green screen work.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -854,6 +854,8 @@ _No parameters._
 | `similarity` | number |  | `0.1` | How far from the key color still counts as screen (raise slowly if green remains) (≥ 0.01, ≤ 0.6) |
 | `blend` | number |  | `0.04` | Edge softness (≥ 0, ≤ 0.5) |
 | `replace` | string |  | `"#111216"` | Color to fill the keyed area with, or "transparent" (media overlays only) |
+| `backdrop` | string |  |  | Image or video asset id shown behind the subject instead of the replace color (primary clips), filling the frame |
+| `shadows` | number |  | `0.7` | With a backdrop: how much shadows on the screen darken it (0 = none, 1 = as dark as on the screen) (≥ 0, ≤ 1) |
 
 ### tilt
 

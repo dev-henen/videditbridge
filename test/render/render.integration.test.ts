@@ -68,6 +68,16 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     const preview = await executeTool(session, "render_preview", { scale: 0.25 });
     expect(preview.isError, preview.text).toBeFalsy();
     expect((await probe(session.renders[2]!.path)).duration).toBeCloseTo(4.5, 0);
+
+    // An unchanged edit reuses its preview, also in a new session (the app reopened); a change renders again.
+    const reopened = new EditorSession(session.project, { outputDir: session.options.outputDir });
+    const again = await executeTool(reopened, "render_preview", { scale: 0.25 });
+    expect(again.text).toMatch(/up to date/);
+    expect(reopened.renders[0]!.path).toBe(session.renders[2]!.path);
+    await executeTool(reopened, "color_adjust", { settings: { exposure: 0.2 } });
+    const changed = await executeTool(reopened, "render_preview", { scale: 0.25 });
+    expect(changed.text).toMatch(/Preview rendered/);
+    expect(reopened.renders[1]!.path).not.toBe(session.renders[2]!.path);
   });
 
   it("measures color, ignores letterbox bars, and renders scopes", async () => {
@@ -285,6 +295,32 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     const crop = out("zoom-crop.png");
     await runFfmpegOrThrow(["-y", "-hide_banner", "-i", plain, "-vf", "crop=iw/1.5:ih/1.5,scale=640:360", crop]);
     expect(await psnr(await frame("zoom-persp", [{ type: "kenBurns", params: { zoomFrom: 1.5, zoomTo: 1.5 } }]), crop)).toBeGreaterThan(30);
+  });
+
+  it("keys a green screen onto a backdrop, with the shadows on the screen", async () => {
+    // A red box on a green screen with a darker green shadow strip, and a blue backdrop.
+    const screen = out("key-screen.mp4");
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x00C500:s=320x180:r=30:d=2", "-vf", "drawbox=x=120:y=50:w=80:h=80:color=0xD02020:t=fill,drawbox=x=0:y=150:w=320:h=30:color=0x006200:t=fill", "-pix_fmt", "yuv420p", screen]);
+    const backdrop = out("key-backdrop.png");
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=0x3060E0:s=640x360", "-frames:v", "1", backdrop]);
+    const p = parseProject({
+      settings: { width: 320, height: 180, fps: 30 },
+      assets: [
+        { type: "video", id: "v", src: screen, duration: 2, hasAudio: false, width: 320, height: 180 },
+        { type: "image", id: "bd", src: backdrop, width: 640, height: 360 },
+      ],
+      clips: [{ id: "a", assetId: "v", in: 0, duration: 2, effects: [{ type: "chromaKey", params: { color: "#00C500", similarity: 0.2, backdrop: "bd", shadows: 1 } }] }],
+    });
+    const file = out("key-backdrop-frame.png");
+    await renderFrame(p, 1, { output: file });
+    const px = (await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", file, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { binaryStdout: true })).stdoutBuffer!;
+    const at = (x: number, y: number) => [...px.subarray((y * 320 + x) * 3, (y * 320 + x) * 3 + 3)];
+    const near = (a: number[], b: number[], tol: number) => a.every((v, k) => Math.abs(v - b[k]!) <= tol);
+    expect(near(at(160, 90), [0xd0, 0x20, 0x20], 24), `subject ${at(160, 90)}`).toBe(true);
+    expect(near(at(30, 30), [0x30, 0x60, 0xe0], 24), `backdrop ${at(30, 30)}`).toBe(true);
+    // The shadow strip is keyed too, and darkens the backdrop by the screen's darkening (0x62 of 0xC5).
+    const shadow = at(30, 165);
+    expect(near(shadow, [0x30, 0x60, 0xe0].map((v) => v * (0x62 / 0xc5)), 24), `shadow ${shadow}`).toBe(true);
   });
 
   it("previews big footage from proxies made in the background", async () => {

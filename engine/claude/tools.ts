@@ -1,4 +1,5 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import {
@@ -512,7 +513,7 @@ async function matchScenes(
         skin = [];
       }
       const m = matchShot({ frames, ...(skin.length ? { skin } : {}) }, reference, { strength: o.strength, method: o.method, maxHueShift: o.maxHueShift ?? 15 });
-      p = ops.removeEffect(p, id, "colorMatch");
+      if (tc.clip.effects.some((e) => e.type === "colorMatch")) p = ops.removeEffect(p, id, "colorMatch");
       p = ops.addEffect(p, id, { type: "colorMatch", params: { ...m.params, reference: scene.reference } });
       const others = (Object.entries(m.scores) as [string, number][]).filter(([k]) => k !== "unchanged" && k !== m.method).map(([k, v]) => `${k} ${v}`);
       lines.push(
@@ -3470,9 +3471,19 @@ export const TOOLS: ToolDefinition[] = [
     input: z.object({ scale: z.number().min(0.1).max(1).default(0.5), start: z.number().min(0).optional(), end: z.number().positive().optional() }),
     mutates: false,
     run: async (s, i, activity) => {
-      const out = await s.outputPath("preview.mp4");
       const range = i.start !== undefined || i.end !== undefined ? { start: i.start ?? 0, end: i.end ?? Number.MAX_SAFE_INTEGER } : undefined;
-      const r = await render(s.project, { output: out, scale: i.scale, range, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], proxies: true, ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
+      // Named after what it shows, so an unchanged edit (after an undo, or when the app reopens) reuses it.
+      const { metadata: _, ...content } = s.project;
+      const key = createHash("sha256").update(JSON.stringify({ v: 1, content, scale: i.scale, range })).digest("hex").slice(0, 20);
+      const out = path.join(s.options.outputDir, `preview-${key}.mp4`);
+      if (await stat(out).then((f) => f.size > 0, () => false)) {
+        s.recordRender({ kind: "preview", path: out });
+        return ok(`Preview is up to date (nothing changed since it was rendered): ${out}`);
+      }
+      // Written under another name first, so a cancelled render never looks finished.
+      const part = await s.outputPath("preview.part.mp4");
+      const r = await render(s.project, { output: part, scale: i.scale, range, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], proxies: true, ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
+      await rename(part, out);
       s.recordRender({ kind: "preview", path: out });
       return ok(`Preview rendered (${r.duration}s): ${out}`);
     },
