@@ -266,18 +266,32 @@ async function subjectMatte(p: Project, opts: Omit<RenderOptions, "output">): Pr
     .slice(0, 32);
   const file = path.join(dir, `subject-${key}.mkv`);
   if (await stat(file).then((s) => s.size > 0, () => false)) return file;
-  await mkdir(dir, { recursive: true });
-  const picture = path.join(dir, `subject-${key}-plate.mp4`);
-  const plate: Project = { ...p, layers: [], audio: [] };
-  // Only looked at by the model, so made the quick way: half size, from proxies, fast encode.
-  const { duration } = await render(plate, { ...opts, output: picture, scale: 0.5, proxies: true, preset: "ultrafast", range: undefined, onProgress: undefined, hardware: false });
+  // Renders that start while it is being made (a frame during a preview) wait for the same one.
+  const pending = makingSubject.get(file);
+  if (pending) return pending;
+  const making = (async () => {
+    await mkdir(dir, { recursive: true });
+    const picture = path.join(dir, `subject-${key}-plate.mp4`);
+    const plate: Project = { ...p, layers: [], audio: [] };
+    // Only looked at by the model, so made the quick way: half size, from proxies, fast encode.
+    const { duration } = await render(plate, { ...opts, output: picture, scale: 0.5, proxies: true, preset: "ultrafast", range: undefined, onProgress: undefined, hardware: false });
+    try {
+      await new PersonSegmenter({ ffmpegPath: opts.ffmpegPath }).writeMask(picture, file, { start: 0, end: duration, fps: p.settings.fps, signal: opts.signal });
+    } finally {
+      await rm(picture, { force: true });
+    }
+    return file;
+  })();
+  makingSubject.set(file, making);
   try {
-    await new PersonSegmenter({ ffmpegPath: opts.ffmpegPath }).writeMask(picture, file, { start: 0, end: duration, fps: p.settings.fps, signal: opts.signal });
+    return await making;
   } finally {
-    await rm(picture, { force: true });
+    makingSubject.delete(file);
   }
-  return file;
 }
+
+/** Subject cutouts being made, by file. */
+const makingSubject = new Map<string, Promise<string>>();
 
 /** Clips rendered into the cache at once. Filters already use several threads, so this stays small. */
 const SEGMENT_JOBS = Math.max(1, Math.min(3, Math.floor(availableParallelism() / 2)));
@@ -289,7 +303,11 @@ async function renderSegment(p: Project, seg: SegmentPlan, opts: Omit<RenderOpti
   const compiled = compileProject(one, { output: part, scale: opts.scale, baseDir: opts.baseDir, fontsDir: opts.fontsDir, segment: true, ...masks });
   try {
     await execute(compiled, { output: part, ffmpegPath: opts.ffmpegPath, signal: opts.signal, onProgress });
-    await rename(part, seg.file);
+    // Two renders can make the same entry at once (a frame while a preview runs). On Windows the
+    // second rename fails while the first entry is being read; theirs is the same picture, so keep it.
+    await rename(part, seg.file).catch(async (e) => {
+      if (!(await stat(seg.file).then((s) => s.size > 0, () => false))) throw e;
+    });
   } finally {
     await rm(part, { force: true });
   }
