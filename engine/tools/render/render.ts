@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { availableParallelism, tmpdir } from "node:os";
 import path from "node:path";
-import type { Project } from "../../core/schema.js";
+import type { MediaLayer, Project } from "../../core/schema.js";
 import { deepClone } from "../../core/util.js";
 import { withProjectPaths } from "../../core/operations.js";
 import { compileProject, type CompileOptions, type CompiledRender } from "./compile.js";
@@ -10,6 +10,7 @@ import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPl
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
 import { effectObjects, usesFaceMask, usesPersonMask, usesSkyMask } from "../../library/effects/index.js";
+import { maskNeeds } from "../../library/effects/masks.js";
 import { ObjectSegmenter, objectMaskFile, writeObjectMask, type ObjectSpec, type ObjectTrack } from "../vision/objects.js";
 import { PersonSegmenter, maskFile } from "../vision/segment.js";
 import { faceMaskFile, writeFaceMask } from "../vision/facemask.js";
@@ -227,7 +228,7 @@ async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<Ren
   }
 }
 
-type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "subjectMask">;
+type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "subjectMask" | "skyMatte">;
 
 const maskFiles = (jobs: MaskJob[]): MaskFiles => {
   const of = (kind: MaskJob["kind"]) => Object.fromEntries(jobs.filter((j) => j.kind === kind).map((j) => [j.clipId, j.file]));
@@ -247,51 +248,77 @@ async function prepare(original: Project, opts: Omit<RenderOptions, "output">, c
   const rubberband = p.clips.some((c) => c.keyframes?.speed?.length) && (await hasFilter("rubberband", opts));
   // Always give libass the fonts folder with the bundled fonts, and replace system fonts this machine lacks.
   const fonts = await prepareFonts(opts.fontsDir, p);
-  // From the originals, like the other masks, so previews (on proxies) and exports share it.
-  const subjectMask = await subjectMatte(original, opts);
-  return { project: p, segments, share, masks: { ...maskFiles(jobs), subjectMask }, rubberband, fonts };
+  // From the originals, like the other masks, so previews (on proxies) and exports share them.
+  const finished = await finishedMattes(original, opts);
+  return { project: p, segments, share, masks: { ...maskFiles(jobs), ...finished }, rubberband, fonts };
 }
 
 /**
- * The person cutout of the finished main picture (clips, transitions and whole-video effects, without
- * layers or sound), for media layers drawn behind the subject: the picture is rendered once at half
- * size and segmented, and the cutout is kept in the cache until the main picture changes.
+ * Mattes of the finished main picture (clips, transitions and whole-video effects, without layers or
+ * sound): the person cutout, for media layers behind the subject or masked to a person, and the sky,
+ * for media layers masked to it. The picture is rendered once at half size for the models, and the
+ * mattes are kept in the cache until the main picture changes.
  */
-async function subjectMatte(p: Project, opts: Omit<RenderOptions, "output">): Promise<string | undefined> {
-  if (!p.layers.some((l) => l.type === "media" && l.behindSubject)) return undefined;
-  const dir = path.join(opts.cacheDir ?? path.join(tmpdir(), "ave-cache"), "masks");
-  const key = createHash("sha256")
-    .update(JSON.stringify({ v: 1, settings: p.settings, assets: p.assets, clips: p.clips, effects: p.effects, customEffects: p.customEffects }))
-    .digest("hex")
-    .slice(0, 32);
-  const file = path.join(dir, `subject-${key}.mkv`);
-  if (await stat(file).then((s) => s.size > 0, () => false)) return file;
-  // Renders that start while it is being made (a frame during a preview) wait for the same one.
-  const pending = makingSubject.get(file);
-  if (pending) return pending;
-  const making = (async () => {
-    await mkdir(dir, { recursive: true });
-    const picture = path.join(dir, `subject-${key}-plate.mp4`);
-    const plate: Project = { ...p, layers: [], audio: [] };
-    // Only looked at by the model, so made the quick way: half size, from proxies, fast encode.
-    const { duration } = await render(plate, { ...opts, output: picture, scale: 0.5, proxies: true, preset: "ultrafast", range: undefined, onProgress: undefined, hardware: false });
-    try {
-      await new PersonSegmenter({ ffmpegPath: opts.ffmpegPath }).writeMask(picture, file, { start: 0, end: duration, fps: p.settings.fps, signal: opts.signal });
-    } finally {
-      await rm(picture, { force: true });
+async function finishedMattes(p: Project, opts: Omit<RenderOptions, "output">): Promise<Pick<CompileOptions, "subjectMask" | "skyMatte">> {
+  const media = p.layers.filter((l): l is MediaLayer => l.type === "media");
+  const person = media.some((l) => l.behindSubject || maskNeeds(l.mask, "person"));
+  const sky = media.some((l) => maskNeeds(l.mask, "sky"));
+  if (!person && !sky) return {};
+  const { key, ...files } = finishedMatteFiles(p, opts.cacheDir);
+  const dir = path.dirname(files.subjectMask);
+  const ready = (file: string) => stat(file).then((s) => s.size > 0, () => false);
+  const missing = { person: person && !(await ready(files.subjectMask)), sky: sky && !(await ready(files.skyMatte)) };
+  if (missing.person || missing.sky) {
+    // Renders that start while they are being made (a frame during a preview) wait for the same job.
+    const id = `${key}:${missing.person}:${missing.sky}`;
+    let making = makingMattes.get(id);
+    if (!making) {
+      making = (async () => {
+        await mkdir(dir, { recursive: true });
+        const picture = path.join(dir, `finished-${key}-${Number(missing.person)}${Number(missing.sky)}-plate.mp4`);
+        const plate: Project = { ...p, layers: [], audio: [] };
+        // Only looked at by the models, so made the quick way: half size, from proxies, fast encode.
+        const { duration } = await render(plate, { ...opts, output: picture, scale: 0.5, proxies: true, preset: "ultrafast", range: undefined, onProgress: undefined, hardware: false });
+        const range = { start: 0, end: duration, fps: p.settings.fps, signal: opts.signal };
+        try {
+          if (missing.person) await new PersonSegmenter({ ffmpegPath: opts.ffmpegPath }).writeMask(picture, files.subjectMask, range);
+          if (missing.sky) {
+            const track = files.skyMatte.replace(/\.mkv$/, ".json");
+            await writeSkyMask(picture, { file: files.skyMatte, track }, { ...range, segmenter: new SkySegmenter({ ffmpegPath: opts.ffmpegPath }), ffmpegPath: opts.ffmpegPath });
+          }
+        } finally {
+          await rm(picture, { force: true });
+        }
+      })();
+      makingMattes.set(id, making);
+      making.then(
+        () => makingMattes.delete(id),
+        () => makingMattes.delete(id),
+      );
     }
-    return file;
-  })();
-  makingSubject.set(file, making);
-  try {
-    return await making;
-  } finally {
-    makingSubject.delete(file);
+    await making;
   }
+  return { subjectMask: person ? files.subjectMask : undefined, skyMatte: sky ? files.skyMatte : undefined };
 }
 
-/** Subject cutouts being made, by file. */
-const makingSubject = new Map<string, Promise<string>>();
+/**
+ * Where the mattes of a project's finished main picture are kept (see finishedMattes): they change
+ * only with what makes that picture (settings, assets, clips and whole-video effects).
+ */
+export function finishedMatteFiles(p: Project, cacheDir?: string): { key: string; subjectMask: string; skyMatte: string } {
+  const dir = path.join(cacheDir ?? path.join(tmpdir(), "ave-cache"), "masks");
+  // Assets only layers use (graphics, particles) are not in that picture: redrawing them keeps the mattes.
+  const picture = JSON.stringify([p.clips, p.effects]);
+  const assets = p.assets.filter((a) => picture.includes(JSON.stringify(a.id)));
+  const key = createHash("sha256")
+    .update(JSON.stringify({ v: 2, settings: p.settings, assets, clips: p.clips, effects: p.effects, customEffects: p.customEffects }))
+    .digest("hex")
+    .slice(0, 32);
+  return { key, subjectMask: path.join(dir, `subject-${key}.mkv`), skyMatte: path.join(dir, `sky-${key}.mkv`) };
+}
+
+/** Mattes of finished pictures being made, by picture and kinds. */
+const makingMattes = new Map<string, Promise<void>>();
 
 /** Clips rendered into the cache at once. Filters already use several threads, so this stays small. */
 const SEGMENT_JOBS = Math.max(1, Math.min(3, Math.floor(availableParallelism() / 2)));

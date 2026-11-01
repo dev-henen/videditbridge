@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   AnimationSchema,
   BlendModeSchema,
+  ColorSchema,
   CornersSchema,
   EasingSchema,
   EffectSchema,
@@ -50,6 +51,9 @@ import { matchShot, pixelsIn, readPixels, type MatchMethod } from "../tools/rend
 import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, frameFeatures, segmentLabel, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
 import { SoundClassifier } from "../tools/audio/classify.js";
 import { GRAPHIC_EXPRESSIONS, renderGraphic } from "../tools/graphics/index.js";
+import { drawParticles, flareSpec, particleSpec, sourceBrightness } from "../tools/particles/index.js";
+import type { ParticleSpec } from "../tools/native/index.js";
+import { FLARE_LOOKS, FlareLookSchema, PARTICLE_PRESETS, ParticlePresetIdSchema, ParticleSettingsSchema, getParticlePreset, rgb } from "../library/particles/index.js";
 import { renderSoundMapImage } from "../tools/audio/image.js";
 import { renderSoundEffect } from "../tools/audio/sfx.js";
 import { detectScenes } from "../tools/video/scenes.js";
@@ -173,6 +177,30 @@ async function drawGraphic(s: EditorSession, layerId: string, svg: string, width
     : ({ type: "image", id, src: r.file, svg, width: w, height: h } as const);
   return { asset, summary: `${w}x${h} px, ${r.animated ? `animated, ${r.frames} frames` : "still"}` };
 }
+
+/** Draw particles or a flare (add_particles, add_light) into a new full-frame video asset that records how it was made. */
+async function drawGenerated(s: EditorSession, layerId: string, spec: ParticleSpec, duration: number, record: Record<string, unknown>, onProgress?: (fraction: number) => void) {
+  onProgress?.(0);
+  const id = assetIdFromSrc(s.project, `${layerId}-fx`);
+  const out = await s.outputPath(`${id}-${Date.now().toString(36)}.mkv`);
+  const frames = Math.max(1, Math.round(duration * spec.fps));
+  await drawParticles(spec, frames, out, { ffmpegPath: s.options.ffmpegPath, onProgress });
+  return { type: "video", id, src: out, width: spec.width, height: spec.height, duration: round3(frames / spec.fps), hasAudio: false, particles: record } as const;
+}
+
+/** Why a mask cannot limit a media layer, if it cannot (face and object masks need a clip's own footage). */
+function layerMaskProblem(mask: Mask | undefined): string | undefined {
+  const kinds = mask ? [mask, ...(mask.combine ?? [])].map((m) => m.kind) : [];
+  const bad = kinds.find((k) => k === "face" || k === "object");
+  return bad && `${bad} masks do not work on layers; use person, sky, key, luma or shape.`;
+}
+
+/** The particle settings with no defaults, so a patch only changes what it names (zod's partial() would fill defaults in). */
+const ParticleSettingsPatchSchema = z.object(
+  Object.fromEntries(
+    Object.entries(ParticleSettingsSchema.shape).map(([k, v]) => [k, (v instanceof z.ZodDefault ? (v.unwrap() as z.ZodType) : v).optional().describe(v.description ?? "")]),
+  ) as { [K in keyof typeof ParticleSettingsSchema.shape]: z.ZodOptional<z.ZodType<z.output<typeof ParticleSettingsSchema>[K]>> },
+);
 
 function mediaAsset(s: EditorSession, assetId: string, p: Project = s.project): Extract<Asset, { type: "video" | "audio" }> {
   const asset = p.assets.find((a) => a.id === assetId);
@@ -1551,6 +1579,203 @@ export const TOOLS: ToolDefinition[] = [
       const drawn = await drawGraphic(s, i.layerId, i.svg ?? asset.svg, layer.size.width, duration, activity);
       const p = ops.removeAsset(ops.updateLayer(ops.addAsset(s.project, drawn.asset), i.layerId, { assetId: drawn.asset.id, duration }), asset.id);
       return commit(s, p, "update_graphic", { ...i, svg: i.svg ? `${i.svg.length} characters` : undefined }, `Redrew ${i.layerId} (${drawn.summary}). Check it with render_frame.`);
+    },
+  }),
+  tool({
+    name: "add_particles",
+    description:
+      "Add weather, atmosphere or celebration over the video: rain, heavy rain with splashes, snow, dust motes in light, rising embers, sparks, confetti, bokeh orbs, smoke or fog. " +
+      "A seeded simulation (the same seed always draws the same frames) is drawn into a full-frame layer that mixes with the picture by the preset's blend mode; near particles are bigger, faster and softer than far ones, and everything slows down with slow-motion footage under it. " +
+      "Shape it with density, size, speed, wind (slants rain, pushes snow and smoke), color, area (where particles are born: the spot sparks fly from, the fire embers rise from) and ground (where heavy rain splashes). " +
+      "Limit it with mask: snow or rain only in the sky (kind sky), embers kept off a person (kind person, invert true, or behindSubject true), dust only in a beam of light (luma or shape). " +
+      "Weather looks real with a matching grade: cooler, darker and flatter for rain, brighter and cooler for snow. Check with render_frame at a dark and a bright moment, and render_preview for the motion. Change it later with update_particles.",
+    input: z.object({
+      preset: ParticlePresetIdSchema.describe(PARTICLE_PRESETS.map((p) => `${p.id}: ${p.description}`).join(" ")),
+      start: z.number().min(0),
+      duration: z.number().positive().max(600),
+      ...ParticleSettingsSchema.shape,
+      opacity: z.number().min(0).max(1).optional(),
+      blend: BlendModeSchema.optional().describe("Override the preset's blend (screen for light on dark, normal for snow and smoke)"),
+      mask: MaskSchema.optional().describe("Show the particles only where this selects in the picture under them (sky, person, key, luma or shape)"),
+      behindSubject: z.boolean().optional().describe(BEHIND_SUBJECT),
+      followSpeed: z.boolean().default(true).describe("Slow down with slow-motion footage under the layer (and speed up with fast footage)"),
+      animationIn: AnimationSchema.optional().describe("e.g. { type: 'fade', duration: 1 } to let the weather come in"),
+      animationOut: AnimationSchema.optional(),
+      label: z.string().optional(),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const problem = layerMaskProblem(i.mask);
+      if (problem) return { text: problem, isError: true };
+      const preset = getParticlePreset(i.preset)!;
+      const settings = ParticleSettingsSchema.parse(i);
+      const id = newId("particles");
+      const spec = particleSpec(s.project, i.preset, settings, i.start, i.duration, i.followSpeed);
+      const asset = await drawGenerated(s, id, spec, i.duration, { kind: "particles", preset: i.preset, settings, followSpeed: i.followSpeed }, (f) => activity?.progress(f));
+      let p = ops.addAsset(s.project, asset);
+      p = ops.addLayer(p, {
+        type: "media",
+        id,
+        assetId: asset.id,
+        start: i.start,
+        duration: i.duration,
+        size: { width: 1, height: 1 },
+        fit: "stretch",
+        blend: i.blend ?? preset.blend,
+        ...(i.opacity !== undefined && { opacity: i.opacity }),
+        ...(i.mask && { mask: i.mask }),
+        ...(i.behindSubject && { behindSubject: true }),
+        animationIn: i.animationIn,
+        animationOut: i.animationOut,
+        label: i.label ?? preset.name,
+      });
+      const slowed = spec.timeScale?.some((v) => Math.abs(v - 1) > 0.01) ? " It follows the speed of the footage under it." : "";
+      return commit(s, p, "add_particles", i, `Added ${preset.name.toLowerCase()} as layer ${id} (${i.start}-${round3(i.start + i.duration)}s, blend ${i.blend ?? preset.blend}).${slowed} Check it with render_frame.`);
+    },
+  }),
+  tool({
+    name: "update_particles",
+    description: "Change particles made with add_particles and draw them again: any of their settings (density, size, speed, wind, color, area, ground, seed), the preset, or the duration. Blend, opacity, mask and animations are layer properties: change those with update_layer.",
+    input: z.object({
+      layerId: z.string(),
+      preset: ParticlePresetIdSchema.optional(),
+      ...ParticleSettingsPatchSchema.shape,
+      duration: z.number().positive().max(600).optional().describe("New duration in seconds"),
+      followSpeed: z.boolean().optional(),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const layer = s.project.layers.find((l) => l.id === i.layerId);
+      const asset = layer?.type === "media" ? s.project.assets.find((a) => a.id === layer.assetId) : undefined;
+      const made = asset?.type === "video" ? asset.particles : undefined;
+      if (!layer || layer.type !== "media" || !asset || made?.kind !== "particles") return { text: `${i.layerId} is not a layer made with add_particles.`, isError: true };
+      const { layerId: _, preset: newPreset, duration: newDuration, followSpeed: newFollow, ...patch } = i;
+      const preset = newPreset ?? String(made.preset);
+      const settings = ParticleSettingsSchema.parse({ ...(made.settings as object), ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) });
+      const followSpeed = newFollow ?? made.followSpeed !== false;
+      const duration = newDuration ?? layer.duration;
+      const spec = particleSpec(s.project, preset, settings, layer.start, duration, followSpeed);
+      const drawn = await drawGenerated(s, i.layerId, spec, duration, { kind: "particles", preset, settings, followSpeed }, (f) => activity?.progress(f));
+      const p = ops.removeAsset(ops.updateLayer(ops.addAsset(s.project, drawn), i.layerId, { assetId: drawn.id, duration }), asset.id);
+      return commit(s, p, "update_particles", i, `Redrew ${i.layerId} (${preset}). Check it with render_frame.`);
+    },
+  }),
+  tool({
+    name: "add_light",
+    description:
+      "Add light effects that make a shot feel lit: rays or a lens flare. " +
+      "rays: shafts of light streaming from a bright source (sun through trees or a window, a stage light): the parts of the picture brighter than threshold are smeared outward from source and added back, so put source on the light itself and lower threshold for dimmer lights. It is an effect on target (a clip, all-clips, global or a media layer) with a label; the same label updates it and remove: true deletes it; mask limits where rays show. " +
+      "flare: a lens flare from a light (glow, streak and ghosts along the line through the frame center) as a layer from start for duration. It follows a moving light by path (keyframes) or track (a point from track_points), and by default its size and strength follow how bright the picture is at the source, so it fades when the light is blocked or leaves the frame. " +
+      "Check with render_frame; for a flare also at the start and end, and render_preview for the motion.",
+    input: z.object({
+      kind: z.enum(["rays", "flare"]),
+      source: PositionSchema.optional().describe("Where the light is (frame fractions); rays default to the top middle"),
+      target: z.string().default("all-clips").describe('rays: a clip id, "all-clips", "global", or a media layer id'),
+      label: z.string().min(1).max(40).optional().describe('rays: name of these rays (default "light rays"); flare: layer label'),
+      threshold: z.number().min(0).max(0.98).optional().describe("rays: only parts brighter than this cast rays (default 0.7)"),
+      length: z.number().min(0.05).max(1).optional().describe("rays: how far they reach toward the frame edges (default 0.5)"),
+      intensity: z.number().min(0).max(3).optional().describe("Brightness: rays default 0.8, flare 1"),
+      color: ColorSchema.optional().describe("Light color (rays default warm #FFE6B8; flare by look)"),
+      mask: MaskSchema.optional().describe("rays: where they show; flare: where the flare layer shows"),
+      remove: z.boolean().optional().describe("rays: delete the rays with this label from target"),
+      start: z.number().min(0).optional().describe("flare: timeline start"),
+      duration: z.number().positive().max(600).optional().describe("flare: seconds"),
+      look: FlareLookSchema.default("natural").describe(FLARE_LOOKS.map((l) => `${l.id}: ${l.description}`).join("; ")),
+      path: z
+        .array(z.object({ time: z.number().min(0).describe("Seconds from the flare's start"), x: z.number(), y: z.number() }))
+        .optional()
+        .describe("flare: the light's position over time (frame fractions), straight between points"),
+      track: z.string().optional().describe("flare: follow the center of this tracked point or surface (track_points)"),
+      matchBrightness: z.boolean().default(true).describe("flare: size and strength follow the picture's brightness at the source"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      if (i.kind === "rays") {
+        const label = i.label ?? "light rays";
+        const targets = i.target === "all-clips" ? s.project.clips.map((c) => c.id) : [i.target];
+        if (!targets.length) return { text: "There are no clips to add rays to.", isError: true };
+        let p = s.project;
+        if (i.remove) {
+          const having = targets.filter((t) => effectsOf(p, t)?.some((e) => e.label === label));
+          if (!having.length) return { text: `No rays "${label}" on ${i.target}.`, isError: true };
+          for (const t of having) p = ops.removeEffect(p, t, "lightRays", label);
+          return commit(s, p, "add_light", i, `Removed "${label}" from ${having.join(", ")}.`);
+        }
+        const model = i.mask && [i.mask, ...(i.mask.combine ?? [])].find((m) => m.kind === "person" || m.kind === "face" || m.kind === "object" || m.kind === "sky");
+        if (model && !targets.every((t) => s.project.clips.some((c) => c.id === t))) return { text: `${model.kind} masks work on primary video clips only; target a clip or "all-clips".`, isError: true };
+        for (const t of targets) {
+          const current = effectsOf(p, t)?.find((e) => e.label === label && e.type === "lightRays");
+          const params = { ...(current?.params ?? {}), ...Object.fromEntries(Object.entries({ x: i.source?.x, y: i.source?.y, threshold: i.threshold, length: i.length, intensity: i.intensity, color: i.color }).filter(([, v]) => v !== undefined)) };
+          const mask = i.mask ?? current?.mask;
+          if (current) p = ops.removeEffect(p, t, "lightRays", label);
+          p = ops.addEffect(p, t, { type: "lightRays", params, label, ...(mask && { mask }) });
+        }
+        return commit(s, p, "add_light", i, `"${label}" on ${i.target}. Check it with render_frame; lower threshold if the rays are faint, raise it if the whole picture glows.`);
+      }
+
+      if (i.start === undefined || !i.duration) return { text: "A flare needs start and duration.", isError: true };
+      if (!i.source && !i.path?.length && !i.track) return { text: "A flare needs a source, a path or a track.", isError: true };
+      const problem = layerMaskProblem(i.mask);
+      if (problem) return { text: problem, isError: true };
+      const { width: W, height: H, fps } = s.project.settings;
+      const frames = Math.max(1, Math.round(i.duration * fps));
+      const start = i.start;
+      let at: (t: number) => [number, number] | undefined;
+      if (i.track) {
+        if (!s.project.tracks[i.track]) return { text: `No track "${i.track}". Tracks: ${Object.keys(s.project.tracks).join(", ") || "(none; make one with track_points)"}`, isError: true };
+        const sample = trackSampler(s.project, await trackPointsInClips(s.project, i.track, { ...s.renderOptions, onProgress: (f) => activity?.progress(0.4 * f) }));
+        at = (t) => {
+          const found = sample(t);
+          if (!found) return undefined;
+          const [x, y] = quadCenter(quadOf(found.corners, W, H));
+          return [x / W, y / H];
+        };
+      } else if (i.path?.length) {
+        const keys = [...i.path].sort((a, b) => a.time - b.time);
+        at = (t) => {
+          const u = t - start;
+          const k = keys.findIndex((key) => key.time >= u);
+          if (k <= 0) return [keys[k === 0 ? 0 : keys.length - 1]!.x, keys[k === 0 ? 0 : keys.length - 1]!.y];
+          const [a, b] = [keys[k - 1]!, keys[k]!];
+          const f = (u - a.time) / (b.time - a.time || 1);
+          return [a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f];
+        };
+      } else at = () => [i.source!.x, i.source!.y];
+      // Where the track is lost, the flare holds its last place (and its brightness check decides if it shows).
+      let last: [number, number] = i.source ? [i.source.x, i.source.y] : [0.5, 0.5];
+      const positions = Array.from({ length: frames }, (_, f) => (last = at(start + f / fps) ?? last));
+      const strength = i.intensity ?? 1;
+      let intensity = positions.map(() => strength);
+      let measured = "";
+      if (i.matchBrightness) {
+        // Four looks a second (at most 120) at the finished picture, without this flare.
+        const n = Math.min(120, Math.max(2, Math.ceil(i.duration * 4) + 1));
+        const samples = Array.from({ length: n }, (_, k) => {
+          const f = Math.min(frames - 1, Math.round((k / (n - 1)) * (frames - 1)));
+          return { frame: f, time: round3(start + f / fps), x: positions[f]![0], y: positions[f]![1] };
+        });
+        const bright = await sourceBrightness(s.project, samples, s.renderOptions);
+        activity?.progress(0.5);
+        intensity = positions.map((_, f) => {
+          const k = samples.findIndex((x) => x.frame >= f);
+          if (k <= 0) return strength * bright[Math.max(0, k)]!;
+          const u = (f - samples[k - 1]!.frame) / (samples[k]!.frame - samples[k - 1]!.frame || 1);
+          return strength * (bright[k - 1]! + (bright[k]! - bright[k - 1]!) * u);
+        });
+        const peak = Math.max(...bright);
+        if (peak < 0.05) return { text: "The picture is not bright at the source, so the flare would not show. Put source on a light (the sun, a lamp, a headlight), or set matchBrightness: false to draw it anyway.", isError: true };
+        measured = ` Its strength follows the picture's brightness at the source (${Math.round(Math.min(...bright) * 100)}% to ${Math.round(peak * 100)}%).`;
+      }
+      const look = FLARE_LOOKS.find((l) => l.id === i.look)!;
+      const color = i.color ? rgb(i.color) : look.id === "anamorphic" ? ([0.75, 0.85, 1] as [number, number, number]) : ([1, 0.85, 0.65] as [number, number, number]);
+      const spec = flareSpec(s.project, { color, size: look.size, streak: look.streak, streakColor: i.color ? color : look.streakColor, ghosts: look.ghosts }, positions, intensity);
+      const id = newId("flare");
+      const asset = await drawGenerated(s, id, spec, i.duration, { kind: "flare", look: i.look, color: i.color, intensity: strength, matchBrightness: i.matchBrightness, ...(i.track && { track: i.track }) }, (f) =>
+        activity?.progress(0.5 + 0.5 * f),
+      );
+      let p = ops.addAsset(s.project, asset);
+      p = ops.addLayer(p, { type: "media", id, assetId: asset.id, start, duration: i.duration, size: { width: 1, height: 1 }, fit: "stretch", blend: "screen", ...(i.mask && { mask: i.mask }), label: i.label ?? `${look.id} flare` });
+      return commit(s, p, "add_light", i, `Added a ${look.id} lens flare as layer ${id} (${start}-${round3(start + i.duration)}s).${measured} Check it with render_frame.`);
     },
   }),
   tool({

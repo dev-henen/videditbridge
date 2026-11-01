@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { round3 } from "../../core/util.js";
+import { parseColor, round3 } from "../../core/util.js";
 import {
   SubjectRegionSchema,
   TimesSchema,
@@ -162,6 +162,63 @@ export function motionEffects(): EffectDefinition[] {
           `[${c}]curves=all='0/0 ${t}/0 1/1',gblur=sigma=${round3(p.radius * 0.6 * scaleOf(ctx))}[${g}]`,
           `[${o}][${g}]blend=all_mode=screen:all_opacity=${round3(p.strength)},format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
         ].join(";");
+      },
+    }),
+    define({
+      id: "lightRays",
+      name: "Light Rays / God Rays",
+      category: "light",
+      perFrame: true,
+      description:
+        "Shafts of light streaming out from a bright source: sun through trees, clouds or a window, a stage light, headlights in haze. The parts of the picture brighter than threshold are smeared outward from the source point and added back as light, so rays only come from real highlights and are broken up by whatever blocks them. " +
+        "Put the source on the light itself (inside the frame or on its edge). Pair with dust motes in the beams (add_particles dust) and a lens flare (add_light flare).",
+      params: z.object({
+        x: num(0.5, 0, 1, "Source x (frame fraction), on the light"),
+        y: num(0.2, 0, 1, "Source y (frame fraction)"),
+        threshold: num(0.7, 0, 0.98, "Only parts brighter than this cast rays (lower for dimmer sources)"),
+        length: num(0.5, 0.05, 1, "How far the rays reach toward the frame edges"),
+        intensity: num(0.8, 0, 3, "Brightness of the rays"),
+        color: z.string().default("#FFE6B8").describe("Ray tint #RRGGBB (warm sunlight by default)"),
+      }),
+      toFilter: (p, ctx) => {
+        // Radial blur by repeated zooms about the source at quarter size: each pass averages the
+        // picture with a copy enlarged about the source, doubling the samples along every ray, so
+        // 6 passes give 64 samples spaced evenly in log distance from the source, close enough that
+        // rays from small highlights stay continuous.
+        const label = labeler(ctx);
+        const fmt = ctx.alpha ? "gbrap" : "gbrp";
+        const even = (v: number) => Math.max(2, 2 * Math.round(v / 2));
+        const [w, h] = [even(ctx.width / 4), even(ctx.height / 4)];
+        const [o, c] = [label("fro"), label("frc")];
+        const lines = [`format=${fmt},split=2[${o}][${c}]`];
+        let cur = label("frh");
+        lines.push(`[${c}]scale=${w}:${h},curves=all='0/0 ${round3(p.threshold)}/0 1/1'[${cur}]`);
+        const passes = 6;
+        // Highlights at distance d from the source streak out to d * zoom.
+        const zoom = 20 ** p.length;
+        for (let k = 0; k < passes; k++) {
+          const f = zoom ** (2 ** k / 2 ** passes);
+          const [sw, sh] = [even(w * f), even(h * f)];
+          const [a, b, z, next] = [label("fra"), label("frb"), label("frz"), label("frn")];
+          lines.push(`[${cur}]split=2[${a}][${b}]`);
+          lines.push(`[${b}]scale=${sw}:${sh},crop=${w}:${h}:${round3((sw - w) * p.x)}:${round3((sh - h) * p.y)}[${z}]`);
+          lines.push(`[${a}][${z}]blend=all_mode=average[${next}]`);
+          cur = next;
+        }
+        const { r, g, b } = parseColor(p.color);
+        const tint = [r / 255, g / 255, b / 255] as const;
+        // Averaging spreads the light thin, so it is brought back up: a gain above 1 moves a channel's
+        // input white point down, a gain below 1 its output white point.
+        const levels = (["r", "g", "b"] as const)
+          .map((ch, k) => {
+            const gain = Math.max(1e-3, 1.3 * p.intensity * tint[k]!);
+            return gain >= 1 ? `${ch}imax=${round3(Math.max(0.001, 1 / gain))}` : `${ch}omax=${round3(gain)}`;
+          })
+          .join(":");
+        const rays = label("frr");
+        lines.push(`[${cur}]colorlevels=${levels},scale=${ctx.width}:${ctx.height}[${rays}]`);
+        lines.push(`[${o}][${rays}]blend=all_mode=screen,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`);
+        return lines.join(";");
       },
     }),
     define({

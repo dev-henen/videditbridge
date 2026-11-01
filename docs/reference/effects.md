@@ -2,7 +2,7 @@
 
 # Effects
 
-86 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+87 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -14,7 +14,7 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 
 - **color**: [adjust](#adjust), [temperature](#temperature), [grayscale](#grayscale), [sepia](#sepia), [invert](#invert), [hueShift](#hueshift), [tint](#tint), [color](#color), [saturation](#saturation), [vibrance](#vibrance), [hue](#hue), [whiteBalance](#whitebalance), [hsl](#hsl), [autoCorrect](#autocorrect), [colorMatch](#colormatch)
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
-- **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe)
+- **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [lightRays](#lightrays), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe)
 - **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs), [custom](#custom)
 - **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [skyReplace](#skyreplace), [maskView](#maskview), [denoise](#denoise)
 - **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur)
@@ -455,6 +455,19 @@ _No parameters._
 | `strength` | number |  | `0.8` | Glow opacity (≥ 0, ≤ 1) |
 | `threshold` | number |  | `45` | Only parts brighter than this glow (≥ 0, ≤ 100) |
 | `radius` | number |  | `30` | Glow spread (≥ 1, ≤ 100) |
+
+### lightRays
+
+**Light Rays / God Rays**. Shafts of light streaming out from a bright source: sun through trees, clouds or a window, a stage light, headlights in haze. The parts of the picture brighter than threshold are smeared outward from the source point and added back as light, so rays only come from real highlights and are broken up by whatever blocks them. Put the source on the light itself (inside the frame or on its edge). Pair with dust motes in the beams (add_particles dust) and a lens flare (add_light flare).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `x` | number |  | `0.5` | Source x (frame fraction), on the light (≥ 0, ≤ 1) |
+| `y` | number |  | `0.2` | Source y (frame fraction) (≥ 0, ≤ 1) |
+| `threshold` | number |  | `0.7` | Only parts brighter than this cast rays (lower for dimmer sources) (≥ 0, ≤ 0.98) |
+| `length` | number |  | `0.5` | How far the rays reach toward the frame edges (≥ 0.05, ≤ 1) |
+| `intensity` | number |  | `0.8` | Brightness of the rays (≥ 0, ≤ 3) |
+| `color` | string |  | `"#FFE6B8"` | Ray tint #RRGGBB (warm sunlight by default) |
 
 ### bokehLights
 

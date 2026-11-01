@@ -249,22 +249,37 @@ export async function renderGraphic(svg: string, output: string, opts: GraphicOp
   // Check every placeholder before starting the encoder, so mistakes come back as clear errors.
   fillGraphic(svg, vars(0));
   const file = output.replace(/\.[^.]+$/, "") + ".mkv";
+  let n = 0;
+  await writeAlphaVideo(file, { ...opts, fps, what: "the graphic" }, () => (n < frames ? draw(fillGraphic(svg, vars(n++))).pixels : undefined));
+  return { file, animated: true, frames };
+}
+
+/**
+ * Encode RGBA frames into a lossless video with transparency (FFV1, yuva420p, in .mkv), through a
+ * temporary file so a failure never leaves a broken one. `next` gives the next frames (one or more,
+ * packed), or undefined at the end.
+ */
+export async function writeAlphaVideo(
+  file: string,
+  opts: FfmpegOptions & { width: number; height: number; fps: number; signal?: AbortSignal; what?: string },
+  next: () => Uint8Array | undefined | Promise<Uint8Array | undefined>,
+): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
   const part = `${file}.${process.pid}.part.mkv`;
   const enc = spawn(
     resolveFfmpegPath(opts),
-    ["-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${opts.width}x${opts.height}`, "-r", String(fps), "-i", "-", "-c:v", "ffv1", "-pix_fmt", "yuva420p", part],
+    ["-y", "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${opts.width}x${opts.height}`, "-r", String(opts.fps), "-i", "-", "-c:v", "ffv1", "-pix_fmt", "yuva420p", part],
     { windowsHide: true, signal: opts.signal },
   );
   let err = "";
   enc.stderr.on("data", (d: Buffer) => (err += d.toString()));
   const closed = new Promise<void>((resolve, reject) => {
     enc.on("error", reject);
-    enc.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg (writing the graphic) failed: ${err.trim().split("\n").pop()}`))));
+    enc.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg (writing ${opts.what ?? "frames"}) failed: ${err.trim().split("\n").pop()}`))));
   });
   try {
-    for (let n = 0; n < frames; n++) {
-      const img = draw(fillGraphic(svg, vars(n)));
-      if (!enc.stdin.write(img.pixels)) await new Promise((r) => enc.stdin.once("drain", r));
+    for (let px = await next(); px; px = await next()) {
+      if (!enc.stdin.write(px)) await new Promise((r) => enc.stdin.once("drain", r));
     }
     enc.stdin.end();
     await closed;
@@ -275,5 +290,4 @@ export async function renderGraphic(svg: string, output: string, opts: GraphicOp
   } finally {
     await rm(part, { force: true });
   }
-  return { file, animated: true, frames };
 }

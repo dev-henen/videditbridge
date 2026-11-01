@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { analyzeSamples, decodeAudio, detectBeats, frameFeatures } from "../../engine/tools/audio/analyze.js";
-import { native, nativeTarget } from "../../engine/tools/native/index.js";
+import { native, nativeTarget, type ParticleSpec } from "../../engine/tools/native/index.js";
+import { PARTICLE_PRESETS, ParticleSettingsSchema, getParticlePreset, resolveParticles, type EmitterSpec } from "../../engine/library/particles/index.js";
 import { frameFeatures as reference, type FrameFeatures } from "../helpers/audio-reference.js";
 import { ffmpegAvailable, makeFixtures } from "../helpers/media.js";
 
@@ -98,5 +99,35 @@ describe("native kernels (ave-native)", () => {
     await frameFeatures(x);
     clearInterval(timer);
     expect(ticks).toBeGreaterThan(0);
+  });
+});
+
+describe("particle generator (ave-native)", () => {
+  const spec = (preset: string, seed = 1, timeScale?: number[]): ParticleSpec => {
+    const { systems, preroll } = resolveParticles(getParticlePreset(preset)!, ParticleSettingsSchema.parse({ seed }));
+    return { width: 160, height: 90, fps: 30, seed, preroll, systems, timeScale };
+  };
+  const draw = async (s: ParticleSpec, batches: number[]) => {
+    const r = new (native().ParticleRenderer)(s);
+    const parts: Uint8Array[] = [];
+    for (const n of batches) parts.push(await r.frames(n));
+    return Buffer.concat(parts);
+  };
+
+  it("draws the same frames for the same seed, in any batches", async () => {
+    for (const preset of PARTICLE_PRESETS.map((p) => p.id)) {
+      const whole = await draw(spec(preset), [6]);
+      expect(whole.length).toBe(6 * 160 * 90 * 4);
+      expect(whole.equals(await draw(spec(preset), [1, 2, 3])), `${preset} in batches`).toBe(true);
+      // Something is drawn on every frame.
+      for (let f = 0; f < 6; f++) expect(whole.subarray(f * 57600, (f + 1) * 57600).some((v, i) => i % 4 === 3 && v > 0), `${preset} frame ${f}`).toBe(true);
+    }
+    expect((await draw(spec("snow", 1), [3])).equals(await draw(spec("snow", 2), [3]))).toBe(false);
+  });
+
+  it("rejects a malformed spec with a clear error", () => {
+    const bad = spec("snow");
+    bad.systems = [{ emitter: { ...(bad.systems[0] as { emitter: EmitterSpec }).emitter, life: [1] as unknown as [number, number] } }];
+    expect(() => new (native().ParticleRenderer)(bad)).toThrow(/life needs 2 numbers/);
   });
 });

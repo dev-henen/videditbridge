@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import type { ParticleSystemSpec } from "../../library/particles/index.js";
 
 /**
  * The Rust kernels (native/ave-native, see docs/design/cinematic-grade-and-vfx.md section 3.5).
@@ -25,7 +26,25 @@ export interface NativeKernels {
   guidedFilter(guide: Uint8Array, mask: Uint8Array, width: number, height: number, radius: number, eps: number): Promise<Uint8Array>;
   /** Warp a mask by each transform (9 numbers each, from the mask's pixels): one mask per transform, back to back. */
   warpMasks(mask: Uint8Array, width: number, height: number, matrices: Float64Array): Promise<Uint8Array>;
+  /** Draws particles, smoke, fog and lens flares into RGBA frames (see ParticleSpec). */
+  ParticleRenderer: new (spec: ParticleSpec) => { frames(count: number): Promise<Uint8Array> };
   version(): string;
+}
+
+/**
+ * A particle generator spec (native/ave-native/src/particles.rs documents every field; the systems
+ * are the library's, see engine/library/particles).
+ */
+export interface ParticleSpec {
+  width: number;
+  height: number;
+  fps: number;
+  seed: number;
+  /** Seconds simulated before the first frame. */
+  preroll: number;
+  /** Simulated time per output frame, in frames (the footage's speed); missing frames are 1. */
+  timeScale?: number[];
+  systems: ParticleSystemSpec[];
 }
 
 /** The prebuilt package for this machine, and the file `npm run native` builds. */

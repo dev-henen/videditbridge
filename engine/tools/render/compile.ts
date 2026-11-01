@@ -4,6 +4,7 @@ import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
 import { effectMedia, effectObjects, effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, type EffectContext } from "../../library/effects/index.js";
+import { buildMatte, maskNeeds } from "../../library/effects/masks.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
 import { overlayMotion } from "../../library/animations/index.js";
@@ -65,6 +66,8 @@ export interface CompileOptions {
    * in timeline time, for media layers drawn behind the subject. Without it those layers go on top.
    */
   subjectMask?: string;
+  /** Sky matte of the finished main picture (255 = sky), in the same form as `subjectMask`, for media layers masked to the sky. */
+  skyMatte?: string;
   /** The FFmpeg build has the rubberband filter, used for speed ramps' sound (see rampTempo). */
   rubberband?: boolean;
   /** Encode the video on the graphics card instead of with x264, at matching quality. */
@@ -503,13 +506,24 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // people are, so they stay in front of it (and of nothing else that was not already there).
   const behind = opts.subjectMask && !opts.segment ? project.layers.filter((l) => l.type === "media" && l.behindSubject).map((l) => l.id) : [];
   const subjectLabels = new Map(behind.map((id) => [id, g.label("subj")]));
-  if (behind.length) {
-    // A little grown and softened: the model's outline runs tight on hands and hair.
+  const maskedLayers = opts.segment ? [] : project.layers.filter((l): l is MediaLayer => l.type === "media" && !!l.mask);
+  // Mattes of the finished picture (person, sky): one copy per layer mask that uses each, and the
+  // person cutout for each layer behind the subject.
+  const finished = (file: string | undefined, kind: "person" | "sky", grown: string[] = []) => {
+    const users = maskedLayers.filter((l) => maskNeeds(l.mask, kind)).length;
+    const copies = Array.from({ length: users + grown.length }, () => g.label(kind === "sky" ? "skym" : "subm"));
+    if (!copies.length) return [];
+    if (!file) throw new Error(`A layer mask of kind ${kind} needs the ${kind} matte of the finished picture, which the renderer makes; render with render() or renderFrame()`);
     g.add(
-      `[${g.addInput(["-i", opts.subjectMask!])}:v]setpts=PTS-STARTPTS,fps=${F},format=gray,scale=${W}:${H},dilation,dilation,gblur=sigma=${round3(2 * k)},` +
-        `tpad=stop_mode=clone:stop=-1,trim=duration=${round3(total)}${behind.length > 1 ? `,split=${behind.length}` : ""}${behind.map((id) => `[${subjectLabels.get(id)}]`).join("")}`,
+      `[${g.addInput(["-i", file])}:v]setpts=PTS-STARTPTS,fps=${F},format=gray,scale=${W}:${H},tpad=stop_mode=clone:stop=-1,trim=duration=${round3(total)}` +
+        `${copies.length > 1 ? `,split=${copies.length}` : ""}${copies.map((c) => `[${c}]`).join("")}`,
     );
-  }
+    // A little grown and softened behind the subject: the model's outline runs tight on hands and hair.
+    grown.forEach((label, i) => g.add(`[${copies[users + i]}]dilation,dilation,gblur=sigma=${round3(2 * k)}[${label}]`));
+    return copies.slice(0, users);
+  };
+  const personCopies = finished(opts.subjectMask, "person", behind.map((id) => subjectLabels.get(id)!));
+  const skyCopies = finished(opts.skyMatte, "sky");
   project.layers.forEach((layer) => {
     if (layer.type !== "media") return;
     const subject = subjectLabels.get(layer.id);
@@ -539,23 +553,38 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
           layer.animationOut,
         );
     const enable = `enable='between(t,${layer.start},${end})'`;
-    if (layer.blend === "normal") {
+    if (layer.blend === "normal" && !layer.mask) {
       g.add(`[${vCur}][${v}]overlay=x='${motion.x}':y='${motion.y}':${enable}:eof_action=pass[${out}]`);
     } else {
       // blend ignores alpha and position: place the layer on a clear frame-size canvas, blend the
       // whole frame in RGB, then show the result only through the layer's alpha (opacity and fades
-      // included).
+      // included) times its mask.
+      const mixing = layer.blend !== "normal";
+      const matte = layer.mask
+        ? buildMatte({ width: W, height: H, fps: F, duration: total, label: (p) => g.label(p), personMask: () => personCopies.shift(), skyMask: () => skyCopies.shift() }, layer.mask)
+        : undefined;
       const [base, under, canvas, placed, color, alpha, top, mixed, cut] = ["lbb", "lbu", "lbc", "lbp", "lbr", "lba", "lbt", "lbm", "lbx"].map((p) => g.label(p));
-      g.add(`[${vCur}]split=2[${base}][${under}]`);
+      const copies = [base, ...(mixing ? [under] : []), ...(matte?.picture ?? [])];
+      g.add(`[${vCur}]split=${copies.length}${copies.map((c) => `[${c}]`).join("")}`);
       g.add(`color=c=black@0:s=${W}x${H}:r=${F}:d=${total},format=yuva420p[${canvas}]`);
       g.add(`[${canvas}][${v}]overlay=x='${motion.x}':y='${motion.y}':${enable}:eof_action=pass:format=auto,format=gbrap,split=2[${placed}][${alpha}]`);
-      g.add(`[${placed}]format=gbrp[${color}]`);
-      // Nearest-neighbor chroma both ways makes the round trip exact, so a black screen layer changes nothing.
-      g.add(`[${under}]scale=flags=neighbor,format=gbrp[${top}]`);
-      g.add(`[${top}][${color}]blend=all_mode=${BLEND_MODES[layer.blend]}:${enable},scale=flags=neighbor,format=yuv420p[${mixed}]`);
+      if (layer.blend !== "normal") {
+        g.add(`[${placed}]format=gbrp[${color}]`);
+        // Nearest-neighbor chroma both ways makes the round trip exact, so a black screen layer changes nothing.
+        g.add(`[${under}]scale=flags=neighbor,format=gbrp[${top}]`);
+        g.add(`[${top}][${color}]blend=all_mode=${BLEND_MODES[layer.blend]}:${enable},scale=flags=neighbor,format=yuv420p[${mixed}]`);
+      } else {
+        g.add(`[${placed}]format=yuv420p[${mixed}]`);
+      }
       g.add(`[${alpha}]alphaextract[${cut}]`);
+      let through = cut;
+      if (matte) {
+        for (const line of matte.lines) g.add(line);
+        through = g.label("lbk");
+        g.add(`[${cut}][${matte.out}]blend=all_mode=multiply[${through}]`);
+      }
       const shown = g.label("lbs");
-      g.add(`[${mixed}][${cut}]alphamerge[${shown}]`);
+      g.add(`[${mixed}][${through}]alphamerge[${shown}]`);
       g.add(`[${base}][${shown}]overlay=format=auto:shortest=1:${enable},format=yuv420p[${out}]`);
     }
     vCur = out;

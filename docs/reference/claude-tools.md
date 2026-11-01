@@ -2,7 +2,7 @@
 
 # Claude tools
 
-104 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+107 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_scene](#grade_scene), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_scene](#grade_scene), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -1089,6 +1089,126 @@ _No parameters._
 | `layerId` | string | yes |  |  |
 | `svg` | string |  |  | New SVG; omit to keep the current one |
 | `duration` | number |  |  | New duration in seconds (animated graphics are redrawn for it) (> 0) |
+
+### add_particles
+
+**edits**. Add weather, atmosphere or celebration over the video: rain, heavy rain with splashes, snow, dust motes in light, rising embers, sparks, confetti, bokeh orbs, smoke or fog. A seeded simulation (the same seed always draws the same frames) is drawn into a full-frame layer that mixes with the picture by the preset's blend mode; near particles are bigger, faster and softer than far ones, and everything slows down with slow-motion footage under it. Shape it with density, size, speed, wind (slants rain, pushes snow and smoke), color, area (where particles are born: the spot sparks fly from, the fire embers rise from) and ground (where heavy rain splashes). Limit it with mask: snow or rain only in the sky (kind sky), embers kept off a person (kind person, invert true, or behindSubject true), dust only in a beam of light (luma or shape). Weather looks real with a matching grade: cooler, darker and flatter for rain, brighter and cooler for snow. Check with render_frame at a dark and a bright moment, and render_preview for the motion. Change it later with update_particles.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `preset` | "rain" \| "heavyRain" \| "snow" \| "dust" \| "embers" \| "sparks" \| "confetti" \| "bokeh" \| "smoke" \| "fog" | yes |  | rain: Light rain: thin pale streaks falling fast, nearer drops bigger and softer. Lighten the picture with it; a cool, darker grade sells it. heavyRain: A downpour: dense streaks and droplets splashing up from a ground line (ground, default 0.86 of the frame height; set it to where the street or floor is). snow: Falling snow: flakes of many sizes drifting down and swaying, near flakes large and out of focus. Works on dark and bright plates; for snow only in the sky, give mask { kind: 'sky' }. dust: Dust floating in a beam of light: a few hundred tiny specks drifting slowly and twinkling as they catch the light. Best over a shaft of light or a window; limit it there with a shape or luma mask. embers: Glowing embers rising from below and flickering out: fire scenes, campfires, dramatic or heroic moments. Put them behind a person with behindSubject or mask { kind: 'person', invert: true }. sparks: A fountain of hot sparks thrown up and arcing down, streaked by their speed: grinders, welding, impacts, fireworks on the ground. Place it with area (default a small spot at the bottom middle). confetti: A burst of colored paper pieces fluttering down, spinning and tumbling: celebrations, reveals, wins, announcements. Starts with a burst at the layer's start. bokeh: Large soft out-of-focus light orbs drifting slowly upward and fading in and out: romantic, festive, dreamy, night and title backgrounds. smoke: Billowing gray smoke drifting up and across, thicker low in the frame: fires, battlefields, concerts, mystery. Not particles: layers of drifting noise. fog: Low fog or mist rolling slowly across, dense at the bottom and clear at the top: moody landscapes, horror, mornings, depth in a wide shot. |
+| `start` | number | yes |  | (≥ 0) |
+| `duration` | number | yes |  | (> 0, ≤ 600) |
+| `density` | number |  | `1` | More or fewer particles (smoke and fog: thicker or thinner), 1 = the preset (≥ 0.1, ≤ 4) |
+| `size` | number |  | `1` | Particle size (smoke and fog: size of the billows), 1 = the preset (≥ 0.25, ≤ 4) |
+| `speed` | number |  | `1` | How fast everything moves, 1 = the preset (≥ 0.25, ≤ 4) |
+| `wind` | number |  | `0` | Sideways wind in frame heights per second, + to the right (0.1 is a breeze, 0.5 a storm); slants rain (≥ -1, ≤ 1) |
+| `color` | string |  |  | One color for every particle (#RRGGBB), replacing the preset's colors |
+| `area` | { x0, y0, x1, y1 } |  |  | Where particles are born (frame fractions; may reach outside the frame): sparks from a grinder at a spot, embers from a fire's area, confetti over one side |
+| `area.x0` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.y0` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.x1` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.y1` | number | yes |  | (≥ -1, ≤ 2) |
+| `ground` | number |  |  | Height of the ground line (frame fraction) where falling particles stop; heavyRain splashes there (≥ 0, ≤ 1.5) |
+| `seed` | integer |  | `1` | Another seed gives another, equally random, arrangement; the same seed always draws the same frames (≥ 0, ≤ 1000000) |
+| `opacity` | number |  |  | (≥ 0, ≤ 1) |
+| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" |  |  | Override the preset's blend (screen for light on dark, normal for snow and smoke) |
+| `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | Show the particles only where this selects in the picture under them (sky, person, key, luma or shape) |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
+| `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
+| `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
+| `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
+| `mask.softness` | number |  | `0.2` | key and luma: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
+| `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
+| `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number | yes |  | Center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number | yes |  | Width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number | yes |  | Height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.invert` | boolean |  | `false` | Select everything except this |
+| `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
+| `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
+| `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
+| `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
+| `mask.combine` | { kind, object, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `behindSubject` | boolean |  |  | Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them |
+| `followSpeed` | boolean |  | `true` | Slow down with slow-motion footage under the layer (and speed up with fast footage) |
+| `animationIn` | { type, duration, easing } |  |  | e.g. { type: 'fade', duration: 1 } to let the weather come in |
+| `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationIn.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+| `animationOut` | { type, duration, easing } |  |  |  |
+| `animationOut.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationOut.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationOut.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+| `label` | string |  |  |  |
+
+### update_particles
+
+**edits**. Change particles made with add_particles and draw them again: any of their settings (density, size, speed, wind, color, area, ground, seed), the preset, or the duration. Blend, opacity, mask and animations are layer properties: change those with update_layer.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `preset` | "rain" \| "heavyRain" \| "snow" \| "dust" \| "embers" \| "sparks" \| "confetti" \| "bokeh" \| "smoke" \| "fog" |  |  |  |
+| `density` | number |  |  | More or fewer particles (smoke and fog: thicker or thinner), 1 = the preset (≥ 0.1, ≤ 4) |
+| `size` | number |  |  | Particle size (smoke and fog: size of the billows), 1 = the preset (≥ 0.25, ≤ 4) |
+| `speed` | number |  |  | How fast everything moves, 1 = the preset (≥ 0.25, ≤ 4) |
+| `wind` | number |  |  | Sideways wind in frame heights per second, + to the right (0.1 is a breeze, 0.5 a storm); slants rain (≥ -1, ≤ 1) |
+| `color` | string |  |  | One color for every particle (#RRGGBB), replacing the preset's colors |
+| `area` | { x0, y0, x1, y1 } |  |  | Where particles are born (frame fractions; may reach outside the frame): sparks from a grinder at a spot, embers from a fire's area, confetti over one side |
+| `area.x0` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.y0` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.x1` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.y1` | number | yes |  | (≥ -1, ≤ 2) |
+| `ground` | number |  |  | Height of the ground line (frame fraction) where falling particles stop; heavyRain splashes there (≥ 0, ≤ 1.5) |
+| `seed` | integer |  |  | Another seed gives another, equally random, arrangement; the same seed always draws the same frames (≥ 0, ≤ 1000000) |
+| `duration` | number |  |  | New duration in seconds (> 0, ≤ 600) |
+| `followSpeed` | boolean |  |  |  |
+
+### add_light
+
+**edits**. Add light effects that make a shot feel lit: rays or a lens flare. rays: shafts of light streaming from a bright source (sun through trees or a window, a stage light): the parts of the picture brighter than threshold are smeared outward from source and added back, so put source on the light itself and lower threshold for dimmer lights. It is an effect on target (a clip, all-clips, global or a media layer) with a label; the same label updates it and remove: true deletes it; mask limits where rays show. flare: a lens flare from a light (glow, streak and ghosts along the line through the frame center) as a layer from start for duration. It follows a moving light by path (keyframes) or track (a point from track_points), and by default its size and strength follow how bright the picture is at the source, so it fades when the light is blocked or leaves the frame. Check with render_frame; for a flare also at the start and end, and render_preview for the motion.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `kind` | "rays" \| "flare" | yes |  |  |
+| `source` | { x, y } |  |  | Where the light is (frame fractions); rays default to the top middle |
+| `source.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `source.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `target` | string |  | `"all-clips"` | rays: a clip id, "all-clips", "global", or a media layer id |
+| `label` | string |  |  | rays: name of these rays (default "light rays"); flare: layer label |
+| `threshold` | number |  |  | rays: only parts brighter than this cast rays (default 0.7) (≥ 0, ≤ 0.98) |
+| `length` | number |  |  | rays: how far they reach toward the frame edges (default 0.5) (≥ 0.05, ≤ 1) |
+| `intensity` | number |  |  | Brightness: rays default 0.8, flare 1 (≥ 0, ≤ 3) |
+| `color` | string |  |  | Light color (rays default warm #FFE6B8; flare by look) |
+| `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | rays: where they show; flare: where the flare layer shows |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
+| `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
+| `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
+| `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
+| `mask.softness` | number |  | `0.2` | key and luma: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
+| `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
+| `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number | yes |  | Center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number | yes |  | Width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number | yes |  | Height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.invert` | boolean |  | `false` | Select everything except this |
+| `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
+| `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
+| `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
+| `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
+| `mask.combine` | { kind, object, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `remove` | boolean |  |  | rays: delete the rays with this label from target |
+| `start` | number |  |  | flare: timeline start (≥ 0) |
+| `duration` | number |  |  | flare: seconds (> 0, ≤ 600) |
+| `look` | "natural" \| "anamorphic" \| "subtle" |  | `"natural"` | natural: A spherical lens: warm glow, a short streak and a chain of faint colored ghosts and rings across the frame; anamorphic: An anamorphic lens: a long thin blue streak across the frame and blue ghosts (sci-fi, night city, car lights); subtle: A soft glow with two faint ghosts, for a light that should catch the lens without drawing attention |
+| `path` | { time, x, y }[] |  |  | flare: the light's position over time (frame fractions), straight between points |
+| `track` | string |  |  | flare: follow the center of this tracked point or surface (track_points) |
+| `matchBrightness` | boolean |  | `true` | flare: size and strength follow the picture's brightness at the source |
 
 ### animate_layer
 

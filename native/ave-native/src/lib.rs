@@ -3,11 +3,13 @@
 //! promises, so the host stays responsive.
 
 pub mod audio;
+pub mod particles;
 pub mod refine;
 pub mod track;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
+use std::sync::{Arc, Mutex};
 
 #[napi(object)]
 pub struct FrameFeatures {
@@ -186,6 +188,244 @@ impl Task for WarpTask {
 #[napi(js_name = "warpMasks")]
 pub fn warp_masks(mask: Uint8Array, width: u32, height: u32, matrices: Float64Array) -> AsyncTask<WarpTask> {
     AsyncTask::new(WarpTask { mask: mask.to_vec(), width: width as usize, height: height as usize, matrices: matrices.to_vec() })
+}
+
+// --- Particles and light (particles.rs). The specs mirror particles::Spec; see its docs for units.
+
+#[napi(object)]
+pub struct ParticleGroundSpec {
+    pub y: f64,
+    pub spread: f64,
+    pub splash: u32,
+    pub splash_size: f64,
+}
+
+#[napi(object)]
+pub struct ParticleEmitterSpec {
+    pub area: Vec<f64>,
+    pub rate: f64,
+    pub burst: u32,
+    pub max: u32,
+    pub life: Vec<f64>,
+    pub speed: Vec<f64>,
+    pub direction: f64,
+    pub spread: f64,
+    pub gravity: f64,
+    pub wind: Vec<f64>,
+    pub drag: f64,
+    pub turbulence: f64,
+    pub turbulence_scale: f64,
+    pub turbulence_speed: f64,
+    pub size: Vec<f64>,
+    pub size_over_life: Vec<Vec<f64>>,
+    pub opacity: Vec<f64>,
+    pub opacity_over_life: Vec<Vec<f64>>,
+    pub colors: Vec<Vec<f64>>,
+    pub color_over_life: Vec<Vec<f64>>,
+    pub shape: String,
+    pub softness: f64,
+    pub streak: f64,
+    pub aspect: f64,
+    pub spin: Vec<f64>,
+    pub flip: f64,
+    pub flicker: f64,
+    pub flicker_rate: f64,
+    pub glow: f64,
+    pub depth: Vec<f64>,
+    pub depth_blur: f64,
+    pub additive: bool,
+    pub ground: Option<ParticleGroundSpec>,
+}
+
+#[napi(object)]
+pub struct NoiseSpec {
+    pub color: Vec<f64>,
+    pub opacity: f64,
+    pub scale: f64,
+    pub octaves: u32,
+    pub drift: Vec<f64>,
+    pub evolve: f64,
+    pub density: Vec<f64>,
+    pub falloff: Vec<f64>,
+    pub layers: u32,
+    pub downscale: u32,
+}
+
+#[napi(object)]
+pub struct GhostSpec {
+    pub at: f64,
+    pub size: f64,
+    pub color: Vec<f64>,
+    pub opacity: f64,
+    pub ring: bool,
+}
+
+#[napi(object)]
+pub struct FlareSpec {
+    /// x, y per output frame, flattened.
+    pub positions: Vec<f64>,
+    pub intensity: Vec<f64>,
+    pub color: Vec<f64>,
+    pub size: f64,
+    pub streak: f64,
+    pub streak_color: Vec<f64>,
+    pub ghosts: Vec<GhostSpec>,
+}
+
+/// One system: exactly one of the three.
+#[napi(object)]
+pub struct ParticleSystemSpec {
+    pub emitter: Option<ParticleEmitterSpec>,
+    pub noise: Option<NoiseSpec>,
+    pub flare: Option<FlareSpec>,
+}
+
+#[napi(object)]
+pub struct ParticleSpec {
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
+    pub seed: u32,
+    pub preroll: f64,
+    pub time_scale: Option<Vec<f64>>,
+    pub systems: Vec<ParticleSystemSpec>,
+}
+
+fn fixed<const N: usize>(v: &[f64], what: &str) -> Result<[f32; N]> {
+    if v.len() != N {
+        return Err(Error::from_reason(format!("ave-native: {what} needs {N} numbers, got {}", v.len())));
+    }
+    Ok(std::array::from_fn(|i| v[i] as f32))
+}
+
+fn list<const N: usize>(v: &[Vec<f64>], what: &str) -> Result<Vec<[f32; N]>> {
+    v.iter().map(|x| fixed::<N>(x, what)).collect()
+}
+
+fn emitter(e: ParticleEmitterSpec) -> Result<particles::Emitter> {
+    Ok(particles::Emitter {
+        area: fixed(&e.area, "area")?,
+        rate: e.rate as f32,
+        burst: e.burst,
+        max: e.max,
+        life: fixed(&e.life, "life")?,
+        speed: fixed(&e.speed, "speed")?,
+        direction: e.direction as f32,
+        spread: e.spread as f32,
+        gravity: e.gravity as f32,
+        wind: fixed(&e.wind, "wind")?,
+        drag: e.drag as f32,
+        turbulence: e.turbulence as f32,
+        turbulence_scale: e.turbulence_scale as f32,
+        turbulence_speed: e.turbulence_speed as f32,
+        size: fixed(&e.size, "size")?,
+        size_over_life: list(&e.size_over_life, "sizeOverLife stops")?,
+        opacity: fixed(&e.opacity, "opacity")?,
+        opacity_over_life: list(&e.opacity_over_life, "opacityOverLife stops")?,
+        colors: list(&e.colors, "colors")?,
+        color_over_life: list(&e.color_over_life, "colorOverLife stops")?,
+        shape: particles::Shape::parse(&e.shape).ok_or_else(|| Error::from_reason(format!("ave-native: unknown particle shape \"{}\"", e.shape)))?,
+        softness: e.softness as f32,
+        streak: e.streak as f32,
+        aspect: e.aspect as f32,
+        spin: fixed(&e.spin, "spin")?,
+        flip: e.flip as f32,
+        flicker: e.flicker as f32,
+        flicker_rate: e.flicker_rate as f32,
+        glow: e.glow as f32,
+        depth: fixed(&e.depth, "depth")?,
+        depth_blur: e.depth_blur as f32,
+        additive: e.additive,
+        ground: e.ground.map(|g| particles::Ground { y: g.y as f32, spread: g.spread as f32, splash: g.splash, splash_size: g.splash_size as f32 }),
+    })
+}
+
+fn particle_spec(s: ParticleSpec) -> Result<particles::Spec> {
+    if s.width == 0 || s.height == 0 || !(s.fps > 0.0) {
+        return Err(Error::from_reason("ave-native: particles need a frame size and a frame rate"));
+    }
+    let systems = s
+        .systems
+        .into_iter()
+        .map(|sys| match (sys.emitter, sys.noise, sys.flare) {
+            (Some(e), None, None) => Ok(particles::System::Particles(emitter(e)?)),
+            (None, Some(n), None) => Ok(particles::System::Noise(particles::Noise {
+                color: fixed(&n.color, "noise color")?,
+                opacity: n.opacity as f32,
+                scale: n.scale as f32,
+                octaves: n.octaves,
+                drift: fixed(&n.drift, "drift")?,
+                evolve: n.evolve as f32,
+                density: fixed(&n.density, "density")?,
+                falloff: fixed(&n.falloff, "falloff")?,
+                layers: n.layers,
+                downscale: n.downscale,
+            })),
+            (None, None, Some(f)) => Ok(particles::System::Flare(particles::Flare {
+                positions: f.positions.chunks_exact(2).map(|p| [p[0] as f32, p[1] as f32]).collect(),
+                intensity: f.intensity.iter().map(|&v| v as f32).collect(),
+                color: fixed(&f.color, "flare color")?,
+                size: f.size as f32,
+                streak: f.streak as f32,
+                streak_color: fixed(&f.streak_color, "streak color")?,
+                ghosts: f
+                    .ghosts
+                    .into_iter()
+                    .map(|g| Ok(particles::Ghost { at: g.at as f32, size: g.size as f32, color: fixed(&g.color, "ghost color")?, opacity: g.opacity as f32, ring: g.ring }))
+                    .collect::<Result<_>>()?,
+            })),
+            _ => Err(Error::from_reason("ave-native: each particle system needs exactly one of emitter, noise or flare")),
+        })
+        .collect::<Result<_>>()?;
+    Ok(particles::Spec {
+        width: s.width as usize,
+        height: s.height as usize,
+        fps: s.fps as f32,
+        seed: s.seed as u64,
+        preroll: s.preroll as f32,
+        time_scale: s.time_scale.unwrap_or_default().into_iter().map(|v| v as f32).collect(),
+        systems,
+    })
+}
+
+pub struct ParticleFramesTask {
+    renderer: Arc<Mutex<particles::Renderer>>,
+    count: usize,
+}
+
+impl Task for ParticleFramesTask {
+    type Output = Vec<u8>;
+    type JsValue = Uint8Array;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let mut r = self.renderer.lock().map_err(|_| Error::from_reason("ave-native: the particle renderer failed earlier"))?;
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| r.frames(self.count))).map_err(|_| Error::from_reason("ave-native: particle frames panicked"))
+    }
+
+    fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {
+        Ok(out.into())
+    }
+}
+
+/// Draws particles, smoke, fog and lens flares into RGBA frames, one batch after another. Each
+/// batch continues where the last one ended; the same spec always gives the same frames.
+#[napi]
+pub struct ParticleRenderer {
+    inner: Arc<Mutex<particles::Renderer>>,
+}
+
+#[napi]
+impl ParticleRenderer {
+    #[napi(constructor)]
+    pub fn new(spec: ParticleSpec) -> Result<Self> {
+        Ok(ParticleRenderer { inner: Arc::new(Mutex::new(particles::Renderer::new(particle_spec(spec)?))) })
+    }
+
+    /// The next `count` frames as straight-alpha RGBA, width x height x 4 bytes each, back to back.
+    #[napi]
+    pub fn frames(&self, count: u32) -> AsyncTask<ParticleFramesTask> {
+        AsyncTask::new(ParticleFramesTask { renderer: self.inner.clone(), count: count as usize })
+    }
 }
 
 /// Version of the addon, so the loader can tell a stale build apart.

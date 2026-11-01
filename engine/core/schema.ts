@@ -29,6 +29,10 @@ export const VideoAssetSchema = z.object({
   height: z.number().int().positive().optional(),
   hasAudio: z.boolean().optional().describe("Whether the file has an audio stream (filled by probe)"),
   svg: z.string().optional().describe("SVG source of an animated graphic drawn with create_graphic"),
+  particles: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("How add_particles or add_light drew this video (preset or flare, and settings), so update_particles can redraw it"),
   label: z.string().optional(),
 });
 
@@ -308,6 +312,9 @@ export const MediaLayerSchema = z.object({
     .boolean()
     .default(false)
     .describe("Draw the layer behind the people in the main video (smoke, props or light beams behind a dancer); they are found frame by frame in the finished picture"),
+  mask: MaskSchema.optional().describe(
+    "Show the layer only where this mask selects in the picture under it: snow only in the sky (kind sky), embers kept off a person (kind person, invert true), light only on highlights (luma). person and sky are found frame by frame in the finished picture; key, luma and shape are cut from the picture under the layer; face and object masks do not work on layers",
+  ),
   volume: z.number().min(0).max(4).default(0).describe("Overlay audio volume (0 = muted)"),
   audioEffects: audioEffects("the overlay's audio"),
   effects: z.array(EffectSchema).default([]),
