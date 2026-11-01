@@ -1,4 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
 import type { EditorSession } from "../claude/session.js";
 import { executeTool, toAnthropicTools, toToolResultContent } from "../claude/tools.js";
 
@@ -21,9 +23,50 @@ How to work:
 - When taste decides (the narration voice, the music, a title style), let the user choose: make the options (preview_voice for voices, render_frame for looks), call offer_choices, and end your turn. Their pick comes back as the next message, starting with "[Choice:".
 - Keep replies short and plain; the user sees each step in the activity feed.`;
 
+/** Models the app offers, the first being the default. */
+export const AGENT_MODELS = [
+  { id: "claude-opus-5-5", label: "Opus 5.5", description: "Most capable, for full edits" },
+  { id: "claude-sonnet-5-5", label: "Sonnet 5.5", description: "Fast and capable" },
+  { id: "claude-haiku-5-5", label: "Haiku 5.5", description: "Fastest, for small changes" },
+] as const;
+export const DEFAULT_MODEL = AGENT_MODELS[0].id;
+
+export type AgentMessage = Anthropic.Beta.BetaMessageParam;
+
 export interface AgentCallbacks {
   /** Streamed assistant text. */
   onText?: (delta: string) => void;
+}
+
+export interface AgentRequest {
+  /** Model id for this request (AGENT_MODELS); the agent's model when left out. */
+  model?: string;
+  /** Pictures Claude should see with the request, as PNG, JPEG, GIF or WebP files. */
+  images?: string[];
+}
+
+const IMAGE_TYPES: Record<string, "image/png" | "image/jpeg" | "image/gif" | "image/webp"> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+};
+/** The API's limit for one image. */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * The conversation without pictures, for saving: rendered frames and contact sheets are large, and
+ * Claude can render them again. Each picture becomes a short note.
+ */
+export function withoutImages(messages: AgentMessage[]): AgentMessage[] {
+  const strip = (blocks: unknown): unknown =>
+    Array.isArray(blocks)
+      ? blocks.map((b: { type?: string; content?: unknown }) =>
+          b.type === "image" ? { type: "text", text: "[picture not kept; render it again to look]" } : b.type === "tool_result" ? { ...b, content: strip(b.content) } : b,
+        )
+      : blocks;
+  return messages.map((m) => ({ ...m, content: strip(m.content) }) as AgentMessage);
 }
 
 /**
@@ -32,34 +75,66 @@ export interface AgentCallbacks {
  */
 export class EditorAgent {
   private readonly client: Anthropic;
-  private readonly model: string;
-  private readonly messages: Anthropic.Beta.BetaMessageParam[] = [];
+  private model: string;
+  private readonly messages: AgentMessage[];
   private controller: AbortController | undefined;
   private busy = false;
 
   constructor(
     private readonly session: EditorSession,
-    opts: { client?: Anthropic; model?: string } = {},
+    opts: { client?: Anthropic; model?: string; messages?: AgentMessage[] } = {},
   ) {
     this.client = opts.client ?? new Anthropic();
-    this.model = opts.model ?? "claude-opus-5-5";
+    this.model = opts.model ?? DEFAULT_MODEL;
+    this.messages = [...(opts.messages ?? [])];
   }
 
   get running(): boolean {
     return this.busy;
   }
 
+  /** The conversation so far, in the Messages API format. */
+  get history(): readonly AgentMessage[] {
+    return this.messages;
+  }
+
   cancel(): void {
     this.controller?.abort();
   }
 
-  async run(prompt: string, callbacks: AgentCallbacks = {}): Promise<{ stopReason: string }> {
+  /**
+   * A request stopped while tools ran leaves Claude's tool calls without results, which the API
+   * refuses; answer them as cancelled before going on.
+   */
+  private closeOpenToolCalls(): void {
+    const last = this.messages[this.messages.length - 1];
+    if (last?.role !== "assistant" || !Array.isArray(last.content)) return;
+    const calls = last.content.filter((b): b is Anthropic.Beta.BetaToolUseBlockParam => b.type === "tool_use");
+    if (!calls.length) return;
+    this.messages.push({ role: "user", content: calls.map((c) => ({ type: "tool_result" as const, tool_use_id: c.id, is_error: true, content: "Stopped by the user before this ran." })) });
+  }
+
+  private async userContent(prompt: string, images: string[] = []): Promise<string | Anthropic.Beta.BetaContentBlockParam[]> {
+    if (!images.length) return prompt;
+    const blocks: Anthropic.Beta.BetaContentBlockParam[] = [];
+    for (const file of images) {
+      const type = IMAGE_TYPES[extname(file).toLowerCase()];
+      const data = type ? await readFile(file).catch(() => undefined) : undefined;
+      if (!type || !data || data.length > MAX_IMAGE_BYTES) continue;
+      blocks.push({ type: "image", source: { type: "base64", media_type: type, data: data.toString("base64") } });
+    }
+    return [...blocks, { type: "text", text: prompt }];
+  }
+
+  async run(prompt: string, callbacks: AgentCallbacks = {}, request: AgentRequest = {}): Promise<{ stopReason: string }> {
     if (this.busy) throw new Error("Claude is already working on a request");
     this.busy = true;
+    if (request.model) this.model = request.model;
     this.controller = new AbortController();
     const signal = this.controller.signal;
     const tools = toAnthropicTools() as Anthropic.Beta.BetaTool[];
-    this.messages.push({ role: "user", content: prompt });
+    this.closeOpenToolCalls();
+    this.messages.push({ role: "user", content: await this.userContent(prompt, request.images) });
     const thinking = this.session.startActivity("info", "Claude is thinking");
     try {
       for (let turn = 0; turn < 80; turn++) {

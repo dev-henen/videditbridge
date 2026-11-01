@@ -1,0 +1,164 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:VideoEditor.Shared"
+             xmlns:chat="using:VideoEditor.Chat"
+             xmlns:session="using:VideoEditor.Session"
+             x:Class="VideoEditor.Chat.ChatPanel">
+  <UserControl.Styles>
+    <Style Selector="Button.row">
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Padding" Value="8,5"/>
+    </Style>
+    <Style Selector="Border.current">
+      <Setter Property="Background" Value="{StaticResource AccentSoft}"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Border Background="{StaticResource Panel}" CornerRadius="8">
+    <DockPanel>
+      <!-- The conversation: its title (double-click to rename), the history and a new one -->
+      <DockPanel DockPanel.Dock="Top" Margin="10,5,5,5">
+        <Button DockPanel.Dock="Right" Click="OnNewConversation" ToolTip.Tip="New conversation" AutomationProperties.Name="New conversation"
+                IsEnabled="{Binding !AgentRunning}">
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Compose}"/>
+        </Button>
+        <Button x:Name="HistoryButton" DockPanel.Dock="Right" ToolTip.Tip="Conversations" AutomationProperties.Name="Conversations">
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.History}"/>
+          <Button.Flyout>
+            <Flyout Placement="BottomEdgeAlignedRight" Opening="OnHistoryOpening">
+              <StackPanel Width="250" Margin="-6">
+                <TextBlock Text="Conversations" FontSize="11" Foreground="{StaticResource Muted}" Margin="8,2,0,6"/>
+                <TextBlock x:Name="NoConversations" Text="No saved conversations yet" FontSize="11" Foreground="{StaticResource Faint}" Margin="8,0,0,6"/>
+                <ScrollViewer MaxHeight="260" VerticalScrollBarVisibility="Auto">
+                  <ItemsControl x:Name="ConversationList">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Border CornerRadius="6" Classes.current="{Binding IsCurrent}" Margin="0,1">
+                          <DockPanel>
+                            <Button DockPanel.Dock="Right" Click="OnDeleteConversation" Tag="{Binding}" ToolTip.Tip="Delete" AutomationProperties.Name="Delete this conversation"
+                                    MinHeight="24" MinWidth="24" Padding="3" VerticalAlignment="Center">
+                              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Delete}" FontSize="13" Foreground="{StaticResource Muted}"/>
+                            </Button>
+                            <Button Classes="row" Click="OnOpenConversation" Tag="{Binding}" AutomationProperties.Name="{Binding Title}">
+                              <StackPanel>
+                                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Updated}" FontSize="10" Foreground="{StaticResource Faint}"/>
+                              </StackPanel>
+                            </Button>
+                          </DockPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </ScrollViewer>
+              </StackPanel>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
+        <TextBlock DockPanel.Dock="Left" Classes="icon" Text="{x:Static shared:Icons.Chat}" FontSize="15" Foreground="{StaticResource Muted}" Margin="0,0,7,0"/>
+        <Grid VerticalAlignment="Center">
+          <TextBlock x:Name="TitleText" Text="{Binding ConversationTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                     DoubleTapped="OnStartRename" ToolTip.Tip="Double-click to rename" Background="Transparent"/>
+          <TextBox x:Name="TitleBox" IsVisible="False" MinHeight="24" Padding="6,2" KeyDown="OnRenameKey" LostFocus="OnRenameLostFocus"/>
+        </Grid>
+      </DockPanel>
+      <Rectangle DockPanel.Dock="Top" Height="1" Fill="{StaticResource Line}"/>
+
+      <chat:ChatComposer x:Name="Composer" DockPanel.Dock="Bottom" Margin="6"/>
+
+      <!-- Options Claude offered: play or look, then pick -->
+      <Border DockPanel.Dock="Bottom" Margin="6,6,6,0" Padding="8,6" CornerRadius="8" Background="{StaticResource Panel2}" IsVisible="{Binding HasChoices}">
+        <StackPanel>
+          <DockPanel Margin="0,0,0,4">
+            <Button DockPanel.Dock="Right" Click="OnDismissChoices" ToolTip.Tip="Close without picking" AutomationProperties.Name="Close the options"
+                    MinHeight="20" MinWidth="20" Padding="2">
+              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Dismiss}" FontSize="11"/>
+            </Button>
+            <TextBlock Text="{Binding ChoiceQuestion}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
+          </DockPanel>
+          <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Choices}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Border Margin="0,3" Padding="6" CornerRadius="6" Background="{StaticResource Panel}">
+                    <DockPanel>
+                      <Button DockPanel.Dock="Right" Classes="primary" Click="OnPickChoice" Tag="{Binding}" Width="22" Height="22" MinWidth="0" MinHeight="0" Padding="0"
+                              Margin="6,0,0,0" VerticalAlignment="Center" ToolTip.Tip="Pick this" AutomationProperties.Name="Pick this"
+                              IsEnabled="{Binding $parent[ItemsControl].DataContext.CanAsk}">
+                        <TextBlock Classes="icon" Text="{x:Static shared:Icons.Check}" FontSize="13" Foreground="{StaticResource OnAccent}"/>
+                      </Button>
+                      <Button DockPanel.Dock="Left" Click="OnPlayChoice" Tag="{Binding}" MinHeight="22" MinWidth="22" Padding="2" Margin="0,0,6,0" VerticalAlignment="Center"
+                              ToolTip.Tip="{Binding PlayHint}" AutomationProperties.Name="Play this option" IsVisible="{Binding HasAudio}">
+                        <TextBlock Classes="icon" Text="{Binding PlayGlyph}" FontSize="13" Foreground="{StaticResource Accent}"/>
+                      </Button>
+                      <Border DockPanel.Dock="Left" CornerRadius="4" ClipToBounds="True" Margin="0,0,8,0" IsVisible="{Binding HasImage}">
+                        <Image Source="{Binding ImageBitmap}" Height="54" MaxWidth="96" Stretch="Uniform" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                      </Border>
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Label}" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding Description}" FontSize="10" Foreground="{StaticResource Muted}" TextWrapping="Wrap" IsVisible="{Binding HasDescription}"/>
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </StackPanel>
+      </Border>
+
+      <Grid>
+        <!-- An empty conversation: what Claude can do here -->
+        <StackPanel VerticalAlignment="Center" Margin="18,0" Spacing="6" IsVisible="{Binding !HasMessages}">
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Sparkle}" FontSize="22" Foreground="{StaticResource Accent}"/>
+          <TextBlock Text="Edit by asking Claude" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+          <TextBlock Text="Describe the video you want, point at a clip on the timeline or a spot in the frame, or add files with +."
+                     FontSize="11" Foreground="{StaticResource Muted}" TextWrapping="Wrap" TextAlignment="Center"/>
+        </StackPanel>
+
+        <ScrollViewer x:Name="MessageScroll" VerticalScrollBarVisibility="Auto" Padding="10,8">
+          <ItemsControl ItemsSource="{Binding Messages}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Panel Margin="0,4">
+                  <!-- A request: on the right, on a chip, with what it was about and its files -->
+                  <StackPanel IsVisible="{Binding IsUser}" HorizontalAlignment="Right" MaxWidth="250">
+                    <TextBlock Text="{Binding About}" FontSize="10" Foreground="{StaticResource Faint}" HorizontalAlignment="Right" Margin="0,0,2,2"
+                               IsVisible="{Binding HasAbout}" TextTrimming="CharacterEllipsis"/>
+                    <Border Background="{StaticResource Panel2}" CornerRadius="10,10,3,10" Padding="10,6">
+                      <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12" LineHeight="17"/>
+                    </Border>
+                    <ItemsControl ItemsSource="{Binding Attachments}" IsVisible="{Binding HasAttachments}" HorizontalAlignment="Right" Margin="0,3,0,0">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel HorizontalAlignment="Right"/></ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Border Background="{StaticResource Hover}" CornerRadius="5" Padding="6,1" Margin="3,0,0,2">
+                            <StackPanel Orientation="Horizontal">
+                              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Attach}" FontSize="11" Foreground="{StaticResource Muted}" Margin="0,0,4,0"/>
+                              <TextBlock Text="{Binding}" FontSize="10" Foreground="{StaticResource Muted}" MaxWidth="150" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                  <!-- Claude's reply: plain text on the left; a working line until it writes -->
+                  <StackPanel IsVisible="{Binding IsAssistant}">
+                    <StackPanel Orientation="Horizontal" IsVisible="{Binding IsThinking}" Spacing="6">
+                      <TextBlock Classes="icon spin" Text="{x:Static shared:Icons.Sync}" FontSize="12" Foreground="{StaticResource Accent}"/>
+                      <TextBlock Text="Working on it" FontSize="11" Foreground="{StaticResource Muted}"/>
+                    </StackPanel>
+                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12" LineHeight="18" IsVisible="{Binding HasText}"/>
+                  </StackPanel>
+                </Panel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </Grid>
+    </DockPanel>
+  </Border>
+</UserControl>

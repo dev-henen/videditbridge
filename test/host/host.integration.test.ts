@@ -45,7 +45,9 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     fx = await makeFixtures();
     dir = await mkdtemp(path.join(tmpdir(), "ave-host-"));
     const tsx = path.resolve("node_modules/tsx/dist/cli.mjs");
-    const proc = spawn(process.execPath, [tsx, "engine/host/main.ts", "--projects-dir", dir], { stdio: "pipe" });
+    // No key: Claude is unavailable, so requests fail the same way on every machine.
+    const env = { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_PROFILE: "" };
+    const proc = spawn(process.execPath, [tsx, "engine/host/main.ts", "--projects-dir", dir], { stdio: "pipe", env });
     host = new HostClient(proc);
   });
 
@@ -96,6 +98,44 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
 
     await host.call("session.undo");
     expect((await host.call<{ clips: unknown[] }>("state.get")).clips).toHaveLength(0);
+  });
+
+  it("keeps several projects open at once, each with its own state, conversations and cover", async () => {
+    const a = await host.call<{ projectDir: string }>("project.create", { name: "Tab A" });
+    const b = await host.call<{ projectDir: string }>("project.create", { name: "Tab B" });
+    await host.call("project.importMedia", { project: a.projectDir, paths: [fx.talk] });
+    await host.call("tools.execute", { project: a.projectDir, name: "add_clip", input: { assetId: "talk" } });
+    // B was opened last, so it has focus, but A got the clip.
+    expect((await host.call<{ clips: unknown[] }>("state.get", { project: a.projectDir })).clips).toHaveLength(1);
+    expect((await host.call<{ clips: unknown[] }>("state.get")).clips).toHaveLength(0);
+    await host.call("project.focus", { project: a.projectDir });
+    expect((await host.call<{ clips: unknown[] }>("state.get")).clips).toHaveLength(1);
+    // Notifications say which project they are about.
+    const activity = host.notifications.filter((n) => n.method === "activity").at(-1)!.params as { project: string; label: string };
+    expect(activity.project).toBe(a.projectDir);
+
+    // Without a key the request fails, and the conversation still records it.
+    await expect(host.call("agent.run", { project: b.projectDir, prompt: "[About clip x] cut it", display: "cut it" })).rejects.toThrow();
+    const listed = await host.call<{ current: string; conversations: { id: string; title: string; lines: number }[] }>("chat.list", { project: b.projectDir });
+    expect(listed.conversations).toMatchObject([{ id: listed.current, title: "cut it", lines: 2 }]);
+    await host.call("chat.rename", { project: b.projectDir, id: listed.current, title: "First cut" });
+    const fresh = await host.call<{ id: string; transcript: unknown[] }>("chat.new", { project: b.projectDir });
+    expect(fresh.transcript).toHaveLength(0);
+    const reopened = await host.call<{ title: string; transcript: { role: string; text: string }[] }>("chat.open", { project: b.projectDir, id: listed.current });
+    expect(reopened.title).toBe("First cut");
+    expect(reopened.transcript.map((l) => l.role)).toEqual(["user", "assistant"]);
+    expect(reopened.transcript[1]!.text).toMatch(/^Error:/);
+    await host.call("chat.delete", { project: b.projectDir, id: listed.current });
+    expect((await host.call<{ conversations: unknown[] }>("chat.list", { project: b.projectDir })).conversations).toHaveLength(0);
+
+    // Closing leaves a cover of the edit; an empty edit gets none (the app shows its default).
+    await host.call("project.close", { project: a.projectDir });
+    await host.call("project.close", { project: b.projectDir });
+    const covers = Object.fromEntries((await host.call<{ dir: string; cover?: string }[]>("project.list")).map((p) => [p.dir, p.cover]));
+    expect(covers[a.projectDir]).toBe(path.join(a.projectDir, "cover.png"));
+    expect(existsSync(covers[a.projectDir]!)).toBe(true);
+    expect(covers[b.projectDir]).toBeUndefined();
+    await expect(host.call("state.get", { project: a.projectDir })).rejects.toThrow(/not open/);
   });
 
   it("reports errors as JSON-RPC errors", async () => {

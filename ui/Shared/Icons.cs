@@ -32,4 +32,17 @@ public static class Icons
     public static readonly string ChevronDown = G(62115);
     public static readonly string Export = G(57543);
     public static readonly string Review = G(60562);
+    public static readonly string History = G(62590);
+    public static readonly string Compose = G(62228);
+    public static readonly string Delete = G(62284);
+    public static readonly string Edit = G(62429);
+    public static readonly string Attach = G(61865);
+    public static readonly string Chat = G(62086);
+    public static readonly string Document = G(62328);
+    public static readonly string Image = G(62600);
+    public static readonly string Music = G(59476);
+    public static readonly string Sparkle = G(60211);
+    public static readonly string Home = G(62592);
+    public static readonly string DismissSmall = G(62311);
+    public static readonly string AddSmall = G(61704);
 }

@@ -21,7 +21,7 @@ public partial class PreviewScreen : UserControl
 {
     private readonly DispatcherTimer _scrubDebounce = new() { Interval = TimeSpan.FromMilliseconds(160) };
     private readonly DispatcherTimer _playbackTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
-    private MainViewModel _vm = null!;
+    private ProjectViewModel _vm = null!;
     private bool _follow = true;
     private bool _settingScrubber;
     private string? _shownRender;
@@ -57,11 +57,14 @@ public partial class PreviewScreen : UserControl
         };
     }
 
-    public void Attach(MainViewModel vm)
+    public void Attach(ProjectViewModel vm)
     {
         _vm = vm;
         _vm.ProjectChanged += Reset;
         _vm.StateUpdated += OnState;
+        // The project is open before its tab is built: show what it has now.
+        Reset();
+        if (_vm.State is { } s) OnState(s);
     }
 
     /// <summary>Show each new render as it comes (after a command or a request to Claude).</summary>
@@ -85,6 +88,15 @@ public partial class PreviewScreen : UserControl
         Spot = null;
         PlaceMarker();
         SpotChanged?.Invoke(null);
+    }
+
+    /// <summary>Stop playing (the tab was put in the background); the picture stays.</summary>
+    public void Pause()
+    {
+        if (!_playing || _player is null) return;
+        _player.Pause();
+        _playing = false;
+        PlayIcon.Text = Icons.Play;
     }
 
     public void Dispose() => _player?.Dispose();

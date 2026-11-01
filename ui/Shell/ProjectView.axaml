@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:preview="using:VideoEditor.Preview"
+             xmlns:session="using:VideoEditor.Session"
+             xmlns:timeline="using:VideoEditor.Timeline"
+             xmlns:chat="using:VideoEditor.Chat"
+             xmlns:shell="using:VideoEditor.Shell"
+             x:Class="VideoEditor.Shell.ProjectView">
+  <!-- Everything of one project: its commands under the tab, then activity on the left, the preview and
+       timeline in the middle, and the chat with Claude on the right -->
+  <DockPanel>
+  <shell:TopBar x:Name="Bar" DockPanel.Dock="Top"/>
+  <Grid Margin="8,6,8,8" ColumnDefinitions="218,6,*,6,272" RowDefinitions="*,Auto">
+    <session:SessionPanel x:Name="Side" Grid.Column="0" Grid.RowSpan="2"/>
+    <GridSplitter Grid.Column="1" Grid.RowSpan="2" Background="Transparent" ResizeDirection="Columns"/>
+    <preview:PreviewScreen x:Name="Screen" Grid.Column="2" Grid.Row="0"/>
+    <timeline:TimelineStrip x:Name="Strip" Grid.Column="2" Grid.Row="1" Margin="0,6,0,0"/>
+    <GridSplitter Grid.Column="3" Grid.RowSpan="2" Background="Transparent" ResizeDirection="Columns"/>
+    <chat:ChatPanel x:Name="Chat" Grid.Column="4" Grid.RowSpan="2"/>
+  </Grid>
+  </DockPanel>
+</UserControl>

@@ -1,0 +1,100 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:VideoEditor.Shared"
+             x:Class="VideoEditor.Tabs.TabStrip"
+             RenderOptions.TextRenderingMode="Antialias">
+  <!-- Grayscale text smoothing: in the title bar, subpixel smoothing showed colored fringes on the glyphs -->
+  <UserControl.Styles>
+    <!-- A tab: quiet until hovered; the open one takes the toolbar color and joins its page below -->
+    <Style Selector="Border.tab">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="CornerRadius" Value="8,8,0,0"/>
+      <Setter Property="Padding" Value="10,0,5,0"/>
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="Width" Value="232"/>
+      <Setter Property="Margin" Value="0,0,2,0"/>
+      <Setter Property="VerticalAlignment" Value="Bottom"/>
+    </Style>
+    <Style Selector="Border.tab:pointerover">
+      <Setter Property="Background" Value="{StaticResource TabHover}"/>
+    </Style>
+    <Style Selector="Border.tab.selected">
+      <Setter Property="Background" Value="{StaticResource Toolbar}"/>
+    </Style>
+    <Style Selector="Border.tab TextBlock.title">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+    </Style>
+    <Style Selector="Border.tab.selected TextBlock.title, Border.tab:pointerover TextBlock.title">
+      <Setter Property="Foreground" Value="{StaticResource Text}"/>
+    </Style>
+    <Style Selector="Button.chrome">
+      <Setter Property="MinWidth" Value="28"/>
+      <Setter Property="MinHeight" Value="28"/>
+      <Setter Property="Width" Value="28"/>
+      <Setter Property="Height" Value="28"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+  </UserControl.Styles>
+
+  <!-- Empty space lets clicks through to the title bar, so it still moves the window -->
+  <DockPanel Margin="6,0,0,0">
+    <!-- Every open tab, to jump to one -->
+    <Button x:Name="TabMenuButton" DockPanel.Dock="Left" Classes="chrome" ToolTip.Tip="All tabs" AutomationProperties.Name="All tabs" Margin="0,2,6,0">
+      <TextBlock Classes="icon" Text="{x:Static shared:Icons.ChevronDown}" FontSize="13"/>
+      <Button.Flyout>
+        <Flyout Placement="BottomEdgeAlignedLeft">
+          <ItemsControl x:Name="TabMenu" Width="260" Margin="-6">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Click="OnMenuTab" Tag="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="8,6">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Classes="icon" Text="{x:Static shared:Icons.Video}" FontSize="13" Foreground="{StaticResource Muted}" Margin="0,0,8,0"
+                               IsVisible="{Binding IsProject}"/>
+                    <TextBlock DockPanel.Dock="Left" Classes="icon" Text="{x:Static shared:Icons.Home}" FontSize="13" Foreground="{StaticResource Muted}" Margin="0,0,8,0"
+                               IsVisible="{Binding IsStart}"/>
+                    <TextBlock Text="{Binding Project.ProjectName, FallbackValue='New tab'}" TextTrimming="CharacterEllipsis"/>
+                  </DockPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Flyout>
+      </Button.Flyout>
+    </Button>
+
+    <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+      <StackPanel Orientation="Horizontal">
+        <ItemsControl x:Name="TabList" VerticalAlignment="Bottom">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Classes="tab" Classes.selected="{Binding IsSelected}" Tag="{Binding}" PointerPressed="OnTabPressed" PointerReleased="OnTabReleased"
+                      ToolTip.Tip="{Binding Project.Dir, FallbackValue='Projects'}">
+                <DockPanel>
+                  <Button DockPanel.Dock="Right" Click="OnCloseTab" Tag="{Binding}" ToolTip.Tip="Close tab (Ctrl+W)" AutomationProperties.Name="Close tab"
+                          MinWidth="22" MinHeight="22" Width="22" Height="22" Padding="0" VerticalAlignment="Center">
+                    <TextBlock Classes="icon" Text="{x:Static shared:Icons.DismissSmall}" FontSize="11"/>
+                  </Button>
+                  <Grid DockPanel.Dock="Left" Width="16" Margin="0,0,9,0" VerticalAlignment="Center">
+                    <TextBlock Classes="icon" Text="{x:Static shared:Icons.Home}" FontSize="14" Foreground="{StaticResource Muted}" IsVisible="{Binding IsStart}"/>
+                    <TextBlock Classes="icon" Text="{x:Static shared:Icons.Video}" FontSize="14" Foreground="{StaticResource Muted}"
+                               IsVisible="{Binding Project.IsBusy, Converter={x:Static BoolConverters.Not}, FallbackValue=False}"/>
+                    <TextBlock Classes="icon spin" Text="{x:Static shared:Icons.Sync}" FontSize="14" Foreground="{StaticResource Accent}"
+                               IsVisible="{Binding Project.IsBusy, FallbackValue=False}" ToolTip.Tip="{Binding Project.StatusText}"/>
+                  </Grid>
+                  <TextBlock Classes="title" Text="{Binding Project.ProjectName, FallbackValue='New tab'}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </DockPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <Button Classes="chrome" Click="OnNewTab" ToolTip.Tip="New tab (Ctrl+T)" AutomationProperties.Name="New tab" Margin="4,4,0,0">
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Add}" FontSize="15"/>
+        </Button>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

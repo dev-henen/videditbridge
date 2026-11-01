@@ -2,41 +2,38 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:shared="using:VideoEditor.Shared"
              x:Class="VideoEditor.Shell.TopBar">
-  <!-- Project name and size on the left; projects, import, undo, redo, overview, preview and export on the right -->
-  <DockPanel Margin="10,6,8,4" LastChildFill="False">
-    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-      <TextBlock Classes="icon" Text="{x:Static shared:Icons.Video}" FontSize="17" Foreground="{StaticResource Text}" Margin="0,0,8,0"/>
-      <TextBlock Text="{Binding ProjectName, TargetNullValue=AI Video Editor}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"
-                 TextTrimming="CharacterEllipsis" MaxWidth="240"/>
-      <TextBlock Text="{Binding MetaText}" Foreground="{StaticResource Muted}" FontSize="11" Margin="10,1,0,0" VerticalAlignment="Center"/>
-    </StackPanel>
-    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-      <Button Click="OnShowProjects" ToolTip.Tip="Projects" AutomationProperties.Name="Projects">
-        <TextBlock Classes="icon" Text="{x:Static shared:Icons.Folder}"/>
-      </Button>
-      <Button Click="OnImport" IsEnabled="{Binding IsProjectOpen}" ToolTip.Tip="Import media" AutomationProperties.Name="Import media">
-        <TextBlock Classes="icon" Text="{x:Static shared:Icons.Add}"/>
-      </Button>
-      <Rectangle Width="1" Height="16" Fill="{StaticResource Line}" Margin="5,0"/>
-      <Button Click="OnUndo" IsEnabled="{Binding CanUndo}" ToolTip.Tip="Undo" AutomationProperties.Name="Undo">
-        <TextBlock Classes="icon" Text="{x:Static shared:Icons.Undo}"/>
-      </Button>
-      <Button Click="OnRedo" IsEnabled="{Binding CanRedo}" ToolTip.Tip="Redo" AutomationProperties.Name="Redo">
-        <TextBlock Classes="icon" Text="{x:Static shared:Icons.Redo}"/>
-      </Button>
-      <Rectangle Width="1" Height="16" Fill="{StaticResource Line}" Margin="5,0"/>
-      <Button Click="OnOverview" IsEnabled="{Binding IsProjectOpen}" ToolTip.Tip="Overview of the whole video" AutomationProperties.Name="Overview of the whole video">
-        <TextBlock Classes="icon" Text="{x:Static shared:Icons.Grid}"/>
-      </Button>
-      <Button Click="OnPreview" IsEnabled="{Binding IsProjectOpen}" ToolTip.Tip="Render a preview video" AutomationProperties.Name="Render a preview video">
-        <TextBlock Classes="icon" Text="{x:Static shared:Icons.Video}"/>
-      </Button>
-      <Button Classes="primary" Click="OnExport" IsEnabled="{Binding IsProjectOpen}" ToolTip.Tip="Export the final video" AutomationProperties.Name="Export the final video" Margin="6,0,0,0">
-        <StackPanel Orientation="Horizontal">
-          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Export}" FontSize="15" Foreground="{StaticResource OnAccent}" Margin="0,0,6,0"/>
-          <TextBlock Text="Export" Foreground="{StaticResource OnAccent}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-        </StackPanel>
-      </Button>
-    </StackPanel>
-  </DockPanel>
+  <!-- A project's commands, under its tab: the name and size on the left; import, undo, redo, overview, preview and export on the right -->
+  <Border Background="{StaticResource Toolbar}" Padding="12,4,8,4">
+    <DockPanel LastChildFill="False">
+      <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+        <TextBlock Text="{Binding ProjectName}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="260"/>
+        <TextBlock Text="{Binding MetaText}" Foreground="{StaticResource Muted}" FontSize="11" Margin="10,1,0,0" VerticalAlignment="Center"/>
+      </StackPanel>
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button Click="OnImport" ToolTip.Tip="Import media" AutomationProperties.Name="Import media">
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Add}"/>
+        </Button>
+        <Rectangle Width="1" Height="16" Fill="{StaticResource Line}" Margin="5,0"/>
+        <Button Click="OnUndo" IsEnabled="{Binding CanUndo}" ToolTip.Tip="Undo" AutomationProperties.Name="Undo">
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Undo}"/>
+        </Button>
+        <Button Click="OnRedo" IsEnabled="{Binding CanRedo}" ToolTip.Tip="Redo" AutomationProperties.Name="Redo">
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Redo}"/>
+        </Button>
+        <Rectangle Width="1" Height="16" Fill="{StaticResource Line}" Margin="5,0"/>
+        <Button Click="OnOverview" ToolTip.Tip="Overview of the whole video" AutomationProperties.Name="Overview of the whole video">
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Grid}"/>
+        </Button>
+        <Button Click="OnPreview" ToolTip.Tip="Render a preview video" AutomationProperties.Name="Render a preview video">
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Video}"/>
+        </Button>
+        <Button Classes="primary" Click="OnExport" ToolTip.Tip="Export the final video" AutomationProperties.Name="Export the final video" Margin="6,0,0,0" MinHeight="26">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Export}" FontSize="15" Foreground="{StaticResource OnAccent}" Margin="0,0,6,0"/>
+            <TextBlock Text="Export" Foreground="{StaticResource OnAccent}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+      </StackPanel>
+    </DockPanel>
+  </Border>
 </UserControl>

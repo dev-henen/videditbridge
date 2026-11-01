@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:VideoEditor.Shared"
+             x:Class="VideoEditor.Projects.ProjectCover">
+  <!-- A project's cover: a frame of its edit, or the default cover until the engine has made one -->
+  <Border CornerRadius="6" ClipToBounds="True" Background="#141414">
+    <Panel>
+      <Panel x:Name="DefaultCover">
+        <!-- Dark frame with a soft blue light from the top left -->
+        <Border>
+          <Border.Background>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+              <GradientStop Color="#1A2333" Offset="0"/>
+              <GradientStop Color="#151515" Offset="0.65"/>
+              <GradientStop Color="#121212" Offset="1"/>
+            </LinearGradientBrush>
+          </Border.Background>
+        </Border>
+        <Border>
+          <Border.Background>
+            <RadialGradientBrush Center="28%,22%" GradientOrigin="28%,22%" RadiusX="75%" RadiusY="85%">
+              <GradientStop Color="#3A3B82F6" Offset="0"/>
+              <GradientStop Color="#003B82F6" Offset="1"/>
+            </RadialGradientBrush>
+          </Border.Background>
+        </Border>
+        <!-- Film strip edges -->
+        <Border VerticalAlignment="Top" Height="9" Background="#0C0C0C">
+          <Border Margin="0,2" Height="5">
+            <Border.Background>
+              <VisualBrush TileMode="Tile" SourceRect="0,0,12,5" DestinationRect="0,0,12,5" Stretch="None">
+                <VisualBrush.Visual>
+                  <Canvas Width="12" Height="5">
+                    <Rectangle Canvas.Left="3" Width="6" Height="5" RadiusX="1" RadiusY="1" Fill="#2A2A2A"/>
+                  </Canvas>
+                </VisualBrush.Visual>
+              </VisualBrush>
+            </Border.Background>
+          </Border>
+        </Border>
+        <Border VerticalAlignment="Bottom" Height="9" Background="#0C0C0C">
+          <Border Margin="0,2" Height="5">
+            <Border.Background>
+              <VisualBrush TileMode="Tile" SourceRect="0,0,12,5" DestinationRect="0,0,12,5" Stretch="None">
+                <VisualBrush.Visual>
+                  <Canvas Width="12" Height="5">
+                    <Rectangle Canvas.Left="3" Width="6" Height="5" RadiusX="1" RadiusY="1" Fill="#2A2A2A"/>
+                  </Canvas>
+                </VisualBrush.Visual>
+              </VisualBrush>
+            </Border.Background>
+          </Border>
+        </Border>
+        <Border Width="38" Height="38" CornerRadius="19" Background="#1F3B82F6" HorizontalAlignment="Center" VerticalAlignment="Center">
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Video}" FontSize="20" Foreground="{StaticResource Accent}"/>
+        </Border>
+      </Panel>
+      <Image x:Name="Picture" Stretch="UniformToFill" IsVisible="False" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+    </Panel>
+  </Border>
+</UserControl>

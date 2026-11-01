@@ -12,14 +12,19 @@ import { findDuplicate, listFiles } from "../tools/media/files.js";
  *   <projectsDir>/<slug>/media/         imported media
  *   <projectsDir>/<slug>/out/           exports
  *   <projectsDir>/<slug>/.render/       previews, frames, voice-overs
+ *   <projectsDir>/<slug>/cover.png      a frame of the edit for the projects page
+ *   <projectsDir>/<slug>/.conversations conversations with Claude
  */
 
 export const PROJECT_FILE = "project.json";
+export const COVER_FILE = "cover.png";
 
 export interface ProjectEntry {
   name: string;
   dir: string;
   updatedAt: string;
+  /** The cover picture, when one was made (the app shows its default cover otherwise). */
+  cover?: string;
 }
 
 const slugify = (s: string) =>
@@ -64,7 +69,9 @@ export class ProjectStore {
       if (!existsSync(file)) continue;
       try {
         const raw = JSON.parse(await readFile(file, "utf8")) as { name?: string };
-        entries.push({ name: raw.name ?? d.name, dir: path.join(this.root, d.name), updatedAt: (await stat(file)).mtime.toISOString() });
+        const dir = path.join(this.root, d.name);
+        const cover = path.join(dir, COVER_FILE);
+        entries.push({ name: raw.name ?? d.name, dir, updatedAt: (await stat(file)).mtime.toISOString(), ...(existsSync(cover) ? { cover } : {}) });
       } catch {
         // skip unreadable projects
       }

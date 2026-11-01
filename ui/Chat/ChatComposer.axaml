@@ -1,0 +1,128 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:VideoEditor.Shared"
+             xmlns:chat="using:VideoEditor.Chat"
+             x:Class="VideoEditor.Chat.ChatComposer"
+             DragDrop.AllowDrop="True">
+  <UserControl.Styles>
+    <!-- A quiet box until it has focus (or files are dragged over it), then a blue edge -->
+    <Style Selector="Border.ask">
+      <Setter Property="Background" Value="{StaticResource Panel2}"/>
+      <Setter Property="BorderBrush" Value="Transparent"/>
+    </Style>
+    <Style Selector="Border.ask:focus-within, Border.ask.dropping">
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+    </Style>
+    <!-- The activity glow fades in and out -->
+    <Style Selector="Border#Glow">
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.35"/>
+        </Transitions>
+      </Setter>
+    </Style>
+    <!-- The model picker reads as a quiet label until opened -->
+    <Style Selector="ComboBox.model">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="Padding" Value="6,2"/>
+    </Style>
+    <Style Selector="ComboBox.model:pointerover /template/ Border#Background">
+      <Setter Property="Background" Value="{StaticResource Hover}"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid>
+    <Border x:Name="Box" Classes="ask" CornerRadius="10" BorderThickness="1" Padding="8,6,6,5">
+      <StackPanel Spacing="4">
+        <!-- What the request is about: the item picked on the timeline and the spot clicked in the frame -->
+        <WrapPanel x:Name="Pills" IsVisible="False">
+          <Border x:Name="PickChip" IsVisible="False" Background="{StaticResource AccentSoft}" CornerRadius="10" Padding="8,1,2,1" Margin="0,0,6,2" MaxWidth="240">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock x:Name="PickText" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="190"/>
+              <Button Click="OnClearPick" ToolTip.Tip="Clear" AutomationProperties.Name="Clear the picked item" MinHeight="18" MinWidth="18" Padding="0" Margin="4,0,0,0">
+                <TextBlock Classes="icon" Text="{x:Static shared:Icons.Dismiss}" FontSize="10"/>
+              </Button>
+            </StackPanel>
+          </Border>
+          <Border x:Name="SpotChip" IsVisible="False" Background="{StaticResource AccentSoft}" CornerRadius="10" Padding="8,1,2,1" Margin="0,0,6,2">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Location}" FontSize="12" Foreground="{StaticResource Accent}" Margin="0,0,5,0"/>
+              <TextBlock x:Name="SpotText" FontSize="11" VerticalAlignment="Center"/>
+              <Button Click="OnClearSpot" ToolTip.Tip="Clear" AutomationProperties.Name="Clear the spot" MinHeight="18" MinWidth="18" Padding="0" Margin="4,0,0,0">
+                <TextBlock Classes="icon" Text="{x:Static shared:Icons.Dismiss}" FontSize="10"/>
+              </Button>
+            </StackPanel>
+          </Border>
+        </WrapPanel>
+
+        <!-- Files going with the request -->
+        <ItemsControl x:Name="Files" IsVisible="False">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <Border Background="{StaticResource Hover}" CornerRadius="6" Padding="6,2,2,2" Margin="0,0,4,3" MaxWidth="200" ToolTip.Tip="{Binding Path}">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Classes="icon" Text="{Binding Glyph}" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,0,5,0"/>
+                  <TextBlock Text="{Binding Name}" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="140"/>
+                  <Button Click="OnRemoveFile" Tag="{Binding}" ToolTip.Tip="Remove" AutomationProperties.Name="Remove this file" MinHeight="18" MinWidth="18" Padding="0" Margin="3,0,0,0">
+                    <TextBlock Classes="icon" Text="{x:Static shared:Icons.DismissSmall}" FontSize="10"/>
+                  </Button>
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBox x:Name="PromptBox" Classes="bare" KeyDown="OnPromptKeyDown" IsEnabled="{Binding CanAsk}" Padding="2,3" MinHeight="24" MaxHeight="120"
+                 AcceptsReturn="True" TextWrapping="Wrap" Watermark="{Binding AskHint}" VerticalContentAlignment="Top"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+
+        <!-- Add files and pick the model on the left; send (or stop) on the right -->
+        <DockPanel>
+          <Button DockPanel.Dock="Left" Click="OnAttach" IsEnabled="{Binding CanAsk}" ToolTip.Tip="Add files (media for the edit, or pictures for Claude to look at)"
+                  AutomationProperties.Name="Add files" MinHeight="24" MinWidth="24" Padding="3">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Add}" FontSize="15"/>
+          </Button>
+          <ComboBox DockPanel.Dock="Left" Classes="model" ItemsSource="{Binding Models}" SelectedItem="{Binding Model}" Margin="2,0,0,0"
+                    ToolTip.Tip="Model for the next request" AutomationProperties.Name="Model">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel>
+                  <TextBlock Text="{Binding Label}" FontSize="11"/>
+                </StackPanel>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button DockPanel.Dock="Right" Classes="primary" Click="OnStopClaude" ToolTip.Tip="Stop Claude" AutomationProperties.Name="Stop Claude"
+                  Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" IsVisible="{Binding AgentRunning}" HorizontalAlignment="Right">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Stop}" FontSize="12" Foreground="{StaticResource OnAccent}"/>
+          </Button>
+          <Button DockPanel.Dock="Right" Classes="primary" Click="OnAsk" IsEnabled="{Binding CanAsk}" ToolTip.Tip="Send (Enter; Shift+Enter for a new line)" AutomationProperties.Name="Send"
+                  Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" IsVisible="{Binding !AgentRunning}" HorizontalAlignment="Right">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Send}" FontSize="13" Foreground="{StaticResource OnAccent}"/>
+          </Button>
+          <Panel/>
+        </DockPanel>
+      </StackPanel>
+    </Border>
+
+    <!-- Activity glow: while anything runs, a light travels around the box and it softly glows -->
+    <Border x:Name="Glow" CornerRadius="10" BorderThickness="1.5" IsHitTestVisible="False" Opacity="0"
+            BoxShadow="0 0 14 0 #803B82F6">
+      <Border.BorderBrush>
+        <ConicGradientBrush Center="50%,50%">
+          <GradientStop Color="#1D4ED8" Offset="0"/>
+          <GradientStop Color="#3B82F6" Offset="0.35"/>
+          <GradientStop Color="#BFDBFE" Offset="0.5"/>
+          <GradientStop Color="#3B82F6" Offset="0.65"/>
+          <GradientStop Color="#1D4ED8" Offset="1"/>
+        </ConicGradientBrush>
+      </Border.BorderBrush>
+    </Border>
+  </Grid>
+</UserControl>

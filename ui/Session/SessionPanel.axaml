@@ -3,6 +3,11 @@
              xmlns:shared="using:VideoEditor.Shared"
              x:Class="VideoEditor.Session.SessionPanel">
   <UserControl.Styles>
+    <!-- Four tabs in a narrow panel: tight padding, labels centered in equal cells -->
+    <Style Selector="TabItem">
+      <Setter Property="Padding" Value="1,5"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
     <!-- Status dot: grey when idle, a pulsing blue while anything runs -->
     <Style Selector="Ellipse.status">
       <Setter Property="Fill" Value="{StaticResource Faint}"/>
@@ -36,7 +41,7 @@
     </Style>
   </UserControl.Styles>
 
-  <Border Background="{StaticResource Panel}" CornerRadius="8" MinWidth="240" MaxWidth="400">
+  <Border Background="{StaticResource Panel}" CornerRadius="8">
     <DockPanel>
       <!-- Now -->
       <StackPanel DockPanel.Dock="Top" Margin="10,9,10,6">
@@ -49,7 +54,11 @@
       </StackPanel>
       <Rectangle DockPanel.Dock="Top" Height="1" Fill="{StaticResource Line}"/>
 
+      <!-- The four tabs share one row evenly, so they fit the narrow panel -->
       <TabControl x:Name="Tabs" Margin="4" Padding="0">
+        <TabControl.ItemsPanel>
+          <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+        </TabControl.ItemsPanel>
         <TabItem Header="Activity">
           <ListBox ItemsSource="{Binding Activities}" Margin="0,4,0,0">
             <ListBox.ItemTemplate>
@@ -73,53 +82,6 @@
             </ListBox.ItemTemplate>
           </ListBox>
         </TabItem>
-        <TabItem x:Name="ClaudeTab" Header="Claude">
-          <DockPanel>
-            <!-- Options Claude offered: play or look, then pick -->
-            <Border DockPanel.Dock="Top" Margin="4,6,4,2" Padding="8,6" CornerRadius="8" Background="{StaticResource Panel2}" IsVisible="{Binding HasChoices}">
-              <StackPanel>
-                <DockPanel Margin="0,0,0,4">
-                  <Button DockPanel.Dock="Right" Click="OnDismissChoices" ToolTip.Tip="Close without picking" AutomationProperties.Name="Close the options"
-                          MinHeight="20" MinWidth="20" Padding="2">
-                    <TextBlock Classes="icon" Text="{x:Static shared:Icons.Dismiss}" FontSize="11"/>
-                  </Button>
-                  <TextBlock Text="{Binding ChoiceQuestion}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                </DockPanel>
-                <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto">
-                  <ItemsControl ItemsSource="{Binding Choices}">
-                    <ItemsControl.ItemTemplate>
-                      <DataTemplate>
-                        <Border Margin="0,3" Padding="6" CornerRadius="6" Background="{StaticResource Panel}">
-                          <DockPanel>
-                            <Button DockPanel.Dock="Right" Classes="primary" Click="OnPickChoice" Tag="{Binding}" Width="22" Height="22" MinWidth="0" MinHeight="0" Padding="0"
-                                    Margin="6,0,0,0" VerticalAlignment="Center" ToolTip.Tip="Pick this" AutomationProperties.Name="Pick this"
-                                    IsEnabled="{Binding $parent[Window].DataContext.CanAsk}">
-                              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Check}" FontSize="13" Foreground="{StaticResource OnAccent}"/>
-                            </Button>
-                            <Button DockPanel.Dock="Left" Click="OnPlayChoice" Tag="{Binding}" MinHeight="22" MinWidth="22" Padding="2" Margin="0,0,6,0" VerticalAlignment="Center"
-                                    ToolTip.Tip="{Binding PlayHint}" AutomationProperties.Name="Play this option" IsVisible="{Binding HasAudio}">
-                              <TextBlock Classes="icon" Text="{Binding PlayGlyph}" FontSize="13" Foreground="{StaticResource Accent}"/>
-                            </Button>
-                            <Border DockPanel.Dock="Left" CornerRadius="4" ClipToBounds="True" Margin="0,0,8,0" IsVisible="{Binding HasImage}">
-                              <Image Source="{Binding ImageBitmap}" Height="54" MaxWidth="96" Stretch="Uniform" RenderOptions.BitmapInterpolationMode="HighQuality"/>
-                            </Border>
-                            <StackPanel VerticalAlignment="Center">
-                              <TextBlock Text="{Binding Label}" TextWrapping="Wrap"/>
-                              <TextBlock Text="{Binding Description}" FontSize="10" Foreground="{StaticResource Muted}" TextWrapping="Wrap" IsVisible="{Binding HasDescription}"/>
-                            </StackPanel>
-                          </DockPanel>
-                        </Border>
-                      </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                  </ItemsControl>
-                </ScrollViewer>
-              </StackPanel>
-            </Border>
-            <ScrollViewer x:Name="AgentScroll" VerticalScrollBarVisibility="Auto" Padding="8">
-              <SelectableTextBlock Text="{Binding AgentText}" TextWrapping="Wrap" LineHeight="18" Foreground="{StaticResource Text}" FontSize="12"/>
-            </ScrollViewer>
-          </DockPanel>
-        </TabItem>
         <TabItem x:Name="ReviewTab" Header="Review">
           <DockPanel>
             <DockPanel DockPanel.Dock="Top" Margin="6,6,2,4">
@@ -133,7 +95,7 @@
                 <DataTemplate>
                   <DockPanel Margin="6,4">
                     <Button DockPanel.Dock="Right" Click="OnFix" Tag="{Binding}" VerticalAlignment="Top" Margin="6,0,0,0" MinHeight="22" MinWidth="22" Padding="3"
-                            IsEnabled="{Binding $parent[Window].DataContext.CanAsk}"
+                            IsEnabled="{Binding $parent[UserControl].DataContext.CanAsk}"
                             ToolTip.Tip="Ask Claude to fix this" AutomationProperties.Name="Ask Claude to fix this">
                       <TextBlock Classes="icon" Text="{x:Static shared:Icons.Wrench}" FontSize="13" Foreground="{StaticResource Accent}"/>
                     </Button>

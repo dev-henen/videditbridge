@@ -5,6 +5,11 @@
   <Application.Resources>
     <!-- Dark neutral palette with a blue primary color -->
     <SolidColorBrush x:Key="Bg" Color="#121212"/>
+    <!-- Tabs in the title bar, like a browser: a dark row, and the open tab in the toolbar color of its page -->
+    <SolidColorBrush x:Key="TabBar" Color="#0A0A0A"/>
+    <SolidColorBrush x:Key="TabHover" Color="#191919"/>
+    <!-- The open tab and the bar under it, where its page's commands are -->
+    <SolidColorBrush x:Key="Toolbar" Color="#1F1F1F"/>
     <SolidColorBrush x:Key="Panel" Color="#181818"/>
     <SolidColorBrush x:Key="Panel2" Color="#222222"/>
     <SolidColorBrush x:Key="Hover" Color="#2C2C2C"/>
@@ -95,10 +100,12 @@
     <ControlTheme x:Key="{x:Type TabItem}" TargetType="TabItem">
       <Setter Property="Foreground" Value="{StaticResource Muted}"/>
       <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Padding" Value="8,5"/>
       <Setter Property="Template">
         <ControlTemplate>
-          <Border Name="b" Padding="8,5" Margin="0,0,2,0" CornerRadius="5" Background="Transparent">
-            <ContentPresenter Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"/>
+          <Border Name="b" Padding="{TemplateBinding Padding}" Margin="0,0,2,0" CornerRadius="5" Background="Transparent">
+            <ContentPresenter Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
           </Border>
         </ControlTemplate>
       </Setter>

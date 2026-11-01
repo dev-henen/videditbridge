@@ -4,7 +4,7 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 
 ## Layout
 - `engine/` TypeScript (the editing engine: library, Claude tools, CLI, app host), `native/` Rust (speed-critical kernels), `ui/` C# desktop app, `assets/` bundled fonts and models, `scripts/` doc and native builds.
-- `ui/` has one folder per part of the screen (`Shell`, `Preview`, `Timeline`, `Session`, `Ask`, `Projects`), plus `Engine` (host client) and `Shared`. Namespaces follow folders. A part is a UserControl with its own handlers and styles; `Shell/MainWindow` only lays them out and connects their events.
+- `ui/` has one folder per part of the screen (`Shell`, `Tabs`, `Preview`, `Timeline`, `Session`, `Chat`, `Projects`), plus `Engine` (host client) and `Shared`. Namespaces follow folders. A part is a UserControl with its own handlers and styles. `Shell/MainWindow` lays out the tabs (in the title bar) and one page per tab; `Shell/ProjectView` lays out one project's page (commands bar, `Session` on the left, preview and timeline, `Chat` on the right) and connects its parts' events.
 - Tests live in `test/<area>/`, mirroring `engine` (`core`, `library`, `render`, `audio`, `vision`, `transcript`, `claude`, `host`, `native`), plus `test/repo/` for repository-wide checks and `test/helpers/` for fixtures and oracles. Put a new test in the folder of the code it tests.
 
 ## Commands
@@ -28,8 +28,9 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 - Templates are pure JSON specs (`library/templates/catalog/*`) interpreted by `builder.ts`. Add new looks as data, not code.
 
 ## Desktop app (ui, C# Avalonia, Windows/macOS/Linux)
-- It talks to `engine/host/main.ts` over stdio JSON-RPC. stdout carries protocol messages only; the host routes `console.log` to stderr. To add a host method, define it in `main.ts` and call it from `MainViewModel`.
-- Projects live in `projects/<slug>/` (gitignored app storage), and the host autosaves them.
+- It talks to `engine/host/main.ts` over stdio JSON-RPC. stdout carries protocol messages only; the host routes `console.log` to stderr. To add a host method, define it in `main.ts` and call it from `ProjectViewModel` (one per open project; its calls carry `project`) or `AppViewModel` (the app and its tabs).
+- Several projects are open at once, one per tab, each with its own session, conversations and renders; nothing in a tab's page is shared with another tab. Host notifications carry `project`, and the app routes them to that tab.
+- Projects live in `projects/<slug>/` (gitignored app storage), and the host autosaves them, with `cover.png` (a frame of the edit, for the projects page; the app draws a default cover until there is one) and `.conversations/` (chats with Claude, continued when the project opens).
 - The app is AI-first: people edit by asking Claude. It is not a manual editor (not competing with CapCut or Premiere), so direct interaction serves the conversation (pointing Claude at a clip, reviewing what it offers, undo) rather than drag-to-trim editing.
 - UI rules from the user:
   - compact default window (960x460)

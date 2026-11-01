@@ -11,4 +11,15 @@ public static class Ui
 
     /// <summary>Timeline time as mm:ss.s.</summary>
     public static string Time(double s) => $"{(int)s / 60:00}:{s % 60:00.0}";
+
+    /// <summary>How long ago, briefly: "just now", "5 min ago", "yesterday", or the date.</summary>
+    public static string Ago(DateTime local)
+    {
+        var span = DateTime.Now - local;
+        if (span.TotalMinutes < 1) return "just now";
+        if (span.TotalHours < 1) return $"{(int)span.TotalMinutes} min ago";
+        if (local.Date == DateTime.Today) return local.ToString("t", System.Globalization.CultureInfo.CurrentCulture);
+        if (local.Date == DateTime.Today.AddDays(-1)) return "yesterday";
+        return local.ToString("d", System.Globalization.CultureInfo.CurrentCulture);
+    }
 }

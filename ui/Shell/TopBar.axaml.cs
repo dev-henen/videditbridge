@@ -4,7 +4,7 @@ using Avalonia.Platform.Storage;
 
 namespace VideoEditor.Shell;
 
-/// <summary>The bar above the workspace: the project's name, and the commands that are not requests to Claude.</summary>
+/// <summary>A project's commands that are not requests to Claude, in the bar under its tab.</summary>
 public partial class TopBar : UserControl
 {
     /// <summary>A command is about to render something, so the preview should show it as it comes.</summary>
@@ -12,10 +12,9 @@ public partial class TopBar : UserControl
 
     public TopBar() => InitializeComponent();
 
-    private MainViewModel Vm => (MainViewModel)DataContext!;
+    private ProjectViewModel Vm => (ProjectViewModel)DataContext!;
     private IStorageProvider Storage => TopLevel.GetTopLevel(this)!.StorageProvider;
 
-    private async void OnShowProjects(object? sender, RoutedEventArgs e) => await Vm.ShowProjectsAsync();
     private async void OnUndo(object? sender, RoutedEventArgs e) => await Vm.UndoAsync();
     private async void OnRedo(object? sender, RoutedEventArgs e) => await Vm.RedoAsync();
 
@@ -52,15 +51,15 @@ public partial class TopBar : UserControl
 
     private async void OnExport(object? sender, RoutedEventArgs e)
     {
-        var outDir = Vm.ProjectDir is null ? null : Path.Combine(Vm.ProjectDir, "out");
-        if (outDir is not null) Directory.CreateDirectory(outDir);
+        var outDir = Path.Combine(Vm.Dir, "out");
+        Directory.CreateDirectory(outDir);
         var file = await Storage.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export video",
             SuggestedFileName = $"{string.Join("_", Vm.ProjectName.Split(Path.GetInvalidFileNameChars()))}.mp4",
             DefaultExtension = "mp4",
             FileTypeChoices = [new FilePickerFileType("MP4 video") { Patterns = ["*.mp4"], MimeTypes = ["video/mp4"], AppleUniformTypeIdentifiers = ["public.mpeg-4"] }],
-            SuggestedStartLocation = outDir is null ? null : await Storage.TryGetFolderFromPathAsync(outDir),
+            SuggestedStartLocation = await Storage.TryGetFolderFromPathAsync(outDir),
         });
         if (file?.TryGetLocalPath() is not { } output) return;
         FollowRequested?.Invoke();
