@@ -9,15 +9,15 @@ import { labeler, type EffectContext } from "./helpers.js";
  */
 
 type Selection = Omit<MaskPart, "op">;
-type ModelKind = "person" | "face" | "sky";
+type ModelKind = "person" | "face" | "sky" | "depth";
 
 const parts = (mask: Mask): Selection[] => [mask, ...(mask.combine ?? [])];
 
 /** Which renderer stream a part reads: "person", "face", "object:<id>", or none for in-graph masks. */
 const modelKey = (m: Selection): string | undefined =>
-  m.kind === "person" || m.kind === "face" || m.kind === "sky" ? m.kind : m.kind === "object" ? `object:${m.object ?? ""}` : undefined;
+  m.kind === "person" || m.kind === "face" || m.kind === "sky" || m.kind === "depth" ? m.kind : m.kind === "object" ? `object:${m.object ?? ""}` : undefined;
 
-/** Whether a mask needs the clip's person cutout, face mask or sky stream (at most one of each). */
+/** Whether a mask needs the clip's person cutout, face mask, sky or depth stream (at most one of each). */
 export function maskNeeds(mask: Mask | undefined, kind: ModelKind): boolean {
   return !!mask && parts(mask).some((m) => m.kind === kind);
 }
@@ -41,6 +41,7 @@ export function describeMask(mask: Mask): string {
     if (m.hue) bits.push(`hue ${m.hue[0]}-${m.hue[1]}`);
     if (m.saturation) bits.push(`sat ${m.saturation[0]}-${m.saturation[1]}`);
     if (m.luma) bits.push(`luma ${m.luma[0]}-${m.luma[1]}`);
+    if (m.distance) bits.push(`distance ${m.distance[0]}-${m.distance[1]}`);
     return `${m.invert ? "not " : ""}${m.kind}${bits.length ? ` ${bits.join(" ")}` : ""}`;
   };
   return [one(mask), ...(mask.combine ?? []).map((c) => `${c.op} ${one(c)}`)].join(" ");
@@ -128,7 +129,7 @@ export function buildMatte(ctx: EffectContext, mask: Mask): Matte {
   for (const key of new Set(parts(mask).map(modelKey).filter((k): k is string => !!k))) {
     const n = parts(mask).filter((m) => modelKey(m) === key).length;
     const id = key.startsWith("object:") ? key.slice(7) : undefined;
-    const stream = id !== undefined ? ctx.objectMask?.(id) : key === "person" ? ctx.personMask?.() : key === "sky" ? ctx.skyMask?.() : ctx.faceMask?.();
+    const stream = id !== undefined ? ctx.objectMask?.(id) : key === "person" ? ctx.personMask?.() : key === "sky" ? ctx.skyMask?.() : key === "depth" ? ctx.depthMask?.() : ctx.faceMask?.();
     const what = id !== undefined ? `object "${id}"` : key;
     if (!stream) throw new Error(`${what} masks work on primary video clips${id !== undefined ? " of the object's video" : ""} only (not on media layers or whole-video effects); use a key or shape mask there, or put the effect on each clip`);
     const copies = Array.from({ length: n }, () => label("mmd"));
@@ -140,7 +141,11 @@ export function buildMatte(ctx: EffectContext, mask: Mask): Matte {
     const out = label("mms");
     let source: string;
     const key = modelKey(m);
-    if (key) {
+    if (key === "depth") {
+      // Distance (0 near .. 255 far) through the range test.
+      const [lo, hi] = m.distance ?? [0, 1];
+      source = `[${model.get(key)!.shift()}]lut=c0='255*${rangeExpr("val/255", lo, hi, m.softness * 0.25)}'`;
+    } else if (key) {
       source = `[${model.get(key)!.shift()}]null`;
     } else if (m.kind === "shape") {
       // Drawn once; every consumer holds the last frame.

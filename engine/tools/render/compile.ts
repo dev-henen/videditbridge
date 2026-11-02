@@ -61,6 +61,8 @@ export interface CompileOptions {
   objectMasks?: Record<string, Record<string, string>>;
   /** Sky mask videos (255 = sky), in the same form as `masks`. */
   skyMasks?: Record<string, string>;
+  /** Depth videos (16-bit gray, 0 near .. far), in the same form as `masks`. */
+  depthMasks?: Record<string, string>;
   /**
    * Person cutout of the finished main picture (clips, transitions and whole-video effects, no layers),
    * in timeline time, for media layers drawn behind the subject. Without it those layers go on top.
@@ -346,16 +348,20 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const modelMasks = (count: number, file: string | undefined): string[] => {
         if (!count || !file) return [];
         const mraw = g.label("mraw");
-        g.add(`${timing(`${g.addInput(["-i", file])}:v`)},format=gray[${mraw}]`);
+        const input = `${g.addInput(["-i", file])}:v`;
+        // A photo's depth is a single frame, held for the clip.
+        if (asset.type === "image") g.add(`[${input}]setpts=PTS-STARTPTS,fps=${F},tpad=stop_mode=clone:stop=-1,trim=duration=${round3(tc.duration)},format=gray[${mraw}]`);
+        else g.add(`${timing(input)},format=gray[${mraw}]`);
         const mfit = fit(mraw, clip.fit, W, H, true, clip.focus, clip.keyframes?.focus);
         const labels = Array.from({ length: count }, () => g.label("mask"));
         g.add(`[${mfit}]format=gray${count > 1 ? `,split=${count}` : ""}${labels.map((l) => `[${l}]`).join("")}`);
         return labels;
       };
-      const streams = (kind: "person" | "face" | "sky") => clip.effects.reduce((n, e) => n + maskStreams(e, kind), 0);
+      const streams = (kind: "person" | "face" | "sky" | "depth") => clip.effects.reduce((n, e) => n + maskStreams(e, kind), 0);
       const personLabels = modelMasks(streams("person"), opts.masks?.[clip.id]);
       const faceLabels = modelMasks(streams("face"), opts.faceMasks?.[clip.id]);
       const skyLabels = modelMasks(streams("sky"), opts.skyMasks?.[clip.id]);
+      const depthLabels = modelMasks(streams("depth"), opts.depthMasks?.[clip.id]);
       // Pictures effects read (a new sky): one input per use, held or looped over the clip.
       const mediaLabels = new Map<string, string[]>();
       for (const id of clip.effects.flatMap(effectMedia)) {
@@ -377,10 +383,11 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         ...(faceLabels.length ? { faceMask: () => faceLabels.shift() } : {}),
         ...(objectLabels.size ? { objectMask: (id: string) => objectLabels.get(id)?.shift() } : {}),
         ...(skyLabels.length ? { skyMask: () => skyLabels.shift() } : {}),
+        ...(depthLabels.length ? { depthMask: () => depthLabels.shift() } : {}),
         ...(mediaLabels.size ? { media: (id: string) => mediaLabels.get(id)?.shift() } : {}),
       });
       // Any mask or picture an effect did not take still has to be consumed.
-      for (const l of [...personLabels, ...faceLabels, ...skyLabels, ...[...objectLabels.values(), ...mediaLabels.values()].flat()]) g.add(`[${l}]nullsink`);
+      for (const l of [...personLabels, ...faceLabels, ...skyLabels, ...depthLabels, ...[...objectLabels.values(), ...mediaLabels.values()].flat()]) g.add(`[${l}]nullsink`);
       g.add(
         `[${fitted}]${chain([
           ...clipEffects,

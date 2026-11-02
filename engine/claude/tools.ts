@@ -44,7 +44,8 @@ import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
-import { render, renderContactSheet, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
+import { depthInClips, render, renderContactSheet, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
+import { depthInBox, readDepthFrames } from "../tools/vision/depth.js";
 import { effectsOf } from "../tools/render/compile.js";
 import { analyzeColor, renderScopes } from "../tools/render/color-analysis.js";
 import { matchShot, pixelsIn, readPixels, type MatchMethod } from "../tools/render/color-transfer.js";
@@ -191,11 +192,47 @@ async function drawGenerated(s: EditorSession, layerId: string, spec: ParticleSp
 /** Why a mask cannot limit a media layer, if it cannot (face and object masks need a clip's own footage). */
 function layerMaskProblem(mask: Mask | undefined): string | undefined {
   const kinds = mask ? [mask, ...(mask.combine ?? [])].map((m) => m.kind) : [];
-  const bad = kinds.find((k) => k === "face" || k === "object");
+  const bad = kinds.find((k) => k === "face" || k === "object" || k === "depth");
   return bad && `${bad} masks do not work on layers; use person, sky, key, luma or shape.`;
 }
 
 /** The particle settings with no defaults, so a patch only changes what it names (zod's partial() would fill defaults in). */
+/**
+ * A clip's depth (estimated now if not cached) and how to read it: distance at timeline times, in
+ * boxes given in the edit's frame (mapped to the source through the clip's fit) or in the source's.
+ */
+async function clipDepth(s: EditorSession, clipId: string, activity?: ActivityHandle) {
+  const tc = computeTimeline(s.project).clips.find((c) => c.clip.id === clipId);
+  if (!tc) throw new Error(`No clip "${clipId}"`);
+  if (tc.asset.type !== "video" && tc.asset.type !== "image") throw new Error(`${clipId} shows a ${tc.asset.type}; depth works on video and photo clips`);
+  const [r] = await depthInClips(s.project, [clipId], { ...s.renderOptions, onProgress: (f) => activity?.progress(0.8 * f) });
+  if (!r) throw new Error(`Could not estimate the depth of ${clipId}`);
+  const source = { width: tc.asset.width ?? r.track.width, height: tc.asset.height ?? r.track.height };
+  const frameOf = (t: number) => (tc.asset.type === "image" ? 0 : Math.round((timelineToSource(tc, Math.min(tc.end - 1e-3, Math.max(tc.start, t))) - r.track.start) * r.track.fps));
+  /** Median distance in each box at each time; boxes in source fractions unless `frame` is set. */
+  const sample = async (items: { time: number; box: { x0: number; y0: number; x1: number; y1: number }; frame?: boolean }[]) => {
+    const maps = await readDepthFrames(r.file, r.track, items.map((x) => frameOf(x.time)), { ffmpegPath: s.options.ffmpegPath });
+    return items.map((x, k) => {
+      let b = x.box;
+      if (x.frame) {
+        const [p, q] = [framePointToSource({ x: b.x0, y: b.y0 }, source, s.project.settings, tc, x.time), framePointToSource({ x: b.x1, y: b.y1 }, source, s.project.settings, tc, x.time)];
+        b = { x0: p.x, y0: p.y, x1: q.x, y1: q.y };
+      }
+      return depthInBox(maps[k]!, r.track.width, r.track.height, b);
+    });
+  };
+  return { tc, track: r.track, sample };
+}
+
+/** A small box around a point (edit frame fractions), for reading the distance there. */
+const pointBox = (p: { x: number; y: number }) => ({ x0: p.x - 0.015, y0: p.y - 0.015, x1: p.x + 0.015, y1: p.y + 0.015 });
+
+const FocusTargetSchema = z.object({
+  point: PositionSchema.optional().describe("A point on what should be sharp (edit frame fractions)"),
+  box: z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() }).optional().describe("A box around it (edit frame fractions)"),
+  distance: z.number().min(0).max(1).optional().describe("Or the distance itself (0 near .. 1 far)"),
+});
+
 const ParticleSettingsPatchSchema = z.object(
   Object.fromEntries(
     Object.entries(ParticleSettingsSchema.shape).map(([k, v]) => [k, (v instanceof z.ZodDefault ? (v.unwrap() as z.ZodType) : v).optional().describe(v.description ?? "")]),
@@ -1701,7 +1738,7 @@ export const TOOLS: ToolDefinition[] = [
           for (const t of having) p = ops.removeEffect(p, t, "lightRays", label);
           return commit(s, p, "add_light", i, `Removed "${label}" from ${having.join(", ")}.`);
         }
-        const model = i.mask && [i.mask, ...(i.mask.combine ?? [])].find((m) => m.kind === "person" || m.kind === "face" || m.kind === "object" || m.kind === "sky");
+        const model = i.mask && [i.mask, ...(i.mask.combine ?? [])].find((m) => m.kind === "person" || m.kind === "face" || m.kind === "object" || m.kind === "sky" || m.kind === "depth");
         if (model && !targets.every((t) => s.project.clips.some((c) => c.id === t))) return { text: `${model.kind} masks work on primary video clips only; target a clip or "all-clips".`, isError: true };
         for (const t of targets) {
           const current = effectsOf(p, t)?.find((e) => e.label === label && e.type === "lightRays");
@@ -3361,10 +3398,145 @@ export const TOOLS: ToolDefinition[] = [
     },
   }),
   tool({
+    name: "estimate_depth",
+    description:
+      "Estimate how far everything is from the camera in video and photo clips (Depth Anything V2 on keyframes, aligned and carried between them, about 5 s per second of footage on a laptop, cached), and show it: the frame next to its depth, near white and far black. " +
+      "Distance runs from 0 (the nearest things in the clip) to 1 (the farthest). Give points or boxes to read the distance of things, e.g. a face, for focus or for a depth mask. " +
+      "Depth drives: mask { kind: 'depth', distance: [a, b] } in grade_region, render_mask and any effect (grade the background, darken the foreground), set_focus (depth of field and rack focus), and the effects depthFog (haze that thickens with distance) and parallax (a 2.5D camera move through a photo) through add_effect.",
+    input: z.object({
+      clipId: z.string(),
+      time: z.number().min(0).optional().describe("Timeline time to show and measure (default the middle of the clip)"),
+      points: z.array(PositionSchema).max(8).optional().describe("Points to read the distance at (edit frame fractions)"),
+      boxes: z.array(z.object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })).max(8).optional().describe("Boxes to read the median distance in (edit frame fractions)"),
+      scale: z.number().min(0.1).max(1).default(0.5),
+    }),
+    mutates: false,
+    run: async (s, i, activity) => {
+      const d = await clipDepth(s, i.clipId, activity);
+      const time = round3(i.time ?? (d.tc.start + d.tc.end) / 2);
+      if (time < d.tc.start || time > d.tc.end) return { text: `${i.clipId} plays ${round3(d.tc.start)}-${round3(d.tc.end)}s; pick a time inside it.`, isError: true };
+      const items = [...(i.points ?? []).map((p) => ({ time, box: pointBox(p), frame: true })), ...(i.boxes ?? []).map((b) => ({ time, box: b, frame: true }))];
+      const values = items.length ? await d.sample(items) : [];
+      // The frame, and the clip with its depth in place of the picture, side by side.
+      const solo = structuredClone(s.project);
+      solo.layers = [];
+      solo.captions = undefined;
+      solo.effects = [];
+      const view = structuredClone(solo);
+      view.clips.find((c) => c.id === i.clipId)!.effects = [{ type: "depthView", params: {} }];
+      const [a, b] = [await s.outputPath(`depth-${i.clipId}-picture.png`), await s.outputPath(`depth-${i.clipId}-depth.png`)];
+      await renderFrame(solo, time, { output: a, scale: i.scale, proxies: true, ...s.renderOptions });
+      await renderFrame(view, time, { output: b, scale: i.scale, proxies: true, ...s.renderOptions });
+      const out = await s.outputPath(`depth-${i.clipId}-${time.toFixed(2)}.png`);
+      await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-i", a, "-i", b, "-filter_complex", "hstack", out], { ffmpegPath: s.options.ffmpegPath });
+      s.recordRender({ kind: "frame", path: out, time });
+      const f = d.track.fps ? Math.round((timelineToSource(d.tc, time) - d.track.start) * d.track.fps) : 0;
+      const near = d.track.near[Math.min(d.track.near.length - 1, Math.max(0, f))];
+      const far = d.track.far[Math.min(d.track.far.length - 1, Math.max(0, f))];
+      const read = [
+        ...(i.points ?? []).map((p, k) => `point (${p.x}, ${p.y}): ${values[k]}`),
+        ...(i.boxes ?? []).map((bx, k) => `box ${fmtBox(bx)}: ${values[(i.points?.length ?? 0) + k]}`),
+      ];
+      return {
+        text: `Depth of ${i.clipId} at ${time}s (left the frame, right its depth: near white, far black; ${d.track.keyframes.length} keyframes). The nearest tenth of the frame is at ${near} or nearer, the farthest tenth at ${far} or farther.${read.length ? `\nDistances: ${read.join("; ")}.` : ""}\n${out}`,
+        images: [{ path: out, mediaType: "image/png" }],
+        data: { near, far, distances: values },
+      };
+    },
+  }),
+  tool({
+    name: "set_focus",
+    description:
+      "Depth of field on a video or photo clip, from its depth (estimated if needed): what is at the focus stays sharp and everything nearer or farther blurs the more it is out of focus, like a fast lens. Focus on a point, a box, a distance, or a tracked object (select_object), which the focus then follows. " +
+      "rack moves the focus over time (a focus pull from one subject to another): each step gives a timeline time and a point, box or distance. blur sets the strength (pixels at 1080p), range how deep the sharp zone is. remove: true takes it out. " +
+      "Check the sharp subject's edges with render_frame (no halo, no sharp background left around it), and a rack with render_preview.",
+    input: z.object({
+      clipId: z.string(),
+      ...FocusTargetSchema.shape,
+      object: z.string().optional().describe("Keep this tracked object (project.objects) in focus as it moves"),
+      rack: z
+        .array(FocusTargetSchema.extend({ time: z.number().min(0).describe("Timeline time this focus is reached") }))
+        .max(20)
+        .optional()
+        .describe("Focus over time; the focus eases from one step to the next"),
+      blur: z.number().min(0).max(100).optional().describe("Blur of the most out-of-focus parts, pixels at 1080p (default 25)"),
+      range: z.number().min(0).max(0.6).optional().describe("Depth of the sharp zone (default 0.1)"),
+      remove: z.boolean().optional(),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const LABEL = "depth of field";
+      const clip = s.project.clips.find((c) => c.id === i.clipId);
+      if (!clip) return { text: `No clip "${i.clipId}".`, isError: true };
+      const current = clip.effects.find((e) => e.type === "depthOfField" && e.label === LABEL);
+      if (i.remove) {
+        if (!current) return { text: `${i.clipId} has no depth of field.`, isError: true };
+        return commit(s, ops.removeEffect(s.project, i.clipId, "depthOfField", LABEL), "set_focus", i, `Removed the depth of field from ${i.clipId}.`);
+      }
+      const d = await clipDepth(s, i.clipId, activity);
+      const mid = (d.tc.start + d.tc.end) / 2;
+      const distanceOf = async (target: z.infer<typeof FocusTargetSchema>, time: number) => {
+        if (target.distance !== undefined) return target.distance;
+        const box = target.box ?? (target.point && pointBox(target.point));
+        if (!box) return undefined;
+        return (await d.sample([{ time, box, frame: true }]))[0];
+      };
+      let focus: number | undefined;
+      let focusPath: { time: number; focus: number }[] | undefined;
+      let how = "";
+      if (i.object) {
+        const spec = s.project.objects[i.object];
+        if (!spec) return { text: `No object "${i.object}"; select one first with select_object.`, isError: true };
+        if (spec.assetId !== d.tc.asset.id) return { text: `Object "${i.object}" is in ${spec.assetId}, not in the video of ${i.clipId}.`, isError: true };
+        const [tr] = await trackObjectInClips(s.project, i.object, { ...s.renderOptions, clipIds: [i.clipId] });
+        if (!tr) return { text: `Could not follow "${i.object}" in ${i.clipId}.`, isError: true };
+        // Four looks a second at the object's box, where it is seen.
+        const n = Math.max(2, Math.min(120, Math.ceil(d.tc.duration * 4) + 1));
+        const items: { time: number; box: { x0: number; y0: number; x1: number; y1: number } }[] = [];
+        for (let k = 0; k < n; k++) {
+          const t = d.tc.start + (k / (n - 1)) * (d.tc.duration - 1e-3);
+          const box = tr.track.boxes[Math.round((timelineToSource(d.tc, t) - tr.track.start) * tr.track.fps)];
+          // The middle of the box, where the object is (a box's corners are often background).
+          if (box) items.push({ time: t, box: { x0: box.x0 + (box.x1 - box.x0) * 0.3, y0: box.y0 + (box.y1 - box.y0) * 0.3, x1: box.x1 - (box.x1 - box.x0) * 0.3, y1: box.y1 - (box.y1 - box.y0) * 0.3 } });
+        }
+        if (!items.length) return { text: `"${i.object}" is not seen in ${i.clipId}.`, isError: true };
+        const values = await d.sample(items);
+        // A centered median of three steadies it.
+        focusPath = values.map((v, k) => ({ time: round3(items[k]!.time - d.tc.start), focus: round3([values[k - 1] ?? v, v, values[k + 1] ?? v].sort((a, b) => a - b)[1]!) }));
+        how = `following "${i.object}" (distance ${Math.min(...values)} to ${Math.max(...values)})`;
+      } else if (i.rack?.length) {
+        const steps = [...i.rack].sort((a, b) => a.time - b.time);
+        focusPath = [];
+        for (const st of steps) {
+          if (st.time < d.tc.start - 1e-3 || st.time > d.tc.end + 1e-3) return { text: `Rack step at ${st.time}s is outside ${i.clipId} (${round3(d.tc.start)}-${round3(d.tc.end)}s).`, isError: true };
+          const v = await distanceOf(st, st.time);
+          if (v === undefined) return { text: "Each rack step needs a point, a box or a distance.", isError: true };
+          focusPath.push({ time: round3(Math.max(0, st.time - d.tc.start)), focus: round3(v) });
+        }
+        how = `racking ${focusPath.map((k) => `${k.focus} at ${round3(k.time + d.tc.start)}s`).join(", then ")}`;
+      } else {
+        focus = await distanceOf(i, mid);
+        if (focus === undefined && !current) return { text: "Say what to focus on: a point, a box, a distance, an object or rack steps.", isError: true };
+        if (focus !== undefined) how = `focused at distance ${round3(focus)}`;
+      }
+      const params = {
+        ...(current?.params ?? {}),
+        ...(focus !== undefined && { focus: round3(focus) }),
+        ...(i.blur !== undefined && { blur: i.blur }),
+        ...(i.range !== undefined && { range: i.range }),
+      } as Record<string, unknown>;
+      if (focusPath) params.focusPath = focusPath;
+      else if (focus !== undefined) delete params.focusPath;
+      let p = current ? ops.removeEffect(s.project, i.clipId, "depthOfField", LABEL) : s.project;
+      p = ops.addEffect(p, i.clipId, { type: "depthOfField", params, label: LABEL });
+      return commit(s, p, "set_focus", i, `Depth of field on ${i.clipId}, ${how || "updated"}. Check the subject's edges with render_frame.`);
+    },
+  }),
+  tool({
     name: "grade_region",
     description:
       "Secondary color correction: grade only part of the frame, as a colorist does after the primary grade. Deepen a sky, warm or lift faces, cool the shadows, tame bright highlights, make one colored object pop. " +
-      "The mask selects the part: key (an HSL qualifier: hue range in degrees, saturation and luma ranges, with softness), luma (a brightness range: highlights or shadows), shape (a fixed ellipse or rectangle), face (soft ellipses following every face) or person (the person's cutout); face and person work on primary video clips only. " +
+      "The mask selects the part: key (an HSL qualifier: hue range in degrees, saturation and luma ranges, with softness), luma (a brightness range: highlights or shadows), shape (a fixed ellipse or rectangle), face (soft ellipses following every face), person (the person's cutout), sky, object (select_object) or depth (a range of distance, see estimate_depth: grade the background apart from the subject); these five work on primary video clips only. " +
       'Masks combine (a blue key intersected with a shape over the top of the frame selects sky without blue clothes), invert, grow or shrink, and feather. color takes the same settings as color_adjust. Each correction has a label; the same label updates it (color settings merge, a new mask replaces the old), and remove: true deletes it. ' +
       "Work in this order: render_mask to check the selection at the start, middle and end of the clip (and at fast motion), then grade, then render_frame and render_scopes to check for edges and clipping. Keep feather at 0.01 or more so the edge never shows.",
     input: z.object({
@@ -3393,7 +3565,7 @@ export const TOOLS: ToolDefinition[] = [
         if (!mask) return { text: `"${i.label}" is new on ${target}: give it a mask.`, isError: true };
         const onClip = s.project.clips.some((c) => c.id === target);
         const all = [mask, ...(mask.combine ?? [])];
-        const model = all.find((m) => m.kind === "person" || m.kind === "face" || m.kind === "object");
+        const model = all.find((m) => m.kind === "person" || m.kind === "face" || m.kind === "object" || m.kind === "sky" || m.kind === "depth");
         if (model && !onClip) return { text: `${model.kind} masks work on primary video clips only; target a clip or "all-clips", or use a key or shape mask.`, isError: true };
         const objects = all.filter((x) => x.kind === "object").map((m) => ({ id: m.object ?? "", spec: m.object ? s.project.objects[m.object] : undefined }));
         const unknown = objects.find((o) => !o.spec);

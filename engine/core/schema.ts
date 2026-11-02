@@ -88,9 +88,9 @@ const range01 = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]);
 /** What a mask selects, without modifiers. */
 const maskSelection = {
   kind: z
-    .enum(["person", "face", "object", "sky", "key", "luma", "shape"])
+    .enum(["person", "face", "object", "sky", "depth", "key", "luma", "shape"])
     .describe(
-      "person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle",
+      "person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle",
     ),
   object: z.string().optional().describe("object: the id of a tracked object (project.objects, made with select_object)"),
   hue: z
@@ -99,7 +99,10 @@ const maskSelection = {
     .describe("key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue"),
   saturation: range01.optional().describe("key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any"),
   luma: range01.optional().describe("key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any"),
-  softness: z.number().min(0).max(1).default(0.2).describe("key and luma: how gradually the ranges fall off at their ends (0 = hard edge)"),
+  distance: range01
+    .optional()
+    .describe("depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background"),
+  softness: z.number().min(0).max(1).default(0.2).describe("key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge)"),
   shape: z
     .object({
       type: z.enum(["ellipse", "rect"]).default("ellipse"),

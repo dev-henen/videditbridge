@@ -26,6 +26,22 @@ export interface NativeKernels {
   guidedFilter(guide: Uint8Array, mask: Uint8Array, width: number, height: number, radius: number, eps: number): Promise<Uint8Array>;
   /** Warp a mask by each transform (9 numbers each, from the mask's pixels): one mask per transform, back to back. */
   warpMasks(mask: Uint8Array, width: number, height: number, matrices: Float64Array): Promise<Uint8Array>;
+  /**
+   * Depth for every frame of a chunk from the model's disparity on keyframes (`keys`, from 0 to
+   * count - 1, one map per key): fitted keyframe to keyframe, carried along the camera's `motion`
+   * (9 numbers per frame, from frame 0's pixels), edges snapped to the gray frames, blended over time.
+   * Distance 0 (near) .. 1 (far), frame after frame.
+   */
+  depthSequence(
+    gray: Uint8Array,
+    width: number,
+    height: number,
+    count: number,
+    keys: Uint32Array,
+    disparity: Float32Array,
+    motion: Float64Array,
+    options?: { radius?: number; eps?: number; keep?: number; previous?: Float32Array },
+  ): Promise<Float32Array>;
   /** Draws particles, smoke, fog and lens flares into RGBA frames (see ParticleSpec). */
   ParticleRenderer: new (spec: ParticleSpec) => { frames(count: number): Promise<Uint8Array> };
   version(): string;

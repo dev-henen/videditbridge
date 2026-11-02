@@ -24,6 +24,8 @@ export interface EffectContext {
   objectMask?: (id: string) => string | undefined;
   /** Like personMask, for the sky (255 = sky). */
   skyMask?: () => string | undefined;
+  /** Like personMask, for distance (0 = the nearest things in the clip, 255 = the farthest). */
+  depthMask?: () => string | undefined;
   /**
    * A picture asset the effect asked for (EffectDefinition.usesMedia): each call returns a new label
    * of it at its own size, as yuv420p at the clip's frame rate, starting at the clip's start and
@@ -52,6 +54,8 @@ export interface EffectDefinition<P extends z.ZodType = z.ZodType> {
   usesFaceMask?: (params: z.output<P>) => boolean;
   /** The effect wants the clip's sky matte (EffectContext.skyMask); the renderer then prepares one. */
   usesSkyMask?: (params: z.output<P>) => boolean;
+  /** The effect wants the clip's depth (EffectContext.depthMask); the renderer then prepares it. */
+  usesDepthMask?: (params: z.output<P>) => boolean;
   /** Picture assets the effect reads (EffectContext.media), by id. */
   usesMedia?: (params: z.output<P>) => string[];
   /** Returns a comma-separated FFmpeg filter chain. */

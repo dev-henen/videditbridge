@@ -6,3 +6,4 @@ export * from "./facemask.js";
 export * from "./objects.js";
 export * from "./points.js";
 export * from "./sky.js";
+export * from "./depth.js";

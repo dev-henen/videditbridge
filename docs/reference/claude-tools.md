@@ -2,7 +2,7 @@
 
 # Claude tools
 
-107 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+109 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_scene](#grade_scene), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -1113,13 +1113,14 @@ _No parameters._
 | `seed` | integer |  | `1` | Another seed gives another, equally random, arrangement; the same seed always draws the same frames (≥ 0, ≤ 1000000) |
 | `opacity` | number |  |  | (≥ 0, ≤ 1) |
 | `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" |  |  | Override the preset's blend (screen for light on dark, normal for snow and smoke) |
-| `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | Show the particles only where this selects in the picture under them (sky, person, key, luma or shape) |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | Show the particles only where this selects in the picture under them (sky, person, key, luma or shape) |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
-| `mask.softness` | number |  | `0.2` | key and luma: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
+| `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
 | `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
 | `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
 | `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
@@ -1131,7 +1132,7 @@ _No parameters._
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
 | `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
 | `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
-| `mask.combine` | { kind, object, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `mask.combine` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
 | `behindSubject` | boolean |  |  | Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them |
 | `followSpeed` | boolean |  | `true` | Slow down with slow-motion footage under the layer (and speed up with fast footage) |
 | `animationIn` | { type, duration, easing } |  |  | e.g. { type: 'fade', duration: 1 } to let the weather come in |
@@ -1183,13 +1184,14 @@ _No parameters._
 | `length` | number |  |  | rays: how far they reach toward the frame edges (default 0.5) (≥ 0.05, ≤ 1) |
 | `intensity` | number |  |  | Brightness: rays default 0.8, flare 1 (≥ 0, ≤ 3) |
 | `color` | string |  |  | Light color (rays default warm #FFE6B8; flare by look) |
-| `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | rays: where they show; flare: where the flare layer shows |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | rays: where they show; flare: where the flare layer shows |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
-| `mask.softness` | number |  | `0.2` | key and luma: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
+| `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
 | `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
 | `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
 | `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
@@ -1201,7 +1203,7 @@ _No parameters._
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
 | `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
 | `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
-| `mask.combine` | { kind, object, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `mask.combine` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
 | `remove` | boolean |  |  | rays: delete the rays with this label from target |
 | `start` | number |  |  | flare: timeline start (≥ 0) |
 | `duration` | number |  |  | flare: seconds (> 0, ≤ 600) |
@@ -1381,21 +1383,56 @@ _No parameters._
 | `method` | "auto" \| "transfer" \| "reinhard" \| "curves" |  | `"auto"` | auto tries each and keeps the closest; transfer (Oklab color transfer), reinhard (mean and spread), curves (per-channel) |
 | `maxHueShift` | number |  | `15` | Largest hue turn allowed, degrees (raise only when asked for a strong color change) (≥ 0, ≤ 180) |
 
+### estimate_depth
+
+**read-only**. Estimate how far everything is from the camera in video and photo clips (Depth Anything V2 on keyframes, aligned and carried between them, about 5 s per second of footage on a laptop, cached), and show it: the frame next to its depth, near white and far black. Distance runs from 0 (the nearest things in the clip) to 1 (the farthest). Give points or boxes to read the distance of things, e.g. a face, for focus or for a depth mask. Depth drives: mask { kind: 'depth', distance: [a, b] } in grade_region, render_mask and any effect (grade the background, darken the foreground), set_focus (depth of field and rack focus), and the effects depthFog (haze that thickens with distance) and parallax (a 2.5D camera move through a photo) through add_effect.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipId` | string | yes |  |  |
+| `time` | number |  |  | Timeline time to show and measure (default the middle of the clip) (≥ 0) |
+| `points` | { x, y }[] |  |  | Points to read the distance at (edit frame fractions) |
+| `boxes` | { x0, y0, x1, y1 }[] |  |  | Boxes to read the median distance in (edit frame fractions) |
+| `scale` | number |  | `0.5` | (≥ 0.1, ≤ 1) |
+
+### set_focus
+
+**edits**. Depth of field on a video or photo clip, from its depth (estimated if needed): what is at the focus stays sharp and everything nearer or farther blurs the more it is out of focus, like a fast lens. Focus on a point, a box, a distance, or a tracked object (select_object), which the focus then follows. rack moves the focus over time (a focus pull from one subject to another): each step gives a timeline time and a point, box or distance. blur sets the strength (pixels at 1080p), range how deep the sharp zone is. remove: true takes it out. Check the sharp subject's edges with render_frame (no halo, no sharp background left around it), and a rack with render_preview.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipId` | string | yes |  |  |
+| `point` | { x, y } |  |  | A point on what should be sharp (edit frame fractions) |
+| `point.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `point.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `box` | { x0, y0, x1, y1 } |  |  | A box around it (edit frame fractions) |
+| `box.x0` | number | yes |  |  |
+| `box.y0` | number | yes |  |  |
+| `box.x1` | number | yes |  |  |
+| `box.y1` | number | yes |  |  |
+| `distance` | number |  |  | Or the distance itself (0 near .. 1 far) (≥ 0, ≤ 1) |
+| `object` | string |  |  | Keep this tracked object (project.objects) in focus as it moves |
+| `rack` | { point, box, distance, time }[] |  |  | Focus over time; the focus eases from one step to the next |
+| `blur` | number |  |  | Blur of the most out-of-focus parts, pixels at 1080p (default 25) (≥ 0, ≤ 100) |
+| `range` | number |  |  | Depth of the sharp zone (default 0.1) (≥ 0, ≤ 0.6) |
+| `remove` | boolean |  |  |  |
+
 ### grade_region
 
-**edits**. Secondary color correction: grade only part of the frame, as a colorist does after the primary grade. Deepen a sky, warm or lift faces, cool the shadows, tame bright highlights, make one colored object pop. The mask selects the part: key (an HSL qualifier: hue range in degrees, saturation and luma ranges, with softness), luma (a brightness range: highlights or shadows), shape (a fixed ellipse or rectangle), face (soft ellipses following every face) or person (the person's cutout); face and person work on primary video clips only. Masks combine (a blue key intersected with a shape over the top of the frame selects sky without blue clothes), invert, grow or shrink, and feather. color takes the same settings as color_adjust. Each correction has a label; the same label updates it (color settings merge, a new mask replaces the old), and remove: true deletes it. Work in this order: render_mask to check the selection at the start, middle and end of the clip (and at fast motion), then grade, then render_frame and render_scopes to check for edges and clipping. Keep feather at 0.01 or more so the edge never shows.
+**edits**. Secondary color correction: grade only part of the frame, as a colorist does after the primary grade. Deepen a sky, warm or lift faces, cool the shadows, tame bright highlights, make one colored object pop. The mask selects the part: key (an HSL qualifier: hue range in degrees, saturation and luma ranges, with softness), luma (a brightness range: highlights or shadows), shape (a fixed ellipse or rectangle), face (soft ellipses following every face), person (the person's cutout), sky, object (select_object) or depth (a range of distance, see estimate_depth: grade the background apart from the subject); these five work on primary video clips only. Masks combine (a blue key intersected with a shape over the top of the frame selects sky without blue clothes), invert, grow or shrink, and feather. color takes the same settings as color_adjust. Each correction has a label; the same label updates it (color settings merge, a new mask replaces the old), and remove: true deletes it. Work in this order: render_mask to check the selection at the start, middle and end of the clip (and at fast motion), then grade, then render_frame and render_scopes to check for edges and clipping. Keep feather at 0.01 or more so the edge never shows.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `target` | string | yes |  | A clip id, a media layer id, "all-clips", or "global" (whole video; key, luma and shape masks only) |
 | `label` | string | yes |  | Name of this correction, e.g. 'deeper sky' or 'lift faces' |
-| `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | What to grade; needed for a new correction, omit to keep the current mask |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | What to grade; needed for a new correction, omit to keep the current mask |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
-| `mask.softness` | number |  | `0.2` | key and luma: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
+| `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
 | `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
 | `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
 | `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
@@ -1407,7 +1444,7 @@ _No parameters._
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
 | `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
 | `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
-| `mask.combine` | { kind, object, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `mask.combine` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
 | `color` | { exposure, brightness, contrast, highlights, shadows, whites, blacks, brilliance, temperature, tint, hue, saturation, vibrance, hsl, curves, wheels, fade, clarity, sharpen, vignette, grain, autoCorrect } |  |  | Color settings inside the mask (merged into the correction's current ones) |
 | `color.exposure` | number |  |  | Exposure in stops (-3..3) (≥ -3, ≤ 3) |
 | `color.brightness` | number |  |  | Overall brightness (≥ -100, ≤ 100) |
@@ -1487,13 +1524,14 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `target` | string | yes |  | The clip id, media layer id, or "global" the mask is (or will be) on |
-| `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | A mask to try |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | A mask to try |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
-| `mask.softness` | number |  | `0.2` | key and luma: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
+| `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
 | `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
 | `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
 | `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
@@ -1505,7 +1543,7 @@ _No parameters._
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
 | `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
 | `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
-| `mask.combine` | { kind, object, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `mask.combine` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
 | `label` | string |  |  | Label of a masked effect already on the target |
 | `time` | number |  |  | Timeline time; defaults to the middle of the target (≥ 0) |
 | `style` | "matte" \| "overlay" |  | `"matte"` |  |

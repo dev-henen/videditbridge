@@ -3,6 +3,7 @@
 //! promises, so the host stays responsive.
 
 pub mod audio;
+pub mod depth;
 pub mod particles;
 pub mod refine;
 pub mod track;
@@ -188,6 +189,88 @@ impl Task for WarpTask {
 #[napi(js_name = "warpMasks")]
 pub fn warp_masks(mask: Uint8Array, width: u32, height: u32, matrices: Float64Array) -> AsyncTask<WarpTask> {
     AsyncTask::new(WarpTask { mask: mask.to_vec(), width: width as usize, height: height as usize, matrices: matrices.to_vec() })
+}
+
+pub struct DepthTask {
+    gray: Vec<u8>,
+    width: usize,
+    height: usize,
+    count: usize,
+    keys: Vec<usize>,
+    disparity: Vec<f32>,
+    motion: Vec<f64>,
+    previous: Option<Vec<f32>>,
+    opts: depth::DepthOptions,
+}
+
+impl Task for DepthTask {
+    type Output = Vec<f32>;
+    type JsValue = Float32Array;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let area = self.width * self.height;
+        let ok = self.count > 0
+            && self.gray.len() == self.count * area
+            && !self.keys.is_empty()
+            && self.keys[0] == 0
+            && *self.keys.last().unwrap() == self.count - 1
+            && self.keys.windows(2).all(|k| k[0] < k[1])
+            && self.disparity.len() == self.keys.len() * area
+            && self.motion.len() == self.count * 9
+            && self.previous.as_ref().map_or(true, |p| p.len() == area);
+        if !ok {
+            return Err(Error::from_reason("ave-native: depthSequence needs count gray frames, ascending keys from 0 to count - 1, a disparity map per key, 9 numbers of motion per frame, and a previous map of one frame"));
+        }
+        std::panic::catch_unwind(|| depth::depth_sequence(&self.gray, self.width, self.height, self.count, &self.keys, &self.disparity, &self.motion, self.previous.as_deref(), &self.opts))
+            .map_err(|_| Error::from_reason("ave-native: depth_sequence panicked"))
+    }
+
+    fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {
+        Ok(out.into())
+    }
+}
+
+#[napi(object)]
+pub struct DepthSequenceOptions {
+    /// Guided filter radius in pixels (default 4) and regularization (default 0.001).
+    pub radius: Option<u32>,
+    pub eps: Option<f64>,
+    /// Weight of the previous frame in the blend over time (default 0.3).
+    pub keep: Option<f64>,
+    /// Frame 0's depth from the chunk before, so chunks join on the same scale.
+    pub previous: Option<Float32Array>,
+}
+
+/// Depth for every frame of a chunk from model results on keyframes: each keyframe fitted to the one
+/// before, carried between keyframes along the camera's motion, edges snapped to the frames, and
+/// blended lightly over time. Distance on 0 (near) .. 1 (far), one frame after another.
+#[napi(js_name = "depthSequence")]
+pub fn depth_sequence(gray: Uint8Array, width: u32, height: u32, count: u32, keys: Uint32Array, disparity: Float32Array, motion: Float64Array, options: Option<DepthSequenceOptions>) -> AsyncTask<DepthTask> {
+    let mut opts = depth::DepthOptions::default();
+    let mut previous = None;
+    if let Some(o) = options {
+        if let Some(r) = o.radius {
+            opts.radius = r as usize;
+        }
+        if let Some(e) = o.eps {
+            opts.eps = e as f32;
+        }
+        if let Some(k) = o.keep {
+            opts.keep = k as f32;
+        }
+        previous = o.previous.map(|p| p.to_vec());
+    }
+    AsyncTask::new(DepthTask {
+        gray: gray.to_vec(),
+        width: width as usize,
+        height: height as usize,
+        count: count as usize,
+        keys: keys.iter().map(|&k| k as usize).collect(),
+        disparity: disparity.to_vec(),
+        motion: motion.to_vec(),
+        previous,
+        opts,
+    })
 }
 
 // --- Particles and light (particles.rs). The specs mirror particles::Spec; see its docs for units.

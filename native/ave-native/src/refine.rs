@@ -33,13 +33,18 @@ fn box_mean(src: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
 pub fn guided_filter(guide: &[u8], mask: &[u8], w: usize, h: usize, radius: usize, eps: f32) -> Vec<u8> {
     let i: Vec<f32> = guide.iter().map(|&v| v as f32 / 255.0).collect();
     let p: Vec<f32> = mask.iter().map(|&v| v as f32 / 255.0).collect();
+    guided_filter_f32(&i, &p, w, h, radius, eps).into_iter().map(|v| (v * 255.0).round().clamp(0.0, 255.0) as u8).collect()
+}
+
+/// The guided filter on float values: `guide` on 0..1, `src` any range (depth maps).
+pub fn guided_filter_f32(i: &[f32], p: &[f32], w: usize, h: usize, radius: usize, eps: f32) -> Vec<f32> {
     let ii: Vec<f32> = i.iter().map(|v| v * v).collect();
-    let ip: Vec<f32> = i.iter().zip(&p).map(|(a, b)| a * b).collect();
-    let (mi, mp, mii, mip) = (box_mean(&i, w, h, radius), box_mean(&p, w, h, radius), box_mean(&ii, w, h, radius), box_mean(&ip, w, h, radius));
+    let ip: Vec<f32> = i.iter().zip(p).map(|(a, b)| a * b).collect();
+    let (mi, mp, mii, mip) = (box_mean(i, w, h, radius), box_mean(p, w, h, radius), box_mean(&ii, w, h, radius), box_mean(&ip, w, h, radius));
     let a: Vec<f32> = (0..w * h).map(|k| (mip[k] - mi[k] * mp[k]) / (mii[k] - mi[k] * mi[k] + eps)).collect();
     let b: Vec<f32> = (0..w * h).map(|k| mp[k] - a[k] * mi[k]).collect();
     let (ma, mb) = (box_mean(&a, w, h, radius), box_mean(&b, w, h, radius));
-    (0..w * h).map(|k| ((ma[k] * i[k] + mb[k]) * 255.0).round().clamp(0.0, 255.0) as u8).collect()
+    (0..w * h).map(|k| ma[k] * i[k] + mb[k]).collect()
 }
 
 /// Warp a mask (`w` x `h`, 0..255) by each 3x3 row-major transform in `matrices` (from the mask's

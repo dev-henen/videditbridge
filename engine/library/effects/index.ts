@@ -7,6 +7,7 @@ import { motionEffects } from "./motion.js";
 import { customEffect } from "./custom.js";
 import { maskIsTemporal, maskNeeds, maskObjects, maskViewFilter, maskedEffect } from "./masks.js";
 import { SkyReplaceParams, skyReplaceFilter } from "./sky.js";
+import { depthEffects } from "./depth.js";
 
 export { CUSTOM_FILTERS, checkCustomFilter } from "./custom.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
@@ -15,6 +16,7 @@ export * from "./color.js";
 export * from "./helpers.js";
 export * from "./masks.js";
 export * from "./sky.js";
+export * from "./depth.js";
 export * from "./color-match.js";
 import { ColorMatchParams, colorMatchFilter } from "./color-match.js";
 
@@ -282,6 +284,7 @@ export const EFFECTS: EffectDefinition[] = [
     usesPersonMask: (p) => maskNeeds(p.mask, "person"),
     usesFaceMask: (p) => maskNeeds(p.mask, "face"),
     usesSkyMask: (p) => maskNeeds(p.mask, "sky"),
+    usesDepthMask: (p) => maskNeeds(p.mask, "depth"),
     toFilter: (p, ctx) => maskViewFilter(ctx, p.mask, p.style),
   }),
   define({
@@ -489,6 +492,7 @@ export const EFFECTS: EffectDefinition[] = [
   }),
 
   ...motionEffects(),
+  ...depthEffects(),
 
   // --- time -----------------------------------------------------------------------
   define({
@@ -613,9 +617,9 @@ export function effectsToFilter(effects: Effect[], ctx: EffectContext): string[]
  * How many copies of the clip's person cutout or face mask stream an effect takes: one per state of
  * a ramped effect that uses it itself (EffectDefinition.usesPersonMask), plus one for its mask.
  */
-export function maskStreams(effect: Effect, kind: "person" | "face" | "sky"): number {
+export function maskStreams(effect: Effect, kind: "person" | "face" | "sky" | "depth"): number {
   const def = byId.get(effect.type);
-  const uses = kind === "person" ? def?.usesPersonMask : kind === "face" ? def?.usesFaceMask : def?.usesSkyMask;
+  const uses = kind === "person" ? def?.usesPersonMask : kind === "face" ? def?.usesFaceMask : kind === "sky" ? def?.usesSkyMask : def?.usesDepthMask;
   const parsed = uses && def!.params.safeParse(effect.params ?? {});
   const own = uses && parsed?.success && uses(parsed.data) ? effectStates(effect).length : 0;
   return own + (maskNeeds(effect.mask, kind) ? 1 : 0);
@@ -643,6 +647,11 @@ export function usesFaceMask(effect: Effect): boolean {
 /** Whether an effect wants the clip's sky matte (see EffectDefinition.usesSkyMask and Effect.mask). */
 export function usesSkyMask(effect: Effect): boolean {
   return maskStreams(effect, "sky") > 0;
+}
+
+/** Whether an effect wants the clip's depth (see EffectDefinition.usesDepthMask and Effect.mask). */
+export function usesDepthMask(effect: Effect): boolean {
+  return maskStreams(effect, "depth") > 0;
 }
 
 /** The picture assets an effect reads, one stream per state of a ramped effect (see EffectDefinition.usesMedia). */

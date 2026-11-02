@@ -2,7 +2,7 @@
 
 # Effects
 
-87 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+91 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -14,11 +14,11 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 
 - **color**: [adjust](#adjust), [temperature](#temperature), [grayscale](#grayscale), [sepia](#sepia), [invert](#invert), [hueShift](#hueshift), [tint](#tint), [color](#color), [saturation](#saturation), [vibrance](#vibrance), [hue](#hue), [whiteBalance](#whitebalance), [hsl](#hsl), [autoCorrect](#autocorrect), [colorMatch](#colormatch)
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
-- **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [lightRays](#lightrays), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe)
+- **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [lightRays](#lightrays), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe), [depthFog](#depthfog)
 - **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs), [custom](#custom)
-- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [skyReplace](#skyreplace), [maskView](#maskview), [denoise](#denoise)
-- **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur)
-- **motion**: [stabilize](#stabilize), [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat)
+- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [skyReplace](#skyreplace), [maskView](#maskview), [denoise](#denoise), [depthView](#depthview)
+- **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur), [depthOfField](#depthoffield)
+- **motion**: [stabilize](#stabilize), [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat), [parallax](#parallax)
 - **distort**: [mirror](#mirror), [chromaKey](#chromakey), [tilt](#tilt)
 - **shake**: [shake](#shake), [handheld](#handheld), [vibrate](#vibrate), [earthquake](#earthquake), [impactShake](#impactshake)
 - **time**: [fadeIn](#fadein), [fadeOut](#fadeout), [flash](#flash)
@@ -511,6 +511,17 @@ _No parameters._
 | `rate` | number |  | `8` | Flashes per second (strobe) (≥ 0.5, ≤ 30) |
 | `strength` | number |  | `0.35` | Brightness change (≥ 0, ≤ 1) |
 
+### depthFog
+
+**Depth Fog**. Fog, haze or mist that thickens with distance, from the clip's depth: far hills fade into the haze while near things stay clear. Atmosphere for landscapes, mornings, horror and dusty or smoky scenes. For drifting fog banks in front of everything, add_particles fog instead. Primary video and photo clips only.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `color` | string |  | `"#C9D2DC"` | Fog color #RRGGBB (pale blue-gray by default; warmer for dust or a sunset) |
+| `density` | number |  | `0.6` | How much fog the farthest things are under (1 = hidden) (≥ 0, ≤ 1) |
+| `start` | number |  | `0.25` | Distance where the fog begins (0 near .. 1 far) (≥ 0, ≤ 0.95) |
+| `falloff` | number |  | `3` | How fast the fog thickens with distance past start (higher is a denser wall of fog) (≥ 0.5, ≤ 10) |
+
 ## Stylize
 
 ### clarity
@@ -672,13 +683,14 @@ _No parameters._
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `mask` | { kind, object, hue, saturation, luma, softness, shape, invert, feather, grow, smooth, denoise, combine } |  | `{"kind":"shape","softness":0.2,"shape":{"type":"ellipse","x":0.5,"y":0.5,"width":0.5,"height":0.5},"invert":false,"feather":0.01,"grow":0,"smooth":0,"denoise":false}` | Limits an effect to part of the frame. Check it with render_mask before relying on it |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, found by a model (all four found per frame; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  | `{"kind":"shape","softness":0.2,"shape":{"type":"ellipse","x":0.5,"y":0.5,"width":0.5,"height":0.5},"invert":false,"feather":0.01,"grow":0,"smooth":0,"denoise":false}` | Limits an effect to part of the frame. Check it with render_mask before relying on it |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
-| `mask.softness` | number |  | `0.2` | key and luma: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
+| `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
 | `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
 | `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
 | `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
@@ -690,7 +702,7 @@ _No parameters._
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
 | `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
 | `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
-| `mask.combine` | { kind, object, hue, saturation, luma, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `mask.combine` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
 | `style` | "matte" \| "overlay" |  | `"matte"` |  |
 
 ### denoise
@@ -700,6 +712,12 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `strength` | number |  | `0.5` | 0..1 (≥ 0, ≤ 1) |
+
+### depthView
+
+**Depth View**. Shows the clip's depth in place of the picture, near white and far black, to check it. estimate_depth uses it; it does not belong in a finished edit.
+
+_No parameters._
 
 ## Blur
 
@@ -762,6 +780,17 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `frames` | integer |  | `3` | Frames blended together (≥ 2, ≤ 8) |
+
+### depthOfField
+
+**Depth of Field**. A real lens's depth of field from the clip's depth: things at the focus distance stay sharp and everything nearer or farther blurs more the farther it is from it, with clean edges around the sharp subject. Set focus to the subject's distance (estimate_depth gives it for a point or a tracked object), range for how deep the sharp zone is, and blur for the strength. focusPath racks focus over time, from one subject to another. Primary video and photo clips only.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `focus` | number |  | `0.2` | Distance in focus, 0 = the nearest things in the clip, 1 = the farthest (estimate_depth tells the distance of a point or object) (≥ 0, ≤ 1) |
+| `focusPath` | { time, focus }[] |  |  | Rack focus: the distance in focus over time, eased between points; replaces focus while set |
+| `range` | number |  | `0.1` | How deep the sharp zone around the focus is (0 = a thin plane, like a wide-open lens) (≥ 0, ≤ 0.6) |
+| `blur` | number |  | `25` | Blur of the most out-of-focus parts, in pixels at 1080p (≥ 0, ≤ 100) |
 
 ## Motion
 
@@ -846,6 +875,17 @@ _No parameters._
 |---|---|---|---|---|
 | `bpm` | number |  | `70` | Heartbeats per minute (≥ 30, ≤ 180) |
 | `amount` | number |  | `0.05` | Zoom on each beat (≥ 0.01, ≤ 0.3) |
+
+### parallax
+
+**2.5D Parallax**. Brings a photo (or a still shot) to life with a camera move through it: the picture is cut into depth layers that move apart, near ones more, so the scene looks three-dimensional. The gaps nearer layers leave are filled from around them. Keep moves small (x up to 0.06, zoom up to 0.15) for a clean result; check the edges of near subjects at the end of the move with render_frame. Primary photo and video clips only.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `x` | number |  | `0.04` | How far the camera moves sideways over the clip, as a fraction of frame width (+ right): near things shift the most (≥ -0.3, ≤ 0.3) |
+| `y` | number |  | `0` | How far it moves up or down (+ down) (≥ -0.3, ≤ 0.3) |
+| `zoom` | number |  | `0.08` | How far it pushes in (+) or pulls out (-) over the clip: near things grow the most (≥ -0.5, ≤ 0.5) |
+| `layers` | integer |  | `8` | Depth layers the picture is cut into (more is smoother, and slower) (≥ 3, ≤ 12) |
 
 ## Distort
 
