@@ -21,6 +21,7 @@ await render(project, {
   keepWorkDir: true,       // keep graph.txt + overlay.ass for debugging
   cacheDir: ".render/cache", // reuse processed clips between renders (see below)
   hardware: true,          // graphics card encoder for full-quality renders (default)
+  backend: "auto",         // draw the picture on the GPU engine when it can (see below)
 });
 
 await renderFrame(project, 12.5, { output: "frame.png", scale: 0.5 });
@@ -28,6 +29,8 @@ await renderContactSheet(project, { output: "sheet.png", columns: 4, rows: 3, th
 ```
 
 All of these call `probeAssets` first unless you pass `probe: false`. Probing fills in each asset's missing duration, size and audio flag.
+
+`backend` picks what draws the picture of `render`: `"ffmpeg"` (the filter graph described below), `"engine"` (the GPU render engine) or `"auto"` (the engine when it can draw the whole project). Without it, renders use `setDefaultBackend`'s choice, which the app takes from its first-run performance test. See [GPU render engine & performance test](render-engine.md).
 
 ## Reviewing an edit
 

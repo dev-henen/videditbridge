@@ -5,7 +5,9 @@ import path from "node:path";
 import type { MediaLayer, Project } from "../../core/schema.js";
 import { deepClone } from "../../core/util.js";
 import { withProjectPaths } from "../../core/operations.js";
-import { compileProject, type CompileOptions, type CompiledRender } from "./compile.js";
+import { ASS_FILE, compileProject, type CompileOptions, type CompiledRender } from "./compile.js";
+import { enginePath, runPlan } from "./engine.js";
+import { engineUnsupported, planProject } from "./plan.js";
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
@@ -20,7 +22,7 @@ import { DepthEstimator, depthFile, writeDepth, type DepthTrack } from "../visio
 import { Inpainter, removalFile, removalMasks, writeRemoval, type RemovalTrack } from "../vision/removal.js";
 import { Interpolator, clipFrameTimes, framePlan, interpolatedFile, needsFrames, writeInterpolated, type InterpolateTrack } from "../video/interpolate.js";
 import { withProxies } from "./proxy.js";
-import { hasFilter, probe, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
+import { hasFilter, probe, resolveFfmpegPath, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
 import { prepareFonts } from "../fonts/index.js";
 
 export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segments" | "segment" | "hardwareEncoder">, FfmpegOptions {
@@ -45,6 +47,13 @@ export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segment
    * Leave it off for final renders (default false).
    */
   proxies?: boolean;
+  /**
+   * Which renderer draws the picture: "ffmpeg" (the CPU filter graph), "engine" (the
+   * GPU render engine; an error when it cannot draw something in the project), or "auto" (the
+   * engine when it can draw the whole project and is built, else FFmpeg). Default: setDefaultBackend's,
+   * "ffmpeg" until it is called. See the render engine guide.
+   */
+  backend?: RenderBackend;
   /** Keep the work directory (graph + ASS files) for debugging. */
   keepWorkDir?: boolean;
   /** Progress callback: 0..1 */
@@ -501,9 +510,64 @@ async function cachedSegments(
 /** Progress of the final pass, after the share spent filling the cache. */
 const after = (opts: Omit<RenderOptions, "output">, share: number) => (opts.onProgress ? { onProgress: (f: number) => opts.onProgress!(share + (1 - share) * f) } : {});
 
+export type RenderBackend = "ffmpeg" | "engine" | "auto";
+
+let defaultBackend: RenderBackend = "ffmpeg";
+
+/** The backend of renders that do not name one (the app sets it from its first-run performance test). */
+export function setDefaultBackend(backend: RenderBackend): void {
+  defaultBackend = backend;
+}
+
+/** Why the engine cannot render this project with these options (empty when it can). */
+export function engineBlockers(p: Project, opts: Pick<RenderOptions, "range" | "proxies">): string[] {
+  return [...(opts.range ? ["a time range"] : []), ...(opts.proxies ? ["proxies"] : []), ...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
+}
+
+/**
+ * Render on the GPU engine: the sound and the text overlay come from the FFmpeg backend (the sound
+ * mix on its own, from a tiny picture), the picture from the engine, which muxes both in its encoder.
+ */
+async function renderOnEngine(p: Project, opts: RenderOptions): Promise<RenderResult> {
+  const fonts = await prepareFonts(opts.fontsDir, p);
+  const rubberband = p.clips.some((c) => c.keyframes?.speed?.length) && (await hasFilter("rubberband", opts));
+  const workDir = await mkdtemp(path.join(tmpdir(), "ave-engine-"));
+  try {
+    const mix = path.join(workDir, "mix.wav");
+    const sound = compileProject(p, { ...opts, ...fonts, rubberband, scale: 0.05, output: "", analysis: { audio: { mix } } });
+    for (const f of sound.files) await writeFile(path.join(workDir, f.name), f.content, "utf8");
+    await runFfmpegOrThrow(sound.args, { ffmpegPath: opts.ffmpegPath, cwd: workDir, signal: opts.signal });
+    opts.onProgress?.(0.1);
+    const hardwareEncoder =
+      opts.hardware !== false && wantsHardware(p.export.videoCodec, opts.preset ?? p.export.preset) ? await detectHardwareEncoder(opts) : undefined;
+    const planned = planProject(p, {
+      ...opts,
+      ffmpeg: resolveFfmpegPath(opts),
+      audio: mix,
+      overlay: sound.files.some((f) => f.name === ASS_FILE),
+      fontsDir: fonts.fontsDir,
+      hardwareEncoder,
+    });
+    if (!planned.plan) throw new Error(`The render engine cannot draw: ${planned.unsupported.join("; ")}`);
+    await mkdir(path.dirname(path.resolve(opts.output)), { recursive: true });
+    await runPlan({ ...planned.plan, cwd: workDir }, { signal: opts.signal, onProgress: opts.onProgress && ((f) => opts.onProgress!(0.1 + 0.9 * f)) });
+    opts.onProgress?.(1);
+    const args = planned.plan.output.args;
+    return { output: path.resolve(opts.output), duration: sound.duration, workDir: opts.keepWorkDir ? workDir : undefined, args };
+  } finally {
+    if (!opts.keepWorkDir) await rm(workDir, { recursive: true, force: true });
+  }
+}
+
 /** Render a project to a video file. */
 export async function render(project: Project, opts: RenderOptions): Promise<RenderResult> {
   const p = await readyToRender(project, opts);
+  const backend = opts.backend ?? defaultBackend;
+  if (backend === "engine" || backend === "auto") {
+    const blockers = engineBlockers(p, opts);
+    if (!blockers.length) return renderOnEngine(p, opts);
+    if (backend === "engine") throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
+  }
   const { project: q, segments, share, masks, rubberband, fonts } = await prepare(p, opts, true, opts.range?.end);
   const hardwareEncoder =
     opts.hardware !== false && wantsHardware(p.export.videoCodec, opts.preset ?? p.export.preset) ? await detectHardwareEncoder(opts) : undefined;

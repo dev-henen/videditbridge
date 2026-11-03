@@ -1,17 +1,17 @@
 # ai-video-editor, notes for Claude
 
-TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Rendering is FFmpeg via `ffmpeg-static`. Hot CPU kernels are Rust (`native/`), reached only through `engine/tools/native`.
+TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Rendering is FFmpeg via `ffmpeg-static`. Hot CPU kernels are Rust (`native/`), reached only through `engine/tools/native`. The GPU render engine (`native/ave-render`) is a separate process reached only through `engine/tools/render/engine.ts`.
 
 ## Layout
 - `engine/` TypeScript (the editing engine: library, Claude tools, CLI, app host), `native/` Rust (speed-critical kernels), `ui/` C# desktop app, `assets/` bundled fonts and models, `scripts/` doc and native builds.
-- `ui/` has one folder per part of the screen (`Shell`, `Tabs`, `Preview`, `Timeline`, `Session`, `Chat`, `Projects`), plus `Engine` (host client) and `Shared`. Namespaces follow folders. A part is a UserControl with its own handlers and styles. `Shell/MainWindow` lays out the tabs (in the title bar) and one page per tab; `Shell/ProjectView` lays out one project's page (commands bar, `Session` on the left, preview and timeline, `Chat` on the right) and connects its parts' events.
+- `ui/` has one folder per part of the screen (`Shell`, `Tabs`, `Preview`, `Timeline`, `Session`, `Chat`, `Projects`), plus `Setup` (the first-start performance test window, shown before the editor), `Engine` (host client) and `Shared`. Namespaces follow folders. A part is a UserControl with its own handlers and styles. `Shell/MainWindow` lays out the tabs (in the title bar) and one page per tab; `Shell/ProjectView` lays out one project's page (commands bar, `Session` on the left, preview and timeline, `Chat` on the right) and connects its parts' events.
 - Tests live in `test/<area>/`, mirroring `engine` (`core`, `library`, `render`, `audio`, `vision`, `video`, `transcript`, `claude`, `host`, `native`), plus `test/repo/` for repository-wide checks and `test/helpers/` for fixtures and oracles. Put a new test in the folder of the code it tests.
 
 ## Commands
 - `npm test` runs unit and integration tests; integration renders real video (~3 min). `FULL_RENDER=1 npm test` renders all templates.
 - `npx vitest run --exclude "**/*.integration.test.ts"` gives fast unit tests only.
 - `npx tsc --noEmit` typechecks. `npx tsx engine/cli.ts <cmd>` runs the CLI from source.
-- `npm run native` builds the Rust addon (`native/ave-native`) for this machine; tests need it. `cd native && cargo test --release` runs the Rust tests (on Windows add `--target x86_64-pc-windows-msvc` inside the Visual Studio environment; `npm run native` does that itself).
+- `npm run native` builds the Rust addon (`native/ave-native`) and the GPU render engine (`native/ave-render`) for this machine; tests need them. `cd native && cargo test --release` runs the Rust tests (on Windows add `--target x86_64-pc-windows-msvc` inside the Visual Studio environment; `npm run native` does that itself).
 - Scratch renders go in `test/.output/` (gitignored).
 - `npm run docs` regenerates `docs/reference/*` (except `api.md` and `cli.md`, which are hand-written) from the catalogs and tools. Run it after changing any tool, effect, transition, animation, caption style, component or template. `test/repo/docs.test.ts` fails when these files are stale. Keep `docs/guides/*` accurate by hand.
 
@@ -40,6 +40,11 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
   - the timeline is a compact preview strip by default
 - Nothing Windows-only: dialogs through `StorageProvider`, video and audio through LibVLC (`Playback/Player.cs`, frames drawn into a bitmap so overlays stay on top), UI font Segoe UI on Windows and bundled Inter elsewhere.
 - Build with `dotnet build ui` (add `-r linux-x64` or `-r osx-arm64` to check the other systems compile). Test the host with `test/host/host.integration.test.ts`.
+
+## GPU render engine (plan.ts, native/ave-render)
+- `render` takes `backend` (`ffmpeg`, `engine`, `auto`); the default comes from the app's first-start performance test (`setDefaultBackend`). See `docs/guides/render-engine.md`.
+- `plan.ts` copies `compile.ts`'s timing and rounding (frame counts, xfade offsets, fit sizes, crop and overlay positions). Change both together, and run `test/render/engine.integration.test.ts` (both backends, compared frame by frame).
+- A feature the engine cannot draw yet goes in `engineUnsupported`, so those projects render with FFmpeg. `native/ave-render/src/plan.rs` mirrors the plan types.
 
 ## Renderer gotchas (compile.ts)
 - Every primary segment ends with `fps`, `format=yuv420p`, `setsar=1` and `settb=AVTB`. `concat` outputs AV_TIME_BASE, and `xfade` fails if the timebases differ.

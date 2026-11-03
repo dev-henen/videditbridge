@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using VideoEditor.Engine;
 using VideoEditor.Projects;
 using VideoEditor.Shared;
 
@@ -19,12 +20,15 @@ public partial class MainWindow : Window
     private readonly AppViewModel _vm = new();
     private readonly Dictionary<AppTab, Control> _pages = [];
     private readonly string[] _args;
+    private readonly EngineClient? _engine;
 
     public MainWindow() : this([]) { }
 
-    public MainWindow(string[] args)
+    /// <summary>The editor window; `engine` is a host already started (by the first-start performance test).</summary>
+    public MainWindow(string[] args, EngineClient? engine = null)
     {
         _args = args;
+        _engine = engine;
         InitializeComponent();
         DataContext = _vm;
         Tabs.Attach(_vm);
@@ -37,7 +41,7 @@ public partial class MainWindow : Window
         Opened += async (_, _) =>
         {
             PlaceTabs();
-            await _vm.StartAsync(_args.Length > 0 && Directory.Exists(_args[0]) ? _args[0] : null);
+            await _vm.StartAsync(_args.Length > 0 && Directory.Exists(_args[0]) ? _args[0] : null, _engine);
         };
         PropertyChanged += (_, e) =>
         {

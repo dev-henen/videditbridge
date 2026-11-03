@@ -95,11 +95,12 @@ public sealed class AppViewModel : Observable, IDisposable
 
     // ---------------------------------------------------------------- engine lifecycle
 
-    public async Task StartAsync(string? openDir = null)
+    /// <summary>Start (or take over an already started) engine host, then restore the tabs.</summary>
+    public async Task StartAsync(string? openDir = null, EngineClient? engine = null)
     {
         try
         {
-            _engine = await Task.Run(EngineClient.Start);
+            _engine = engine ?? await Task.Run(EngineClient.Start);
             _engine.Notification += (method, p) => Dispatcher.UIThread.Post(() => OnNotification(method, p));
             _engine.Exited += () => Dispatcher.UIThread.Post(() => EngineError = "The editing engine stopped. Restart the app.");
             var info = await _engine.CallAsync("host.info");

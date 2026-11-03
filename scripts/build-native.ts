@@ -1,12 +1,14 @@
 /**
- * Build the Rust kernels (native/ave-native) for this machine and put the addon where the loader
- * looks for it (engine/tools/native/index.ts). Needs Rust (rustup); on Windows also the Visual Studio C++
+ * Build the Rust code for this machine: the kernels (native/ave-native), put where the loader looks
+ * for the addon (engine/tools/native/index.ts), and the GPU render engine (native/ave-render), put
+ * where engine/tools/render/engine.ts looks for it. Needs Rust (rustup); on Windows also the Visual Studio C++
  * build tools and the Windows SDK. Usage: npm run native [-- --debug]
  */
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { nativeTarget } from "../engine/tools/native/index.js";
+import { engineFile } from "../engine/tools/render/engine.js";
 
 const root = path.resolve(import.meta.dirname, "..");
 const workspace = path.join(root, "native");
@@ -15,7 +17,7 @@ const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
 
 // Node addons on Windows are MSVC builds, whatever rustup's default host is.
 const target = process.platform === "win32" ? `${arch}-pc-windows-msvc` : undefined;
-const cargoArgs = ["build", "-p", "ave-native", ...(release ? ["--release"] : []), ...(target ? ["--target", target] : [])];
+const cargoArgs = ["build", "-p", "ave-native", "-p", "ave-render", ...(release ? ["--release"] : []), ...(target ? ["--target", target] : [])];
 
 function run(command: string, args: string[], shell = false): void {
   const r = spawnSync(command, args, { cwd: workspace, stdio: "inherit", shell });
@@ -44,3 +46,6 @@ const lib = process.platform === "win32" ? "ave_native.dll" : process.platform =
 const dest = path.join(workspace, "ave-native", nativeTarget().file);
 copyFileSync(path.join(outDir, lib), dest);
 console.log(`Built ${path.relative(root, dest)}`);
+const engine = path.join(workspace, "ave-render", engineFile());
+copyFileSync(path.join(outDir, process.platform === "win32" ? "ave-render.exe" : "ave-render"), engine);
+console.log(`Built ${path.relative(root, engine)}`);

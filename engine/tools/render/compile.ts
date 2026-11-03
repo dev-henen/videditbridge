@@ -131,7 +131,7 @@ const BLEND_MODES: Record<Exclude<BlendMode, "normal">, string> = {
  * A speed ramp as a setpts expression of the input time T (source seconds from the in point): the
  * clip's time map in straight pieces, every 0.1 s of source (at most 150 pieces).
  */
-function rampPts(map: SpeedMap, sourceDuration: number): string {
+export function rampPts(map: SpeedMap, sourceDuration: number): string {
   const n = Math.min(150, Math.max(8, Math.ceil(sourceDuration / 0.1)));
   const u = (i: number) => (sourceDuration * i) / n;
   const piece = (i: number) => {

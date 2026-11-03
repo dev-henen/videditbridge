@@ -36,12 +36,12 @@ One folder per part, named for what it is: `engine/` (TypeScript), `native/` (Ru
 engine/              TypeScript: the editing engine (library, Claude tools, CLI, host for the app)
   core/              Project schema (zod), timeline math, pure edit operations, validation, summaries
   library/           Catalogs: effects (and masks), transitions, animations, caption styles, components, templates
-  tools/             render (FFmpeg), audio, vision, transcript, captions, voiceover, graphics, fonts, review
+  tools/             render (FFmpeg and the GPU engine), audio, vision, transcript, captions, voiceover, graphics, fonts, review
     native/          Loader for the Rust addon (native/ave-native)
   claude/            EditorSession (state, undo/redo, events, live activities) + tool definitions for Claude
   host/              Engine host for the desktop app: JSON-RPC over stdio, project storage, Claude agent loop
   cli.ts             `ave` command line
-native/              Rust: speed-critical code (Cargo workspace). ave-native, the CPU kernels as a Node addon. See native/README.md
+native/              Rust: speed-critical code (Cargo workspace). ave-native, the CPU kernels as a Node addon; ave-render, the GPU render engine. See native/README.md
 ui/                  C# (Avalonia): the desktop app for Windows, macOS and Linux, one folder per part of the screen
   Shell/             The window and its layout, the top bar, the app state (MainViewModel)
   Preview/           The preview screen: frames and video (LibVLC), live follow, scrubbing, pointing at a spot
@@ -49,6 +49,7 @@ ui/                  C# (Avalonia): the desktop app for Windows, macOS and Linux
   Session/           The side panel: activity, Claude's replies and offered choices, review, summary, history
   Ask/               The box where people ask Claude, with the picked item and spot
   Projects/          The projects screen
+  Setup/             The first-start performance test window (processor or graphics card)
   Engine/            JSON-RPC client that starts and talks to engine/host
   Shared/            Icons and helpers
   Assets/ Packaging/ Fonts and icons; per-system packaging (see ui/Packaging/README.md)

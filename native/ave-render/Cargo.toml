@@ -1,0 +1,17 @@
+[package]
+name = "ave-render"
+version = "0.1.0"
+description = "GPU render engine of ai-video-editor: renders an engine plan (from engine/tools/render/plan.ts) in float on the GPU, speaking JSON-RPC over stdio"
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ave-render"
+path = "src/main.rs"
+
+[dependencies]
+wgpu = "30"
+pollster = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bytemuck = { version = "1", features = ["derive"] }

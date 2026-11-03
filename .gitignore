@@ -9,3 +9,4 @@ ui/**/bin/
 ui/**/obj/
 native/target/
 native/ave-native/*.node
+native/ave-render/ave-render.*

@@ -13,6 +13,7 @@
 | [Graphics, 3D & custom effects](guides/graphics.md) | SVG graphics Claude designs and animates, 3D layers, custom FFmpeg effects, font packs |
 | [Templates](guides/templates.md) | How templates work and how to write your own (slots, scenes, placeholders) |
 | [Rendering & preview](guides/rendering-and-preview.md) | FFmpeg setup, renders, frames, contact sheets, proxies, automatic review of an edit |
+| [GPU render engine & performance test](guides/render-engine.md) | Rendering the picture on the graphics card, what it draws so far, how it matches FFmpeg, and the first-run test that picks the renderer |
 | [Color correction & grading](guides/color.md) | Exposure, white balance, tone, HSL, curves, color wheels, finishing, analysis and scopes |
 | [Voice-over](guides/voiceover.md) | Text-to-speech providers and narrated edits |
 | [Faces, cutouts & reframing](guides/faces.md) | Local face detection and tracking, person cutout for background blur and replacement, reframing 16:9 for 9:16, text over faces |

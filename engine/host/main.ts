@@ -11,9 +11,10 @@
  * Requests: host.info, project.list, project.create, project.open, project.close, project.focus,
  *           project.importMedia, state.get, tools.list, tools.execute, session.undo, session.redo,
  *           render.scrub, choices.dismiss, chat.list, chat.current, chat.open, chat.new, chat.rename, chat.delete,
- *           agent.run, agent.cancel
+ *           agent.run, agent.cancel, performance.get, performance.run
  * Notifications (each with `project`): state, activity, agent.text, agent.end, log, project.cover, and
- * project.opened / project.closed when remote control opens or closes a project, so the app shows it
+ * project.opened / project.closed when remote control opens or closes a project, so the app shows it.
+ * Without `project`: performance.progress ({ stage, step, stageProgress, progress, adapter }) while the performance test runs.
  */
 import { randomBytes } from "node:crypto";
 import { rmSync } from "node:fs";
@@ -25,6 +26,7 @@ import { TOOLS, executeTool } from "../claude/tools.js";
 import { sessionState } from "../claude/state.js";
 import { computeTimeline } from "../core/timeline.js";
 import { renderFrame } from "../tools/render/render.js";
+import { applyPerformance, benchmarkBackends, loadPerformance, savePerformance, type PerformanceReport } from "../tools/render/benchmark.js";
 import { checkFfmpeg, describeFfmpegCheck } from "../tools/render/selftest.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
@@ -229,7 +231,30 @@ const handlers: Record<string, Handler> = {
     target(p).agent?.cancel();
     return true;
   },
+
+  // The performance test the app runs on first start: which renderer (processor or graphics card)
+  // becomes the default for this machine. null until it has run.
+  "performance.get": async () => (await loadPerformance()) ?? null,
+  "performance.run": () => (testing ??= runPerformanceTest().finally(() => (testing = undefined))),
 };
+
+let testing: Promise<PerformanceReport> | undefined;
+
+async function runPerformanceTest(): Promise<PerformanceReport> {
+  let last = 0;
+  let stage = "";
+  const report = await benchmarkBackends({
+    onProgress: (p) => {
+      // A few updates a second are enough for progress bars, but every change of stage goes out.
+      if (p.stage === stage && Date.now() - last < 200) return;
+      [last, stage] = [Date.now(), p.stage];
+      rpc.notify("performance.progress", p);
+    },
+  });
+  await savePerformance(report);
+  applyPerformance(report);
+  return report;
+}
 const rpc = new StdioRpc(handlers);
 
 function sessionOptions(dir: string) {
@@ -409,6 +434,9 @@ const stop = () =>
     process.exit(0);
   })());
 for (const signal of ["SIGTERM", "SIGHUP", "SIGINT"] as const) process.on(signal, () => void stop());
+
+// Renders use the renderer the performance test chose for this machine.
+applyPerformance(await loadPerformance());
 
 // FFmpeg builds differ per platform; say early (on stderr, the host log) when this one lacks something.
 void checkFfmpeg()

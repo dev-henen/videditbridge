@@ -1,0 +1,60 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:setup="using:VideoEditor.Setup"
+        x:Class="VideoEditor.Setup.PerformanceWindow"
+        Title="Performance test" Width="460" SizeToContent="Height" CanResize="False"
+        Background="{StaticResource Bg}" WindowStartupLocation="CenterScreen"
+        Icon="/Assets/AppIcon.png"
+        ExtendClientAreaToDecorationsHint="True" ExtendClientAreaChromeHints="NoChrome" ExtendClientAreaTitleBarHeightHint="-1">
+  <Window.Styles>
+    <Style Selector="TextBlock.caption">
+      <Setter Property="FontSize" Value="10"/>
+      <Setter Property="LetterSpacing" Value="0.8"/>
+      <Setter Property="Foreground" Value="{StaticResource Faint}"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="TextBlock.stat">
+      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+    </Style>
+  </Window.Styles>
+
+  <!-- The first start: one big live number, the render speed, on a gauge; the two renderers and
+       how well their pictures match underneath; then the choice. Plain flat colors, no title bar
+       (the system keeps the rounded corners and shadow); drag anywhere to move it. -->
+  <StackPanel Margin="24,22,24,20" Spacing="0">
+    <Panel Width="250" Height="196" HorizontalAlignment="Center">
+      <setup:SpeedGauge x:Name="Gauge" Track="{StaticResource Panel2}" Fill="{StaticResource Accent}" MarkBrush="{StaticResource Faint}"/>
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,40,0,0" Spacing="0">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+          <TextBlock x:Name="Speed" Text="0" FontSize="58" FontWeight="Light" Foreground="{StaticResource Muted}"/>
+          <TextBlock Text="fps" FontSize="17" Foreground="{StaticResource Muted}" VerticalAlignment="Top" Margin="6,12,0,0"/>
+        </StackPanel>
+      </StackPanel>
+    </Panel>
+
+    <TextBlock x:Name="Status" Text="Preparing the test" HorizontalAlignment="Center" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
+
+    <Grid ColumnDefinitions="*,*,*" Margin="0,24,0,0">
+      <StackPanel Grid.Column="0" Spacing="3">
+        <TextBlock Classes="caption" Text="PROCESSOR"/>
+        <TextBlock x:Name="CpuValue" Classes="stat" Text="--" Foreground="{StaticResource Faint}"/>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Spacing="3">
+        <TextBlock Classes="caption" Text="GRAPHICS CARD"/>
+        <TextBlock x:Name="GpuValue" Classes="stat" Text="--" Foreground="{StaticResource Faint}"/>
+      </StackPanel>
+      <StackPanel Grid.Column="2" Spacing="3">
+        <TextBlock Classes="caption" Text="PICTURE MATCH"/>
+        <TextBlock x:Name="MatchValue" Classes="stat" Text="--" Foreground="{StaticResource Faint}"/>
+      </StackPanel>
+    </Grid>
+
+    <TextBlock x:Name="Reason" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" FontSize="11"
+               Foreground="{StaticResource Muted}" Margin="8,18,8,0" IsVisible="False"/>
+    <TextBlock x:Name="Machine" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="10"
+               Foreground="{StaticResource Faint}" Margin="0,6,0,0" IsVisible="False"/>
+
+    <Button x:Name="ContinueButton" Classes="primary" Content="Continue" MinWidth="110" Height="34" HorizontalAlignment="Center" Margin="0,20,0,0" IsEnabled="False" IsDefault="True" Click="OnContinue"/>
+  </StackPanel>
+</Window>

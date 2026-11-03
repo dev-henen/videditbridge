@@ -5,11 +5,12 @@ Rust code of ai-video-editor, as one Cargo workspace. See [the design](../docs/d
 | Crate | Ships as | Holds |
 |---|---|---|
 | `ave-native` | A Node addon (napi-rs), loaded by [engine/tools/native/index.ts](../engine/tools/native/index.ts) | CPU kernels: `frameFeatures` (audio analysis), `trackRegion` (region tracking: Lucas-Kanade and RANSAC), `warpMasks` and `guidedFilter` (object mattes), `ParticleRenderer` (particles, smoke, fog and lens flares), `depthSequence` (depth over time: keyframe alignment, carrying along the camera, edges), `Remover` (object removal: filling a hole from other frames moved by the camera, layers of generated fill) |
+| `ave-render` | An executable speaking JSON-RPC over stdio, started by [engine/tools/render/engine.ts](../engine/tools/render/engine.ts) | The GPU render engine (wgpu): renders an engine plan from `planProject`, with ffmpeg processes for decoding and encoding. See [the render engine guide](../docs/guides/render-engine.md) |
 
 ## Building
 
 ```sh
-npm run native          # release build for this machine, copied to native/ave-native/ave-native.<target>.node
+npm run native          # release build for this machine: native/ave-native/ave-native.<target>.node and native/ave-render/ave-render.<target>[.exe]
 npm run native -- --debug
 cd native && cargo test --release
 ```
