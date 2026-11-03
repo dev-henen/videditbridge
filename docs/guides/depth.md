@@ -75,6 +75,6 @@ On the reference laptop (Intel i3-1005G1, 2 cores, 4 threads):
 
 - Depth is relative and per clip; the scale can drift slowly over a long clip with large changes of scene.
 - Moving subjects between keyframes follow the camera's motion, not their own, so a fast-moving person's depth edge can lag by up to a quarter of a second before the guided filter pulls it to the frame's edge.
-- Parallax fills what nearer layers uncover with a blur of what is around it, not real detail: keep moves small, and check near subjects' edges at the end of the move. Object removal (the design's section 7.2) will bring inpainting for larger moves.
+- Parallax fills what nearer layers uncover with a blur of what is around it, not real detail: keep moves small, and check near subjects' edges at the end of the move. Inpainting now exists for [object removal](removal.md), but parallax does not use it yet.
 - Depth of field on transparent edges (hair, fine branches) follows the depth map's edges, which are softer than the picture's.
 - Checks on the design's test clips (halo width on real people, rack focus in motion) wait for the test clips of section 11.

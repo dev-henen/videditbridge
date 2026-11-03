@@ -31,7 +31,7 @@ fn mat(motion: &[f64], i: usize) -> Mat3 {
     motion[i * 9..i * 9 + 9].try_into().unwrap()
 }
 
-fn mul(a: &Mat3, b: &Mat3) -> Mat3 {
+pub fn mul(a: &Mat3, b: &Mat3) -> Mat3 {
     let mut m = [0.0; 9];
     for r in 0..3 {
         for c in 0..3 {

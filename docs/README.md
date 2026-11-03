@@ -20,6 +20,7 @@
 | [Tracking points & surfaces](guides/tracking.md) | Follow a point or a flat surface, pin layers to it, and put a new picture on a screen or sign |
 | [Sky masks & replacement](guides/sky.md) | Find the sky on every frame, grade it, and replace it with a picture or gradient that moves with the camera |
 | [Depth](guides/depth.md) | Depth of every frame, depth of field and rack focus, depth masks, fog by distance, and 2.5D moves through photos |
+| [Removing objects](guides/removal.md) | Take a tracked object or a fixed area (a logo, a sign) out of clips and photos, rebuilt from other frames, with an inpainting model for what no frame shows |
 | [Atmosphere & light](guides/atmosphere-and-light.md) | Rain, snow, dust, embers, sparks, confetti, bokeh, smoke and fog as seeded particle layers, masked to the sky or behind people; light rays and lens flares |
 | [Retouch & audio](guides/retouch-and-audio.md) | Beauty retouch, background blur, voice cleanup, audio effects, speed and volume |
 | [Editing raw footage](guides/raw-footage.md) | Sound maps (speech, silence, music), silence removal, shot detection, beat sync, moment effects and sound effects |

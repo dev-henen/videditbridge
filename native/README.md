@@ -4,7 +4,7 @@ Rust code of ai-video-editor, as one Cargo workspace. See [the design](../docs/d
 
 | Crate | Ships as | Holds |
 |---|---|---|
-| `ave-native` | A Node addon (napi-rs), loaded by [engine/tools/native/index.ts](../engine/tools/native/index.ts) | CPU kernels: `frameFeatures` (audio analysis), `trackRegion` (region tracking: Lucas-Kanade and RANSAC), `warpMasks` and `guidedFilter` (object mattes), `ParticleRenderer` (particles, smoke, fog and lens flares), `depthSequence` (depth over time: keyframe alignment, carrying along the camera, edges) |
+| `ave-native` | A Node addon (napi-rs), loaded by [engine/tools/native/index.ts](../engine/tools/native/index.ts) | CPU kernels: `frameFeatures` (audio analysis), `trackRegion` (region tracking: Lucas-Kanade and RANSAC), `warpMasks` and `guidedFilter` (object mattes), `ParticleRenderer` (particles, smoke, fog and lens flares), `depthSequence` (depth over time: keyframe alignment, carrying along the camera, edges), `Remover` (object removal: filling a hole from other frames moved by the camera, layers of generated fill) |
 
 ## Building
 

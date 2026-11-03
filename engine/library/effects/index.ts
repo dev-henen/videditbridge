@@ -8,6 +8,7 @@ import { customEffect } from "./custom.js";
 import { maskIsTemporal, maskNeeds, maskObjects, maskViewFilter, maskedEffect } from "./masks.js";
 import { SkyReplaceParams, skyReplaceFilter } from "./sky.js";
 import { depthEffects } from "./depth.js";
+import { removalEffects, type RemovalSpec } from "./removal.js";
 
 export { CUSTOM_FILTERS, checkCustomFilter } from "./custom.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
@@ -17,6 +18,7 @@ export * from "./helpers.js";
 export * from "./masks.js";
 export * from "./sky.js";
 export * from "./depth.js";
+export * from "./removal.js";
 export * from "./color-match.js";
 import { ColorMatchParams, colorMatchFilter } from "./color-match.js";
 
@@ -493,6 +495,7 @@ export const EFFECTS: EffectDefinition[] = [
 
   ...motionEffects(),
   ...depthEffects(),
+  ...removalEffects(),
 
   // --- time -----------------------------------------------------------------------
   define({
@@ -661,6 +664,16 @@ export function effectMedia(effect: Effect): string[] {
   if (!parsed?.success) return [];
   const ids = def!.usesMedia!(parsed.data);
   return effectStates(effect).flatMap(() => ids);
+}
+
+/** The removals whose fills an effect lays over its clip, one per state of a ramped effect (see EffectDefinition.usesRemoval). */
+export function effectRemovals(effect: Effect): RemovalSpec[] {
+  const def = byId.get(effect.type);
+  if (!def?.usesRemoval) return [];
+  return effectStates(effect).flatMap((s) => {
+    const parsed = def.params.safeParse(s.params);
+    return parsed.success ? [def.usesRemoval!(parsed.data)] : [];
+  });
 }
 
 /** Whether an effect works frame by frame (see EffectDefinition.perFrame). Unknown effects are not. */

@@ -2,7 +2,7 @@
 
 # Claude tools
 
-109 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+110 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -1330,6 +1330,25 @@ _No parameters._
 | `relight` | number |  |  | Tint of the scenery toward the new sky (default 0.12, subtle) (≥ 0, ≤ 1) |
 | `blur` | number |  |  | Softening of the new sky in pixels at 1080p (default 0.6) (≥ 0, ≤ 20) |
 | `remove` | boolean |  |  | Take the sky replacement out of these clips |
+
+### remove_object
+
+**edits**. Remove an object from video clips and fill in what was behind it: a person walking through, a car, a sign, a cable, a logo or watermark. Give a tracked object (objectId from select_object, followed through every frame; it is tracked first if it is not yet) or a box: a fixed area of the edit's frame that stays put (a logo, a date stamp, a dust spot on the lens). Behind the object is rebuilt from other frames of the clip, where the object moves away or the camera moves past it: on a locked-off shot this is exact and does not flicker. What no frame ever shows (an object that never moves on a still shot, a photo) is painted by an inpainting model on this machine (a 208 MB model downloads once; about 10 s each time it runs, plus 20 s to load it), on as few frames as possible, and the rest take from that, so it stays put. Shows the clip before and after at the frame with the most removed, and reports per clip whether the camera moved and how much of the area came from real frames. Check the result with render_preview: generated areas on moving shots can wobble, and large objects on moving shots are the hardest case. Calling again adds to the clip's removal; remove takes an object out of it, or everything when no object or box is given. Primary video and photo clips only.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `objectId` | string |  |  | A tracked object to remove (select_object) |
+| `box` | { x0, y0, x1, y1 } |  |  | A fixed area to remove instead, in fractions of the edit's frame as in render_frame; draw it a little larger than the thing |
+| `box.x0` | number | yes |  |  |
+| `box.y0` | number | yes |  |  |
+| `box.x1` | number | yes |  |  |
+| `box.y1` | number | yes |  |  |
+| `shape` | "rect" \| "ellipse" |  | `"rect"` | Shape of the box's area |
+| `time` | number |  |  | Timeline time the box was drawn at (default: the middle of each clip); it maps the box into the source (≥ 0) |
+| `clipIds` | string[] |  |  | Clips to remove it from (default: every primary clip of the object's video, or the clip playing at time for a box) |
+| `grow` | number |  |  | Grow the removed area by this fraction of the frame's short side (default 0.008); more covers a soft edge or a shadow (≥ 0, ≤ 0.05) |
+| `feather` | number |  |  | Soft edge beyond that (default 0.006) (≥ 0, ≤ 0.03) |
+| `remove` | boolean |  |  | Take the object (or, with neither objectId nor box, the whole removal) out of these clips |
 
 ### follow_face
 

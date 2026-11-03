@@ -2,7 +2,7 @@
 
 # Effects
 
-91 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+92 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -16,7 +16,7 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
 - **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [lightRays](#lightrays), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe), [depthFog](#depthfog)
 - **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs), [custom](#custom)
-- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [skyReplace](#skyreplace), [maskView](#maskview), [denoise](#denoise), [depthView](#depthview)
+- **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [skyReplace](#skyreplace), [maskView](#maskview), [denoise](#denoise), [depthView](#depthview), [removeObject](#removeobject)
 - **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur), [depthOfField](#depthoffield)
 - **motion**: [stabilize](#stabilize), [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat), [parallax](#parallax)
 - **distort**: [mirror](#mirror), [chromaKey](#chromakey), [tilt](#tilt)
@@ -718,6 +718,17 @@ _No parameters._
 **Depth View**. Shows the clip's depth in place of the picture, near white and far black, to check it. estimate_depth uses it; it does not belong in a finished edit.
 
 _No parameters._
+
+### removeObject
+
+**Remove Object**. Removes tracked objects or fixed areas from a clip and fills in what was behind them: from other frames of the clip where the object moves away or the camera moves past it (real detail, exact on a locked-off shot), and from an inpainting model where no frame shows it. Set it up with remove_object, which selects, tracks, prepares and checks it; put it first among the clip's effects so grades apply to the fill too. Primary video and photo clips only.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `objects` | string[] |  | `[]` | Tracked objects to remove (ids from select_object), followed through the clip |
+| `regions` | { shape, x0, y0, x1, y1 }[] |  | `[]` | Fixed areas to remove, in fractions of the source frame (remove_object converts from the edit's frame): a logo, a watermark, a date stamp, anything that stays put in the frame |
+| `grow` | number |  | `0.008` | Grow the removed area by this fraction of the frame's short side, so soft edges, motion blur and a contact shadow go too (≥ 0, ≤ 0.05) |
+| `feather` | number |  | `0.006` | Soft edge beyond that, as a fraction of the short side (≥ 0, ≤ 0.03) |
 
 ## Blur
 

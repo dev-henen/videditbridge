@@ -44,7 +44,48 @@ export interface NativeKernels {
   ): Promise<Float32Array>;
   /** Draws particles, smoke, fog and lens flares into RGBA frames (see ParticleSpec). */
   ParticleRenderer: new (spec: ParticleSpec) => { frames(count: number): Promise<Uint8Array> };
+  /**
+   * Fills the area under an object with what other frames of the clip show there (object removal):
+   * `motion` is 9 numbers per frame of the clip, from frame 0's pixels to that frame's.
+   */
+  Remover: new (width: number, height: number, motion: Float64Array, options?: RemoverOptions) => NativeRemover;
   version(): string;
+}
+
+export interface RemoverOptions {
+  /** Grow the mask by this many pixels, then fade out over `feather`. */
+  grow?: number;
+  feather?: number;
+  /** Ring around the hole where each pool frame's exposure is matched, pixels. */
+  ring?: number;
+  /** The camera does not move: the median of the whole pool, without exposure matching. */
+  locked?: boolean;
+  /** Pool frames nearest in time that a moving camera's fill takes the median of. */
+  nearest?: number;
+  /** Leftovers within this many pixels of a filled one are interpolated; thicker ones come back in `residual`. */
+  thin?: number;
+}
+
+export interface RemovalFill {
+  /** Straight-alpha RGBA: the fill inside the hole, fading out over the feather; clear elsewhere. */
+  rgba: Uint8Array;
+  /** 1 where nothing could fill the hole; `rgba` holds the frame itself there. */
+  residual: Uint8Array;
+  /** Pixels in the hole; filled from real frames, from layers, interpolated; and left over. */
+  hole: number;
+  real: number;
+  layered: number;
+  interpolated: number;
+  left: number;
+}
+
+export interface NativeRemover {
+  /** Frame `index` (RGB) and its object mask (0..255) join the pool. */
+  addFrame(index: number, rgb: Uint8Array, mask: Uint8Array): Promise<null>;
+  /** Frame `index`'s filled picture (RGB) and where it was generated (1) become a layer later fills take from. */
+  addLayer(index: number, rgb: Uint8Array, generated: Uint8Array): Promise<null>;
+  /** Fill frame `index` (RGB) under its object mask. */
+  fill(index: number, rgb: Uint8Array, mask: Uint8Array): Promise<RemovalFill>;
 }
 
 /**

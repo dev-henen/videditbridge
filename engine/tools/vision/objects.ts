@@ -1,8 +1,9 @@
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { round3 } from "../../core/util.js";
-import { probe, runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
+import { probe, resolveFfmpegPath, runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
 import { defaultModelsDir } from "../appdirs.js";
 import { native } from "../native/index.js";
 import { resizeMask } from "./segment.js";
@@ -250,6 +251,55 @@ export async function decodeFrames(src: string, range: { start: number; end: num
   const buf = res.stdoutBuffer ?? Buffer.alloc(0);
   const bytes = size.w * size.h * (fmt === "gray" ? 1 : 3);
   return Array.from({ length: Math.floor(buf.length / bytes) }, (_, i) => new Uint8Array(buf.buffer, buf.byteOffset + i * bytes, bytes));
+}
+
+/**
+ * Frames of a source range at `fps`, as raw bytes of `w` x `h` (gray or rgb24), one at a time from a
+ * single decode: for long ranges, where decodeFrames would hold every frame, and where seeking for
+ * each chunk would decode from the previous keyframe again (slow for AV1 and VP9).
+ */
+export async function* streamFrames(src: string, range: { start: number; end: number }, fps: number, size: { w: number; h: number }, fmt: "gray" | "rgb24", opts: FfmpegOptions & { signal?: AbortSignal }): AsyncGenerator<Uint8Array> {
+  const proc = spawn(
+    resolveFfmpegPath(opts),
+    [
+      "-hide_banner", "-loglevel", "error",
+      ...(range.start > 0 ? ["-ss", String(round3(range.start))] : []),
+      "-t", String(round3(Math.max(0.05, range.end - range.start))),
+      "-i", src,
+      "-an", "-vf", `fps=${fps},scale=${size.w}:${size.h}`,
+      "-fps_mode", "passthrough",
+      "-f", "rawvideo", "-pix_fmt", fmt, "-",
+    ],
+    { windowsHide: true, signal: opts.signal },
+  );
+  let err = "";
+  proc.stderr.on("data", (d: Buffer) => (err += d.toString()).length > 20_000 && (err = err.slice(-10_000)));
+  const closed = new Promise<number | null>((resolve, reject) => {
+    proc.on("error", reject);
+    proc.on("close", resolve);
+  });
+  const bytes = size.w * size.h * (fmt === "gray" ? 1 : 3);
+  // Pipe chunks are copied straight into the frame being filled (joining them would copy a large frame many times over).
+  let frame = new Uint8Array(bytes);
+  let at = 0;
+  try {
+    for await (const chunk of proc.stdout as AsyncIterable<Buffer>) {
+      for (let o = 0; o < chunk.length; ) {
+        const n = Math.min(bytes - at, chunk.length - o);
+        frame.set(chunk.subarray(o, o + n), at);
+        [at, o] = [at + n, o + n];
+        if (at === bytes) {
+          yield frame;
+          [frame, at] = [new Uint8Array(bytes), 0];
+        }
+      }
+    }
+    const code = await closed;
+    if (code !== 0) throw new Error(`ffmpeg (reading frames) failed for ${src}: ${err.trim().split("\n").pop()}`);
+  } finally {
+    // Stopped early (or failed): do not leave the decoder running.
+    if (proc.exitCode === null) proc.kill();
+  }
 }
 
 /** A prompt in frame fractions as segmenter input in pixels of a `size` frame; a name is found by the detector first. */

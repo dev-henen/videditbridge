@@ -2,6 +2,7 @@ import { z } from "zod";
 import { clamp, round3 } from "../../core/util.js";
 import type { Easing } from "../../core/schema.js";
 import { easeExpr } from "../../core/keyframes.js";
+import type { RemovalSpec } from "./removal.js";
 
 export interface EffectContext {
   width: number;
@@ -32,6 +33,11 @@ export interface EffectContext {
    * repeating (stills held, videos looped) for the clip's duration. Undefined where not prepared.
    */
   media?: (assetId: string) => string | undefined;
+  /**
+   * The prepared fill of an object removal (EffectDefinition.usesRemoval), by removalKey: each call
+   * returns a new label of it as yuva420p, fitted and timed like the clip. Undefined where not prepared.
+   */
+  removal?: (key: string) => string | undefined;
 }
 
 export type EffectCategory = "light" | "color" | "grade" | "retouch" | "blur" | "stylize" | "motion" | "shake" | "distort" | "time";
@@ -58,6 +64,8 @@ export interface EffectDefinition<P extends z.ZodType = z.ZodType> {
   usesDepthMask?: (params: z.output<P>) => boolean;
   /** Picture assets the effect reads (EffectContext.media), by id. */
   usesMedia?: (params: z.output<P>) => string[];
+  /** The removal whose fill the effect lays over the clip (EffectContext.removal); the renderer then prepares it. */
+  usesRemoval?: (params: z.output<P>) => RemovalSpec;
   /** Returns a comma-separated FFmpeg filter chain. */
   toFilter(params: z.output<P>, ctx: EffectContext): string;
 }

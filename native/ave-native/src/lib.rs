@@ -6,6 +6,7 @@ pub mod audio;
 pub mod depth;
 pub mod particles;
 pub mod refine;
+pub mod remove;
 pub mod track;
 
 use napi::bindgen_prelude::*;
@@ -508,6 +509,143 @@ impl ParticleRenderer {
     #[napi]
     pub fn frames(&self, count: u32) -> AsyncTask<ParticleFramesTask> {
         AsyncTask::new(ParticleFramesTask { renderer: self.inner.clone(), count: count as usize })
+    }
+}
+
+// --- Object removal (remove.rs).
+
+#[napi(object)]
+pub struct RemoverOptions {
+    /// Grow the mask by this many pixels (default 6), then fade out over `feather` (default 4).
+    pub grow: Option<f64>,
+    pub feather: Option<f64>,
+    /// Ring around the hole where exposure is matched, pixels (default 12).
+    pub ring: Option<f64>,
+    /// The camera does not move: take the median of the whole pool, unmatched (default false).
+    pub locked: Option<bool>,
+    /// Pool frames nearest in time a moving camera's fill takes the median of (default 5).
+    pub nearest: Option<u32>,
+    /// Leftovers within this many pixels of a filled one are interpolated (default 3); thicker ones are returned.
+    pub thin: Option<f64>,
+}
+
+#[napi(object)]
+pub struct RemovalFill {
+    /// Straight-alpha RGBA: the fill inside the hole, fading out over the feather; clear elsewhere.
+    pub rgba: Uint8Array,
+    /// 1 where nothing could fill the hole (thicker than `thin`); there `rgba` holds the frame itself.
+    pub residual: Uint8Array,
+    pub hole: u32,
+    pub real: u32,
+    pub layered: u32,
+    pub interpolated: u32,
+    pub left: u32,
+}
+
+enum RemoverJob {
+    Frame { index: usize, rgb: Vec<u8>, mask: Vec<u8> },
+    Layer { index: usize, rgb: Vec<u8>, generated: Vec<u8> },
+    Fill { index: usize, rgb: Vec<u8>, mask: Vec<u8> },
+}
+
+pub struct RemoverTask {
+    remover: Arc<Mutex<remove::Remover>>,
+    area: usize,
+    job: Option<RemoverJob>,
+}
+
+impl Task for RemoverTask {
+    type Output = Option<remove::Fill>;
+    type JsValue = Option<RemovalFill>;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let job = self.job.take().ok_or_else(|| Error::from_reason("ave-native: remover task ran twice"))?;
+        let area = self.area;
+        let sized = match &job {
+            RemoverJob::Frame { rgb, mask, .. } | RemoverJob::Fill { rgb, mask, .. } => rgb.len() == area * 3 && mask.len() == area,
+            RemoverJob::Layer { rgb, generated, .. } => rgb.len() == area * 3 && generated.len() == area,
+        };
+        if !sized {
+            return Err(Error::from_reason("ave-native: the remover needs RGB frames of width x height x 3 bytes and masks of width x height"));
+        }
+        let mut r = self.remover.lock().map_err(|_| Error::from_reason("ave-native: the remover failed earlier"))?;
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match job {
+            RemoverJob::Frame { index, rgb, mask } => {
+                r.add_frame(index, rgb, &mask);
+                None
+            }
+            RemoverJob::Layer { index, rgb, generated } => {
+                r.add_layer(index, rgb, generated);
+                None
+            }
+            RemoverJob::Fill { index, rgb, mask } => Some(r.fill(index, &rgb, &mask)),
+        }))
+        .map_err(|_| Error::from_reason("ave-native: the remover panicked"))
+    }
+
+    fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {
+        Ok(out.map(|f| RemovalFill {
+            rgba: f.rgba.into(),
+            residual: f.residual.into(),
+            hole: f.hole,
+            real: f.real,
+            layered: f.layered,
+            interpolated: f.interpolated,
+            left: f.left,
+        }))
+    }
+}
+
+/// Fills the area under an object with what other frames of the clip show there (see remove.rs):
+/// add pool frames, then fill frames one by one; what nothing shows comes back for a model, whose
+/// result goes in as a layer.
+#[napi]
+pub struct Remover {
+    inner: Arc<Mutex<remove::Remover>>,
+    area: usize,
+}
+
+#[napi]
+impl Remover {
+    /// `motion`: per frame of the clip, the 3x3 transform from frame 0's pixels to that frame's.
+    #[napi(constructor)]
+    pub fn new(width: u32, height: u32, motion: Float64Array, options: Option<RemoverOptions>) -> Result<Self> {
+        if motion.len() % 9 != 0 || width == 0 || height == 0 {
+            return Err(Error::from_reason("ave-native: the remover needs a frame size and 9 numbers of motion per frame"));
+        }
+        let mut opts = remove::RemoveOptions::default();
+        if let Some(o) = options {
+            opts.grow = o.grow.map_or(opts.grow, |v| v as f32);
+            opts.feather = o.feather.map_or(opts.feather, |v| v as f32);
+            opts.ring = o.ring.map_or(opts.ring, |v| v as f32);
+            opts.locked = o.locked.unwrap_or(opts.locked);
+            opts.nearest = o.nearest.map_or(opts.nearest, |v| (v as usize).max(1));
+            opts.thin = o.thin.map_or(opts.thin, |v| v as f32);
+        }
+        let (w, h) = (width as usize, height as usize);
+        Ok(Remover { inner: Arc::new(Mutex::new(remove::Remover::new(w, h, &motion, opts))), area: w * h })
+    }
+
+    fn task(&self, job: RemoverJob) -> AsyncTask<RemoverTask> {
+        AsyncTask::new(RemoverTask { remover: self.inner.clone(), area: self.area, job: Some(job) })
+    }
+
+    /// Frame `index` (RGB) and its object mask (0..255) join the pool.
+    #[napi(js_name = "addFrame")]
+    pub fn add_frame(&self, index: u32, rgb: Uint8Array, mask: Uint8Array) -> AsyncTask<RemoverTask> {
+        self.task(RemoverJob::Frame { index: index as usize, rgb: rgb.to_vec(), mask: mask.to_vec() })
+    }
+
+    /// Frame `index`'s filled picture (RGB) and where it was generated (1) become a layer.
+    #[napi(js_name = "addLayer")]
+    pub fn add_layer(&self, index: u32, rgb: Uint8Array, generated: Uint8Array) -> AsyncTask<RemoverTask> {
+        self.task(RemoverJob::Layer { index: index as usize, rgb: rgb.to_vec(), generated: generated.to_vec() })
+    }
+
+    /// Fill frame `index` (RGB) under its object mask (0..255).
+    #[napi]
+    pub fn fill(&self, index: u32, rgb: Uint8Array, mask: Uint8Array) -> AsyncTask<RemoverTask> {
+        self.task(RemoverJob::Fill { index: index as usize, rgb: rgb.to_vec(), mask: mask.to_vec() })
     }
 }
 

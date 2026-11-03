@@ -25,7 +25,7 @@ import { isAnimated, layerStateAt, positionAt, simplifyKeys, simplifyKeysBy, smo
 import { fileOnDisk, validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, isAbsolutePath, isUrl, newId, round3, type AspectRatio } from "../core/util.js";
-import { CUSTOM_FILTERS, ColorSettingsSchema, SubjectRegionSchema, checkCustomFilter, describeColorSettings, describeMask, effectStates, getEffect, listEffects, mergeColorSettings, SKIN_LINE, type ColorSettings, type Vec3 } from "../library/effects/index.js";
+import { CUSTOM_FILTERS, ColorSettingsSchema, RemoveObjectParams, SubjectRegionSchema, checkCustomFilter, describeColorSettings, describeMask, effectStates, getEffect, listEffects, mergeColorSettings, removalKey, removalSpec, SKIN_LINE, type ColorSettings, type RemovalSpec, type Vec3 } from "../library/effects/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { getTransition, listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
@@ -44,7 +44,7 @@ import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
-import { depthInClips, render, renderContactSheet, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
+import { depthInClips, removalInClips, render, renderContactSheet, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
 import { depthInBox, readDepthFrames } from "../tools/vision/depth.js";
 import { effectsOf } from "../tools/render/compile.js";
 import { analyzeColor, renderScopes } from "../tools/render/color-analysis.js";
@@ -2456,6 +2456,135 @@ export const TOOLS: ToolDefinition[] = [
         images.push({ path: out, mediaType: "image/png" });
       }
       return { ...res, text: `${res.text}\nThe image${images.length > 1 ? "s show" : " shows"} the middle of ${changed.slice(0, 3).map((c) => c.clipId).join(", ")}. Check edges against trees or buildings with render_frame at full scale.`, images };
+    },
+  }),
+  tool({
+    name: "remove_object",
+    description:
+      "Remove an object from video clips and fill in what was behind it: a person walking through, a car, a sign, a cable, a logo or watermark. Give a tracked object (objectId from select_object, followed through every frame; it is tracked first if it is not yet) or a box: a fixed area of the edit's frame that stays put (a logo, a date stamp, a dust spot on the lens). " +
+      "Behind the object is rebuilt from other frames of the clip, where the object moves away or the camera moves past it: on a locked-off shot this is exact and does not flicker. What no frame ever shows (an object that never moves on a still shot, a photo) is painted by an inpainting model on this machine (a 208 MB model downloads once; about 10 s each time it runs, plus 20 s to load it), on as few frames as possible, and the rest take from that, so it stays put. " +
+      "Shows the clip before and after at the frame with the most removed, and reports per clip whether the camera moved and how much of the area came from real frames. Check the result with render_preview: generated areas on moving shots can wobble, and large objects on moving shots are the hardest case. " +
+      "Calling again adds to the clip's removal; remove takes an object out of it, or everything when no object or box is given. Primary video and photo clips only.",
+    input: z.object({
+      objectId: z.string().optional().describe("A tracked object to remove (select_object)"),
+      box: z
+        .object({ x0: z.number(), y0: z.number(), x1: z.number(), y1: z.number() })
+        .optional()
+        .describe("A fixed area to remove instead, in fractions of the edit's frame as in render_frame; draw it a little larger than the thing"),
+      shape: z.enum(["rect", "ellipse"]).default("rect").describe("Shape of the box's area"),
+      time: z.number().min(0).optional().describe("Timeline time the box was drawn at (default: the middle of each clip); it maps the box into the source"),
+      clipIds: z.array(z.string()).optional().describe("Clips to remove it from (default: every primary clip of the object's video, or the clip playing at time for a box)"),
+      grow: z.number().min(0).max(0.05).optional().describe("Grow the removed area by this fraction of the frame's short side (default 0.008); more covers a soft edge or a shadow"),
+      feather: z.number().min(0).max(0.03).optional().describe("Soft edge beyond that (default 0.006)"),
+      remove: z.boolean().optional().describe("Take the object (or, with neither objectId nor box, the whole removal) out of these clips"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const tl = computeTimeline(s.project);
+      const object = i.objectId ? s.project.objects[i.objectId] : undefined;
+      if (i.objectId && !object) return { text: `No object "${i.objectId}". Objects: ${Object.keys(s.project.objects).join(", ") || "(none; make one with select_object)"}`, isError: true };
+      if (!i.remove && !object && !i.box) return { text: "Give an objectId (select_object) or a box of the frame to remove.", isError: true };
+      const at = i.time !== undefined ? tl.clips.find((c) => i.time! >= c.start && i.time! < c.end) : undefined;
+      const ids = i.clipIds ?? (object ? tl.clips.filter((c) => c.asset.id === object.assetId).map((c) => c.clip.id) : at ? [at.clip.id] : []);
+      if (!ids.length) return { text: i.box && i.time === undefined ? "Give the time the box was drawn at, or clipIds." : "No primary clip to change.", isError: true };
+      const targets = ids.map((id) => tl.clips.find((c) => c.clip.id === id));
+      const missing = ids.filter((_, k) => !targets[k]);
+      if (missing.length) return { text: `No primary clip ${missing.join(", ")}.`, isError: true };
+      const clips = targets as TimedClip[];
+      const wrong = clips.filter((c) => (object ? c.asset.id !== object.assetId : c.asset.type !== "video" && c.asset.type !== "image"));
+      if (wrong.length) return { text: object ? `${wrong.map((c) => c.clip.id).join(", ")} ${wrong.length > 1 ? "do" : "does"} not show ${object.assetId}, the video "${i.objectId}" was selected in.` : `${wrong.map((c) => c.clip.id).join(", ")}: removal works on video and photo clips.`, isError: true };
+      const current = (tc: TimedClip) => tc.clip.effects.find((e) => e.type === "removeObject");
+
+      if (i.remove) {
+        let p = s.project;
+        for (const tc of clips) {
+          const e = current(tc);
+          if (!e) continue;
+          const params = e.params as { objects?: string[]; regions?: unknown[] };
+          const objects = (params.objects ?? []).filter((id) => id !== i.objectId);
+          const keep = i.objectId && (objects.length || params.regions?.length);
+          const rest = tc.clip.effects.filter((x) => x !== e);
+          p = ops.updateClip(p, tc.clip.id, { effects: keep ? [{ ...e, params: { ...params, objects } }, ...rest] : rest });
+        }
+        return commit(s, p, "remove_object", i, i.objectId ? `Took "${i.objectId}" out of the removal in ${ids.join(", ")}.` : `Took the object removal out of ${ids.join(", ")}.`);
+      }
+
+      // The new removal settings of each clip: its current ones plus this object or area.
+      let p = s.project;
+      const specs = new Map<string, RemovalSpec>();
+      for (const tc of clips) {
+        const e = current(tc);
+        const old = RemoveObjectParams.parse(e?.params ?? {});
+        let regions = old.regions;
+        if (i.box) {
+          const a = tc.asset as { width?: number; height?: number; src?: string };
+          const info = a.width && a.height ? { width: a.width, height: a.height } : await probe(s.resolve(a.src!), { ffmpegPath: s.options.ffmpegPath });
+          const t = at && at.clip.id === tc.clip.id ? i.time! : (tc.start + tc.end) / 2;
+          const focus = tc.clip.keyframes?.focus?.length ? positionAt(tc.clip.keyframes.focus, t - tc.start) : tc.clip.focus;
+          const b = frameToSource(i.box, { width: info.width ?? 1920, height: info.height ?? 1080 }, s.project.settings, tc.clip.fit, focus);
+          if (b.x1 - b.x0 < 1e-3 || b.y1 - b.y0 < 1e-3) return { text: `The box is outside the picture of ${tc.clip.id}.`, isError: true };
+          regions = [...regions, { shape: i.shape, ...b }];
+        }
+        const params = {
+          objects: [...new Set([...old.objects, ...(i.objectId ? [i.objectId] : [])])],
+          regions,
+          grow: i.grow ?? old.grow,
+          feather: i.feather ?? old.feather,
+        };
+        specs.set(tc.clip.id, removalSpec(RemoveObjectParams.parse(params)));
+        // First, so the clip's grade applies to the fill as well.
+        const effect = { type: "removeObject", params, label: "remove" };
+        p = ops.updateClip(p, tc.clip.id, { effects: [effect, ...tc.clip.effects.filter((x) => x.type !== "removeObject")] });
+      }
+
+      // Prepared now (objects tracked first), clips with the same settings together.
+      const groups = new Map<string, { spec: RemovalSpec; clipIds: string[] }>();
+      for (const [clipId, spec] of specs) {
+        const g = groups.get(removalKey(spec)) ?? { spec, clipIds: [] };
+        g.clipIds.push(clipId);
+        groups.set(removalKey(spec), g);
+      }
+      const results: Awaited<ReturnType<typeof removalInClips>> = [];
+      let done = 0;
+      for (const g of groups.values()) {
+        const share = g.clipIds.length / specs.size;
+        const base = done;
+        results.push(...(await removalInClips(p, g.clipIds, g.spec, { ...s.renderOptions, onProgress: (f) => activity?.progress(0.02 + 0.9 * (base + share * f)) })));
+        done += share;
+      }
+      const lines: string[] = [];
+      let best: { clipId: string; time: number; area: number } | undefined;
+      for (const r of results) {
+        const tc = clips.find((c) => c.clip.id === r.clipId)!;
+        const t = r.track;
+        const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / Math.max(1, v.length);
+        // The frame with the most removed; of several, the one nearest the middle.
+        const most = Math.max(...t.area);
+        const k = t.area.reduce((b, a, f) => (a >= most - 1e-6 && Math.abs(f - t.area.length / 2) < Math.abs(b - t.area.length / 2) ? f : b), t.area.indexOf(most));
+        const time = round3(Math.min(tc.end - 0.05, Math.max(tc.start, sourceToTimeline(tc, t.start + k / t.fps))));
+        if (!best || t.area[k]! > best.area) best = { clipId: r.clipId, time, area: t.area[k]! };
+        const camera = t.area.length === 1 ? "a still" : t.locked ? "locked-off camera" : `camera moves up to ${Math.round(t.moved)} px`;
+        lines.push(
+          `${r.clipId} (${formatTime(tc.start)}-${formatTime(tc.end)}): ${camera}; removed up to ${(t.area[k]! * 100).toFixed(1)}% of the frame; ${Math.round(mean(t.real) * 100)}% rebuilt from real frames, ${Math.round(mean(t.generated) * 100)}% generated (model on ${t.inpainted.length} frame${t.inpainted.length === 1 ? "" : "s"}).`,
+        );
+      }
+      const before = s.project;
+      const res = commit(s, p, "remove_object", i, `Removed ${i.objectId ? `"${i.objectId}"` : "the area"}:\n${lines.join("\n")}`);
+      const images: { path: string; mediaType: "image/png" }[] = [];
+      if (best) {
+        for (const [name, project] of [["before", before], ["after", s.project]] as const) {
+          const out = await s.outputPath(`remove-${best.clipId}-${name}-${Date.now().toString(36)}.png`);
+          await renderFrame(project, best.time, { output: out, scale: 0.5, proxies: true, ...s.renderOptions });
+          if (name === "after") s.recordRender({ kind: "frame", path: out, time: best.time });
+          images.push({ path: out, mediaType: "image/png" });
+        }
+      }
+      const generated = results.some((r) => r.track.generated.some((g) => g > 0.05));
+      return {
+        ...res,
+        text: `${res.text}${best ? `\nThe images show ${best.clipId} at ${formatTime(best.time)} before and after.` : ""}${generated ? " Part of the area was generated: check it moves with the scene in render_preview." : ""}`,
+        images,
+      };
     },
   }),
   tool({

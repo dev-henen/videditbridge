@@ -3,7 +3,7 @@ import type { Asset, BlendMode, Clip, Corners, Effect, Fit, Keyframe, MediaLayer
 import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { round3, toFfmpegColor } from "../../core/util.js";
-import { effectMedia, effectObjects, effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, type EffectContext } from "../../library/effects/index.js";
+import { effectMedia, effectObjects, effectRemovals, effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, removalKey, type EffectContext } from "../../library/effects/index.js";
 import { buildMatte, maskNeeds } from "../../library/effects/masks.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
@@ -63,6 +63,8 @@ export interface CompileOptions {
   skyMasks?: Record<string, string>;
   /** Depth videos (16-bit gray, 0 near .. far), in the same form as `masks`. */
   depthMasks?: Record<string, string>;
+  /** Object removal fills (clip id to removalKey to file; RGBA with transparency), in the same form as `masks`. */
+  removals?: Record<string, Record<string, string>>;
   /**
    * Person cutout of the finished main picture (clips, transitions and whole-video effects, no layers),
    * in timeline time, for media layers drawn behind the subject. Without it those layers go on top.
@@ -345,16 +347,16 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const fitted = fit(raw, clip.fit, W, H, false, clip.focus, clip.keyframes?.focus);
       // Person cutouts and face masks go through the same timing and fit as the picture, so they line up.
       // A ramped effect runs once per state, and each run (and the effect's mask) takes its own copy.
-      const modelMasks = (count: number, file: string | undefined): string[] => {
+      const modelMasks = (count: number, file: string | undefined, format = "gray"): string[] => {
         if (!count || !file) return [];
         const mraw = g.label("mraw");
         const input = `${g.addInput(["-i", file])}:v`;
-        // A photo's depth is a single frame, held for the clip.
-        if (asset.type === "image") g.add(`[${input}]setpts=PTS-STARTPTS,fps=${F},tpad=stop_mode=clone:stop=-1,trim=duration=${round3(tc.duration)},format=gray[${mraw}]`);
-        else g.add(`${timing(input)},format=gray[${mraw}]`);
+        // A photo's depth or removal is a single frame, held for the clip.
+        if (asset.type === "image") g.add(`[${input}]setpts=PTS-STARTPTS,fps=${F},tpad=stop_mode=clone:stop=-1,trim=duration=${round3(tc.duration)},format=${format}[${mraw}]`);
+        else g.add(`${timing(input)},format=${format}[${mraw}]`);
         const mfit = fit(mraw, clip.fit, W, H, true, clip.focus, clip.keyframes?.focus);
         const labels = Array.from({ length: count }, () => g.label("mask"));
-        g.add(`[${mfit}]format=gray${count > 1 ? `,split=${count}` : ""}${labels.map((l) => `[${l}]`).join("")}`);
+        g.add(`[${mfit}]format=${format}${count > 1 ? `,split=${count}` : ""}${labels.map((l) => `[${l}]`).join("")}`);
         return labels;
       };
       const streams = (kind: "person" | "face" | "sky" | "depth") => clip.effects.reduce((n, e) => n + maskStreams(e, kind), 0);
@@ -377,6 +379,13 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         const labels = modelMasks(clip.effects.filter((e) => effectObjects(e).includes(id)).length, opts.objectMasks?.[clip.id]?.[id]);
         if (labels.length) objectLabels.set(id, labels);
       }
+      // Object removal fills, with their transparency: one stream per use of each.
+      const removalLabels = new Map<string, string[]>();
+      const removalUses = clip.effects.flatMap(effectRemovals).map(removalKey);
+      for (const key of new Set(removalUses)) {
+        const labels = modelMasks(removalUses.filter((k) => k === key).length, opts.removals?.[clip.id]?.[key], "yuva420p");
+        if (labels.length) removalLabels.set(key, labels);
+      }
       const clipEffects = effectsToFilter(clip.effects, {
         ...effectCtx(tc.duration),
         ...(personLabels.length ? { personMask: () => personLabels.shift() } : {}),
@@ -385,9 +394,10 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         ...(skyLabels.length ? { skyMask: () => skyLabels.shift() } : {}),
         ...(depthLabels.length ? { depthMask: () => depthLabels.shift() } : {}),
         ...(mediaLabels.size ? { media: (id: string) => mediaLabels.get(id)?.shift() } : {}),
+        ...(removalLabels.size ? { removal: (key: string) => removalLabels.get(key)?.shift() } : {}),
       });
       // Any mask or picture an effect did not take still has to be consumed.
-      for (const l of [...personLabels, ...faceLabels, ...skyLabels, ...depthLabels, ...[...objectLabels.values(), ...mediaLabels.values()].flat()]) g.add(`[${l}]nullsink`);
+      for (const l of [...personLabels, ...faceLabels, ...skyLabels, ...depthLabels, ...[...objectLabels.values(), ...mediaLabels.values(), ...removalLabels.values()].flat()]) g.add(`[${l}]nullsink`);
       g.add(
         `[${fitted}]${chain([
           ...clipEffects,

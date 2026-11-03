@@ -9,7 +9,7 @@ import { compileProject, type CompileOptions, type CompiledRender } from "./comp
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
-import { effectObjects, usesDepthMask, usesFaceMask, usesPersonMask, usesSkyMask } from "../../library/effects/index.js";
+import { effectObjects, effectRemovals, removalKey, usesDepthMask, usesFaceMask, usesPersonMask, usesSkyMask, type RemovalSpec } from "../../library/effects/index.js";
 import { maskNeeds } from "../../library/effects/masks.js";
 import { ObjectSegmenter, objectMaskFile, writeObjectMask, type ObjectSpec, type ObjectTrack } from "../vision/objects.js";
 import { PersonSegmenter, maskFile } from "../vision/segment.js";
@@ -17,6 +17,7 @@ import { faceMaskFile, writeFaceMask } from "../vision/facemask.js";
 import { FaceDetector } from "../vision/faces.js";
 import { SkySegmenter, skyMaskFile, writeSkyMask, type SkyTrack } from "../vision/sky.js";
 import { DepthEstimator, depthFile, writeDepth, type DepthTrack } from "../vision/depth.js";
+import { Inpainter, removalFile, removalMasks, writeRemoval, type RemovalTrack } from "../vision/removal.js";
 import { withProxies } from "./proxy.js";
 import { hasFilter, probe, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
 import { prepareFonts } from "../fonts/index.js";
@@ -117,12 +118,14 @@ async function execute(compiled: CompiledRender, opts: RenderOptions, outputs = 
 }
 
 interface MaskJob {
-  kind: "person" | "face" | "object" | "sky" | "depth";
+  kind: "person" | "face" | "object" | "sky" | "depth" | "removal";
   clipId: string;
   /** Object masks: the tracked object. */
   objectId?: string;
   object?: ObjectSpec;
-  /** Object, sky and depth masks: where their track goes. */
+  /** Removals: what goes, and the mask videos of its objects (jobs planned before this one). */
+  removal?: { spec: RemovalSpec; objectFiles: string[] };
+  /** Object, sky, depth and removal jobs: where their track goes. */
   track?: string;
   /** Progress of making this mask, 0..1. */
   onProgress?: (p: number) => void;
@@ -134,23 +137,30 @@ interface MaskJob {
 }
 
 /**
- * The person cutout, face, object and sky mask files of each video clip whose effects use them (see
- * PersonSegmenter, writeFaceMask, writeObjectMask and writeSkyMask), kept in the cache folder (or the system temp folder). Only names them; makeMasks
- * makes the missing ones.
+ * The person cutout, face, object, sky, depth and removal files of each clip whose effects use them
+ * (see PersonSegmenter, writeFaceMask, writeObjectMask, writeSkyMask, writeDepth and writeRemoval),
+ * kept in the cache folder (or the system temp folder). Only names them; makeMasks makes the missing ones.
  */
-async function planMasks(p: Project, opts: Omit<RenderOptions, "output">, extra: { clipId: string; objectId?: string; sky?: boolean; depth?: boolean }[] = []): Promise<MaskJob[]> {
+async function planMasks(p: Project, opts: Omit<RenderOptions, "output">, extra: { clipId: string; objectId?: string; sky?: boolean; depth?: boolean; removal?: RemovalSpec }[] = []): Promise<MaskJob[]> {
   const jobs: MaskJob[] = [];
   const dir = path.join(opts.cacheDir ?? path.join(tmpdir(), "ave-cache"), "masks");
   for (const tc of computeTimeline(p).clips) {
     const person = tc.clip.effects.some(usesPersonMask);
     const face = tc.clip.effects.some(usesFaceMask);
-    // Objects selected in this clip's video (an object from another video has no mask here).
     const wanted = extra.filter((x) => x.clipId === tc.clip.id);
-    const objects = [...new Set([...tc.clip.effects.flatMap(effectObjects), ...wanted.flatMap((x) => (x.objectId ? [x.objectId] : []))])].filter((id) => p.objects[id]?.assetId === tc.asset.id);
+    // Removals, each once, and the objects they take out.
+    const removals = [...new Map([...tc.clip.effects.flatMap(effectRemovals), ...wanted.flatMap((x) => (x.removal ? [x.removal] : []))].map((r) => [removalKey(r), r])).values()];
+    for (const id of removals.flatMap((r) => r.objects)) {
+      const o = p.objects[id];
+      if (!o) throw new Error(`Clip "${tc.clip.id}" removes object "${id}", which no longer exists; select it again or take it out with remove_object`);
+      if (o.assetId !== tc.asset.id) throw new Error(`Clip "${tc.clip.id}" removes object "${id}", which was selected in ${o.assetId}, another video; select it in this clip's video`);
+    }
+    // Objects selected in this clip's video (an object from another video has no mask here).
+    const objects = [...new Set([...tc.clip.effects.flatMap(effectObjects), ...wanted.flatMap((x) => (x.objectId ? [x.objectId] : [])), ...removals.flatMap((r) => r.objects)])].filter((id) => p.objects[id]?.assetId === tc.asset.id);
     const sky = tc.clip.effects.some(usesSkyMask) || wanted.some((x) => x.sky);
     const depth = tc.clip.effects.some(usesDepthMask) || wanted.some((x) => x.depth);
-    // Depth also works on photos (a 2.5D move); the other masks need video.
-    if (!(tc.asset.type === "video" || (tc.asset.type === "image" && depth)) || !(person || face || sky || depth || objects.length)) continue;
+    // Depth and removals also work on photos (a 2.5D move, a logo taken out); the other masks need video.
+    if (!(tc.asset.type === "video" || (tc.asset.type === "image" && (depth || removals.length))) || !(person || face || sky || depth || objects.length || removals.length)) continue;
     const src = /^[a-z]+:\/\//i.test(tc.asset.src) ? tc.asset.src : path.resolve(opts.baseDir ?? process.cwd(), tc.asset.src);
     // One mask frame per output frame, counted in source time.
     // A speed ramp needs the rate of its fastest moment.
@@ -158,17 +168,25 @@ async function planMasks(p: Project, opts: Omit<RenderOptions, "output">, extra:
     const fps = Math.min(60, Math.max(1, Math.round(p.settings.fps * fastest)));
     const range = { start: tc.clip.in, end: tc.clip.in + tc.sourceDuration };
     const clipId = tc.clip.id;
+    const objectFiles = new Map<string, string>();
     if (tc.asset.type === "image") {
-      jobs.push({ kind: "depth", clipId, ...(await depthFile(dir, src, range, fps)), src, range, fps });
-      continue;
+      if (depth) jobs.push({ kind: "depth", clipId, ...(await depthFile(dir, src, range, fps)), src, range, fps });
+    } else {
+      if (person) jobs.push({ kind: "person", clipId, ...(await maskFile(dir, src, range, fps)), src, range, fps });
+      if (face) jobs.push({ kind: "face", clipId, ...(await faceMaskFile(dir, src, range, fps)), src, range, fps });
+      if (sky) jobs.push({ kind: "sky", clipId, ...(await skyMaskFile(dir, src, range, fps)), src, range, fps });
+      if (depth) jobs.push({ kind: "depth", clipId, ...(await depthFile(dir, src, range, fps)), src, range, fps });
+      for (const objectId of objects) {
+        const object = p.objects[objectId]!;
+        const job: MaskJob = { kind: "object", clipId, objectId, object, ...(await objectMaskFile(dir, src, range, fps, object)), src, range, fps };
+        objectFiles.set(objectId, job.file);
+        jobs.push(job);
+      }
     }
-    if (person) jobs.push({ kind: "person", clipId, ...(await maskFile(dir, src, range, fps)), src, range, fps });
-    if (face) jobs.push({ kind: "face", clipId, ...(await faceMaskFile(dir, src, range, fps)), src, range, fps });
-    if (sky) jobs.push({ kind: "sky", clipId, ...(await skyMaskFile(dir, src, range, fps)), src, range, fps });
-    if (depth) jobs.push({ kind: "depth", clipId, ...(await depthFile(dir, src, range, fps)), src, range, fps });
-    for (const objectId of objects) {
-      const object = p.objects[objectId]!;
-      jobs.push({ kind: "object", clipId, objectId, object, ...(await objectMaskFile(dir, src, range, fps, object)), src, range, fps });
+    // After the object masks they read.
+    for (const spec of removals) {
+      const files = await removalFile(dir, src, range, fps, spec, p.objects);
+      jobs.push({ kind: "removal", clipId, removal: { spec, objectFiles: spec.objects.map((id) => objectFiles.get(id)!) }, ...files, src, range, fps });
     }
   }
   return jobs;
@@ -224,6 +242,31 @@ export async function depthInClips(project: Project, clipIds: string[], opts: Om
   return Promise.all(jobs.map(async (j) => ({ clipId: j.clipId, file: j.file, track: JSON.parse(await readFile(j.track!, "utf8")) as DepthTrack })));
 }
 
+/**
+ * Prepare a removal in primary clips into the same cache files renders use (its objects tracked
+ * first where they are not yet), so a later render does not prepare it again. Returns each clip's
+ * removal track (camera, area, shares filled from real frames and generated, in source time).
+ */
+export async function removalInClips(project: Project, clipIds: string[], spec: RemovalSpec, opts: Omit<RenderOptions, "output" | "range">): Promise<{ clipId: string; file: string; track: RemovalTrack }[]> {
+  const p = await readyToRender(project, opts);
+  const key = removalKey(spec);
+  const all = await planMasks(p, opts, clipIds.map((clipId) => ({ clipId, removal: spec })));
+  const removals = all.filter((j) => j.kind === "removal" && clipIds.includes(j.clipId) && removalKey(j.removal!.spec) === key);
+  // The objects' masks are made on the way; progress counts them as half of their clip's removal.
+  const jobs = all.filter((j) => clipIds.includes(j.clipId) && (removals.includes(j) || (j.kind === "object" && spec.objects.includes(j.objectId!))));
+  const weight = (j: MaskJob) => (j.exists ? 0 : j.kind === "object" ? 0.5 : 1);
+  const total = jobs.reduce((n, j) => n + weight(j), 0) || 1;
+  let done = 0;
+  for (const j of jobs) {
+    const [base, w] = [done, weight(j)];
+    j.onProgress = opts.onProgress && ((f) => opts.onProgress!((base + w * f) / total));
+    done += w;
+  }
+  await makeMasks(jobs, clipIds, opts);
+  opts.onProgress?.(1);
+  return Promise.all(removals.map(async (j) => ({ clipId: j.clipId, file: j.file, track: JSON.parse(await readFile(j.track!, "utf8")) as RemovalTrack })));
+}
+
 /** Make the missing masks of the clips in `only` (a few seconds per clip second on a laptop). */
 async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<RenderOptions, "output">): Promise<void> {
   const ids = new Set(only);
@@ -232,9 +275,24 @@ async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<Ren
   let objects: ObjectSegmenter | undefined;
   let skies: SkySegmenter | undefined;
   let depths: DepthEstimator | undefined;
+  let inpainter: Inpainter | undefined;
   for (const job of jobs) {
     if (job.exists || !ids.has(job.clipId)) continue;
-    if (job.kind === "object") {
+    if (job.kind === "removal") {
+      inpainter ??= new Inpainter({ ffmpegPath: opts.ffmpegPath });
+      const { spec, objectFiles } = job.removal!;
+      await writeRemoval(job.src, { file: job.file, track: job.track! }, {
+        ...job.range,
+        fps: job.fps,
+        masks: removalMasks(spec.regions, objectFiles, job.fps, { ffmpegPath: opts.ffmpegPath }),
+        grow: spec.grow,
+        feather: spec.feather,
+        inpainter,
+        ffmpegPath: opts.ffmpegPath,
+        signal: opts.signal,
+        onProgress: job.onProgress,
+      });
+    } else if (job.kind === "object") {
       objects ??= new ObjectSegmenter();
       await writeObjectMask(job.src, { file: job.file, track: job.track! }, { ...job.range, fps: job.fps, time: job.object!.time, prompt: job.object!, segmenter: objects, ffmpegPath: opts.ffmpegPath, signal: opts.signal, onProgress: job.onProgress });
     } else if (job.kind === "depth") {
@@ -254,13 +312,15 @@ async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<Ren
   }
 }
 
-type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "depthMasks" | "subjectMask" | "skyMatte">;
+type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "depthMasks" | "removals" | "subjectMask" | "skyMatte">;
 
 const maskFiles = (jobs: MaskJob[]): MaskFiles => {
   const of = (kind: MaskJob["kind"]) => Object.fromEntries(jobs.filter((j) => j.kind === kind).map((j) => [j.clipId, j.file]));
   const objectMasks: Record<string, Record<string, string>> = {};
   for (const j of jobs) if (j.kind === "object") (objectMasks[j.clipId] ??= {})[j.objectId!] = j.file;
-  return { masks: of("person"), faceMasks: of("face"), objectMasks, skyMasks: of("sky"), depthMasks: of("depth") };
+  const removals: Record<string, Record<string, string>> = {};
+  for (const j of jobs) if (j.kind === "removal") (removals[j.clipId] ??= {})[removalKey(j.removal!.spec)] = j.file;
+  return { masks: of("person"), faceMasks: of("face"), objectMasks, skyMasks: of("sky"), depthMasks: of("depth"), removals };
 };
 
 /** Masks and cached clips for a render: `create` fills the cache; clips not taken from it get their masks made. */
