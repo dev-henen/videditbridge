@@ -258,6 +258,10 @@ export const ClipSchema = z.object({
     .describe("Source duration to use (seconds). Required for image/color/gradient assets; defaults to rest of source for video"),
   speed: z.number().min(0.25).max(4).default(1),
   reverse: z.boolean().optional().describe("Play the clip backwards (picture and sound; no captions for it). Keep reversed clips short, under ~20s"),
+  interpolate: z
+    .boolean()
+    .optional()
+    .describe("Smooth motion: where the clip shows more frames than its footage has (slow motion, a speed ramp, a lower frame rate than the edit's), make the frames in between with a model instead of repeating frames. Prepared before rendering (slow) and cached"),
   volume: z.number().min(0).max(4).default(1),
   muted: z.boolean().default(false),
   audioEffects: audioEffects("this clip's audio"),

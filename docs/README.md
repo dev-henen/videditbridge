@@ -21,6 +21,7 @@
 | [Sky masks & replacement](guides/sky.md) | Find the sky on every frame, grade it, and replace it with a picture or gradient that moves with the camera |
 | [Depth](guides/depth.md) | Depth of every frame, depth of field and rack focus, depth masks, fog by distance, and 2.5D moves through photos |
 | [Removing objects](guides/removal.md) | Take a tracked object or a fixed area (a logo, a sign) out of clips and photos, rebuilt from other frames, with an inpainting model for what no frame shows |
+| [Slow motion & frame rates](guides/slow-motion.md) | Smooth slow motion, speed ramps and frame rate conversion, with frames made in between by a model instead of repeated |
 | [Atmosphere & light](guides/atmosphere-and-light.md) | Rain, snow, dust, embers, sparks, confetti, bokeh, smoke and fog as seeded particle layers, masked to the sky or behind people; light rays and lens flares |
 | [Retouch & audio](guides/retouch-and-audio.md) | Beauty retouch, background blur, voice cleanup, audio effects, speed and volume |
 | [Editing raw footage](guides/raw-footage.md) | Sound maps (speech, silence, music), silence removal, shot detection, beat sync, moment effects and sound effects |

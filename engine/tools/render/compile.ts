@@ -66,6 +66,11 @@ export interface CompileOptions {
   /** Object removal fills (clip id to removalKey to file; RGBA with transparency), in the same form as `masks`. */
   removals?: Record<string, Record<string, string>>;
   /**
+   * Interpolated pictures of clips with `interpolate` (clip id to file, see writeInterpolated): the
+   * frames the clip shows, in source order at the project frame rate, read in place of the source.
+   */
+  interpolated?: Record<string, string>;
+  /**
    * Person cutout of the finished main picture (clips, transitions and whole-video effects, no layers),
    * in timeline time, for media layers drawn behind the subject. Without it those layers go on top.
    */
@@ -343,7 +348,10 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       // A speed ramp maps each frame's source time through the clip's time map.
       const retime = tc.speedMap ? `setpts='(${rampPts(tc.speedMap, tc.sourceDuration)})/TB'` : speed !== 1 && `setpts=PTS/${speed}`;
       const timing = (input: string) => `[${input}]${chain([clip.reverse && "reverse", "setpts=PTS-STARTPTS", retime, `fps=${F}`])}`;
-      g.add(`${timing(`${k}:v`)}[${raw}]`);
+      // Smooth motion: the prepared frames are the clip's retimed picture already (in source order, so a reversed clip turns them round).
+      const smooth = opts.interpolated?.[clip.id];
+      if (smooth) g.add(`[${g.addInput(["-i", smooth])}:v]${chain([clip.reverse && "reverse", "setpts=PTS-STARTPTS", `fps=${F}`])}[${raw}]`);
+      else g.add(`${timing(`${k}:v`)}[${raw}]`);
       const fitted = fit(raw, clip.fit, W, H, false, clip.focus, clip.keyframes?.focus);
       // Person cutouts and face masks go through the same timing and fit as the picture, so they line up.
       // A ramped effect runs once per state, and each run (and the effect's mask) takes its own copy.

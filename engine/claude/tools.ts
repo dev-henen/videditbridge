@@ -44,7 +44,8 @@ import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
-import { depthInClips, removalInClips, render, renderContactSheet, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
+import { depthInClips, interpolateInClips, removalInClips, render, renderContactSheet, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
+import { clipFrameTimes, framePlan } from "../tools/video/interpolate.js";
 import { depthInBox, readDepthFrames } from "../tools/vision/depth.js";
 import { effectsOf } from "../tools/render/compile.js";
 import { analyzeColor, renderScopes } from "../tools/render/color-analysis.js";
@@ -93,6 +94,30 @@ const aspect = z.enum(Object.keys(ASPECT_RATIOS) as [AspectRatio, ...AspectRatio
 const empty = z.object({});
 const BEHIND_SUBJECT =
   "Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them";
+
+/** How many of the frames a video clip shows its footage does not have (made by interpolation), of how many in all; undefined when unknown. */
+async function framesToMake(s: EditorSession, project: Project, clipId: string): Promise<{ make: number; total: number; sourceFps: number } | undefined> {
+  const tc = computeTimeline(project).clips.find((c) => c.clip.id === clipId);
+  if (!tc || tc.asset.type !== "video") return undefined;
+  const sourceFps = (await probe(s.resolve(tc.asset.src), { ffmpegPath: s.options.ffmpegPath }).catch(() => undefined))?.fps;
+  if (!sourceFps) return undefined;
+  const plan = framePlan(clipFrameTimes(tc, project.settings.fps), sourceFps);
+  return { make: plan.filter((p) => p.t > 0).length, total: plan.length, sourceFps };
+}
+
+/**
+ * After a speed change: turn smooth motion on (`smooth` unset or true) where the clip now shows frames
+ * its footage lacks, or off (`smooth` false), and say what that means.
+ */
+async function applySmooth(s: EditorSession, project: Project, clipId: string, smooth: boolean | undefined): Promise<{ project: Project; note: string }> {
+  const need = await framesToMake(s, project, clipId);
+  if (smooth === false) return { project: ops.updateClip(project, clipId, { interpolate: undefined }), note: need?.make ? ` Frames repeat where the footage runs out (smooth motion off).` : "" };
+  if (!need?.make) return { project, note: "" };
+  return {
+    project: ops.updateClip(project, clipId, { interpolate: true }),
+    note: ` Smooth motion on: ${need.make} of its ${need.total} frames are in between the footage's (${need.sourceFps} fps) and will be made by a model, about half a second each with a graphics card and several seconds without. interpolate prepares them now; render_video does it otherwise, and previews repeat frames until then. smooth: false turns it off.`,
+  };
+}
 
 /** Commit a change and describe it briefly. */
 function commit(session: EditorSession, project: Project, action: string, input: unknown, message: string): ToolResult {
@@ -1300,13 +1325,15 @@ export const TOOLS: ToolDefinition[] = [
     description:
       "Change a clip's speed over time: fast, then slow motion on the moment that matters, then back (a speed ramp). Keyframes give the speed at moments of the clip's FOOTAGE (seconds from its in point, as in its source), with easing into each; the speed holds before the first and after the last. " +
       "Example, a 2x run-up into slow motion: [{time: 0, speed: 2}, {time: 1.5, speed: 2}, {time: 2, speed: 0.4}, {time: 3, speed: 0.4}, {time: 3.4, speed: 1}]. " +
-      "The clip keeps the same footage, so its length on the timeline changes and later clips move. Sound follows with its pitch kept; captions and cuts follow too. Pass null to go back to the clip's steady speed.",
+      "The clip keeps the same footage, so its length on the timeline changes and later clips move. Sound follows with its pitch kept; captions and cuts follow too. Pass null to go back to the clip's steady speed. " +
+      "Slow parts below the footage's frame rate get smooth motion (see interpolate) unless smooth is false.",
     input: z.object({
       clipId: z.string(),
       keyframes: z
         .array(z.object({ time: z.number().min(0).describe("Seconds of footage from the clip's in point"), speed: z.number().min(0.25).max(4), easing: EasingSchema.optional() }))
         .min(1)
         .nullable(),
+      smooth: z.boolean().optional().describe("Make in-between frames where the footage runs out (default: yes when it does)"),
     }),
     mutates: true,
     run: async (s, i) => {
@@ -1321,7 +1348,7 @@ export const TOOLS: ToolDefinition[] = [
         keys = i.keyframes.map((k) => ({ time: round3(k.time), value: k.speed, easing: k.easing ?? "ease-in-out" })).sort((a, b) => a.time - b.time);
       }
       const merged = keys ? { ...others, speed: keys } : others;
-      const p = ops.updateClip(s.project, i.clipId, { keyframes: Object.keys(merged).length ? merged : undefined });
+      const { project: p, note } = await applySmooth(s, ops.updateClip(s.project, i.clipId, { keyframes: Object.keys(merged).length ? merged : undefined }), i.clipId, i.smooth);
       const after = computeTimeline(p).clips.find((c) => c.clip.id === i.clipId)!;
       const moments = (keys ?? []).map((k) => `${k.value}x at ${formatTime(sourceToTimeline(after, after.clip.in + k.time))}`).join(", ");
       return commit(
@@ -1329,10 +1356,66 @@ export const TOOLS: ToolDefinition[] = [
         p,
         "speed_ramp",
         i,
-        keys
+        (keys
           ? `Speed ramp on ${i.clipId}: ${moments} on the timeline. The clip now runs ${formatTime(after.start)}-${formatTime(after.end)} (${after.duration}s, was ${before.duration}s).`
-          : `Removed the speed ramp from ${i.clipId}; it plays at ${before.clip.speed}x (${after.duration}s).`,
+          : `Removed the speed ramp from ${i.clipId}; it plays at ${before.clip.speed}x (${after.duration}s).`) + note,
       );
+    },
+  }),
+  tool({
+    name: "interpolate",
+    description:
+      "Smooth motion for video clips that show more frames than their footage has: slow motion and speed ramps below the footage's frame rate, or a lower frame rate than the edit's (24 fps footage in a 60 fps edit). Without it those frames repeat and motion stutters; with it a model on this machine (RIFE, a 21 MB model downloads once) makes the frames in between, only the ones the edit shows. " +
+      "About half a second a frame at 1080p with a graphics card and several seconds without, done once and cached; reports per clip how many frames were made. set_speed and speed_ramp turn it on by themselves when they slow a clip that far; this prepares the frames now (so previews show them too) or turns it off. " +
+      "Check fast movement and edges where things cross (hands, spokes, water) with render_preview; a cut inside a clip is never blended across.",
+    input: z.object({
+      clipIds: z.array(z.string()).optional().describe("Clips (default: every primary video clip with smooth motion on, or that shows frames its footage lacks)"),
+      off: z.boolean().optional().describe("Turn smooth motion off for these clips (frames repeat again)"),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const tl = computeTimeline(s.project);
+      const ids = i.clipIds ?? tl.clips.filter((c) => c.asset.type === "video").map((c) => c.clip.id);
+      const missing = ids.filter((id) => !tl.clips.some((c) => c.clip.id === id));
+      if (missing.length) return { text: `No primary clip ${missing.join(", ")}.`, isError: true };
+      let p = s.project;
+      if (i.off) {
+        for (const id of ids) p = ops.updateClip(p, id, { interpolate: undefined });
+        return commit(s, p, "interpolate", i, `Smooth motion off for ${ids.join(", ")}; frames repeat where the footage runs out.`);
+      }
+      const lines: string[] = [];
+      const targets: string[] = [];
+      for (const id of ids) {
+        const tc = tl.clips.find((c) => c.clip.id === id)!;
+        if (tc.asset.type !== "video") {
+          if (i.clipIds) lines.push(`${id}: not a video clip.`);
+          continue;
+        }
+        const need = await framesToMake(s, p, id);
+        if (!need?.make) {
+          // Only worth saying for clips asked for by name.
+          if (i.clipIds) lines.push(`${id}: every frame it shows is in its footage (${need?.sourceFps ?? "?"} fps at ${tc.clip.speed}x), nothing to make.`);
+          continue;
+        }
+        p = ops.updateClip(p, id, { interpolate: true });
+        targets.push(id);
+      }
+      if (!targets.length) return { text: lines.join("\n") || "No clip shows frames its footage lacks: nothing to make.", isError: !lines.length };
+      const started = Date.now();
+      const results = await interpolateInClips(p, targets, { ...s.renderOptions, onProgress: (f) => activity?.progress(0.02 + 0.9 * f) });
+      const seconds = (Date.now() - started) / 1000;
+      for (const r of results) {
+        const t = r.track;
+        lines.push(`${r.clipId}: ${t.frames} frames from ${t.sourceFps} fps footage, ${t.made} made by the model${t.held ? `, ${t.held} held (a cut or identical neighbors)` : ""}.`);
+      }
+      const res = commit(s, p, "interpolate", i, `Smooth motion prepared in ${Math.round(seconds)} s:\n${lines.join("\n")}`);
+      // A made frame, from the middle of the first clip, for a look at edges.
+      const tc = computeTimeline(s.project).clips.find((c) => c.clip.id === targets[0])!;
+      const out = await s.outputPath(`smooth-${tc.clip.id}-${Date.now().toString(36)}.png`);
+      const time = round3((tc.start + tc.end) / 2);
+      await renderFrame(s.project, time, { output: out, scale: 0.5, proxies: true, ...s.renderOptions });
+      s.recordRender({ kind: "frame", path: out, time });
+      return { ...res, text: `${res.text}\nThe image shows ${tc.clip.id} at ${formatTime(time)}. Check the motion itself with render_preview.`, images: [{ path: out, mediaType: "image/png" }] };
     },
   }),
   tool({
@@ -1380,10 +1463,20 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "set_speed",
     description:
-      "Speed up or slow down a primary clip or an audio clip (0.25-4; 0.5 = half speed slow motion, 2 = double speed). Audio keeps its pitch. The clip covers the same source footage, so it gets shorter or longer on the timeline and later clips move. Captions follow automatically.",
-    input: z.object({ target: z.string().describe("Clip id or audio clip id"), speed: z.number().min(0.25).max(4) }),
+      "Speed up or slow down a primary clip or an audio clip (0.25-4; 0.5 = half speed slow motion, 2 = double speed). Audio keeps its pitch. The clip covers the same source footage, so it gets shorter or longer on the timeline and later clips move. Captions follow automatically. " +
+      "Slowing a video clip below its footage's frame rate turns on smooth motion (see interpolate), so frames are made in between instead of repeated; smooth: false keeps repeated frames.",
+    input: z.object({
+      target: z.string().describe("Clip id or audio clip id"),
+      speed: z.number().min(0.25).max(4),
+      smooth: z.boolean().optional().describe("Video clips: make in-between frames where the footage runs out (default: yes when it does)"),
+    }),
     mutates: true,
-    run: async (s, i) => commit(s, ops.setSpeed(s.project, i.target, i.speed), "set_speed", i, `Speed of ${i.target}: ${i.speed}x.`),
+    run: async (s, i) => {
+      let p = ops.setSpeed(s.project, i.target, i.speed);
+      const { project, note } = p.clips.some((c) => c.id === i.target) ? await applySmooth(s, p, i.target, i.smooth) : { project: p, note: "" };
+      p = project;
+      return commit(s, p, "set_speed", i, `Speed of ${i.target}: ${i.speed}x.${note}`);
+    },
   }),
 
   // -------------------------------------------------------------------------

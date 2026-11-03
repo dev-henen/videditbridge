@@ -73,6 +73,7 @@ export function summarizeProject(project: Project): string {
         c.keyframes?.speed?.length
           ? `speed ramp ${Math.min(...c.keyframes.speed.map((k) => k.value))}-${Math.max(...c.keyframes.speed.map((k) => k.value))}x`
           : c.speed !== 1 && `speed ${c.speed}x`,
+        c.interpolate && "smooth motion",
         c.muted && "muted",
         c.volume !== 1 && `vol ${c.volume}`,
         c.fit !== "cover" && `fit ${c.fit}`,

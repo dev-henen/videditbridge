@@ -5,7 +5,7 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 ## Layout
 - `engine/` TypeScript (the editing engine: library, Claude tools, CLI, app host), `native/` Rust (speed-critical kernels), `ui/` C# desktop app, `assets/` bundled fonts and models, `scripts/` doc and native builds.
 - `ui/` has one folder per part of the screen (`Shell`, `Tabs`, `Preview`, `Timeline`, `Session`, `Chat`, `Projects`), plus `Engine` (host client) and `Shared`. Namespaces follow folders. A part is a UserControl with its own handlers and styles. `Shell/MainWindow` lays out the tabs (in the title bar) and one page per tab; `Shell/ProjectView` lays out one project's page (commands bar, `Session` on the left, preview and timeline, `Chat` on the right) and connects its parts' events.
-- Tests live in `test/<area>/`, mirroring `engine` (`core`, `library`, `render`, `audio`, `vision`, `transcript`, `claude`, `host`, `native`), plus `test/repo/` for repository-wide checks and `test/helpers/` for fixtures and oracles. Put a new test in the folder of the code it tests.
+- Tests live in `test/<area>/`, mirroring `engine` (`core`, `library`, `render`, `audio`, `vision`, `video`, `transcript`, `claude`, `host`, `native`), plus `test/repo/` for repository-wide checks and `test/helpers/` for fixtures and oracles. Put a new test in the folder of the code it tests.
 
 ## Commands
 - `npm test` runs unit and integration tests; integration renders real video (~3 min). `FULL_RENDER=1 npm test` renders all templates.

@@ -27,11 +27,11 @@ export function segmentProject(project: Project, clip: Clip): Project {
 /**
  * The cache file of each primary clip's picture. The key is the FFmpeg graph and inputs that make
  * it, plus the source file's size and modified time, so any change to the clip, the per-frame
- * global effects, the output size, the person cutout, face, sky or depth mask, an object removal, a picture an effect shows, or the code that builds effects gives a new file.
+ * global effects, the output size, the person cutout, face, sky or depth mask, an object removal, interpolated frames, a picture an effect shows, or the code that builds effects gives a new file.
  */
 export async function planSegments(
   project: Project,
-  opts: { cacheDir: string; baseDir?: string; fontsDir?: string; scale?: number; masks?: Record<string, string>; faceMasks?: Record<string, string>; objectMasks?: Record<string, Record<string, string>>; skyMasks?: Record<string, string>; depthMasks?: Record<string, string>; removals?: Record<string, Record<string, string>> },
+  opts: { cacheDir: string; baseDir?: string; fontsDir?: string; scale?: number; masks?: Record<string, string>; faceMasks?: Record<string, string>; objectMasks?: Record<string, Record<string, string>>; skyMasks?: Record<string, string>; depthMasks?: Record<string, string>; removals?: Record<string, Record<string, string>>; interpolated?: Record<string, string> },
 ): Promise<SegmentPlan[]> {
   const timeline = computeTimeline(project);
   const baseDir = opts.baseDir ?? process.cwd();
@@ -51,7 +51,7 @@ export async function planSegments(
           return a && "src" in a ? { id, ...(await version(a.src)) } : { id };
         }),
       );
-      const compiled = compileProject(segmentProject(project, clip), { output: "", scale: opts.scale, baseDir, fontsDir: opts.fontsDir, segment: true, masks: opts.masks, faceMasks: opts.faceMasks, objectMasks: opts.objectMasks, skyMasks: opts.skyMasks, depthMasks: opts.depthMasks, removals: opts.removals });
+      const compiled = compileProject(segmentProject(project, clip), { output: "", scale: opts.scale, baseDir, fontsDir: opts.fontsDir, segment: true, masks: opts.masks, faceMasks: opts.faceMasks, objectMasks: opts.objectMasks, skyMasks: opts.skyMasks, depthMasks: opts.depthMasks, removals: opts.removals, interpolated: opts.interpolated });
       // The last argument is the output path, which is not part of what the clip looks like.
       const key = { v: SEGMENT_VERSION, source, ...(media.length ? { media } : {}), args: compiled.args.slice(0, -1), graph: compiled.filterGraph };
       const hash = createHash("sha256").update(JSON.stringify(key)).digest("hex").slice(0, 32);

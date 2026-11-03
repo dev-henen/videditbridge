@@ -27,7 +27,8 @@ describe.skipIf(!hasFfmpeg || !hasModels)("selecting and tracking objects", () =
     ]);
   });
 
-  it("follows a moving object with IoU 0.85 and little flicker", async () => {
+  // About a minute alone; the full suite runs other model tests beside it.
+  it("follows a moving object with IoU 0.85 and little flicker", { timeout: 240_000 }, async () => {
     const p0 = pathAt(0);
     const r = await trackObject(clip, { start: 0, end: SECONDS, fps: 30, time: 0, prompt: { box: { x0: p0.x / W, y0: p0.y / H, x1: (p0.x + OW) / W, y1: (p0.y + OH) / H } } });
     expect(r.masks.length).toBeGreaterThanOrEqual(SECONDS * 30 - 1);

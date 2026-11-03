@@ -18,6 +18,7 @@ import { FaceDetector } from "../vision/faces.js";
 import { SkySegmenter, skyMaskFile, writeSkyMask, type SkyTrack } from "../vision/sky.js";
 import { DepthEstimator, depthFile, writeDepth, type DepthTrack } from "../vision/depth.js";
 import { Inpainter, removalFile, removalMasks, writeRemoval, type RemovalTrack } from "../vision/removal.js";
+import { Interpolator, clipFrameTimes, framePlan, interpolatedFile, needsFrames, writeInterpolated, type InterpolateTrack } from "../video/interpolate.js";
 import { withProxies } from "./proxy.js";
 import { hasFilter, probe, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
 import { prepareFonts } from "../fonts/index.js";
@@ -118,13 +119,15 @@ async function execute(compiled: CompiledRender, opts: RenderOptions, outputs = 
 }
 
 interface MaskJob {
-  kind: "person" | "face" | "object" | "sky" | "depth" | "removal";
+  kind: "person" | "face" | "object" | "sky" | "depth" | "removal" | "interpolate";
   clipId: string;
   /** Object masks: the tracked object. */
   objectId?: string;
   object?: ObjectSpec;
   /** Removals: what goes, and the mask videos of its objects (jobs planned before this one). */
   removal?: { spec: RemovalSpec; objectFiles: string[] };
+  /** Interpolation: the source time of every frame the clip shows, ascending (see clipFrameTimes). */
+  times?: number[];
   /** Object, sky, depth and removal jobs: where their track goes. */
   track?: string;
   /** Progress of making this mask, 0..1. */
@@ -159,8 +162,9 @@ async function planMasks(p: Project, opts: Omit<RenderOptions, "output">, extra:
     const objects = [...new Set([...tc.clip.effects.flatMap(effectObjects), ...wanted.flatMap((x) => (x.objectId ? [x.objectId] : [])), ...removals.flatMap((r) => r.objects)])].filter((id) => p.objects[id]?.assetId === tc.asset.id);
     const sky = tc.clip.effects.some(usesSkyMask) || wanted.some((x) => x.sky);
     const depth = tc.clip.effects.some(usesDepthMask) || wanted.some((x) => x.depth);
+    const smooth = tc.asset.type === "video" && !!tc.clip.interpolate;
     // Depth and removals also work on photos (a 2.5D move, a logo taken out); the other masks need video.
-    if (!(tc.asset.type === "video" || (tc.asset.type === "image" && (depth || removals.length))) || !(person || face || sky || depth || objects.length || removals.length)) continue;
+    if (!(tc.asset.type === "video" || (tc.asset.type === "image" && (depth || removals.length))) || !(person || face || sky || depth || objects.length || removals.length || smooth)) continue;
     const src = /^[a-z]+:\/\//i.test(tc.asset.src) ? tc.asset.src : path.resolve(opts.baseDir ?? process.cwd(), tc.asset.src);
     // One mask frame per output frame, counted in source time.
     // A speed ramp needs the rate of its fastest moment.
@@ -187,6 +191,16 @@ async function planMasks(p: Project, opts: Omit<RenderOptions, "output">, extra:
     for (const spec of removals) {
       const files = await removalFile(dir, src, range, fps, spec, p.objects);
       jobs.push({ kind: "removal", clipId, removal: { spec, objectFiles: spec.objects.map((id) => objectFiles.get(id)!) }, ...files, src, range, fps });
+    }
+    // Smooth motion, only where the clip shows frames its footage does not have. Making them takes
+    // minutes, so quick previews (on proxies) use them once prepared and repeat frames until then.
+    if (smooth) {
+      const sourceFps = (await probe(src, opts)).fps;
+      const times = clipFrameTimes(tc, p.settings.fps);
+      if (sourceFps && needsFrames(framePlan(times, sourceFps))) {
+        const files = await interpolatedFile(dir, src, times, p.settings.fps);
+        if (files.exists || !opts.proxies) jobs.push({ kind: "interpolate", clipId, times, ...files, src, range, fps: p.settings.fps });
+      }
     }
   }
   return jobs;
@@ -267,6 +281,20 @@ export async function removalInClips(project: Project, clipIds: string[], spec: 
   return Promise.all(removals.map(async (j) => ({ clipId: j.clipId, file: j.file, track: JSON.parse(await readFile(j.track!, "utf8")) as RemovalTrack })));
 }
 
+/**
+ * Make the in-between frames of primary clips with `interpolate` set, into the same cache files
+ * renders use (about half a second a frame at 1080p on a laptop's graphics card). Returns each
+ * prepared clip's track; clips that show no frames their footage lacks are left out.
+ */
+export async function interpolateInClips(project: Project, clipIds: string[], opts: Omit<RenderOptions, "output" | "range">): Promise<{ clipId: string; file: string; track: InterpolateTrack }[]> {
+  const p = await readyToRender(project, opts);
+  const jobs = (await planMasks(p, { ...opts, proxies: false })).filter((j) => j.kind === "interpolate" && clipIds.includes(j.clipId));
+  jobs.forEach((j, k) => (j.onProgress = opts.onProgress && ((f) => opts.onProgress!((k + f) / jobs.length))));
+  await makeMasks(jobs, clipIds, opts);
+  opts.onProgress?.(1);
+  return Promise.all(jobs.map(async (j) => ({ clipId: j.clipId, file: j.file, track: JSON.parse(await readFile(j.track!, "utf8")) as InterpolateTrack })));
+}
+
 /** Make the missing masks of the clips in `only` (a few seconds per clip second on a laptop). */
 async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<RenderOptions, "output">): Promise<void> {
   const ids = new Set(only);
@@ -276,9 +304,13 @@ async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<Ren
   let skies: SkySegmenter | undefined;
   let depths: DepthEstimator | undefined;
   let inpainter: Inpainter | undefined;
+  let interpolator: Interpolator | undefined;
   for (const job of jobs) {
     if (job.exists || !ids.has(job.clipId)) continue;
-    if (job.kind === "removal") {
+    if (job.kind === "interpolate") {
+      interpolator ??= new Interpolator({ ffmpegPath: opts.ffmpegPath });
+      await writeInterpolated(job.src, { file: job.file, track: job.track! }, { times: job.times!, fps: job.fps, interpolator, ffmpegPath: opts.ffmpegPath, signal: opts.signal, onProgress: job.onProgress });
+    } else if (job.kind === "removal") {
       inpainter ??= new Inpainter({ ffmpegPath: opts.ffmpegPath });
       const { spec, objectFiles } = job.removal!;
       await writeRemoval(job.src, { file: job.file, track: job.track! }, {
@@ -312,7 +344,7 @@ async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<Ren
   }
 }
 
-type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "depthMasks" | "removals" | "subjectMask" | "skyMatte">;
+type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "depthMasks" | "removals" | "interpolated" | "subjectMask" | "skyMatte">;
 
 const maskFiles = (jobs: MaskJob[]): MaskFiles => {
   const of = (kind: MaskJob["kind"]) => Object.fromEntries(jobs.filter((j) => j.kind === kind).map((j) => [j.clipId, j.file]));
@@ -320,7 +352,7 @@ const maskFiles = (jobs: MaskJob[]): MaskFiles => {
   for (const j of jobs) if (j.kind === "object") (objectMasks[j.clipId] ??= {})[j.objectId!] = j.file;
   const removals: Record<string, Record<string, string>> = {};
   for (const j of jobs) if (j.kind === "removal") (removals[j.clipId] ??= {})[removalKey(j.removal!.spec)] = j.file;
-  return { masks: of("person"), faceMasks: of("face"), objectMasks, skyMasks: of("sky"), depthMasks: of("depth"), removals };
+  return { masks: of("person"), faceMasks: of("face"), objectMasks, skyMasks: of("sky"), depthMasks: of("depth"), removals, interpolated: of("interpolate") };
 };
 
 /** Masks and cached clips for a render: `create` fills the cache; clips not taken from it get their masks made. */

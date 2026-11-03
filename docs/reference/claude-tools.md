@@ -2,7 +2,7 @@
 
 # Claude tools
 
-110 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+111 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -223,12 +223,13 @@ _No parameters._
 
 ### set_speed
 
-**edits**. Speed up or slow down a primary clip or an audio clip (0.25-4; 0.5 = half speed slow motion, 2 = double speed). Audio keeps its pitch. The clip covers the same source footage, so it gets shorter or longer on the timeline and later clips move. Captions follow automatically.
+**edits**. Speed up or slow down a primary clip or an audio clip (0.25-4; 0.5 = half speed slow motion, 2 = double speed). Audio keeps its pitch. The clip covers the same source footage, so it gets shorter or longer on the timeline and later clips move. Captions follow automatically. Slowing a video clip below its footage's frame rate turns on smooth motion (see interpolate), so frames are made in between instead of repeated; smooth: false keeps repeated frames.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `target` | string | yes |  | Clip id or audio clip id |
 | `speed` | number | yes |  | (≥ 0.25, ≤ 4) |
+| `smooth` | boolean |  |  | Video clips: make in-between frames where the footage runs out (default: yes when it does) |
 
 ### set_transition
 
@@ -970,12 +971,22 @@ _No parameters._
 
 ### speed_ramp
 
-**edits**. Change a clip's speed over time: fast, then slow motion on the moment that matters, then back (a speed ramp). Keyframes give the speed at moments of the clip's FOOTAGE (seconds from its in point, as in its source), with easing into each; the speed holds before the first and after the last. Example, a 2x run-up into slow motion: [{time: 0, speed: 2}, {time: 1.5, speed: 2}, {time: 2, speed: 0.4}, {time: 3, speed: 0.4}, {time: 3.4, speed: 1}]. The clip keeps the same footage, so its length on the timeline changes and later clips move. Sound follows with its pitch kept; captions and cuts follow too. Pass null to go back to the clip's steady speed.
+**edits**. Change a clip's speed over time: fast, then slow motion on the moment that matters, then back (a speed ramp). Keyframes give the speed at moments of the clip's FOOTAGE (seconds from its in point, as in its source), with easing into each; the speed holds before the first and after the last. Example, a 2x run-up into slow motion: [{time: 0, speed: 2}, {time: 1.5, speed: 2}, {time: 2, speed: 0.4}, {time: 3, speed: 0.4}, {time: 3.4, speed: 1}]. The clip keeps the same footage, so its length on the timeline changes and later clips move. Sound follows with its pitch kept; captions and cuts follow too. Pass null to go back to the clip's steady speed. Slow parts below the footage's frame rate get smooth motion (see interpolate) unless smooth is false.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `clipId` | string | yes |  |  |
 | `keyframes` | { time, speed, easing }[] \| null | yes |  |  |
+| `smooth` | boolean |  |  | Make in-between frames where the footage runs out (default: yes when it does) |
+
+### interpolate
+
+**edits**. Smooth motion for video clips that show more frames than their footage has: slow motion and speed ramps below the footage's frame rate, or a lower frame rate than the edit's (24 fps footage in a 60 fps edit). Without it those frames repeat and motion stutters; with it a model on this machine (RIFE, a 21 MB model downloads once) makes the frames in between, only the ones the edit shows. About half a second a frame at 1080p with a graphics card and several seconds without, done once and cached; reports per clip how many frames were made. set_speed and speed_ramp turn it on by themselves when they slow a clip that far; this prepares the frames now (so previews show them too) or turns it off. Check fast movement and edges where things cross (hands, spokes, water) with render_preview; a cut inside a clip is never blended across.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipIds` | string[] |  |  | Clips (default: every primary video clip with smooth motion on, or that shows frames its footage lacks) |
+| `off` | boolean |  |  | Turn smooth motion off for these clips (frames repeat again) |
 
 ### animate_effect
 
