@@ -1,7 +1,7 @@
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { addAsset, addClip, addLayer, createProject, setTransition, type Project } from "../../engine/core/index.js";
-import { enginePath, engineUnsupported, planProject, render, runFfmpegOrThrow } from "../../engine/tools/index.js";
+import { enginePath, engineUnsupported, planProject, render, renderFrame, runFfmpegOrThrow } from "../../engine/tools/index.js";
 import { deltaE2000, rgbToLab } from "../../engine/library/effects/color-match.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "../helpers/media.js";
 import { sampleInputs } from "../helpers/inputs.js";
@@ -205,6 +205,33 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
     expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
     expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
   }, 60_000);
+
+  it("single frames: anywhere in the edit, in any order, like FFmpeg's", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 2.5 });
+    p = addClip(p, { id: "b", assetId: "pic", duration: 2, effects: [{ type: "kenBurns", params: { zoomTo: 1.3 } }] });
+    p = addClip(p, { id: "c", assetId: "talk", in: 1, duration: 2, speed: 1.5 });
+    p = setTransition(p, "b", { type: "fade", duration: 0.5 });
+    p = addLayer(p, { type: "media", assetId: "tall", start: 0.5, duration: 4, position: { x: 0.8, y: 0.5 }, size: { width: 0.2, height: 0.5 }, fit: "contain" });
+    p = addLayer(p, { type: "text", text: "Frames", start: 1, duration: 4, position: { x: 0.5, y: 0.85 } });
+    const dir = path.join(OUT_DIR, "engine");
+    // The engine's export, losslessly: a frame on its own must be the same picture.
+    const exported = path.join(dir, "frames-export.mp4");
+    await render({ ...p, export: { ...p.export, crf: 0, preset: "ultrafast" } }, { output: exported, backend: "engine", hardware: false });
+    const all = await frames(exported);
+    // Jumps forward and back (decoders start again at the frame), then a neighbor (they read on).
+    for (const time of [3.4, 0.6, 5.2, 2.3, 2.4, 1.0]) {
+      const [ff, gpu] = [path.join(dir, `frame-${time}-ffmpeg.png`), path.join(dir, `frame-${time}-engine.png`)];
+      await renderFrame(p, time, { output: ff, backend: "ffmpeg" });
+      await renderFrame(p, time, { output: gpu, backend: "engine" });
+      const [a, b] = [(await frames(ff))[0]!, (await frames(gpu))[0]!];
+      const n = Math.ceil(time * FPS - 1e-6);
+      expect(meanDeltaE(all[n]!, b), `frame at ${time} s against the engine's export`).toBeLessThan(0.1);
+      // Near FFmpeg's (export parity has its own tests; this edit shrinks the test pattern 9x into
+      // a layer and zooms over a fractal, where the two resamplers differ a little).
+      expect(meanDeltaE(a, b), `frame at ${time} s against FFmpeg's`).toBeLessThan(1.5);
+    }
+  }, 120_000);
 
   it("whole-video effects run on the joined picture", async () => {
     let p = base();

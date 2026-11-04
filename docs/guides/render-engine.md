@@ -65,7 +65,15 @@ Every template renders on the engine. Not yet: effects with masks or keyframes, 
 
 ## Speed
 
-On the reference laptop (Intel UHD, 2-core i3), a 7.5 s 1080x1920 edit with two clips, a crossfade, a screen-blended picture and a title took 13.7 to 14.2 s on the engine and 15.8 to 15.9 s on FFmpeg. Encoding takes most of the time, and the engine still waits for each frame's readback before drawing the next; overlapping the two (E3) is the next speed step.
+On the reference laptop (Intel UHD, 2-core i3), a 7.5 s 1080x1920 edit with two clips, a crossfade, a screen-blended picture and a title took 13.7 to 14.2 s on the engine and 15.8 to 15.9 s on FFmpeg, encoding to H.264 included; the encoder takes most of that.
+
+Drawing alone (output thrown away), a 1080p30 clip graded with `cinematic` and a vignette, with a picture screen-blended over it, runs at 27 to 31 frames per second on the engine against 9.5 on FFmpeg, about 3x and close to real time. Each frame draws on the GPU while the one before is read back (two readback buffers). The video decoder is now the limit: a flat color draws at 83 frames per second, the same clip at 37, because the decoder converts every frame to 4:4:4 VUYA on the processor (100 frames per second for the 720p test clip, against 330 for plain 4:2:0). Decoding 4:2:0 and scaling chroma at half size on the GPU, as FFmpeg's scale does, is the next step for speed and for color on sharp edges.
+
+## Previews
+
+`renderFrame` draws on the engine when `backend` asks for it, or by default once the performance test found the engine working (`setDefaultBackend`'s second argument; even where FFmpeg exports faster, the engine draws single frames several times faster). The preview engine is one long-lived process (`FrameSession` in `engine.ts`): each version of a project is planned once and kept open (the last three), with its color tables and decoders, so the app's scrubbing and Claude's `render_frame` do not start over. Video sources that play forwards at constant speed can start their decoder at any frame (`PlanSeek`); a decoder behind the frame wanted, or more than 1.5 s short of it, starts again there, and nearby frames read on. A frame on its own is the same picture as in an export (the parity test checks it against the engine's export, frame for frame).
+
+The frame is then handed to a short ffmpeg run that burns in the text and captions (the same ASS file, at the frame's time in AV_TIME_BASE) and writes the picture. On the reference laptop a frame of the documentary template at half size took 0.4 to 0.9 s, the same anywhere in the edit, against 0.8 to 3.9 s for FFmpeg, which runs its graph from the start of the edit up to the frame. Drawing takes 7 ms for a neighboring frame and up to 0.4 s when decoders start again; most of the rest is that ffmpeg run (about 0.4 s, half of it libass loading the fonts). Rendering the text once per version of the edit, as a transparent layer the engine draws over the picture, would remove it. Font preparation for previews is cached for 30 seconds (`prepareFontsRecent`).
 
 ## Performance test
 

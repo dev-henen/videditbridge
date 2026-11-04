@@ -5,6 +5,10 @@
 //! - `render` takes an engine plan (engine/tools/render/plan.ts) and writes the video; it sends
 //!   `progress` notifications ({ frame, frames }) a few times a second.
 //! - `cancel` (a notification) stops the render in progress.
+//! - `open` keeps a plan ready for drawing single frames (previews, scrubbing) and returns a session
+//!   id; `frame` ({ session, frame, args }) draws one and hands it to ffmpeg with `args`, which read
+//!   VUYA frames on stdin (to burn in the text and write a picture); `close` ends a session. A
+//!   session keeps its decoders, so nearby frames come quickly.
 //! - `shutdown` ends the process.
 //!
 //! stdout carries protocol messages only. A failure, panics included, is an error reply; the
@@ -17,6 +21,7 @@ mod plan;
 mod render;
 
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -58,7 +63,11 @@ fn main() {
             }
         });
     }
-    let mut gpu: Option<gpu::Gpu> = None;
+    // The device lives as long as the process (sessions hold it); after a panic a new one is opened
+    // and the old one, with its sessions, is dropped.
+    let mut gpu: Option<&'static gpu::Gpu> = None;
+    let mut sessions: HashMap<u64, render::Composer<'static>> = HashMap::new();
+    let mut next_session = 1u64;
     for message in rx {
         let id = message["id"].clone();
         let method = message["method"].as_str().unwrap_or("").to_string();
@@ -72,18 +81,36 @@ fn main() {
         }
         let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| -> Result<Value, String> {
             if gpu.is_none() {
-                gpu = Some(gpu::Gpu::new()?);
+                gpu = Some(Box::leak(Box::new(gpu::Gpu::new()?)));
             }
-            let g = gpu.as_ref().unwrap();
+            let g: &'static gpu::Gpu = gpu.unwrap();
+            let params = &message["params"];
             match method.as_str() {
                 "info" => Ok(g.describe()),
                 "render" => {
-                    let plan: plan::Plan = serde_json::from_value(message["params"].clone()).map_err(|e| format!("invalid plan: {e}"))?;
+                    let plan: plan::Plan = serde_json::from_value(params.clone()).map_err(|e| format!("invalid plan: {e}"))?;
                     cancel.store(false, Ordering::Relaxed);
                     let out = out.clone();
-                    render::render(g, &plan, &cancel, &mut |frame, frames| {
+                    render::render(g, Arc::new(plan), &cancel, &mut |frame, frames| {
                         send(&out, json!({ "jsonrpc": "2.0", "method": "progress", "params": { "frame": frame, "frames": frames } }))
                     })
+                }
+                "open" => {
+                    let plan: plan::Plan = serde_json::from_value(params.clone()).map_err(|e| format!("invalid plan: {e}"))?;
+                    let id = next_session;
+                    next_session += 1;
+                    sessions.insert(id, render::Composer::new(g, Arc::new(plan))?);
+                    Ok(json!({ "session": id }))
+                }
+                "frame" => {
+                    let id = params["session"].as_u64().ok_or("frame needs a session")?;
+                    let c = sessions.get_mut(&id).ok_or_else(|| format!("no session {id}"))?;
+                    let args: Vec<String> = serde_json::from_value(params["args"].clone()).map_err(|e| format!("invalid args: {e}"))?;
+                    render::frame(c, params["frame"].as_i64().unwrap_or(0), &args)
+                }
+                "close" => {
+                    sessions.remove(&params["session"].as_u64().unwrap_or(0));
+                    Ok(Value::Null)
                 }
                 _ => Err(format!("unknown method {method}")),
             }
@@ -91,6 +118,7 @@ fn main() {
         let result = outcome.unwrap_or_else(|e| {
             // The device may be unusable after a panic: open it again on the next call.
             gpu = None;
+            sessions.clear();
             Err(format!("ave-render panicked: {}", panic_text(e)))
         });
         send(&out, reply(result));

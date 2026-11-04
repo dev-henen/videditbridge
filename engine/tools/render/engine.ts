@@ -39,21 +39,33 @@ export function enginePath(): string | undefined {
 
 export class EngineError extends Error {}
 
-/** Run calls on a fresh engine process, then shut it down. */
-async function session<T>(work: (call: (method: string, params?: unknown) => Promise<unknown>, notify: (method: string) => void) => Promise<T>, opts: { onProgress?: (frame: number, frames: number) => void; signal?: AbortSignal } = {}): Promise<T> {
+/** A running engine process: its calls, notifications, and an end. */
+interface Connection {
+  call(method: string, params?: unknown): Promise<unknown>;
+  notify(method: string): void;
+  /** Ask it to stop, then make sure it has. */
+  close(): Promise<void>;
+  /** Whether it has stopped (a crash or close). */
+  readonly closed: boolean;
+}
+
+function connect(onProgress?: (frame: number, frames: number) => void): Connection {
   const bin = enginePath();
   if (!bin) throw new EngineError("The GPU render engine is not built: run npm run native (or set AVE_RENDER_PATH)");
   const proc = spawn(bin, [], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   let stderr = "";
+  let closed = false;
   proc.stderr.on("data", (d: Buffer) => (stderr = (stderr + d.toString()).slice(-8000)));
   const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
   let nextId = 1;
   const failAll = (e: Error) => {
+    closed = true;
     for (const p of pending.values()) p.reject(e);
     pending.clear();
   };
   proc.on("error", (e) => failAll(new EngineError(`Cannot start the render engine (${bin}): ${e.message}`)));
   proc.on("close", (code) => failAll(new EngineError(`The render engine stopped (code ${code})${stderr ? `:\n${stderr.trim()}` : ""}`)));
+  proc.stdin.on("error", () => undefined);
   createInterface({ input: proc.stdout }).on("line", (line) => {
     let m: { id?: number; method?: string; params?: { frame: number; frames: number }; result?: unknown; error?: { message: string } };
     try {
@@ -61,7 +73,7 @@ async function session<T>(work: (call: (method: string, params?: unknown) => Pro
     } catch {
       return;
     }
-    if (m.method === "progress" && m.params) opts.onProgress?.(m.params.frame, m.params.frames);
+    if (m.method === "progress" && m.params) onProgress?.(m.params.frame, m.params.frames);
     else if (typeof m.id === "number") {
       const p = pending.get(m.id);
       pending.delete(m.id);
@@ -71,20 +83,36 @@ async function session<T>(work: (call: (method: string, params?: unknown) => Pro
   });
   const write = (m: object) => proc.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...m }) + "\n");
   const call = (method: string, params?: unknown) =>
-    new Promise<unknown>((resolve, reject) => {
-      const id = nextId++;
-      pending.set(id, { resolve, reject });
-      write({ id, method, params });
-    });
-  const notify = (method: string) => write({ method });
-  const abort = () => notify("cancel");
+    closed
+      ? Promise.reject(new EngineError("The render engine has stopped"))
+      : new Promise<unknown>((resolve, reject) => {
+          const id = nextId++;
+          pending.set(id, { resolve, reject });
+          write({ id, method, params });
+        });
+  return {
+    call,
+    notify: (method) => void (closed || write({ method })),
+    close: async () => {
+      await call("shutdown").catch(() => undefined);
+      proc.kill();
+    },
+    get closed() {
+      return closed;
+    },
+  };
+}
+
+/** Run calls on a fresh engine process, then shut it down. */
+async function session<T>(work: (call: Connection["call"]) => Promise<T>, opts: { onProgress?: (frame: number, frames: number) => void; signal?: AbortSignal } = {}): Promise<T> {
+  const c = connect(opts.onProgress);
+  const abort = () => c.notify("cancel");
   opts.signal?.addEventListener("abort", abort);
   try {
-    return await work(call, notify);
+    return await work(c.call);
   } finally {
     opts.signal?.removeEventListener("abort", abort);
-    await call("shutdown").catch(() => undefined);
-    proc.kill();
+    await c.close();
   }
 }
 
@@ -100,4 +128,50 @@ export function runPlan(plan: EnginePlan, opts: { onProgress?: (fraction: number
     signal: opts.signal,
     onProgress: opts.onProgress ? (frame, frames) => opts.onProgress!(frames ? frame / frames : 1) : undefined,
   });
+}
+
+/**
+ * The engine process previews share: it stays up between frames, so a session keeps its plan, color
+ * tables and decoders, and nearby frames come quickly. Started on first use, again after a crash.
+ */
+let preview: Connection | undefined;
+
+function previewEngine(): Connection {
+  if (!preview || preview.closed) {
+    preview = connect();
+    process.once("exit", () => preview && !preview.closed && preview.notify("shutdown"));
+  }
+  return preview;
+}
+
+/** A plan held open by the preview engine, for drawing single frames (see planProject). */
+export class FrameSession {
+  private constructor(
+    private readonly engine: Connection,
+    readonly id: number,
+    readonly plan: EnginePlan,
+  ) {}
+
+  static async open(plan: EnginePlan): Promise<FrameSession> {
+    const engine = previewEngine();
+    const { session } = (await engine.call("open", plan)) as { session: number };
+    return new FrameSession(engine, session, plan);
+  }
+
+  /** Whether the engine behind it is still running. */
+  get alive(): boolean {
+    return !this.engine.closed;
+  }
+
+  /**
+   * Draw output frame `n` and hand it to ffmpeg with `args`, which read it on stdin as packed VUYA
+   * (plan.width x plan.height). Resolves with seconds spent drawing and in all.
+   */
+  frame(n: number, args: string[]): Promise<{ draw: number; seconds: number }> {
+    return this.engine.call("frame", { session: this.id, frame: n, args }) as Promise<{ draw: number; seconds: number }>;
+  }
+
+  async close(): Promise<void> {
+    if (this.alive) await this.engine.call("close", { session: this.id }).catch(() => undefined);
+  }
 }

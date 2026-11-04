@@ -94,9 +94,58 @@ pub enum Op {
 pub enum Source {
     /// Frames from ffmpeg: `args` write `width` x `height` RGBA frames to stdout, one per output frame.
     #[serde(rename_all = "camelCase")]
-    Decode { width: u32, height: u32, args: Vec<String>, #[serde(default)] still: bool },
+    Decode {
+        width: u32,
+        height: u32,
+        args: Vec<String>,
+        #[serde(default)]
+        still: bool,
+        /// How to start the decoder at a later frame (previews that jump around).
+        #[serde(default)]
+        seek: Option<Seek>,
+    },
     /// A flat color.
     Color { color: [f32; 4] },
+}
+
+/// A video source restarted at frame `k`: from in_point + k / fps x speed seconds, with the
+/// timing filters of the plan's decoder (held and cut to `frames` for clips), then `tail`.
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Seek {
+    pub src: String,
+    pub in_point: f64,
+    pub speed: f64,
+    pub source_duration: f64,
+    #[serde(default)]
+    pub frames: Option<i64>,
+    pub tail: Vec<String>,
+}
+
+impl Seek {
+    /// ffmpeg arguments that decode the source from frame `k` on.
+    pub fn args(&self, k: i64, fps: f64) -> Vec<String> {
+        let skipped = k as f64 / fps * self.speed;
+        let mut filters = vec!["setpts=PTS-STARTPTS".to_string()];
+        if self.speed != 1.0 {
+            filters.push(format!("setpts=PTS/{}", self.speed));
+        }
+        filters.push(format!("fps={fps}"));
+        if let Some(frames) = self.frames {
+            filters.push("tpad=stop_mode=clone:stop=-1".into());
+            filters.push(format!("trim=end_frame={}", (frames - k).max(1)));
+        }
+        filters.extend(self.tail.iter().cloned());
+        let mut args: Vec<String> = ["-hide_banner", "-loglevel", "error", "-nostdin"].map(String::from).into();
+        if self.in_point + skipped > 0.0 {
+            args.extend(["-ss".into(), format!("{:.6}", self.in_point + skipped)]);
+        }
+        args.extend(["-t".into(), format!("{:.6}", (self.source_duration - skipped).max(1.0 / fps)), "-i".into(), self.src.clone()]);
+        args.extend(["-an", "-sn", "-vf"].map(String::from));
+        args.push(filters.join(","));
+        args.extend(["-f", "rawvideo", "-pix_fmt", "vuya", "pipe:1"].map(String::from));
+        args
+    }
 }
 
 #[derive(Deserialize, Debug)]

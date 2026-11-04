@@ -12,7 +12,7 @@ const HALD: usize = 512;
 
 pub struct Effects<'a> {
     gpu: &'a Gpu,
-    ffmpeg: &'a str,
+    ffmpeg: String,
     fps: f64,
     tables: HashMap<Vec<String>, wgpu::Texture>,
     scratch: HashMap<(u32, u32), wgpu::Texture>,
@@ -38,14 +38,14 @@ fn gblur(sigma: f32) -> (f32, f32, f32) {
 }
 
 impl<'a> Effects<'a> {
-    pub fn new(gpu: &'a Gpu, ffmpeg: &'a str, fps: f64) -> Self {
-        Effects { gpu, ffmpeg, fps, tables: HashMap::new(), scratch: HashMap::new(), buffers: HashMap::new() }
+    pub fn new(gpu: &'a Gpu, ffmpeg: &str, fps: f64) -> Self {
+        Effects { gpu, ffmpeg: ffmpeg.to_string(), fps, tables: HashMap::new(), scratch: HashMap::new(), buffers: HashMap::new() }
     }
 
     /// Bake a color table by running ffmpeg once per distinct chain.
     fn table(&mut self, args: &[String]) -> Result<&wgpu::Texture, String> {
         if !self.tables.contains_key(args) {
-            let out = Command::new(self.ffmpeg).args(args).stdin(Stdio::null()).output().map_err(|e| format!("cannot start ffmpeg ({}): {e}", self.ffmpeg))?;
+            let out = Command::new(&self.ffmpeg).args(args).stdin(Stdio::null()).output().map_err(|e| format!("cannot start ffmpeg ({}): {e}", self.ffmpeg))?;
             if !out.status.success() || out.stdout.len() < HALD * HALD * 3 {
                 return Err(format!("baking a color table failed:\n{}", String::from_utf8_lossy(&out.stderr)));
             }

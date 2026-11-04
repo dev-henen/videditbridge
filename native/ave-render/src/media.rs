@@ -62,10 +62,12 @@ pub struct Decoder {
     pub current: Option<(i64, Vec<u8>)>,
     pub previous: Option<(i64, Vec<u8>)>,
     pub ended: bool,
+    /// The index of the first frame it gives (0, or where it was started for a seek).
+    pub base: i64,
 }
 
 impl Decoder {
-    pub fn start(ffmpeg: &str, args: &[String], cwd: Option<&str>, frame_bytes: usize) -> Result<Decoder, String> {
+    pub fn start(ffmpeg: &str, args: &[String], cwd: Option<&str>, frame_bytes: usize, base: i64) -> Result<Decoder, String> {
         let mut child = command(ffmpeg, args, cwd).stdout(Stdio::piped()).stdin(Stdio::null()).spawn().map_err(|e| format!("cannot start ffmpeg ({ffmpeg}): {e}"))?;
         let log = collect_stderr(&mut child);
         let mut out = child.stdout.take().unwrap();
@@ -76,7 +78,7 @@ impl Decoder {
                 break;
             }
         });
-        Ok(Decoder { child, frames: rx, log, current: None, previous: None, ended: false })
+        Ok(Decoder { child, frames: rx, log, current: None, previous: None, ended: false, base })
     }
 
     /// Advance to frame `k` (never back). Returns whether the current frame changed; after the last
@@ -86,7 +88,7 @@ impl Decoder {
         while !self.ended && self.current.as_ref().map_or(true, |(i, _)| *i < k) {
             match self.frames.recv() {
                 Ok(frame) => {
-                    let next = self.current.as_ref().map_or(0, |(i, _)| i + 1);
+                    let next = self.current.as_ref().map_or(self.base, |(i, _)| i + 1);
                     self.previous = self.current.replace((next, frame));
                     changed = true;
                 }
@@ -100,6 +102,11 @@ impl Decoder {
             }
         }
         Ok(changed)
+    }
+
+    /// The index of the next frame it would read.
+    pub fn next(&self) -> i64 {
+        self.current.as_ref().map_or(self.base, |(i, _)| i + 1)
     }
 
     /// Frame `k`, when it is the current or the previous one.

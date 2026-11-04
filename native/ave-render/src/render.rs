@@ -8,6 +8,7 @@ use crate::media::{Decoder, Encoder};
 use crate::plan::{blend_mode, transition_kind, Item, Plan, Source, HBLUR, PLAN_VERSION};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Seconds of lookahead for starting decoders, so ffmpeg's start and seek are hidden.
@@ -97,43 +98,140 @@ fn fit(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, src: &wgpu::TextureView, rows:
     gpu.dispatch(enc, &gpu.resample_v, &[wgpu::BindingResource::TextureView(rows), wgpu::BindingResource::TextureView(out), vp.as_entire_binding()], w, h);
 }
 
-struct Renderer<'a> {
+/// Frames past what a decoder has read that are worth reading through rather than restarting it at
+/// the frame wanted (when its source can seek).
+const READ_THROUGH: i64 = 45;
+
+/// Draws a plan's frames: fits each visible item's source frame, builds the primary picture, puts
+/// the whole-video effects and the layers over it, and reads the frame back. Exports draw every
+/// frame in order; sessions (previews) draw any frame, restarting decoders where they jump.
+pub struct Composer<'a> {
     gpu: &'a Gpu,
-    plan: &'a Plan,
+    pub plan: Arc<Plan>,
     states: Vec<ItemState>,
     effects: Effects<'a>,
+    blends: Vec<u32>,
+    kinds: Vec<Option<u32>>,
+    spans: Vec<(i64, i64)>,
+    canvas: [wgpu::Texture; 2],
+    blank: wgpu::Texture,
+    sums: wgpu::Buffer,
+    packed: wgpu::Buffer,
+    /// Two readback buffers, so one frame can be read while the next draws, and the submission that
+    /// last filled each.
+    staging: [wgpu::Buffer; 2],
+    filled: [Option<wgpu::SubmissionIndex>; 2],
+    next_slot: usize,
 }
 
-impl<'a> Renderer<'a> {
-    fn start_decoder(&mut self, i: usize) -> Result<(), String> {
-        let state = &mut self.states[i];
-        if state.decoder.is_some() || state.released {
-            return Ok(());
+impl<'a> Composer<'a> {
+    pub fn new(gpu: &'a Gpu, plan: Arc<Plan>) -> Result<Self, String> {
+        if plan.version != PLAN_VERSION {
+            return Err(format!("plan version {} is not supported (this engine reads version {PLAN_VERSION})", plan.version));
         }
-        if let Source::Decode { width, height, args, .. } = &self.plan.items[i].source {
-            state.decoder = Some(Decoder::start(&self.plan.ffmpeg, args, self.plan.cwd.as_deref(), (*width * *height * 4) as usize)?);
+        let (w, h) = (plan.width, plan.height);
+        let blends = plan.layers.iter().map(|l| blend_mode(&l.blend)).collect::<Result<Vec<_>, _>>()?;
+        let kinds = plan.clips.iter().map(|c| c.transition.as_ref().map(|t| transition_kind(&t.kind)).transpose()).collect::<Result<Vec<_>, _>>()?;
+        // hblur's row sums (width + 1 per row and clip), only when a transition needs them.
+        let sums_size = if kinds.iter().any(|k| *k == Some(HBLUR)) { h as u64 * (w as u64 + 1) * 2 * 16 } else { 32 };
+        let bytes = (w * h * 4) as u64;
+        let buffer = |label: &str, size: u64, usage: wgpu::BufferUsages| gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage, mapped_at_creation: false });
+        Ok(Composer {
+            gpu,
+            states: (0..plan.items.len()).map(|_| ItemState::default()).collect(),
+            effects: Effects::new(gpu, &plan.ffmpeg, plan.fps),
+            spans: spans(&plan),
+            blends,
+            kinds,
+            canvas: [gpu.texture("canvas-a", w, h, FLOAT, true), gpu.texture("canvas-b", w, h, FLOAT, true)],
+            blank: gpu.texture("blank", 1, 1, FLOAT, true),
+            sums: buffer("row-sums", sums_size, wgpu::BufferUsages::STORAGE),
+            packed: buffer("packed", bytes, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC),
+            staging: ["staging-a", "staging-b"].map(|l| buffer(l, bytes, wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST)),
+            filled: [None, None],
+            next_slot: 0,
+            plan,
+        })
+    }
+
+    /// Start item `i`'s decoder: from its first frame with the plan's arguments, or from frame `at`
+    /// when its source can seek there.
+    fn start_decoder(&mut self, i: usize, at: Option<i64>) -> Result<(), String> {
+        let plan = self.plan.clone();
+        let state = &mut self.states[i];
+        if let Source::Decode { width, height, args, seek, .. } = &plan.items[i].source {
+            let bytes = (*width * *height * 4) as usize;
+            state.decoder = Some(match (at, seek) {
+                (Some(k), Some(seek)) if k > 0 => Decoder::start(&plan.ffmpeg, &seek.args(k, plan.fps), plan.cwd.as_deref(), bytes, k)?,
+                _ => Decoder::start(&plan.ffmpeg, args, plan.cwd.as_deref(), bytes, 0)?,
+            });
         }
         Ok(())
+    }
+
+    /// Start the decoders of items shown within `lead` frames from `n`, so ffmpeg's start is hidden
+    /// (exports, which draw frames in order).
+    fn look_ahead(&mut self, n: i64, lead: i64) -> Result<(), String> {
+        for i in 0..self.spans.len() {
+            let (a, b) = self.spans[i];
+            let state = &self.states[i];
+            if a <= n + lead && b >= n && state.decoder.is_none() && !state.released {
+                self.start_decoder(i, None)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Drop the decoders and textures of items no longer shown after frame `n` (exports).
+    fn release_done(&mut self, n: i64) {
+        for i in 0..self.spans.len() {
+            if self.spans[i].1 <= n && !self.states[i].released {
+                self.states[i] = ItemState { released: true, ..Default::default() };
+            }
+        }
     }
 
     /// Fit frame `k` of item `i` into its item image, recording the passes into `enc`. Clips (`hold`)
     /// show their last frame once the source runs out. Layers follow FFmpeg's overlay: after the
     /// source's last frame they are gone, and the last frame itself shows only at its own time
-    /// (`exact`), so the frame after it is read to know it is not the last.
+    /// (`exact`), so the frame after it is read to know it is not the last. A decoder behind the
+    /// frame wanted, or far ahead of it, starts again there.
     fn prepare(&mut self, i: usize, k: i64, hold: bool, exact: bool, enc: &mut wgpu::CommandEncoder) -> Result<Option<usize>, String> {
-        let item: &Item = &self.plan.items[i];
+        let plan = self.plan.clone();
+        let item: &Item = &plan.items[i];
         let gpu = self.gpu;
-        self.start_decoder(i)?;
+        if let Source::Decode { still, seek, .. } = &item.source {
+            let need = if *still { 0 } else if hold || exact { k } else { k + 1 };
+            let restart = match &self.states[i].decoder {
+                None => true,
+                Some(d) => {
+                    let have = d.current.as_ref().map_or(d.base, |(index, _)| *index - 1);
+                    // A finished decoder has nothing further on: the source ended there.
+                    !*still && (need < have || (seek.is_some() && !d.ended && need - d.next() > READ_THROUGH))
+                }
+            };
+            if restart {
+                self.states[i].released = false;
+                self.start_decoder(i, (!*still).then_some(k))?;
+            }
+        }
         let state = &mut self.states[i];
         let (sw, sh, shown) = match &item.source {
             Source::Decode { width, height, still: true, .. } => {
                 state.decoder.as_mut().unwrap().seek(0)?;
                 (*width, *height, 0)
             }
-            Source::Decode { width, height, .. } => {
-                let decoder = state.decoder.as_mut().unwrap();
+            Source::Decode { width, height, args, .. } => {
                 let need = if hold || exact { k } else { k + 1 };
-                decoder.seek(need)?;
+                if let Err(e) = state.decoder.as_mut().unwrap().seek(need) {
+                    // A seek past the end of the source gives nothing: read it from the start instead.
+                    if state.decoder.as_ref().unwrap().base == 0 {
+                        return Err(e);
+                    }
+                    state.decoder = Some(Decoder::start(&plan.ffmpeg, args, plan.cwd.as_deref(), (*width * *height * 4) as usize, 0)?);
+                    state.decoder.as_mut().unwrap().seek(need)?;
+                }
+                let decoder = state.decoder.as_mut().unwrap();
                 let last = decoder.current.as_ref().unwrap().0;
                 if hold {
                     (*width, *height, last.min(k))
@@ -209,185 +307,209 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn release(&mut self, i: usize) {
-        self.states[i] = ItemState { released: true, ..Default::default() };
+    /// Draw output frame `n` and read it back: packed 8-bit VUYA, width x height.
+    pub fn frame(&mut self, n: i64) -> Result<Vec<u8>, String> {
+        let slot = self.draw(n)?;
+        self.read(slot)
     }
-}
 
-pub fn render(gpu: &Gpu, plan: &Plan, cancel: &AtomicBool, progress: &mut dyn FnMut(u32, u32)) -> Result<Value, String> {
-    if plan.version != PLAN_VERSION {
-        return Err(format!("plan version {} is not supported (this engine reads version {PLAN_VERSION})", plan.version));
+    /// Read back the frame `draw` put in `slot`, waiting only for its own submission.
+    pub fn read(&mut self, slot: usize) -> Result<Vec<u8>, String> {
+        let index = self.filled[slot].take().ok_or("nothing was drawn into that slot")?;
+        let slice = self.staging[slot].slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        self.gpu.device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: None }).map_err(|e| format!("graphics device: {e}"))?;
+        let frame = slice.get_mapped_range().map_err(|e| format!("reading the frame back: {e}"))?.to_vec();
+        self.staging[slot].unmap();
+        Ok(frame)
     }
-    let started = Instant::now();
-    let (w, h, fps) = (plan.width, plan.height, plan.fps);
-    let blends = plan.layers.iter().map(|l| blend_mode(&l.blend)).collect::<Result<Vec<_>, _>>()?;
-    let kinds = plan.clips.iter().map(|c| c.transition.as_ref().map(|t| transition_kind(&t.kind)).transpose()).collect::<Result<Vec<_>, _>>()?;
-    let spans = spans(plan);
-    let mut r = Renderer { gpu, plan, states: (0..plan.items.len()).map(|_| ItemState::default()).collect(), effects: Effects::new(gpu, &plan.ffmpeg, fps) };
-    let canvas = [gpu.texture("canvas-a", w, h, FLOAT, true), gpu.texture("canvas-b", w, h, FLOAT, true)];
-    let canvas_views = [view(&canvas[0]), view(&canvas[1])];
-    let blank = view(&gpu.texture("blank", 1, 1, FLOAT, true));
-    // hblur's row sums (width + 1 per row and clip), only when a transition needs them.
-    let sums_size = if kinds.iter().any(|k| *k == Some(HBLUR)) { h as u64 * (w as u64 + 1) * 2 * 16 } else { 32 };
-    let sums = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("row-sums"), size: sums_size, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
-    let bytes = (w * h * 4) as u64;
-    let packed = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("packed"), size: bytes, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
-    let staging = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("staging"), size: bytes, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-    let mut encoder = Encoder::start(&plan.ffmpeg, &plan.output.args, plan.cwd.as_deref())?;
-    let lead = (DECODE_LEAD * fps).ceil() as i64;
-    let mut last_report = Instant::now();
-    let result = (|| -> Result<(), String> {
-        for n in 0..plan.frames as i64 {
-            if cancel.load(Ordering::Relaxed) {
-                return Err("cancelled".into());
-            }
-            for (i, &(a, b)) in spans.iter().enumerate() {
-                if a <= n + lead && b >= n {
-                    r.start_decoder(i)?;
-                }
-            }
-            let t = n as f64 / fps;
-            let mut enc = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-            // The primary track: at most the outgoing and the incoming clip of a transition.
-            let active: Vec<usize> = plan.clips.iter().enumerate().filter(|(_, c)| c.first <= n && n < c.first + c.frames).map(|(i, _)| i).collect();
-            let mut params = PrimaryParams {
-                mode: 0,
-                kind: 0,
-                fade_a: 1.0,
-                fade_b: 1.0,
-                progress: 1.0,
-                reach: 0.0,
-                aspect: 1.0,
-                rgb: plan.rgb_transitions as u32,
-                background: [plan.background[0], plan.background[1], plan.background[2], 1.0],
-                origin: [0.5, 0.5],
-                _pad1: [0.0; 2],
-            };
-            let mut views: Vec<wgpu::TextureView> = Vec::new();
-            let shown: Vec<usize> = match active.as_slice() {
-                [] => vec![],
-                [one] => vec![*one],
-                [.., a, b] => {
-                    if plan.clips[*b].transition.is_some() {
-                        vec![*a, *b]
-                    } else {
-                        vec![*b]
-                    }
-                }
-            };
-            for (slot, &ci) in shown.iter().enumerate() {
-                let c = &plan.clips[ci];
-                let j = n - c.first;
-                let item = r.prepare(c.item, j, true, true, &mut enc)?.unwrap();
-                views.push(r.shown(item));
-                let f = fade(j, fps, c.duration, c.fade_in, c.fade_out);
-                if slot == 0 {
-                    params.fade_a = f;
+
+    /// Draw output frame `n` and send it to the GPU, into the next readback slot (returned). Read
+    /// it with `read`; meanwhile the next frame can be drawn into the other slot.
+    pub fn draw(&mut self, n: i64) -> Result<usize, String> {
+        let plan = self.plan.clone();
+        let gpu = self.gpu;
+        let (w, h, fps) = (plan.width, plan.height, plan.fps);
+        let t = n as f64 / fps;
+        let canvas_views = [view(&self.canvas[0]), view(&self.canvas[1])];
+        let blank = view(&self.blank);
+        let mut enc = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        // The primary track: at most the outgoing and the incoming clip of a transition.
+        let active: Vec<usize> = plan.clips.iter().enumerate().filter(|(_, c)| c.first <= n && n < c.first + c.frames).map(|(i, _)| i).collect();
+        let mut params = PrimaryParams {
+            mode: 0,
+            kind: 0,
+            fade_a: 1.0,
+            fade_b: 1.0,
+            progress: 1.0,
+            reach: 0.0,
+            aspect: 1.0,
+            rgb: plan.rgb_transitions as u32,
+            background: [plan.background[0], plan.background[1], plan.background[2], 1.0],
+            origin: [0.5, 0.5],
+            _pad1: [0.0; 2],
+        };
+        let mut views: Vec<wgpu::TextureView> = Vec::new();
+        let shown: Vec<usize> = match active.as_slice() {
+            [] => vec![],
+            [one] => vec![*one],
+            [.., a, b] => {
+                if plan.clips[*b].transition.is_some() {
+                    vec![*a, *b]
                 } else {
-                    params.fade_b = f;
-                    let tr = c.transition.as_ref().unwrap();
-                    params.kind = kinds[ci].unwrap();
-                    params.origin = tr.origin.unwrap_or([0.5, 0.5]);
-                    params.reach = tr.reach;
-                    params.aspect = tr.aspect;
-                    params.progress = xfade_progress(n, fps, tr.offset, tr.duration);
+                    vec![*b]
                 }
             }
-            params.mode = shown.len() as u32;
-            if params.mode == 2 && params.kind == HBLUR {
-                let hp = gpu.uniform(&HblurParams { fade_a: params.fade_a, fade_b: params.fade_b, width: w, height: h });
-                gpu.dispatch_bound(
-                    &mut enc,
-                    &gpu.hblur,
-                    &[(0, wgpu::BindingResource::TextureView(&views[0])), (1, wgpu::BindingResource::TextureView(&views[1])), (2, sums.as_entire_binding()), (3, hp.as_entire_binding())],
-                    h.div_ceil(64),
-                    1,
-                );
+        };
+        for (slot, &ci) in shown.iter().enumerate() {
+            let c = &plan.clips[ci];
+            let j = n - c.first;
+            let item = self.prepare(c.item, j, true, true, &mut enc)?.unwrap();
+            views.push(self.shown(item));
+            let f = fade(j, fps, c.duration, c.fade_in, c.fade_out);
+            if slot == 0 {
+                params.fade_a = f;
+            } else {
+                params.fade_b = f;
+                let tr = c.transition.as_ref().unwrap();
+                params.kind = self.kinds[ci].unwrap();
+                params.origin = tr.origin.unwrap_or([0.5, 0.5]);
+                params.reach = tr.reach;
+                params.aspect = tr.aspect;
+                params.progress = xfade_progress(n, fps, tr.offset, tr.duration);
             }
-            let pu = gpu.uniform(&params);
+        }
+        params.mode = shown.len() as u32;
+        if params.mode == 2 && params.kind == HBLUR {
+            let hp = gpu.uniform(&HblurParams { fade_a: params.fade_a, fade_b: params.fade_b, width: w, height: h });
+            gpu.dispatch_bound(
+                &mut enc,
+                &gpu.hblur,
+                &[(0, wgpu::BindingResource::TextureView(&views[0])), (1, wgpu::BindingResource::TextureView(&views[1])), (2, self.sums.as_entire_binding()), (3, hp.as_entire_binding())],
+                h.div_ceil(64),
+                1,
+            );
+        }
+        let pu = gpu.uniform(&params);
+        gpu.dispatch(
+            &mut enc,
+            &gpu.primary,
+            &[
+                wgpu::BindingResource::TextureView(views.first().unwrap_or(&blank)),
+                wgpu::BindingResource::TextureView(views.get(1).unwrap_or(&blank)),
+                wgpu::BindingResource::TextureView(&canvas_views[0]),
+                pu.as_entire_binding(),
+                self.sums.as_entire_binding(),
+            ],
+            w,
+            h,
+        );
+        // Whole-video effects on the primary picture, before the layers.
+        let mut cur = self.effects.run(&mut enc, &plan.effects, &canvas_views[0], [&canvas_views[0], &canvas_views[1]], 1, (w, h), n)?.unwrap_or(0);
+        for (li, l) in plan.layers.iter().enumerate() {
+            if t < l.start - 1e-9 || t > l.end + 1e-9 {
+                continue;
+            }
+            let pos = (t - l.start) * fps;
+            let k = (pos + 1e-6).floor() as i64;
+            let exact = (pos - k as f64).abs() < 1e-6;
+            if l.frames.is_some_and(|f| k > f - 1 || (k == f - 1 && !exact)) {
+                continue;
+            }
+            let Some(item) = self.prepare(l.item, k, false, exact, &mut enc)? else { continue };
+            let it = &plan.items[item];
+            let pos = hold(&l.positions, n - l.frame0).unwrap_or([l.x, l.y]);
+            let keyed = hold(&l.opacities, k).unwrap_or(1.0);
+            let lu = gpu.uniform(&LayerParams {
+                pos,
+                size: [it.width, it.height],
+                blend: self.blends[li],
+                opacity: l.opacity * keyed * fade(k, fps, l.duration, l.fade_in, l.fade_out),
+                _pad: [0.0; 2],
+            });
+            let item_view = self.shown(item);
             gpu.dispatch(
                 &mut enc,
-                &gpu.primary,
+                &gpu.layer,
                 &[
-                    wgpu::BindingResource::TextureView(views.first().unwrap_or(&blank)),
-                    wgpu::BindingResource::TextureView(views.get(1).unwrap_or(&blank)),
-                    wgpu::BindingResource::TextureView(&canvas_views[0]),
-                    pu.as_entire_binding(),
-                    sums.as_entire_binding(),
+                    wgpu::BindingResource::TextureView(&canvas_views[cur]),
+                    wgpu::BindingResource::TextureView(&item_view),
+                    wgpu::BindingResource::TextureView(&canvas_views[1 - cur]),
+                    lu.as_entire_binding(),
                 ],
                 w,
                 h,
             );
-            // Whole-video effects on the primary picture, before the layers.
-            let mut cur = r.effects.run(&mut enc, &plan.effects, &canvas_views[0], [&canvas_views[0], &canvas_views[1]], 1, (w, h), n)?.unwrap_or(0);
-            for (li, l) in plan.layers.iter().enumerate() {
-                if t < l.start - 1e-9 || t > l.end + 1e-9 {
-                    continue;
-                }
-                let pos = (t - l.start) * fps;
-                let k = (pos + 1e-6).floor() as i64;
-                let exact = (pos - k as f64).abs() < 1e-6;
-                if l.frames.is_some_and(|f| k > f - 1 || (k == f - 1 && !exact)) {
-                    continue;
-                }
-                let Some(item) = r.prepare(l.item, k, false, exact, &mut enc)? else { continue };
-                let it = &plan.items[item];
-                let pos = hold(&l.positions, n - l.frame0).unwrap_or([l.x, l.y]);
-                let keyed = hold(&l.opacities, k).unwrap_or(1.0);
-                let lu = gpu.uniform(&LayerParams {
-                    pos,
-                    size: [it.width, it.height],
-                    blend: blends[li],
-                    opacity: l.opacity * keyed * fade(k, fps, l.duration, l.fade_in, l.fade_out),
-                    _pad: [0.0; 2],
-                });
-                let item_view = r.shown(item);
-                gpu.dispatch(
-                    &mut enc,
-                    &gpu.layer,
-                    &[
-                        wgpu::BindingResource::TextureView(&canvas_views[cur]),
-                        wgpu::BindingResource::TextureView(&item_view),
-                        wgpu::BindingResource::TextureView(&canvas_views[1 - cur]),
-                        lu.as_entire_binding(),
-                    ],
-                    w,
-                    h,
-                );
-                cur = 1 - cur;
+            cur = 1 - cur;
+        }
+        let bytes = (w * h * 4) as u64;
+        gpu.dispatch(&mut enc, &gpu.pack, &[wgpu::BindingResource::TextureView(&canvas_views[cur]), self.packed.as_entire_binding()], w, h);
+        let slot = self.next_slot;
+        if self.filled[slot].is_some() {
+            return Err("both readback slots are waiting to be read".into());
+        }
+        enc.copy_buffer_to_buffer(&self.packed, 0, &self.staging[slot], 0, bytes);
+        self.filled[slot] = Some(gpu.queue.submit([enc.finish()]));
+        self.next_slot = 1 - slot;
+        Ok(slot)
+    }
+}
+
+/// Render a whole plan in order to its encoder.
+pub fn render(gpu: &Gpu, plan: Arc<Plan>, cancel: &AtomicBool, progress: &mut dyn FnMut(u32, u32)) -> Result<Value, String> {
+    let started = Instant::now();
+    let frames = plan.frames;
+    let lead = (DECODE_LEAD * plan.fps).ceil() as i64;
+    let mut c = Composer::new(gpu, plan.clone())?;
+    let mut encoder = Encoder::start(&plan.ffmpeg, &plan.output.args, plan.cwd.as_deref())?;
+    let mut last_report = Instant::now();
+    let result = (|| -> Result<(), String> {
+        // Frame n draws on the GPU while frame n - 1 is read back and sent to the encoder.
+        let mut waiting: Option<usize> = None;
+        for n in 0..frames as i64 {
+            if cancel.load(Ordering::Relaxed) {
+                return Err("cancelled".into());
             }
-            gpu.dispatch(&mut enc, &gpu.pack, &[wgpu::BindingResource::TextureView(&canvas_views[cur]), packed.as_entire_binding()], w, h);
-            enc.copy_buffer_to_buffer(&packed, 0, &staging, 0, bytes);
-            gpu.queue.submit([enc.finish()]);
-            let slice = staging.slice(..);
-            slice.map_async(wgpu::MapMode::Read, |_| {});
-            gpu.device.poll(wgpu::PollType::wait_indefinitely()).map_err(|e| format!("graphics device: {e}"))?;
-            let frame = slice.get_mapped_range().map_err(|e| format!("reading the frame back: {e}"))?.to_vec();
-            staging.unmap();
-            encoder.write(frame)?;
-            for (i, &(_, b)) in spans.iter().enumerate() {
-                if b <= n && !r.states[i].released {
-                    r.release(i);
-                }
+            c.look_ahead(n, lead)?;
+            let slot = c.draw(n)?;
+            if let Some(previous) = waiting.replace(slot) {
+                encoder.write(c.read(previous)?)?;
             }
+            c.release_done(n);
             if last_report.elapsed().as_millis() >= 250 {
-                progress(n as u32 + 1, plan.frames);
+                progress(n as u32 + 1, frames);
                 last_report = Instant::now();
             }
         }
+        if let Some(last) = waiting {
+            encoder.write(c.read(last)?)?;
+        }
         Ok(())
     })();
-    drop(r);
+    drop(c);
     match result {
         Ok(()) => {
             encoder.finish()?;
-            progress(plan.frames, plan.frames);
+            progress(frames, frames);
             let seconds = started.elapsed().as_secs_f64();
-            Ok(json!({ "frames": plan.frames, "seconds": seconds, "fps": plan.frames as f64 / seconds.max(1e-9) }))
+            Ok(json!({ "frames": frames, "seconds": seconds, "fps": frames as f64 / seconds.max(1e-9) }))
         }
         Err(e) => {
             encoder.abort();
             Err(e)
         }
     }
+}
+
+/// Draw one frame of an open composer and hand it to ffmpeg with `args` (which read VUYA frames
+/// on stdin, e.g. to burn in the text and write a picture). Returns how long the parts took.
+pub fn frame(c: &mut Composer, n: i64, args: &[String]) -> Result<Value, String> {
+    let started = Instant::now();
+    let last = c.plan.frames.saturating_sub(1) as i64;
+    let pixels = c.frame(n.clamp(0, last))?;
+    let drawn = started.elapsed().as_secs_f64();
+    let mut out = Encoder::start(&c.plan.ffmpeg, args, c.plan.cwd.as_deref())?;
+    out.write(pixels)?;
+    out.finish()?;
+    Ok(json!({ "draw": drawn, "seconds": started.elapsed().as_secs_f64() }))
 }

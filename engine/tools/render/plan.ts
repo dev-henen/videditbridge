@@ -19,8 +19,23 @@ import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
 export const PLAN_VERSION = 1;
 
 export type PlanSource =
-  | { kind: "decode"; width: number; height: number; args: string[]; still?: boolean }
+  | { kind: "decode"; width: number; height: number; args: string[]; still?: boolean; seek?: PlanSeek }
   | { kind: "color"; color: [number, number, number, number] };
+
+/**
+ * How to start a video source's decoder at a later frame instead of its first, for previews that
+ * jump around (engine sessions): from `inPoint` + frame / fps x `speed` seconds of `src`, with the
+ * same timing filters as `args` (held at the end and cut to `frames` for clips), then `tail`.
+ * Only for constant speed, forwards; exports always decode from the start.
+ */
+export interface PlanSeek {
+  src: string;
+  inPoint: number;
+  speed: number;
+  sourceDuration: number;
+  frames?: number;
+  tail: string[];
+}
 
 /** A source fitted to a box: scaled to `scaled`, placed at `offset` (negative for a crop) in a `width` x `height` image, the rest `fill`. */
 export interface PlanItem {
@@ -201,20 +216,24 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
    * Frames of a source as RGBA on stdout. The YUV to RGB matrix is fixed to the one the encoder uses
    * back (swscale's BT.601 default), so YUV values come out as they went in, as in the FFmpeg backend.
    */
-  const decode = (input: string[], filters: (string | false | undefined)[], width: number, height: number, still = false): PlanSource => ({
-    kind: "decode",
-    width,
-    height,
-    still,
-    args: [
-      "-hide_banner", "-loglevel", "error", "-nostdin",
-      ...input,
-      "-an", "-sn",
-      "-vf", [...filters, `scale=${width}:${height}:out_range=tv:flags=bicubic+accurate_rnd+full_chroma_int`, "format=vuya"].filter(Boolean).join(","),
-      ...(still ? ["-frames:v", "1"] : []),
-      "-f", "rawvideo", "-pix_fmt", "vuya", "pipe:1",
-    ],
-  });
+  const decode = (input: string[], filters: (string | false | undefined)[], width: number, height: number, still = false, seek?: Omit<PlanSeek, "tail">): PlanSource => {
+    const tail = [`scale=${width}:${height}:out_range=tv:flags=bicubic+accurate_rnd+full_chroma_int`, "format=vuya"];
+    return {
+      kind: "decode",
+      width,
+      height,
+      still,
+      args: [
+        "-hide_banner", "-loglevel", "error", "-nostdin",
+        ...input,
+        "-an", "-sn",
+        "-vf", [...filters, ...tail].filter(Boolean).join(","),
+        ...(still ? ["-frames:v", "1"] : []),
+        "-f", "rawvideo", "-pix_fmt", "vuya", "pipe:1",
+      ],
+      ...(seek ? { seek: { ...seek, tail } } : {}),
+    };
+  };
   /** A still or generated source for `duration` seconds (images, colors, gradients), as the FFmpeg backend makes them. */
   const stillSource = (asset: Asset): { source: PlanSource; size: [number, number] } | undefined => {
     if (asset.type === "color") return { source: { kind: "color", color: rgba(asset.color) }, size: [W, H] };
@@ -255,6 +274,8 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         [clip.reverse && "reverse", "setpts=PTS-STARTPTS", ...retime(tc), `fps=${F}`, "tpad=stop_mode=clone:stop=-1", `trim=end_frame=${frames}`],
         size[0],
         size[1],
+        false,
+        clip.reverse || tc.speedMap ? undefined : { src: resolveSrc(asset.src), inPoint: clip.in, speed: clip.speed, sourceDuration: tc.sourceDuration, frames },
       );
     } else {
       const s = stillSource(asset);
@@ -313,6 +334,8 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         ["setpts=PTS-STARTPTS", `fps=${F}`],
         size[0],
         size[1],
+        false,
+        { src: resolveSrc(asset.src), inPoint: layer.in, speed: 1, sourceDuration: layer.duration },
       );
     } else {
       const s = stillSource(asset);

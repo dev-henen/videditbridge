@@ -69,9 +69,11 @@ export async function savePerformance(report: PerformanceReport, file = performa
   await writeFile(file, JSON.stringify(report, null, 2), "utf8");
 }
 
-/** Use a report's choice for every render that does not name a backend. */
+/** Use a report's choice for renders that do not name a backend, and the engine for single frames when it works. */
 export function applyPerformance(report: PerformanceReport | undefined): void {
-  setDefaultBackend(report?.backend ?? "ffmpeg");
+  // Single frames go to the engine whenever it works: there it is several times faster either way.
+  const engineWorks = !!report?.results.find((r) => r.renderer === "engine")?.ok;
+  setDefaultBackend(report?.backend ?? "ffmpeg", engineWorks ? "auto" : "ffmpeg");
 }
 
 /** The test's stages, in order. */

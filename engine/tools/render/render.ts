@@ -6,12 +6,12 @@ import type { MediaLayer, Project } from "../../core/schema.js";
 import { deepClone } from "../../core/util.js";
 import { withProjectPaths } from "../../core/operations.js";
 import { ASS_FILE, compileProject, type CompileOptions, type CompiledRender } from "./compile.js";
-import { enginePath, runPlan } from "./engine.js";
+import { FrameSession, enginePath, runPlan } from "./engine.js";
 import { engineUnsupported, planProject } from "./plan.js";
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
-import { effectObjects, effectRemovals, removalKey, usesDepthMask, usesFaceMask, usesPersonMask, usesSkyMask, type RemovalSpec } from "../../library/effects/index.js";
+import { effectObjects, effectRemovals, escapeFilterPath, removalKey, usesDepthMask, usesFaceMask, usesPersonMask, usesSkyMask, type RemovalSpec } from "../../library/effects/index.js";
 import { maskNeeds } from "../../library/effects/masks.js";
 import { ObjectSegmenter, objectMaskFile, writeObjectMask, type ObjectSpec, type ObjectTrack } from "../vision/objects.js";
 import { PersonSegmenter, maskFile } from "../vision/segment.js";
@@ -23,7 +23,7 @@ import { Inpainter, removalFile, removalMasks, writeRemoval, type RemovalTrack }
 import { Interpolator, clipFrameTimes, framePlan, interpolatedFile, needsFrames, writeInterpolated, type InterpolateTrack } from "../video/interpolate.js";
 import { withProxies } from "./proxy.js";
 import { hasFilter, probe, resolveFfmpegPath, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
-import { prepareFonts } from "../fonts/index.js";
+import { prepareFonts, prepareFontsRecent } from "../fonts/index.js";
 
 export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segments" | "segment" | "hardwareEncoder">, FfmpegOptions {
   /**
@@ -513,10 +513,16 @@ const after = (opts: Omit<RenderOptions, "output">, share: number) => (opts.onPr
 export type RenderBackend = "ffmpeg" | "engine" | "auto";
 
 let defaultBackend: RenderBackend = "ffmpeg";
+let defaultFrameBackend: RenderBackend = "ffmpeg";
 
-/** The backend of renders that do not name one (the app sets it from its first-run performance test). */
-export function setDefaultBackend(backend: RenderBackend): void {
+/**
+ * The backend of renders that do not name one, and of single frames (renderFrame), which can differ:
+ * the engine draws a frame anywhere in the edit several times faster than FFmpeg runs its graph up
+ * to it, even where FFmpeg exports faster. The app sets both from its first-run performance test.
+ */
+export function setDefaultBackend(backend: RenderBackend, frames: RenderBackend = backend): void {
   defaultBackend = backend;
+  defaultFrameBackend = frames;
 }
 
 /** Why the engine cannot render this project with these options (empty when it can). */
@@ -559,6 +565,59 @@ async function renderOnEngine(p: Project, opts: RenderOptions): Promise<RenderRe
   }
 }
 
+/** Frame sessions of the preview engine, by plan, most recently used last (a few edits back stay ready). */
+const frameSessions = new Map<string, Promise<{ session: FrameSession; workDir: string }>>();
+const FRAME_SESSIONS = 3;
+
+/**
+ * Render one frame on the GPU engine: the project is planned once per version and kept open in the
+ * preview engine, which draws the frame; a short ffmpeg run then burns in the text and captions
+ * (the same ASS file as the FFmpeg backend, at the frame's time) and writes the picture. Video
+ * clips start their decoder at the frame wanted, so a frame anywhere in the edit is quick.
+ */
+async function frameOnEngine(p: Project, time: number, opts: Omit<RenderOptions, "range" | "onProgress">): Promise<string> {
+  const fonts = await prepareFontsRecent(opts.fontsDir, p);
+  // compileProject is pure: it gives the ASS file without running anything.
+  const ass = compileProject(p, { ...opts, ...fonts, frameAt: time, output: "frame.png" }).files.find((f) => f.name === ASS_FILE);
+  const planned = planProject(p, { ...opts, output: "unused.mp4", ffmpeg: resolveFfmpegPath(opts), overlay: !!ass, fontsDir: fonts.fontsDir });
+  if (!planned.plan) throw new Error(`The render engine cannot draw: ${planned.unsupported.join("; ")}`);
+  const plan = planned.plan;
+  const key = createHash("sha256").update(JSON.stringify([plan.items, plan.clips, plan.layers, plan.effects, plan.width, plan.height, ass?.content])).digest("hex");
+  let open = frameSessions.get(key);
+  if (open) {
+    const s = await open.catch(() => undefined);
+    if (!s?.session.alive) open = undefined;
+  }
+  if (!open) {
+    open = (async () => {
+      const workDir = await mkdtemp(path.join(tmpdir(), "ave-frames-"));
+      if (ass) await writeFile(path.join(workDir, ASS_FILE), ass.content, "utf8");
+      return { session: await FrameSession.open({ ...plan, cwd: workDir }), workDir };
+    })();
+    frameSessions.set(key, open);
+    open.catch(() => frameSessions.delete(key));
+  } else {
+    frameSessions.delete(key);
+    frameSessions.set(key, open);
+  }
+  // Keep a few: the oldest close and lose their work folders.
+  while (frameSessions.size > FRAME_SESSIONS) {
+    const [oldKey, old] = frameSessions.entries().next().value!;
+    frameSessions.delete(oldKey);
+    void old.then(({ session, workDir }) => session.close().finally(() => rm(workDir, { recursive: true, force: true })), () => undefined);
+  }
+  const { session } = await open;
+  // As an output seek picks it in the FFmpeg backend: the first frame at or after `time`.
+  const n = Math.min(plan.frames - 1, Math.max(0, Math.ceil(time * plan.fps - 1e-6)));
+  const fontsArg = fonts.fontsDir ? `:fontsdir='${escapeFilterPath(path.resolve(fonts.fontsDir))}'` : "";
+  // Timed in AV_TIME_BASE at the frame's own time, so libass shows what the backend shows there.
+  const picture = [`settb=AVTB,setpts=${Math.round((n * 1e6) / plan.fps)}`, "format=yuv420p", ass && `ass=filename=${ASS_FILE}${fontsArg}`].filter(Boolean).join(",");
+  const output = path.resolve(opts.output);
+  await mkdir(path.dirname(output), { recursive: true });
+  await session.frame(n, ["-y", "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "rawvideo", "-pix_fmt", "vuya", "-s", `${plan.width}x${plan.height}`, "-i", "pipe:0", "-vf", picture, "-frames:v", "1", "-update", "1", output]);
+  return output;
+}
+
 /** Render a project to a video file. */
 export async function render(project: Project, opts: RenderOptions): Promise<RenderResult> {
   const p = await readyToRender(project, opts);
@@ -592,6 +651,12 @@ export async function renderFrame(
   opts: Omit<RenderOptions, "range" | "onProgress">,
 ): Promise<string> {
   const p = await readyToRender(project, opts);
+  const backend = opts.backend ?? defaultFrameBackend;
+  if (backend === "engine" || backend === "auto") {
+    const blockers = [...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
+    if (!blockers.length) return frameOnEngine(p, time, opts);
+    if (backend === "engine") throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
+  }
   // One frame does not pay for caching clips, but uses those already cached.
   const { project: q, segments, masks, fonts } = await prepare(p, opts, false);
   const compiled = compileProject(q, { ...opts, ...fonts, segments, ...masks, frameAt: time });

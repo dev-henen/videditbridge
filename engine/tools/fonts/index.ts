@@ -429,3 +429,22 @@ export function searchIcons(names: Iterable<string>, query: string, limit = 40):
   }
   return scored.sort((a, b) => a[0] - b[0] || a[1].length - b[1].length || a[1].localeCompare(b[1])).slice(0, limit).map(([, n]) => n);
 }
+
+/** prepareFonts results for previews, by fonts folder and the project's texts and families. */
+const recentFonts = new Map<string, { at: number; value: Promise<Awaited<ReturnType<typeof prepareFonts>>> }>();
+
+/**
+ * prepareFonts for previews, which ask for frame after frame of the same edit: a result is reused
+ * for `maxAgeMs` while the fonts folder, texts and families are the same (checking the folder takes
+ * about 150 ms on a laptop). Fonts added to the folder show up once the result is that old.
+ */
+export function prepareFontsRecent(fontsDir: string | undefined, project: unknown, maxAgeMs = 30_000): ReturnType<typeof prepareFonts> {
+  const key = JSON.stringify([path.resolve(fontsDir ?? defaultFontsDir()), textsAndFonts(project)]);
+  const hit = recentFonts.get(key);
+  if (hit && Date.now() - hit.at < maxAgeMs) return hit.value;
+  const value = prepareFonts(fontsDir, project);
+  recentFonts.set(key, { at: Date.now(), value });
+  value.catch(() => recentFonts.delete(key));
+  if (recentFonts.size > 16) recentFonts.delete(recentFonts.keys().next().value!);
+  return value;
+}
