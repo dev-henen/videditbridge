@@ -10,6 +10,7 @@
 //! stdout carries protocol messages only. A failure, panics included, is an error reply; the
 //! process keeps serving.
 
+mod effects;
 mod gpu;
 mod media;
 mod plan;

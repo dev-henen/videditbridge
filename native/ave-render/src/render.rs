@@ -2,9 +2,10 @@
 //! primary picture (clips, fades, transitions), put the layers over it, and hand the frame to the
 //! encoder.
 
-use crate::gpu::{view, Gpu, LayerParams, PrimaryParams, ResampleParams, FLOAT};
+use crate::effects::Effects;
+use crate::gpu::{view, Gpu, HblurParams, LayerParams, PrimaryParams, ResampleParams, FLOAT};
 use crate::media::{Decoder, Encoder};
-use crate::plan::{blend_mode, transition_kind, Item, Plan, Source, PLAN_VERSION};
+use crate::plan::{blend_mode, transition_kind, Item, Plan, Source, HBLUR, PLAN_VERSION};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -21,6 +22,11 @@ struct ItemState {
     out: Option<wgpu::Texture>,
     uploaded: Option<i64>,
     fitted: Option<i64>,
+    /// With effects: the two textures they alternate between, and which one holds this frame's result.
+    fx: Option<[wgpu::Texture; 2]>,
+    result: Option<usize>,
+    /// fit blur: the backdrop's fitted picture, its effect textures, and the picture laid over it.
+    back: Option<[wgpu::Texture; 4]>,
     released: bool,
 }
 
@@ -55,10 +61,47 @@ fn fade(j: i64, fps: f64, duration: f64, fade_in: f64, fade_out: f64) -> f32 {
     f as f32
 }
 
+/// Entry `i` of a per-frame list, the last one holding after its end.
+fn hold<T: Copy>(v: &[T], i: i64) -> Option<T> {
+    v.get((i.max(0) as usize).min(v.len().saturating_sub(1))).copied()
+}
+
+/// xfade's progress at output frame `n` (1 at the start, 0 at the end), computed as it does: frame
+/// times in microseconds (the backend's AV_TIME_BASE), the ratio in 32-bit floats. Slides and wipes
+/// truncate `progress * width` to whole pixels, so a rounding difference there moves the seam.
+fn xfade_progress(n: i64, fps: f64, offset: f64, duration: f64) -> f32 {
+    let pts = (n as f64 * 1e6 / fps).round() as i64;
+    let (start, length) = ((offset * 1e6).round() as i64, ((duration * 1e6).round() as i64).max(1));
+    (1.0f32 - (pts - start) as f32 / length as f32).clamp(0.0, 1.0)
+}
+
+/// Fit a decoded VUYA frame into an item image: scaled to `scaled`, placed at `offset`, the rest `fill`
+/// (two bicubic passes through `rows`).
+#[allow(clippy::too_many_arguments)]
+fn fit(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, src: &wgpu::TextureView, rows: &wgpu::TextureView, out: &wgpu::TextureView, (sw, sh): (u32, u32), scaled: [u32; 2], offset: [i32; 2], (w, h): (u32, u32), opaque: bool, fill: [f32; 4]) {
+    let hp = gpu.uniform(&ResampleParams { src_len: sw, scaled_len: scaled[0], offset: offset[0], opaque: 0, out_size: [w, sh], x_range: [0, 0], fill: [0.0; 4], origin: 0, line_origin: 0, yuv_in: 0, _pad: 0 });
+    gpu.dispatch(enc, &gpu.resample_h, &[wgpu::BindingResource::TextureView(src), wgpu::BindingResource::TextureView(rows), hp.as_entire_binding()], w, sh);
+    let vp = gpu.uniform(&ResampleParams {
+        src_len: sh,
+        scaled_len: scaled[1],
+        offset: offset[1],
+        opaque: opaque as u32,
+        out_size: [w, h],
+        x_range: [offset[0], offset[0] + scaled[0] as i32],
+        fill,
+        origin: 0,
+        line_origin: 0,
+        yuv_in: 1,
+        _pad: 0,
+    });
+    gpu.dispatch(enc, &gpu.resample_v, &[wgpu::BindingResource::TextureView(rows), wgpu::BindingResource::TextureView(out), vp.as_entire_binding()], w, h);
+}
+
 struct Renderer<'a> {
     gpu: &'a Gpu,
     plan: &'a Plan,
     states: Vec<ItemState>,
+    effects: Effects<'a>,
 }
 
 impl<'a> Renderer<'a> {
@@ -124,31 +167,46 @@ impl<'a> Renderer<'a> {
             }
             state.uploaded = Some(shown);
         }
-        if state.fitted != Some(shown) {
-            let (src, tmp, out) = (view(state.source.as_ref().unwrap()), view(state.tmp.as_ref().unwrap()), view(state.out.as_ref().unwrap()));
-            let h = gpu.uniform(&ResampleParams {
-                src_len: sw,
-                scaled_len: item.scaled[0],
-                offset: item.offset[0],
-                opaque: 0,
-                out_size: [item.width, sh],
-                x_range: [0, 0],
-                fill: [0.0; 4],
-            });
-            gpu.dispatch(enc, &gpu.resample_h, &[wgpu::BindingResource::TextureView(&src), wgpu::BindingResource::TextureView(&tmp), h.as_entire_binding()], item.width, sh);
-            let v = gpu.uniform(&ResampleParams {
-                src_len: sh,
-                scaled_len: item.scaled[1],
-                offset: item.offset[1],
-                opaque: item.opaque as u32,
-                out_size: [item.width, item.height],
-                x_range: [item.offset[0], item.offset[0] + item.scaled[0] as i32],
-                fill: item.fill,
-            });
-            gpu.dispatch(enc, &gpu.resample_v, &[wgpu::BindingResource::TextureView(&tmp), wgpu::BindingResource::TextureView(&out), v.as_entire_binding()], item.width, item.height);
+        let (w, h) = (item.width, item.height);
+        let (src, tmp) = (view(state.source.as_ref().unwrap()), view(state.tmp.as_ref().unwrap()));
+        let refit = state.fitted != Some(shown);
+        if refit {
+            fit(gpu, enc, &src, &tmp, &view(state.out.as_ref().unwrap()), (sw, sh), item.scaled, item.offset, (w, h), item.opaque, item.fill);
             state.fitted = Some(shown);
         }
+        // fit blur: the backdrop from the same frame, through its effects, with the picture laid over it.
+        let mut first = view(state.out.as_ref().unwrap());
+        if let Some(back) = &item.backdrop {
+            let t = state.back.get_or_insert_with(|| ["backdrop", "backdrop-a", "backdrop-b", "laid"].map(|l| gpu.texture(l, w, h, FLOAT, true)));
+            let [fitted, a, b, laid] = [view(&t[0]), view(&t[1]), view(&t[2]), view(&t[3])];
+            if refit {
+                fit(gpu, enc, &src, &tmp, &fitted, (sw, sh), back.scaled, back.offset, (w, h), true, item.fill);
+                let under = match self.effects.run(enc, &back.effects, &fitted, [&a, &b], 0, (w, h), k)? {
+                    Some(s) => [&a, &b][s].clone(),
+                    None => fitted.clone(),
+                };
+                let lu = gpu.uniform(&LayerParams { pos: [0, 0], size: [w, h], blend: 0, opacity: 1.0, _pad: [0.0; 2] });
+                gpu.dispatch(enc, &gpu.layer, &[wgpu::BindingResource::TextureView(&under), wgpu::BindingResource::TextureView(&first), wgpu::BindingResource::TextureView(&laid), lu.as_entire_binding()], w, h);
+            }
+            first = laid;
+        }
+        // Effects can change with time, so they run on every frame (frame `k` of the piece).
+        if !item.effects.is_empty() {
+            let fx = state.fx.get_or_insert_with(|| [gpu.texture("effect-a", w, h, FLOAT, true), gpu.texture("effect-b", w, h, FLOAT, true)]);
+            let (a, b) = (view(&fx[0]), view(&fx[1]));
+            state.result = self.effects.run(enc, &item.effects, &first, [&a, &b], 0, (w, h), k)?;
+        }
         Ok(Some(i))
+    }
+
+    /// The picture of item `i` for this frame: fitted (over its backdrop), then through its effects.
+    fn shown(&self, i: usize) -> wgpu::TextureView {
+        let state = &self.states[i];
+        match (state.result, &state.fx, &state.back) {
+            (Some(s), Some(fx), _) => view(&fx[s]),
+            (_, _, Some(back)) => view(&back[3]),
+            _ => view(state.out.as_ref().unwrap()),
+        }
     }
 
     fn release(&mut self, i: usize) {
@@ -165,10 +223,13 @@ pub fn render(gpu: &Gpu, plan: &Plan, cancel: &AtomicBool, progress: &mut dyn Fn
     let blends = plan.layers.iter().map(|l| blend_mode(&l.blend)).collect::<Result<Vec<_>, _>>()?;
     let kinds = plan.clips.iter().map(|c| c.transition.as_ref().map(|t| transition_kind(&t.kind)).transpose()).collect::<Result<Vec<_>, _>>()?;
     let spans = spans(plan);
-    let mut r = Renderer { gpu, plan, states: (0..plan.items.len()).map(|_| ItemState::default()).collect() };
+    let mut r = Renderer { gpu, plan, states: (0..plan.items.len()).map(|_| ItemState::default()).collect(), effects: Effects::new(gpu, &plan.ffmpeg, fps) };
     let canvas = [gpu.texture("canvas-a", w, h, FLOAT, true), gpu.texture("canvas-b", w, h, FLOAT, true)];
     let canvas_views = [view(&canvas[0]), view(&canvas[1])];
     let blank = view(&gpu.texture("blank", 1, 1, FLOAT, true));
+    // hblur's row sums (width + 1 per row and clip), only when a transition needs them.
+    let sums_size = if kinds.iter().any(|k| *k == Some(HBLUR)) { h as u64 * (w as u64 + 1) * 2 * 16 } else { 32 };
+    let sums = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("row-sums"), size: sums_size, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
     let bytes = (w * h * 4) as u64;
     let packed = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("packed"), size: bytes, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
     let staging = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("staging"), size: bytes, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
@@ -189,7 +250,19 @@ pub fn render(gpu: &Gpu, plan: &Plan, cancel: &AtomicBool, progress: &mut dyn Fn
             let mut enc = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
             // The primary track: at most the outgoing and the incoming clip of a transition.
             let active: Vec<usize> = plan.clips.iter().enumerate().filter(|(_, c)| c.first <= n && n < c.first + c.frames).map(|(i, _)| i).collect();
-            let mut params = PrimaryParams { mode: 0, kind: 0, fade_a: 1.0, fade_b: 1.0, progress: 1.0, _pad: [0.0; 3], background: [plan.background[0], plan.background[1], plan.background[2], 1.0] };
+            let mut params = PrimaryParams {
+                mode: 0,
+                kind: 0,
+                fade_a: 1.0,
+                fade_b: 1.0,
+                progress: 1.0,
+                reach: 0.0,
+                aspect: 1.0,
+                rgb: plan.rgb_transitions as u32,
+                background: [plan.background[0], plan.background[1], plan.background[2], 1.0],
+                origin: [0.5, 0.5],
+                _pad1: [0.0; 2],
+            };
             let mut views: Vec<wgpu::TextureView> = Vec::new();
             let shown: Vec<usize> = match active.as_slice() {
                 [] => vec![],
@@ -206,7 +279,7 @@ pub fn render(gpu: &Gpu, plan: &Plan, cancel: &AtomicBool, progress: &mut dyn Fn
                 let c = &plan.clips[ci];
                 let j = n - c.first;
                 let item = r.prepare(c.item, j, true, true, &mut enc)?.unwrap();
-                views.push(view(r.states[item].out.as_ref().unwrap()));
+                views.push(r.shown(item));
                 let f = fade(j, fps, c.duration, c.fade_in, c.fade_out);
                 if slot == 0 {
                     params.fade_a = f;
@@ -214,10 +287,23 @@ pub fn render(gpu: &Gpu, plan: &Plan, cancel: &AtomicBool, progress: &mut dyn Fn
                     params.fade_b = f;
                     let tr = c.transition.as_ref().unwrap();
                     params.kind = kinds[ci].unwrap();
-                    params.progress = (1.0 - (t - tr.offset) / tr.duration).clamp(0.0, 1.0) as f32;
+                    params.origin = tr.origin.unwrap_or([0.5, 0.5]);
+                    params.reach = tr.reach;
+                    params.aspect = tr.aspect;
+                    params.progress = xfade_progress(n, fps, tr.offset, tr.duration);
                 }
             }
             params.mode = shown.len() as u32;
+            if params.mode == 2 && params.kind == HBLUR {
+                let hp = gpu.uniform(&HblurParams { fade_a: params.fade_a, fade_b: params.fade_b, width: w, height: h });
+                gpu.dispatch_bound(
+                    &mut enc,
+                    &gpu.hblur,
+                    &[(0, wgpu::BindingResource::TextureView(&views[0])), (1, wgpu::BindingResource::TextureView(&views[1])), (2, sums.as_entire_binding()), (3, hp.as_entire_binding())],
+                    h.div_ceil(64),
+                    1,
+                );
+            }
             let pu = gpu.uniform(&params);
             gpu.dispatch(
                 &mut enc,
@@ -227,11 +313,13 @@ pub fn render(gpu: &Gpu, plan: &Plan, cancel: &AtomicBool, progress: &mut dyn Fn
                     wgpu::BindingResource::TextureView(views.get(1).unwrap_or(&blank)),
                     wgpu::BindingResource::TextureView(&canvas_views[0]),
                     pu.as_entire_binding(),
+                    sums.as_entire_binding(),
                 ],
                 w,
                 h,
             );
-            let mut cur = 0;
+            // Whole-video effects on the primary picture, before the layers.
+            let mut cur = r.effects.run(&mut enc, &plan.effects, &canvas_views[0], [&canvas_views[0], &canvas_views[1]], 1, (w, h), n)?.unwrap_or(0);
             for (li, l) in plan.layers.iter().enumerate() {
                 if t < l.start - 1e-9 || t > l.end + 1e-9 {
                     continue;
@@ -244,14 +332,16 @@ pub fn render(gpu: &Gpu, plan: &Plan, cancel: &AtomicBool, progress: &mut dyn Fn
                 }
                 let Some(item) = r.prepare(l.item, k, false, exact, &mut enc)? else { continue };
                 let it = &plan.items[item];
+                let pos = hold(&l.positions, n - l.frame0).unwrap_or([l.x, l.y]);
+                let keyed = hold(&l.opacities, k).unwrap_or(1.0);
                 let lu = gpu.uniform(&LayerParams {
-                    pos: [l.x, l.y],
+                    pos,
                     size: [it.width, it.height],
                     blend: blends[li],
-                    opacity: l.opacity * fade(k, fps, l.duration, l.fade_in, l.fade_out),
+                    opacity: l.opacity * keyed * fade(k, fps, l.duration, l.fade_in, l.fade_out),
                     _pad: [0.0; 2],
                 });
-                let item_view = view(r.states[item].out.as_ref().unwrap());
+                let item_view = r.shown(item);
                 gpu.dispatch(
                     &mut enc,
                     &gpu.layer,

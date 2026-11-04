@@ -1,10 +1,12 @@
 import path from "node:path";
 import type { Asset, Fit, MediaLayer, Project } from "../../core/schema.js";
 import { computeTimeline, type TimedClip } from "../../core/timeline.js";
-import { parseColor, round3, toFfmpegColor } from "../../core/util.js";
-import { escapeFilterPath } from "../../library/effects/index.js";
+import { easeValue, numberAt, positionAt } from "../../core/keyframes.js";
+import { parseColor, round3 } from "../../core/util.js";
+import { effectsToFilter, escapeFilterPath } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
-import { ASS_FILE, rampPts, renderSize } from "./compile.js";
+import { ASS_FILE, gradientSource, rampPts, renderSize } from "./compile.js";
+import { cropPosition, effectsOps, lutArgs, type PlanOp } from "./plan-effects.js";
 import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
 
 /**
@@ -29,6 +31,10 @@ export interface PlanItem {
   offset: [number, number];
   fill: [number, number, number, number];
   opaque?: boolean;
+  /** Effects on the fitted picture, in order; time counts in frames of the piece (the clip). */
+  effects?: PlanOp[];
+  /** fit blur: the same source fitted again behind the picture, through its own effects (blurred and darkened). */
+  backdrop?: { scaled: [number, number]; offset: [number, number]; effects: PlanOp[] };
 }
 
 export interface PlanClip {
@@ -39,7 +45,8 @@ export interface PlanClip {
   duration: number;
   fadeIn?: number;
   fadeOut?: number;
-  transition?: { kind: "fade" | "fadeblack" | "fadewhite"; offset: number; duration: number };
+  /** xfade's transition name, or circlereveal with its origin, reach (frame heights) and the frame's aspect. */
+  transition?: { kind: string; offset: number; duration: number; origin?: [number, number]; reach?: number; aspect?: number };
 }
 
 export interface PlanLayer {
@@ -48,8 +55,14 @@ export interface PlanLayer {
   end: number;
   /** Frames a still or generated source lasts (video layers end where their decoder does). */
   frames?: number;
+  /** Top-left corner, pixels. */
   x: number;
   y: number;
+  /** A moving layer (slides, position keyframes): its corner on each output frame from `frame0` (the last holds). */
+  frame0?: number;
+  positions?: [number, number][];
+  /** Opacity keyframes: a factor on each frame of the layer (the last holds). */
+  opacities?: number[];
   opacity: number;
   blend: string;
   fadeIn?: number;
@@ -69,6 +82,10 @@ export interface EnginePlan {
   items: PlanItem[];
   clips: PlanClip[];
   layers: PlanLayer[];
+  /** Whole-video effects on the primary track (clips and transitions), before the layers; time counts in output frames. */
+  effects?: PlanOp[];
+  /** Transitions run on RGB, not YUV, in the FFmpeg backend (see transitionsInRgb). */
+  rgbTransitions?: boolean;
   output: { args: string[] };
 }
 
@@ -88,12 +105,34 @@ export interface PlanOptions {
   extraOutputArgs?: string[];
 }
 
-/** Transitions the engine draws, by xfade name. */
-const TRANSITIONS = new Set(["fade", "fadeblack", "fadewhite"]);
-const FITS = new Set<Fit>(["cover", "contain", "stretch"]);
+/** Filters that take RGB frames only: after a transition, FFmpeg's format negotiation then runs xfade on RGB too. */
+const RGB_FILTERS = new Set(["colorbalance", "colortemperature", "curves", "colorchannelmixer", "lut3d", "haldclut", "exposure", "vibrance", "huesaturation", "rgbashift"]);
+
+/**
+ * Whether the FFmpeg backend's xfade runs on RGB frames: its format follows the filter after it,
+ * the first of the whole-video effects, and when that takes RGB only (or bakes into an RGB table),
+ * the transitions run on RGB. There "black" is plain black, not YUV's luma 0 below video black,
+ * chroma planes are full size, and fadegrays averages R, G and B.
+ */
+export function transitionsInRgb(project: Project, W: number, H: number): boolean {
+  if (!project.effects.length) return false;
+  const chain = effectsToFilter(project.effects, { width: W, height: H, fps: project.settings.fps, duration: 1, label: (p) => p }).join(",");
+  const first = /^\s*(\w+)(?:=([^,;:[]*))?/.exec(chain);
+  if (!first) return false;
+  if (first[1] === "format") return /rgb|gbr/.test(first[2] ?? "");
+  return RGB_FILTERS.has(first[1]!);
+}
+
+/** Transitions the engine draws: FFmpeg xfade names (see primary.wgsl), and the catalog's custom circlereveal. */
+const TRANSITIONS = new Set([
+  "fade", "fadeblack", "fadewhite", "wipeleft", "wiperight", "wipeup", "wipedown", "slideleft", "slideright", "slideup", "slidedown",
+  "smoothleft", "smoothright", "smoothup", "smoothdown", "circleopen", "circleclose", "horzopen", "horzclose", "vertopen", "vertclose",
+  "diagtl", "zoomin", "circlecrop", "rectcrop", "coverleft", "coverright", "revealleft", "revealright", "fadegrays", "pixelize", "hblur",
+]);
+const FITS = new Set<Fit>(["cover", "contain", "stretch", "blur"]);
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
-/** FFmpeg's crop, pad and overlay positions: truncated, then aligned to the 4:2:0 chroma grid. */
+/** FFmpeg's pad and overlay positions: truncated, then aligned to the 4:2:0 chroma grid (crop rounds instead, see cropPosition). */
 const chromaAligned = (v: number) => Math.trunc(v) & ~1;
 const rgba = (hex: string): [number, number, number, number] => {
   const c = parseColor(hex);
@@ -106,31 +145,39 @@ const rgba = (hex: string): [number, number, number, number] => {
  */
 export function engineUnsupported(project: Project): string[] {
   const out: string[] = [];
-  if (project.effects.length) out.push(`whole-video effects (${project.effects.map((e) => e.type).join(", ")})`);
+  const { width, height, fps } = project.settings;
+  const timeline = computeTimeline(project);
+  const ctx = (duration: number) => ({ width, height, fps, duration });
+  for (const r of effectsOps(project.effects, ctx(timeline.primaryDuration || timeline.duration), 1).unsupported) out.push(`whole-video effects: ${r}`);
   const sized = (a: Asset | undefined, where: string) => {
     if ((a?.type === "video" || a?.type === "image") && !(a.width && a.height)) out.push(`${where}: size of asset "${a.id}" unknown (probe it first)`);
   };
   for (const clip of project.clips) {
     const where = `clip "${clip.id}"`;
-    if (clip.effects.length) out.push(`${where}: effects (${clip.effects.map((e) => e.type).join(", ")})`);
+    const duration = timeline.clips.find((c) => c.clip === clip)?.duration ?? 1;
+    for (const r of effectsOps(clip.effects, ctx(duration), 1).unsupported) out.push(`${where}: ${r}`);
     if (!FITS.has(clip.fit)) out.push(`${where}: fit ${clip.fit}`);
     if (clip.keyframes?.focus?.length) out.push(`${where}: moving crop focus`);
     if (clip.interpolate) out.push(`${where}: smooth motion`);
     const t = clip.transition && getTransition(clip.transition.type);
-    if (clip.transition && (!t || t.custom || !TRANSITIONS.has(t.xfade))) out.push(`${where}: transition ${clip.transition.type}`);
+    if (clip.transition && (!t || (t.custom ? t.id !== "circlereveal" : !TRANSITIONS.has(t.xfade)))) out.push(`${where}: transition ${clip.transition.type}`);
     sized(project.assets.find((a) => a.id === clip.assetId), where);
   }
   for (const layer of project.layers) {
     if (layer.type !== "media") continue;
     const where = `layer "${layer.id}"`;
-    if (layer.effects.length) out.push(`${where}: effects (${layer.effects.map((e) => e.type).join(", ")})`);
+    const asset = project.assets.find((a) => a.id === layer.assetId);
+    if (layer.effects.length && asset) {
+      // Effects run on the layer's own picture, at its size and with its transparency.
+      const [w, h] = layerSize(layer, asset, width, height);
+      for (const r of effectsOps(layer.effects, { width: w, height: h, fps, duration: layer.duration, alpha: true }, 1).unsupported) out.push(`${where}: ${r}`);
+    }
     if (layer.mask) out.push(`${where}: mask`);
     if (layer.behindSubject) out.push(`${where}: behind the subject`);
     if (layer.cornerRadius > 0) out.push(`${where}: rounded corners`);
     if (layer.shadow > 0) out.push(`${where}: shadow`);
     if (layer.rotateX || layer.rotateY) out.push(`${where}: 3D rotation`);
-    if (Object.values(layer.keyframes ?? {}).some((k) => k?.length)) out.push(`${where}: keyframes`);
-    for (const a of [layer.animationIn, layer.animationOut]) if (a?.type.startsWith("slide-")) out.push(`${where}: animation ${a.type}`);
+    for (const [name, keys] of Object.entries(layer.keyframes ?? {})) if (keys?.length && !["position", "opacity"].includes(name)) out.push(`${where}: ${name} keyframes`);
     sized(project.assets.find((a) => a.id === layer.assetId), where);
   }
   return out;
@@ -173,10 +220,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
     if (asset.type === "color") return { source: { kind: "color", color: rgba(asset.color) }, size: [W, H] };
     if (asset.type === "image") return { source: decode(["-i", resolveSrc(asset.src)], [], asset.width!, asset.height!, true), size: [asset.width!, asset.height!] };
     if (asset.type === "gradient") {
-      const [x1, y1] = asset.direction === "horizontal" ? [W, 0] : asset.direction === "diagonal" ? [W, H] : [0, H];
-      const cols = asset.colors.map((c, i) => `c${i}=${toFfmpegColor(c)}`).join(":");
-      const src = `gradients=s=${W}x${H}:r=${F}:n=${asset.colors.length}:${cols}:x0=0:y0=0:x1=${x1}:y1=${y1}:speed=0.00001`;
-      return { source: decode(["-f", "lavfi", "-i", src], [], W, H, true), size: [W, H] };
+      return { source: decode(["-f", "lavfi", "-i", gradientSource(asset, W, H, F)], [], W, H, true), size: [W, H] };
     }
     return undefined;
   };
@@ -191,7 +235,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
     const [sw, sh] = [Math.max(w, tw), Math.max(h, th)];
     const fx = round3(Math.min(1, Math.max(0, focus?.x ?? 0.5)));
     const fy = round3(Math.min(1, Math.max(0, focus?.y ?? 0.5)));
-    return { scaled: [sw, sh], offset: [-chromaAligned((sw - w) * fx), -chromaAligned((sh - h) * fy)] };
+    return { scaled: [sw, sh], offset: [-cropPosition((sw - w) * fx), -cropPosition((sh - h) * fy)] };
   };
   const addItem = (item: PlanItem) => items.push(item) - 1;
 
@@ -217,14 +261,34 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       if (!s) throw new Error(`Clip "${clip.id}" uses audio asset "${asset.id}" as a picture`);
       ({ source, size } = s);
     }
-    const item = addItem({ source, width: W, height: H, ...fitBox(clip.fit, size, W, H, clip.focus), fill: background, opaque: true });
+    const { ops } = effectsOps(clip.effects, { width: W, height: H, fps: F, duration: tc.duration }, frames);
+    // fit blur, as compileProject's fit draws it: the picture contained over a cover copy blurred
+    // (gblur sigma 40) and darkened (eq brightness -0.08).
+    const blur = clip.fit === "blur";
+    const item = addItem({
+      source,
+      width: W,
+      height: H,
+      ...fitBox(blur ? "contain" : clip.fit, size, W, H, clip.focus),
+      fill: blur ? [0, 0, 0, 0] : background,
+      opaque: true,
+      ...(ops.length ? { effects: ops } : {}),
+      ...(blur ? { backdrop: { ...fitBox("cover", size, W, H), effects: [{ op: "blur", sigma: 40 }, { op: "lut", args: lutArgs(["eq=brightness=-0.08"]) }] as PlanOp[] } } : {}),
+    });
     let first = next;
     let transition: PlanClip["transition"];
     if (tc.index > 0 && tc.transitionDuration > 0) {
       const d = tc.transitionDuration;
       const offset = round3(curDur - d);
       first = Math.ceil(offset * F - 1e-6);
-      transition = { kind: getTransition(clip.transition!.type)!.xfade as "fade", offset, duration: d };
+      const def = getTransition(clip.transition!.type)!;
+      if (def.custom) {
+        // circlereveal, as its xfade expression computes the circle (transitions catalog).
+        const [ox, oy] = [round3(clip.transition!.origin?.x ?? 0.5), round3(clip.transition!.origin?.y ?? 0.5)];
+        const aspect = round3(W / H);
+        const reach = round3(Math.hypot(Math.max(ox, 1 - ox) * aspect, Math.max(oy, 1 - oy)) + 0.03);
+        transition = { kind: "circlereveal", offset, duration: d, origin: [ox, oy], reach, aspect };
+      } else transition = { kind: def.xfade, offset, duration: d };
       curDur = round3(curDur + tc.duration - d);
     } else {
       curDur = round3(curDur + tc.duration);
@@ -256,7 +320,8 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       ({ source, size } = s);
     }
     const fit: Fit = layer.size.height ? (layer.fit === "blur" ? "contain" : layer.fit) : "stretch";
-    const item = addItem({ source, width: w, height: h, ...fitBox(fit, size, w, h), fill: [0, 0, 0, 0] });
+    const { ops } = effectsOps(layer.effects, { width: w, height: h, fps: F, duration: layer.duration, alpha: true }, Math.max(1, Math.ceil(layer.duration * F - 1e-6)));
+    const item = addItem({ source, width: w, height: h, ...fitBox(fit, size, w, h), fill: [0, 0, 0, 0], ...(ops.length ? { effects: ops } : {}) });
     const fades = (a: MediaLayer["animationIn"]) => (a && a.type !== "none" ? a.duration : 0);
     layers.push({
       item,
@@ -266,6 +331,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       ...(asset.type === "video" ? {} : { frames: Math.ceil(layer.duration * F - 1e-6) }),
       x: chromaAligned(W * layer.position.x - w / 2),
       y: chromaAligned(H * layer.position.y - h / 2),
+      ...layerMotion(layer, w, h, W, H, F),
       opacity: layer.opacity,
       blend: layer.blend,
       fadeIn: fades(layer.animationIn),
@@ -276,8 +342,9 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
 
   const exp = project.export;
   const fonts = opts.fontsDir ? `:fontsdir='${escapeFilterPath(path.resolve(opts.fontsDir))}'` : "";
-  // Text goes on in YUV, as in the FFmpeg backend.
-  const picture = ["format=yuv420p", opts.overlay && `ass=filename=${ASS_FILE}${fonts}`].filter(Boolean).join(",");
+  // Text goes on in YUV, as in the FFmpeg backend, on frames timed in AV_TIME_BASE as the backend's are:
+  // libass takes whole milliseconds, so a frame exactly at an event's start can land on either side of it.
+  const picture = ["settb=AVTB", "format=yuv420p", opts.overlay && `ass=filename=${ASS_FILE}${fonts}`].filter(Boolean).join(",");
   const args = [
     "-y", "-hide_banner", "-loglevel", "error", "-nostdin",
     "-f", "rawvideo", "-pix_fmt", "vuya", "-s", `${W}x${H}`, "-r", String(F), "-i", "pipe:0",
@@ -307,6 +374,11 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       items,
       clips,
       layers,
+      ...(transitionsInRgb(project, W, H) ? { rgbTransitions: true } : {}),
+      ...(() => {
+        const { ops } = effectsOps(project.effects, { width: W, height: H, fps: F, duration: timeline.primaryDuration || total }, Math.ceil(total * F - 1e-6));
+        return ops.length ? { effects: ops } : {};
+      })(),
       output: { args },
     },
   };
@@ -316,6 +388,48 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
 function retime(tc: TimedClip): string[] {
   if (tc.speedMap) return [`setpts='(${rampPts(tc.speedMap, tc.sourceDuration)})/TB'`];
   return tc.clip.speed !== 1 ? [`setpts=PTS/${tc.clip.speed}`] : [];
+}
+
+/**
+ * Where a moving media layer is on each output frame, as compileProject's overlay expressions put it
+ * (position keyframes from the layer's start, slide animations from overlayMotion), and its opacity
+ * keyframes per frame of the layer. Nothing for a layer that holds still.
+ */
+function layerMotion(layer: MediaLayer, w: number, h: number, W: number, H: number, F: number): Pick<PlanLayer, "frame0" | "positions" | "opacities"> {
+  const keys = layer.keyframes?.position;
+  const slides = [layer.animationIn, layer.animationOut].some((a) => a?.type.startsWith("slide-"));
+  const out: Pick<PlanLayer, "frame0" | "positions" | "opacities"> = {};
+  const end = round3(layer.start + layer.duration);
+  if (keys?.length || slides) {
+    const frame0 = Math.ceil(layer.start * F - 1e-6);
+    const last = Math.floor(end * F + 1e-6);
+    out.frame0 = frame0;
+    out.positions = Array.from({ length: Math.max(1, last - frame0 + 1) }, (_, i) => {
+      const t = (frame0 + i) / F;
+      const at = keys?.length ? positionAt(keys, t - layer.start) : layer.position;
+      let [x, y] = [W * at.x - w / 2, H * at.y - h / 2];
+      // overlayMotion's slides: 8% of the height or 10% of the width, eased over the animation.
+      for (const [anim, entering] of [[layer.animationIn, true], [layer.animationOut, false]] as const) {
+        if (!anim?.type.startsWith("slide-")) continue;
+        const d = round3(anim.duration);
+        const t0 = entering ? layer.start : round3(end - d);
+        const e = easeValue(Math.min(1, Math.max(0, (t - t0) / d)), anim.easing);
+        const k = entering ? 1 - e : e;
+        const sign = entering ? 1 : -1;
+        if (anim.type === "slide-up") y += sign * H * 0.08 * k;
+        else if (anim.type === "slide-down") y -= sign * H * 0.08 * k;
+        else if (anim.type === "slide-left") x += sign * W * 0.1 * k;
+        else if (anim.type === "slide-right") x -= sign * W * 0.1 * k;
+      }
+      return [chromaAligned(x), chromaAligned(y)];
+    });
+  }
+  const opacity = layer.keyframes?.opacity;
+  if (opacity?.length) {
+    const frames = Math.max(1, Math.ceil(layer.duration * F - 1e-6));
+    out.opacities = Array.from({ length: frames }, (_, k) => Math.min(1, Math.max(0, numberAt(opacity, k / F))));
+  }
+  return out;
 }
 
 /** A media layer's size in output pixels, as mediaLayerStream computes it. */

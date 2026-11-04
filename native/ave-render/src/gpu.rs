@@ -17,6 +17,13 @@ pub struct Gpu {
     pub primary: wgpu::ComputePipeline,
     pub layer: wgpu::ComputePipeline,
     pub pack: wgpu::ComputePipeline,
+    pub lut: wgpu::ComputePipeline,
+    pub hblur: wgpu::ComputePipeline,
+    pub pixel: wgpu::ComputePipeline,
+    pub blur_load: wgpu::ComputePipeline,
+    pub blur_rows: wgpu::ComputePipeline,
+    pub blur_columns: wgpu::ComputePipeline,
+    pub blur_store: wgpu::ComputePipeline,
 }
 
 #[repr(C)]
@@ -29,6 +36,39 @@ pub struct ResampleParams {
     pub out_size: [u32; 2],
     pub x_range: [i32; 2],
     pub fill: [f32; 4],
+    pub origin: i32,
+    pub line_origin: i32,
+    pub yuv_in: u32,
+    pub _pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Default)]
+pub struct PixelParams {
+    pub mode: u32,
+    pub backward: u32,
+    pub shift_red: [i32; 2],
+    pub shift_green: [i32; 2],
+    pub shift_blue: [i32; 2],
+    pub rect: [f32; 4],
+    pub color: [f32; 4],
+    pub angle: f32,
+    pub factor: f32,
+    pub bar: u32,
+    pub frame: u32,
+    pub strength: f32,
+    pub uniform: u32,
+    pub _pad: [u32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct BlurParams {
+    pub nu: [f32; 4],
+    pub boundary: [f32; 4],
+    pub post: [f32; 4],
+    pub size: [u32; 2],
+    pub _pad: [u32; 2],
 }
 
 #[repr(C)]
@@ -39,8 +79,21 @@ pub struct PrimaryParams {
     pub fade_a: f32,
     pub fade_b: f32,
     pub progress: f32,
-    pub _pad: [f32; 3],
+    pub reach: f32,
+    pub aspect: f32,
+    pub rgb: u32,
     pub background: [f32; 4],
+    pub origin: [f32; 2],
+    pub _pad1: [f32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct HblurParams {
+    pub fade_a: f32,
+    pub fade_b: f32,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[repr(C)]
@@ -73,7 +126,15 @@ impl Gpu {
         }))
         .map_err(|e| format!("no usable graphics adapter: {e}"))?;
         let info = adapter.get_info();
-        let limits = wgpu::Limits { max_texture_dimension_2d: 8192, ..wgpu::Limits::default() }.using_resolution(adapter.limits());
+        // The blur keeps a whole frame of float YUV in a storage buffer: 132 MB at 4K.
+        let most = adapter.limits();
+        let limits = wgpu::Limits {
+            max_texture_dimension_2d: 8192,
+            max_storage_buffer_binding_size: most.max_storage_buffer_binding_size,
+            max_buffer_size: most.max_buffer_size,
+            ..wgpu::Limits::default()
+        }
+        .using_resolution(most);
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("ave-render"),
             required_limits: limits,
@@ -85,6 +146,10 @@ impl Gpu {
         let primary = module("primary", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/primary.wgsl")));
         let layer = module("layer", include_str!("shaders/layer.wgsl"));
         let pack = module("pack", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/pack.wgsl")));
+        let lut = module("lut", include_str!("shaders/lut.wgsl"));
+        let hblur = module("hblur", include_str!("shaders/hblur.wgsl"));
+        let pixel = module("pixel", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/pixel.wgsl")));
+        let blur = module("blur", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/blur.wgsl")));
         let pipeline = |m: &wgpu::ShaderModule, entry: &str| {
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some(entry),
@@ -101,6 +166,13 @@ impl Gpu {
             primary: pipeline(&primary, "main"),
             layer: pipeline(&layer, "main"),
             pack: pipeline(&pack, "main"),
+            lut: pipeline(&lut, "main"),
+            hblur: pipeline(&hblur, "main"),
+            pixel: pipeline(&pixel, "main"),
+            blur_load: pipeline(&blur, "load_yuv"),
+            blur_rows: pipeline(&blur, "rows"),
+            blur_columns: pipeline(&blur, "columns"),
+            blur_store: pipeline(&blur, "store_rgb"),
             device,
             queue,
             info,
@@ -131,6 +203,27 @@ impl Gpu {
         })
     }
 
+    /// A color table, `size` points per channel, from RGBA bytes with red fastest.
+    pub fn table(&self, rgba: &[u8], size: u32) -> wgpu::Texture {
+        let t = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("table"),
+            size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: size },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D3,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo { texture: &t, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            rgba,
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * size), rows_per_image: Some(size) },
+            wgpu::Extent3d { width: size, height: size, depth_or_array_layers: size },
+        );
+        t
+    }
+
     pub fn upload(&self, texture: &wgpu::Texture, rgba: &[u8], width: u32, height: u32) {
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
@@ -150,13 +243,18 @@ impl Gpu {
 
     /// Record one compute pass over a `width` x `height` grid, binding `resources` in order.
     pub fn dispatch(&self, encoder: &mut wgpu::CommandEncoder, pipeline: &wgpu::ComputePipeline, resources: &[wgpu::BindingResource], width: u32, height: u32) {
-        let entries: Vec<wgpu::BindGroupEntry> =
-            resources.iter().enumerate().map(|(i, r)| wgpu::BindGroupEntry { binding: i as u32, resource: r.clone() }).collect();
+        let numbered: Vec<(u32, wgpu::BindingResource)> = resources.iter().enumerate().map(|(i, r)| (i as u32, r.clone())).collect();
+        self.dispatch_bound(encoder, pipeline, &numbered, width.div_ceil(WORKGROUP), height.div_ceil(WORKGROUP));
+    }
+
+    /// Record one compute pass of `groups_x` x `groups_y` workgroups, binding only the numbered resources its entry point uses.
+    pub fn dispatch_bound(&self, encoder: &mut wgpu::CommandEncoder, pipeline: &wgpu::ComputePipeline, resources: &[(u32, wgpu::BindingResource)], groups_x: u32, groups_y: u32) {
+        let entries: Vec<wgpu::BindGroupEntry> = resources.iter().map(|(i, r)| wgpu::BindGroupEntry { binding: *i, resource: r.clone() }).collect();
         let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout: &pipeline.get_bind_group_layout(0), entries: &entries });
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: None, timestamp_writes: None });
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, &group, &[]);
-        pass.dispatch_workgroups(width.div_ceil(WORKGROUP), height.div_ceil(WORKGROUP), 1);
+        pass.dispatch_workgroups(groups_x, groups_y, 1);
     }
 }
 

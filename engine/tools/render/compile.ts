@@ -2,7 +2,7 @@ import path from "node:path";
 import type { Asset, BlendMode, Clip, Corners, Effect, Fit, Keyframe, MediaLayer, Position, Project } from "../../core/schema.js";
 import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
-import { round3, toFfmpegColor } from "../../core/util.js";
+import { parseColor, round3, toFfmpegColor } from "../../core/util.js";
 import { effectMedia, effectObjects, effectRemovals, effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, removalKey, type EffectContext } from "../../library/effects/index.js";
 import { buildMatte, maskNeeds } from "../../library/effects/masks.js";
 import { getTransition } from "../../library/transitions/index.js";
@@ -161,6 +161,29 @@ function rampTempo(map: SpeedMap, sourceDuration: number, name: string, rubberba
   for (let u = 0; u < sourceDuration; u = round3(u + 0.1)) lines.push(`${u} [enter] ${targets.map((t) => `${t} tempo ${tempo(map.speedAt(u + 0.05))}`).join(", ")};`);
   return { filters: targets.map((t) => `${t}=tempo=${tempo(map.speedAt(0.05))}`), commands: lines.join("\n") };
 }
+/**
+ * A gradient asset as a lavfi source: one frame drawn with geq, the colors evenly spaced along the
+ * direction and blended in a straight line between neighbors, then repeated. (FFmpeg's own gradients
+ * source starts at a random angle on every run, so the same edit rendered differently each time.)
+ */
+export function gradientSource(asset: { colors: string[]; direction: "vertical" | "horizontal" | "diagonal" }, W: number, H: number, F: number): string {
+  const [dx, dy] = asset.direction === "horizontal" ? [W, 0] : asset.direction === "diagonal" ? [W, H] : [0, H];
+  const n = asset.colors.length;
+  const cs = asset.colors.map(parseColor);
+  // Position along the direction, 0..n-1, kept in variable 0.
+  const at = `st(0,clip((X*${dx}+Y*${dy})/${dx * dx + dy * dy},0,1)*${n - 1})`;
+  const channel = (pick: (c: (typeof cs)[number]) => number) => {
+    let e = String(round3(pick(cs[n - 1]!)));
+    for (let i = n - 2; i >= 0; i--) {
+      const [a, b] = [pick(cs[i]!), pick(cs[i + 1]!)];
+      e = `if(lt(ld(0),${i + 1}),${round3(a)}+${round3(b - a)}*(ld(0)-${i}),${e})`;
+    }
+    return `'${at};${e}'`;
+  };
+  const geq = `geq=r=${channel((c) => c.r)}:g=${channel((c) => c.g)}:b=${channel((c) => c.b)}:a=${channel((c) => c.a * 255)}`;
+  return `nullsrc=s=${W}x${H}:r=${F},trim=end_frame=1,format=gbrap,${geq},loop=loop=-1:size=1`;
+}
+
 const previewScale = (scale?: number) => (scale && scale > 0 && scale !== 1 ? scale : 1);
 
 /** Frame size of a render at a preview scale (even numbers, as the encoder needs). */
@@ -254,18 +277,8 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         return g.addInput(["-loop", "1", "-framerate", String(F), "-t", String(round3(duration)), "-i", resolveSrc(asset.src)]);
       case "color":
         return g.addInput(["-f", "lavfi", "-t", String(round3(duration)), "-i", `color=c=${toFfmpegColor(asset.color)}:s=${W}x${H}:r=${F}`]);
-      case "gradient": {
-        const [x1, y1] = asset.direction === "horizontal" ? [W, 0] : asset.direction === "diagonal" ? [W, H] : [0, H];
-        const cols = asset.colors.map((c, i) => `c${i}=${toFfmpegColor(c)}`).join(":");
-        return g.addInput([
-          "-f",
-          "lavfi",
-          "-t",
-          String(round3(duration)),
-          "-i",
-          `gradients=s=${W}x${H}:r=${F}:n=${asset.colors.length}:${cols}:x0=0:y0=0:x1=${x1}:y1=${y1}:speed=0.00001`,
-        ]);
-      }
+      case "gradient":
+        return g.addInput(["-f", "lavfi", "-t", String(round3(duration)), "-i", gradientSource(asset, W, H, F)]);
     }
   };
 

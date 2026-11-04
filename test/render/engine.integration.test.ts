@@ -1,20 +1,33 @@
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { addAsset, addClip, addLayer, createProject, setTransition, type Project } from "../../engine/core/index.js";
-import { enginePath, engineUnsupported, render, runFfmpegOrThrow } from "../../engine/tools/index.js";
+import { enginePath, engineUnsupported, planProject, render, runFfmpegOrThrow } from "../../engine/tools/index.js";
 import { deltaE2000, rgbToLab } from "../../engine/library/effects/color-match.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "../helpers/media.js";
+import { sampleInputs } from "../helpers/inputs.js";
+import { TEMPLATES, applyTemplate } from "../../engine/library/index.js";
+import { probe } from "../../engine/tools/index.js";
 
 const hasFfmpeg = await ffmpegAvailable();
 const W = 480;
 const H = 270;
 const FPS = 15;
 
-/** Every frame of a video as packed RGB. */
-async function frames(file: string): Promise<Buffer[]> {
-  const { stdoutBuffer } = await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", file, "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"], { binaryStdout: true });
+/** Every frame of a video as packed RGB, optionally through a filter first. */
+async function frames(file: string, filter?: string): Promise<Buffer[]> {
+  const { stdoutBuffer } = await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", file, ...(filter ? ["-vf", filter] : []), "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"], { binaryStdout: true });
   const size = W * H * 3;
   return Array.from({ length: Math.floor(stdoutBuffer!.length / size) }, (_, i) => stdoutBuffer!.subarray(i * size, (i + 1) * size));
+}
+
+/** How strong the noise in a video is: the deviation of its luma from a blurred copy, in levels. */
+async function noiseLevel(file: string): Promise<number> {
+  const gray = async (filter: string) =>
+    (await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", file, "-vf", filter, "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1"], { binaryStdout: true })).stdoutBuffer!;
+  const [sharp, soft] = [await gray("format=gray"), await gray("format=gray,boxblur=2")];
+  let sum = 0;
+  for (let i = 0; i < sharp.length; i++) sum += (sharp[i]! - soft[i]!) ** 2;
+  return Math.sqrt(sum / sharp.length);
 }
 
 /** Mean ΔE 2000 between two frames, on every 4th pixel. */
@@ -29,18 +42,32 @@ function meanDeltaE(a: Buffer, b: Buffer): number {
   return sum / n;
 }
 
-/** Render on both backends, losslessly, and compare frame by frame. */
-async function compare(name: string, p: Project): Promise<{ mean: number; worst: number; frames: number }> {
+/**
+ * Render on both backends, losslessly, and compare frame by frame (through `filter` when given,
+ * e.g. a blur over random noise). Frames are `size` pixels (the render size).
+ */
+async function compare(
+  name: string,
+  p: Project,
+  opts: { scale?: number; filter?: string; skip?: (frame: number) => boolean } = {},
+): Promise<{ mean: number; worst: number; frames: number; repeatedByFfmpeg: number; skipped: number }> {
   expect(engineUnsupported(p)).toEqual([]);
   p.export = { ...p.export, crf: 0, preset: "ultrafast" };
   const dir = path.join(OUT_DIR, "engine");
   const [ff, gpu] = [path.join(dir, `${name}-ffmpeg.mp4`), path.join(dir, `${name}-engine.mp4`)];
-  await render(p, { output: ff, backend: "ffmpeg", hardware: false });
-  await render(p, { output: gpu, backend: "engine", hardware: false });
-  const [a, b] = [await frames(ff), await frames(gpu)];
+  await render(p, { output: ff, backend: "ffmpeg", hardware: false, scale: opts.scale });
+  await render(p, { output: gpu, backend: "engine", hardware: false, scale: opts.scale });
+  // Compared at a fixed size, so every project uses the same frame buffers.
+  const fit = `scale=${W}:${H}${opts.filter ? `,${opts.filter}` : ""}`;
+  const [a, b] = [await frames(ff, fit), await frames(gpu, fit)];
   expect(b.length).toBe(a.length);
-  const scores = a.map((f, i) => meanDeltaE(f, b[i]!));
-  return { mean: scores.reduce((x, y) => x + y, 0) / scores.length, worst: Math.max(...scores), frames: a.length };
+  // Some FFmpeg chains drop a clip's last frame and the backend repeats the one before (tpad);
+  // the engine shows the real frame there, so those frames are left out (and counted).
+  const repeated = (i: number) => i > 0 && a[i]!.equals(a[i - 1]!) && !b[i]!.equals(b[i - 1]!);
+  const skipped = a.map((_, i) => i).filter((i) => opts.skip?.(i)).length;
+  const kept = a.map((_, i) => i).filter((i) => !repeated(i) && !opts.skip?.(i));
+  const scores = kept.map((i) => meanDeltaE(a[i]!, b[i]!));
+  return { mean: scores.reduce((x, y) => x + y, 0) / scores.length, worst: Math.max(...scores), frames: a.length, repeatedByFfmpeg: a.length - kept.length - skipped, skipped };
 }
 
 describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the FFmpeg backend", () => {
@@ -83,11 +110,143 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
     expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
   }, 120_000);
 
+  // One render per effect on the same footage, so a mismatch names its effect.
+  const EFFECTS: [string, Record<string, unknown>?][] = [
+    ["vibrant"], ["cinematic"], ["tealOrange"], ["warm"], ["moody"], ["faded"], ["bright"],
+    ["adjust", { brightness: 0.05, contrast: 1.2, saturation: 1.3, gamma: 1.1 }],
+    ["color", { exposure: 0.4, contrast: 20, temperature: -30, vibrance: 25 }],
+    ["vignette", { strength: 0.6 }], ["letterbox"], ["chromaticAberration", { amount: 8 }], ["flash", { duration: 0.4 }],
+    ["zoom", { scale: 1.4, x: 0.3, y: 0.6 }], ["kenBurns", { zoomFrom: 1, zoomTo: 1.3, pan: "left" }], ["punchIn", { interval: 0.5, scale: 1.2 }], ["pulse", { bpm: 120 }],
+    ["blur", { amount: 6 }],
+  ];
+  for (const [type, params] of EFFECTS) {
+    it(`effect ${type}`, async () => {
+      let p = base();
+      p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 1.4, effects: [{ type, ...(params ? { params } : {}) }] });
+      const r = await compare(`effect-${type}`, p);
+      expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+      expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+    }, 60_000);
+  }
+
+  // Transitions between moving footage and a still: one of each kind of xfade formula.
+  const TRANSITION_TYPES = ["wiperight", "wipedown", "slideleft", "slideup", "smoothleft", "circleopen", "circleclose", "horzopen", "diagtl", "zoomin", "circlecrop", "rectcrop", "coverleft", "revealright", "fadegrays", "circlereveal", "pixelize", "hblur"];
+  for (const type of TRANSITION_TYPES) {
+    it(`transition ${type}`, async () => {
+      let p = base();
+      // zoomin spreads the outgoing clip's center pixel over the whole frame halfway through, and
+      // the test pattern's center sits on a sharp color edge, where 4:2:0 chroma (FFmpeg) and full
+      // chroma (the engine) differ by a lot: zoom out of a smooth picture instead.
+      p = addAsset(p, { id: "ramp", type: "gradient", colors: ["#203060", "#C08040"], direction: "diagonal" });
+      p = addClip(p, { id: "a", assetId: type === "zoomin" ? "ramp" : "talk", duration: 1.2 });
+      p = addClip(p, { id: "b", assetId: "pic", duration: 1.2 });
+      p = setTransition(p, "b", { type, duration: 0.8, ...(type === "circlereveal" ? { origin: { x: 0.3, y: 0.6 } } : {}) });
+      const r = await compare(`transition-${type}`, p);
+      expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+      expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+    }, 60_000);
+  }
+
+  it("fit blur: the picture over a blurred, darkened copy", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "tall", duration: 1.2, fit: "blur" });
+    p = addClip(p, { id: "b", assetId: "pic", duration: 1, fit: "blur", effects: [{ type: "warm" }] });
+    const r = await compare("fit-blur", p);
+    expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+    expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+  }, 60_000);
+
+  it("layers: slides, position and opacity keyframes", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "talk", duration: 2.5 });
+    p = addLayer(p, { type: "media", assetId: "pic", start: 0.2, duration: 2, position: { x: 0.3, y: 0.5 }, size: { width: 0.35 }, animationIn: { type: "slide-up", duration: 0.5 }, animationOut: { type: "slide-right", duration: 0.4, easing: "ease-in" } });
+    p = addLayer(p, {
+      type: "media",
+      assetId: "blue",
+      start: 0.5,
+      duration: 1.8,
+      size: { width: 0.2, height: 0.2 },
+      keyframes: {
+        position: [{ time: 0, value: { x: 0.2, y: 0.2 }, easing: "linear" }, { time: 1.5, value: { x: 0.8, y: 0.7 }, easing: "ease-in-out" }],
+        opacity: [{ time: 0, value: 0.2, easing: "linear" }, { time: 1, value: 1, easing: "ease-out" }],
+      },
+    });
+    const r = await compare("layer-motion", p);
+    expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+    expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+  }, 60_000);
+
+  // Noise is random in both renderers, so these compare pictures blurred over the noise, and
+  // how strong the noise is, rather than pixels.
+  for (const [type, params] of [["grain", { amount: 20 }], ["glitch", { amount: 12 }]] as const) {
+    it(`effect ${type}: same picture under the noise, same noise strength`, async () => {
+      let p = base();
+      p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 1, effects: [{ type, params }] });
+      p.export = { ...p.export, crf: 0, preset: "ultrafast" };
+      const dir = path.join(OUT_DIR, "engine");
+      const [ff, gpu] = [path.join(dir, `noise-${type}-ffmpeg.mp4`), path.join(dir, `noise-${type}-engine.mp4`)];
+      await render(p, { output: ff, backend: "ffmpeg", hardware: false });
+      await render(p, { output: gpu, backend: "engine", hardware: false });
+      const [a, b] = [await frames(ff, "boxblur=4"), await frames(gpu, "boxblur=4")];
+      const scores = a.map((f, i) => meanDeltaE(f, b[i]!));
+      expect(scores.reduce((x, y) => x + y, 0) / scores.length).toBeLessThan(1.5);
+      const [na, nb] = [await noiseLevel(ff), await noiseLevel(gpu)];
+      expect(nb / na, `noise ${na} (FFmpeg) against ${nb} (engine)`).toBeGreaterThan(0.8);
+      expect(nb / na, `noise ${na} (FFmpeg) against ${nb} (engine)`).toBeLessThan(1.25);
+    }, 60_000);
+  }
+
+  it("effects on media layers, with their transparency", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "talk", duration: 2 });
+    p = addLayer(p, { type: "media", assetId: "pic", start: 0, duration: 2, position: { x: 0.3, y: 0.5 }, size: { width: 0.4 }, effects: [{ type: "kenBurns", params: { zoomTo: 1.4 } }, { type: "warm" }] });
+    p = addLayer(p, { type: "media", assetId: "tall", start: 0.3, duration: 1.5, position: { x: 0.75, y: 0.5 }, size: { width: 0.3, height: 0.6 }, fit: "contain", effects: [{ type: "blur", params: { amount: 5 } }] });
+    const r = await compare("layer-effects", p);
+    expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+    expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+  }, 60_000);
+
+  it("whole-video effects run on the joined picture", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "talk", duration: 1.5 });
+    p = addClip(p, { id: "b", assetId: "pic", duration: 1.5 });
+    p = setTransition(p, "b", { type: "fade", duration: 0.5 });
+    p.effects = [{ type: "cinematic" }, { type: "vignette" }];
+    const r = await compare("global", p);
+    expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+    expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+  }, 60_000);
+
+  // The templates' test projects (the subset the render test uses, or every template with
+  // FULL_RENDER=1), with captions, at half size. Noise (grain, glitch) is compared blurred.
+  const SUBSET = ["viral-talking-head", "listicle-countdown", "documentary", "real-estate-tour", "announcement", "wedding-memories", "reaction-split"];
+  const transcript = {
+    words: "This is a sample sentence for captions. And here is another one to read.".split(" ").map((text, i) => ({ text, start: 0.2 + i * 0.25, end: 0.2 + i * 0.25 + 0.22 })),
+  };
+  for (const t of TEMPLATES.filter((t) => process.env.FULL_RENDER === "1" || SUBSET.includes(t.id))) {
+    it(`template ${t.id}`, async () => {
+      const inputs = sampleInputs(t, { video: fx.talk, image: fx.image, audio: fx.music, videoDuration: 4, audioDuration: 8, transcript }, 2);
+      const { project } = await applyTemplate(t, inputs, { probe: (src) => probe(src) });
+      const noisy = /"type":"(grain|glitch)"/.test(JSON.stringify(project));
+      // zoomin fills the frame with one sample of the outgoing clip halfway through. On these test
+      // pictures (a fractal still, the test pattern) neighboring pixels differ a lot in color, where
+      // 4:2:0 chroma (FFmpeg) and full chroma (the engine) disagree pixel by pixel; magnified to the
+      // whole frame that is not a measure of the frame. Those frames are left out (and counted);
+      // zoomin itself is checked on a smooth picture above.
+      const plan = planProject(project, { output: "x.mp4", ffmpeg: "ffmpeg", scale: 0.5 }).plan!;
+      const zoomins = plan.clips.filter((c) => c.transition?.kind === "zoomin").map((c) => [c.first, c.first + Math.ceil(c.transition!.duration * plan.fps)] as const);
+      const skip = (i: number) => zoomins.some(([a, b]) => i >= a && i <= b);
+      const r = await compare(`template-${t.id}`, project, { scale: 0.5, filter: noisy ? "boxblur=4" : undefined, skip });
+      expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+      expect(r.worst, JSON.stringify(r)).toBeLessThan(noisy ? 3 : 2);
+    }, 180_000);
+  }
+
   it("refuses what it cannot draw yet, and auto falls back to FFmpeg", async () => {
     let p = base();
-    p = addClip(p, { id: "a", assetId: "talk", duration: 1, effects: [{ type: "vignette" }] });
-    expect(engineUnsupported(p)).toEqual(['clip "a": effects (vignette)']);
-    await expect(render(p, { output: path.join(OUT_DIR, "engine", "refused.mp4"), backend: "engine" })).rejects.toThrow(/cannot render this: clip "a": effects \(vignette\)/);
+    p = addClip(p, { id: "a", assetId: "talk", duration: 1, effects: [{ type: "denoise" }] });
+    expect(engineUnsupported(p)).toEqual(['clip "a": effect denoise']);
+    await expect(render(p, { output: path.join(OUT_DIR, "engine", "refused.mp4"), backend: "engine" })).rejects.toThrow(/cannot render this: clip "a": effect denoise/);
     const out = await render(p, { output: path.join(OUT_DIR, "engine", "auto.mp4"), backend: "auto", preset: "ultrafast" });
     expect(out.args.some((a) => a === "-filter_complex_script")).toBe(true);
   }, 60_000);

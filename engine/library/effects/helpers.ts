@@ -12,6 +12,11 @@ export interface EffectContext {
   duration: number;
   /** The stream has an alpha channel (media layers). */
   alpha?: boolean;
+  /**
+   * Leave per-pixel color chains as plain filters instead of baking them into a lookup table here
+   * (bakeColor): the GPU engine bakes them itself from the same filters (haldClutChain).
+   */
+  noBake?: boolean;
   /** Unique filter-graph label generator, for effects that branch the stream. */
   label?: (prefix: string) => string;
   /**
@@ -97,6 +102,17 @@ const COLOR_COST: Record<string, number> = { geq: 400, colorbalance: 30, vibranc
 const BAKED_COST = 28;
 
 /**
+ * The lookup table of a chain of per-pixel color filters: the filters applied to a Hald identity
+ * image (level 8, 64 entries per channel), one frame of 512x512 rgb24. The table must stay at full
+ * color resolution, since a 4:2:0 step would blend unrelated entries, and haldclut is only exact
+ * on packed RGB.
+ */
+export function haldClutChain(filters: string[]): string {
+  const pin = "format=rgb24|yuv444p|gbrpf32";
+  return `haldclutsrc=level=8:rate=1,trim=end_frame=1,${filters.map((f) => `${pin},${f}`).join(",")},format=rgb24`;
+}
+
+/**
  * Run a chain of per-pixel color filters, baked into one lookup table when that is cheaper: the chain
  * is applied once to a Hald identity image, and haldclut maps every frame through the result. The
  * filters must not depend on position or time. Returns a graph fragment reading and writing one stream.
@@ -109,15 +125,12 @@ export function bakeColor(ctx: EffectContext, filters: string[]): string {
   };
   const cost = filters.flatMap(names).reduce((n, name) => n + (COLOR_COST[name] ?? 3), 0);
   // Only bake a clear win: the estimates are rough.
-  if (cost < BAKED_COST * 1.3) return filters.join(",");
+  if (ctx.noBake || cost < BAKED_COST * 1.3) return filters.join(",");
   const label = labeler(ctx);
   const [main, clut] = [label("cbm"), label("cbc")];
-  // The table must stay at full color resolution: a 4:2:0 step would blend unrelated entries.
-  // haldclut is only exact on packed RGB.
-  const pin = "format=rgb24|yuv444p|gbrpf32";
   return [
     `format=${ctx.alpha ? "rgba" : "rgb24"}[${main}]`,
-    `haldclutsrc=level=8:rate=1,trim=end_frame=1,${filters.map((f) => `${pin},${f}`).join(",")},format=rgb24[${clut}]`,
+    `${haldClutChain(filters)}[${clut}]`,
     `[${main}][${clut}]haldclut=clut=first,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
   ].join(";");
 }
