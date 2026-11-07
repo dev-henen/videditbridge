@@ -4,6 +4,7 @@ import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { parseColor, round3, toFfmpegColor } from "../../core/util.js";
 import { effectMedia, effectObjects, effectRemovals, effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, removalKey, type EffectContext } from "../../library/effects/index.js";
+import { colorTableFile, convertsColor } from "./color-space.js";
 import { buildMatte, maskNeeds } from "../../library/effects/masks.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
@@ -186,6 +187,17 @@ export function gradientSource(asset: { colors: string[]; direction: "vertical" 
 
 const previewScale = (scale?: number) => (scale && scale > 0 && scale !== 1 ? scale : 1);
 
+
+/**
+ * Filters that convert a source in a color space (camera log, HDR) to the edit's Rec.709: its
+ * frames read as BT.601 limited range, as the engine reads them, then its .cube table on float RGB.
+ * Empty for ordinary video. `alpha` keeps a layer's transparency.
+ */
+export function colorConversion(asset: Asset, alpha = false): string[] {
+  if (!convertsColor(asset)) return [];
+  const file = escapeFilterPath(path.resolve(colorTableFile(asset.colorSpace)));
+  return ["setparams=colorspace=smpte170m:range=tv", `format=${alpha ? "gbrapf32le" : "gbrpf32le"}`, `lut3d=file='${file}':interp=tetrahedral`];
+}
 /** Frame size of a render at a preview scale (even numbers, as the encoder needs). */
 export function renderSize(project: Project, scale?: number): { width: number; height: number } {
   const k = previewScale(scale);
@@ -363,8 +375,11 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const timing = (input: string) => `[${input}]${chain([clip.reverse && "reverse", "setpts=PTS-STARTPTS", retime, `fps=${F}`])}`;
       // Smooth motion: the prepared frames are the clip's retimed picture already (in source order, so a reversed clip turns them round).
       const smooth = opts.interpolated?.[clip.id];
-      if (smooth) g.add(`[${g.addInput(["-i", smooth])}:v]${chain([clip.reverse && "reverse", "setpts=PTS-STARTPTS", `fps=${F}`])}[${raw}]`);
-      else g.add(`${timing(`${k}:v`)}[${raw}]`);
+      // Camera log and HDR become Rec.709 first (the smooth frames are still in the camera's colors).
+      const convert = colorConversion(asset);
+      const converted = convert.length ? `,${convert.join(",")}` : "";
+      if (smooth) g.add(`[${g.addInput(["-i", smooth])}:v]${chain([clip.reverse && "reverse", "setpts=PTS-STARTPTS", `fps=${F}`, ...convert])}[${raw}]`);
+      else g.add(`${timing(`${k}:v`)}${converted}[${raw}]`);
       const fitted = fit(raw, clip.fit, W, H, false, clip.focus, clip.keyframes?.focus);
       // Person cutouts and face masks go through the same timing and fit as the picture, so they line up.
       // A ramped effect runs once per state, and each run (and the effect's mask) takes its own copy.
@@ -644,7 +659,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     else h = even((w * 9) / 16);
     const input = sourceInput(asset, layer.in, layer.duration);
     const raw = g.label("lraw");
-    g.add(`[${input}:v]setpts=PTS-STARTPTS,fps=${F},format=yuva420p[${raw}]`);
+    g.add(`[${input}:v]${chain(["setpts=PTS-STARTPTS", `fps=${F}`, ...colorConversion(asset, true), "format=yuva420p"])}[${raw}]`);
     const fitted = fit(raw, layer.size.height ? (layer.fit === "blur" ? "contain" : layer.fit) : "stretch", w, h, true);
     let styled = g.label("lfx");
     g.add(`[${fitted}]${chain(["format=yuva420p", ...effectsToFilter(layer.effects, effectCtx(layer.duration, w, h, true))])}[${styled}]`);

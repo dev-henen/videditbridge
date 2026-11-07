@@ -12,6 +12,8 @@ import { getEffect, haldClutChain, type EffectContext } from "../../library/effe
 export type PlanOp =
   /** A per-pixel color chain, baked by running `args` (ffmpeg writing a 512x512 rgb24 Hald table to stdout). */
   | { op: "lut"; args: string[] }
+  /** A color space transform: a .cube table (engine/library/color/transform.ts), with its own input range. */
+  | { op: "cube"; file: string }
   /**
    * Show a rectangle of the picture (x, y, width, height in pixels) at full size, per frame of the
    * piece (the last one holds): `linear` samples between pixels (the perspective filter the motion

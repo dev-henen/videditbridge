@@ -2,7 +2,7 @@
 
 # Claude tools
 
-111 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+112 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [set_color_space](#set_color_space), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -1390,6 +1390,15 @@ _No parameters._
 |---|---|---|---|---|
 | `question` | string | yes |  | What to choose, e.g. 'Which voice should narrate?' |
 | `options` | { label, description, audio, image }[] | yes |  |  |
+
+### set_color_space
+
+**edits**. Say what color space a video or picture was recorded in, so it renders as its maker defines it: camera log (flat, gray-looking footage) and HDR are converted to the edit's Rec.709 with the maker's published curve and gamut, through ACES with a filmic highlight roll-off, before any grade. Set it before grading log footage. HDR files tagged as HLG or PQ are set when imported. Log footage is usually tagged Rec.709, so look at it first (render_frame, render_scopes): a flat, low-contrast picture with no deep blacks and no bright whites is likely log. When the camera is unknown, offer_choices with a frame converted with the two or three likeliest spaces. Spaces: "rec709" (Rec.709: Ordinary video (phones, most cameras, screen recordings, the web). The default: the picture is used as it is.); "srgb" (sRGB: Pictures and graphics made for screens. Used as it is.); "slog3-sgamut3cine" (Sony S-Log3 / S-Gamut3.Cine: Sony cameras (FX3, FX6, A7S III, Venice) shot in S-Log3 with S-Gamut3.Cine: flat, gray-looking footage, 18% gray near 41%.); "slog3-sgamut3" (Sony S-Log3 / S-Gamut3: Sony S-Log3 with the wider S-Gamut3.); "vlog-vgamut" (Panasonic V-Log / V-Gamut: Panasonic cameras (GH5S, GH6, S1H, S5) shot in V-Log: flat footage, 18% gray near 42%.); "applelog" (Apple Log: iPhone 15 Pro and later recording in Apple Log (ProRes Log): very flat footage, 18% gray near 49%, Rec.2020 primaries.); "logc3-awg3" (ARRI LogC3 / ALEXA Wide Gamut 3: ARRI ALEXA cameras before the ALEXA 35 (LogC3 at EI 800): 18% gray near 39%.); "logc4-awg4" (ARRI LogC4 / ALEXA Wide Gamut 4: ARRI ALEXA 35 footage: 18% gray near 28%.); "bmdfilm-gen5" (Blackmagic Film Gen 5: Blackmagic cameras (Pocket 4K/6K, URSA) in Film mode, Generation 5 color science: 18% gray near 38%.); "hlg-rec2020" (HLG (Rec.2020): HDR video in HLG, as phones and cameras record HDR (often tagged arib-std-b67).); "pq-rec2020" (PQ / HDR10 (Rec.2020): HDR video in PQ (HDR10, Dolby Vision base layers; tagged smpte2084).). "rec709" sets it back to ordinary video.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `assetIds` | string[] | yes |  | Video or picture assets recorded in this space |
+| `colorSpace` | "rec709" \| "srgb" \| "slog3-sgamut3cine" \| "slog3-sgamut3" \| "vlog-vgamut" \| "applelog" \| "logc3-awg3" \| "logc4-awg4" \| "bmdfilm-gen5" \| "hlg-rec2020" \| "pq-rec2020" | yes |  |  |
 
 ### match_color
 

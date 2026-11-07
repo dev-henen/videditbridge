@@ -238,6 +238,27 @@ impl Gpu {
         t
     }
 
+    /// A float color table, `size` points per channel, from half-float RGBA bits with red fastest.
+    pub fn table_half(&self, rgba: &[u16], size: u32) -> wgpu::Texture {
+        let t = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("cube"),
+            size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: size },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D3,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo { texture: &t, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            bytemuck::cast_slice(rgba),
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(8 * size), rows_per_image: Some(size) },
+            wgpu::Extent3d { width: size, height: size, depth_or_array_layers: size },
+        );
+        t
+    }
+
     pub fn upload(&self, texture: &wgpu::Texture, rgba: &[u8], width: u32, height: u32) {
         self.upload_pixels(texture, rgba, width, height, 4);
     }

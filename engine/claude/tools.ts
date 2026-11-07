@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   AnimationSchema,
   BlendModeSchema,
+  COLOR_SPACE_IDS,
   ColorSchema,
   CornersSchema,
   EasingSchema,
@@ -26,6 +27,7 @@ import { fileOnDisk, validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, isAbsolutePath, isUrl, newId, round3, type AspectRatio } from "../core/util.js";
 import { CUSTOM_FILTERS, ColorSettingsSchema, RemoveObjectParams, SubjectRegionSchema, checkCustomFilter, describeColorSettings, describeMask, effectStates, getEffect, listEffects, mergeColorSettings, removalKey, removalSpec, SKIN_LINE, type ColorSettings, type RemovalSpec, type Vec3 } from "../library/effects/index.js";
+import { COLOR_SPACES } from "../library/color/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { getTransition, listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
@@ -3564,6 +3566,27 @@ export const TOOLS: ToolDefinition[] = [
         p = ops.setEffectParams(p, target, "color", result as Record<string, unknown>, { prepend: true });
       }
       return commit(s, p, "color_adjust", i, `Color on ${i.target}: ${describeColorSettings(result)}.`);
+    },
+  }),
+  tool({
+    name: "set_color_space",
+    description:
+      "Say what color space a video or picture was recorded in, so it renders as its maker defines it: camera log (flat, gray-looking footage) and HDR are converted to the edit's Rec.709 with the maker's published curve and gamut, " +
+      "through ACES with a filmic highlight roll-off, before any grade. Set it before grading log footage. HDR files tagged as HLG or PQ are set when imported. " +
+      "Log footage is usually tagged Rec.709, so look at it first (render_frame, render_scopes): a flat, low-contrast picture with no deep blacks and no bright whites is likely log. " +
+      "When the camera is unknown, offer_choices with a frame converted with the two or three likeliest spaces. Spaces: " +
+      COLOR_SPACES.map((c) => `"${c.id}" (${c.label}: ${c.description})`).join("; ") +
+      '. "rec709" sets it back to ordinary video.',
+    input: z.object({
+      assetIds: z.array(z.string()).min(1).describe("Video or picture assets recorded in this space"),
+      colorSpace: z.enum(COLOR_SPACE_IDS),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      let p = s.project;
+      for (const id of i.assetIds) p = ops.setAssetColorSpace(p, id, i.colorSpace);
+      const space = COLOR_SPACES.find((c) => c.id === i.colorSpace)!;
+      return commit(s, p, "set_color_space", i, `${i.assetIds.join(", ")} ${i.assetIds.length > 1 ? "are" : "is"} now ${space.label}${i.colorSpace === "rec709" ? " (used as it is)" : ", converted to Rec.709 when rendered"}.`);
     },
   }),
   tool({

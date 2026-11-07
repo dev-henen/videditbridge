@@ -132,10 +132,10 @@ struct Planes {
 }
 
 impl Planes {
-    fn new(gpu: &Gpu, (sw, sh): (u32, u32), (w, h): (u32, u32)) -> Planes {
+    fn new(gpu: &Gpu, (sw, sh): (u32, u32), (w, h): (u32, u32), uv_format: wgpu::TextureFormat) -> Planes {
         let (cw, ch) = (sw.div_ceil(2), sh.div_ceil(2));
         Planes {
-            uv: gpu.texture("source-chroma", cw, ch, wgpu::TextureFormat::Rg8Unorm, false),
+            uv: gpu.texture("source-chroma", cw, ch, uv_format, false),
             rows: gpu.texture("fit-chroma-rows", w.div_ceil(2), ch, FLOAT, true),
             luma: gpu.texture("fit-luma", w, h, FLOAT, true),
             chroma: gpu.texture("fit-chroma", w.div_ceil(2), h.div_ceil(2), FLOAT, true),
@@ -324,14 +324,10 @@ impl<'a> Composer<'a> {
             Source::Color { .. } => PixelFormat::Vuya,
         };
         if state.source.is_none() {
-            let luma = match format {
-                PixelFormat::Vuya => wgpu::TextureFormat::Rgba8Unorm,
-                PixelFormat::Yuv420p => wgpu::TextureFormat::R8Unorm,
-                PixelFormat::Yuva420p => wgpu::TextureFormat::Rg8Unorm,
-            };
+            let luma = if format.planar() { format.plane_formats().0 } else { wgpu::TextureFormat::Rgba8Unorm };
             state.source = Some(gpu.texture("source", sw, sh, luma, false));
             if format.planar() {
-                state.chroma = Some(Planes::new(gpu, (sw, sh), (item.width, item.height)));
+                state.chroma = Some(Planes::new(gpu, (sw, sh), (item.width, item.height), format.plane_formats().1));
             }
             state.tmp = Some(gpu.texture("fit-rows", item.width, sh, FLOAT, true));
             state.out = Some(gpu.texture("item", item.width, item.height, FLOAT, true));
@@ -349,7 +345,7 @@ impl<'a> Composer<'a> {
                             let lb = format.luma_bytes();
                             let luma = (lb * sw * sh) as usize;
                             gpu.upload_pixels(state.source.as_ref().unwrap(), &frame[..luma], sw, sh, lb);
-                            gpu.upload_pixels(&planes.uv, &frame[luma..], sw.div_ceil(2), sh.div_ceil(2), 2);
+                            gpu.upload_pixels(&planes.uv, &frame[luma..], sw.div_ceil(2), sh.div_ceil(2), format.chroma_bytes());
                         }
                     }
                 }
@@ -366,7 +362,7 @@ impl<'a> Composer<'a> {
         let (w, h) = (item.width, item.height);
         let (src, tmp) = (view(state.source.as_ref().unwrap()), view(state.tmp.as_ref().unwrap()));
         let refit = state.fitted != Some(shown);
-        let alpha = format == PixelFormat::Yuva420p;
+        let alpha = format.has_alpha();
         let fit_into = |planes: Option<&Planes>, enc: &mut wgpu::CommandEncoder, out: &wgpu::TextureView, scaled: [u32; 2], offset: [i32; 2], opaque: bool| match planes {
             None => fit(gpu, enc, &src, &tmp, out, (sw, sh), scaled, offset, (w, h), opaque, item.fill, true),
             Some(planes) => fit_planar(gpu, enc, &src, planes, &tmp, out, (sw, sh), scaled, offset, (w, h), opaque, (alpha, item.keep_yuv), item.fill),

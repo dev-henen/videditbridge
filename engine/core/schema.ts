@@ -19,6 +19,29 @@ export const ColorSchema = color;
 // ---------------------------------------------------------------------------
 // Assets
 // ---------------------------------------------------------------------------
+/**
+ * Color spaces footage can be in (engine/library/color/spaces.ts has their curves and gamuts). Video
+ * and pictures are Rec.709 unless an asset says otherwise.
+ */
+export const COLOR_SPACE_IDS = [
+  "rec709",
+  "srgb",
+  "slog3-sgamut3cine",
+  "slog3-sgamut3",
+  "vlog-vgamut",
+  "applelog",
+  "logc3-awg3",
+  "logc4-awg4",
+  "bmdfilm-gen5",
+  "hlg-rec2020",
+  "pq-rec2020",
+] as const;
+export type ColorSpaceId = (typeof COLOR_SPACE_IDS)[number];
+const colorSpaceField = z
+  .enum(COLOR_SPACE_IDS)
+  .optional()
+  .describe("The footage's color space: camera log or HDR is converted to the edit's Rec.709 when it renders (set_color_space). Unset means Rec.709");
+
 
 export const VideoAssetSchema = z.object({
   type: z.literal("video"),
@@ -28,6 +51,7 @@ export const VideoAssetSchema = z.object({
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
   hasAudio: z.boolean().optional().describe("Whether the file has an audio stream (filled by probe)"),
+  colorSpace: colorSpaceField,
   svg: z.string().optional().describe("SVG source of an animated graphic drawn with create_graphic"),
   particles: z
     .record(z.string(), z.unknown())
@@ -51,6 +75,7 @@ export const ImageAssetSchema = z.object({
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
   svg: z.string().optional().describe("SVG source of a graphic drawn with create_graphic"),
+  colorSpace: colorSpaceField,
   label: z.string().optional(),
 });
 

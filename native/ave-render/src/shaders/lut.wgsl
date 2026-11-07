@@ -1,9 +1,12 @@
 // A color effect baked into a 64-point table (FFmpeg's Hald level 8, red fastest), applied with
 // tetrahedral interpolation as FFmpeg's haldclut does. Input clipped to 0..1, as its RGB24 frames are.
+// The same pass applies .cube tables (color space transforms), over their own input range.
 
 @group(0) @binding(0) var src: texture_2d<f32>;
 @group(0) @binding(1) var table: texture_3d<f32>;
 @group(0) @binding(2) var dst: texture_storage_2d<rgba16float, write>;
+// The table's input range: from x to y (0 and 1 for Hald tables).
+@group(0) @binding(3) var<uniform> domain: vec4<f32>;
 
 fn at(i: vec3<u32>) -> vec3<f32> {
     return textureLoad(table, i, 0).rgb;
@@ -11,7 +14,7 @@ fn at(i: vec3<u32>) -> vec3<f32> {
 
 fn apply(rgb: vec3<f32>) -> vec3<f32> {
     let top = f32(textureDimensions(table).x - 1u);
-    let s = clamp(rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * top;
+    let s = clamp((rgb - domain.x) / (domain.y - domain.x), vec3<f32>(0.0), vec3<f32>(1.0)) * top;
     let lo = vec3<u32>(floor(s));
     let hi = min(lo + vec3<u32>(1u), vec3<u32>(u32(top)));
     let d = s - floor(s);

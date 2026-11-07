@@ -11,6 +11,8 @@ import { contactSheetFrames, engineUnsupported, planProject } from "./plan.js";
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
+import { colorSpaceFromTags } from "../../library/color/index.js";
+import { ensureColorTables } from "./color-space.js";
 import { effectObjects, effectRemovals, removalKey, usesDepthMask, usesFaceMask, usesPersonMask, usesSkyMask, type RemovalSpec } from "../../library/effects/index.js";
 import { maskNeeds } from "../../library/effects/masks.js";
 import { ObjectSegmenter, objectMaskFile, writeObjectMask, type ObjectSpec, type ObjectTrack } from "../vision/objects.js";
@@ -75,7 +77,10 @@ export interface RenderResult {
  */
 async function readyToRender(project: Project, opts: RenderOptions | Omit<RenderOptions, "output" | "range">): Promise<Project> {
   const p = withProjectPaths(project, path.resolve(opts.baseDir ?? process.cwd()));
-  return opts.probe === false ? p : probeAssets(p, opts);
+  const ready = opts.probe === false ? p : await probeAssets(p, opts);
+  // Camera log and HDR footage convert through tables both renderers read.
+  await ensureColorTables(ready);
+  return ready;
 }
 
 /** Fill in missing asset metadata (duration, dimensions, audio presence) by probing files. */
@@ -98,6 +103,9 @@ export async function probeAssets(project: Project, opts: FfmpegOptions & { base
         asset.hasAudio ??= info.hasAudio;
         asset.width ??= info.width;
         asset.height ??= info.height;
+        // HDR is tagged in the file; camera log is set with set_color_space.
+        const tagged = colorSpaceFromTags(info.colorTransfer);
+        if (tagged) asset.colorSpace ??= tagged;
       } else if (asset.type === "audio") {
         asset.duration ??= info.duration;
       } else {

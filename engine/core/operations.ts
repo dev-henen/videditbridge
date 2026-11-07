@@ -2,6 +2,7 @@ import type {
   Asset,
   AudioClip,
   Clip,
+  ColorSpaceId,
   Effect,
   Keyframe,
   Layer,
@@ -101,6 +102,18 @@ export function removeAsset(p: Project, assetId: string): Project {
   return edit(p, (d) => {
     d.assets = d.assets.filter((a) => a.id !== assetId);
     delete d.transcripts[assetId];
+  });
+}
+
+/** Set the color space of a video or picture asset (camera log, HDR); "rec709" clears it to the default. */
+export function setAssetColorSpace(p: Project, assetId: string, colorSpace: ColorSpaceId): Project {
+  const asset = p.assets.find((a) => a.id === assetId);
+  if (!asset) throw new EditError(`Unknown asset "${assetId}"`);
+  if (asset.type !== "video" && asset.type !== "image") throw new EditError(`Asset "${assetId}" is ${asset.type === "audio" ? "audio" : `a ${asset.type}`}: only video and pictures have a color space`);
+  return edit(p, (d) => {
+    const a = d.assets.find((x) => x.id === assetId) as typeof asset;
+    if (colorSpace === "rec709") delete a.colorSpace;
+    else a.colorSpace = colorSpace;
   });
 }
 

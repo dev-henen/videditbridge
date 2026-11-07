@@ -8,6 +8,7 @@ import { getTransition } from "../../library/transitions/index.js";
 import { ASS_FILE, gradientSource, rampPts, renderSize } from "./compile.js";
 import { cropPosition, effectsOps, lutArgs, type PlanOp } from "./plan-effects.js";
 import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
+import { colorTableFile, convertsColor } from "./color-space.js";
 
 /**
  * Engine plans: a project turned into what the GPU render engine (native/ave-render) draws on every
@@ -23,7 +24,7 @@ export const PLAN_VERSION = 2;
  * the FFmpeg backend keeps video, `yuv420p` for clips and `yuva420p` for layers. Planar chroma is
  * scaled at half size on the GPU, as FFmpeg's scale does.
  */
-export type PlanPixelFormat = "vuya" | "yuv420p" | "yuva420p";
+export type PlanPixelFormat = "vuya" | "yuv420p" | "yuva420p" | "yuv420p10le" | "yuva420p10le";
 
 export type PlanSource =
   | {
@@ -206,7 +207,10 @@ export function engineUnsupported(project: Project): string[] {
     if (clip.interpolate) out.push(`${where}: smooth motion`);
     const t = clip.transition && getTransition(clip.transition.type);
     if (clip.transition && (!t || (t.custom ? t.id !== "circlereveal" : !TRANSITIONS.has(t.xfade)))) out.push(`${where}: transition ${clip.transition.type}`);
-    sized(project.assets.find((a) => a.id === clip.assetId), where);
+    const asset = project.assets.find((a) => a.id === clip.assetId);
+    sized(asset, where);
+    // The engine converts after the fit, so the background around a contained picture would go through the camera's table too.
+    if (clip.fit === "contain" && asset && convertsColor(asset)) out.push(`${where}: fit contain on footage with a color space`);
   }
   for (const layer of project.layers) {
     if (layer.type !== "media") continue;
@@ -275,7 +279,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
   const stillSource = (asset: Asset, layer: boolean): { source: PlanSource; size: [number, number] } | undefined => {
     if (asset.type === "color") return { source: { kind: "color", color: rgba(asset.color) }, size: [W, H] };
     if (asset.type === "image") {
-      const format = layer ? "yuva420p" : /\.jpe?g$/i.test(asset.src) ? "yuv420p" : "vuya";
+      const format = convertsColor(asset) ? (layer ? "yuva420p10le" : "yuv420p10le") : layer ? "yuva420p" : /\.jpe?g$/i.test(asset.src) ? "yuv420p" : "vuya";
       return { source: decode(["-i", resolveSrc(asset.src)], [], asset.width!, asset.height!, format, true), size: [asset.width!, asset.height!] };
     }
     if (asset.type === "gradient") {
@@ -297,6 +301,8 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
     return { scaled: [sw, sh], offset: [-cropPosition((sw - w) * fx), -cropPosition((sh - h) * fy)] };
   };
   const addItem = (item: PlanItem) => items.push(item) - 1;
+  /** Camera log and HDR footage: its color space table, before any effect (the backend converts the source first). */
+  const colorOps = (asset: Asset): PlanOp[] => (convertsColor(asset) ? [{ op: "cube", file: path.resolve(colorTableFile(asset.colorSpace)) }] : []);
 
   // Primary track, with the FFmpeg backend's frame counts and xfade offsets.
   const clips: PlanClip[] = [];
@@ -314,7 +320,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         [clip.reverse && "reverse", "setpts=PTS-STARTPTS", ...retime(tc), `fps=${F}`, "tpad=stop_mode=clone:stop=-1", `trim=end_frame=${frames}`],
         size[0],
         size[1],
-        "yuv420p",
+        convertsColor(asset) ? "yuv420p10le" : "yuv420p",
         false,
         clip.reverse || tc.speedMap ? undefined : { src: resolveSrc(asset.src), inPoint: clip.in, speed: clip.speed, sourceDuration: tc.sourceDuration, frames },
       );
@@ -323,7 +329,8 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       if (!s) throw new Error(`Clip "${clip.id}" uses audio asset "${asset.id}" as a picture`);
       ({ source, size } = s);
     }
-    const { ops } = effectsOps(clip.effects, { width: W, height: H, fps: F, duration: tc.duration }, frames);
+    // Camera log and HDR footage: its color space table first (10-bit decoding above).
+    const ops = [...colorOps(asset), ...effectsOps(clip.effects, { width: W, height: H, fps: F, duration: tc.duration }, frames).ops];
     // fit blur, as compileProject's fit draws it: the picture contained over a cover copy blurred
     // (gblur sigma 40) and darkened (eq brightness -0.08).
     const blur = clip.fit === "blur";
@@ -335,7 +342,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       fill: blur ? [0, 0, 0, 0] : background,
       opaque: true,
       ...(ops.length ? { effects: ops } : {}),
-      ...(blur ? { backdrop: { ...fitBox("cover", size, W, H), effects: [{ op: "blur", sigma: 40 }, { op: "lut", args: lutArgs(["eq=brightness=-0.08"]) }] as PlanOp[] } } : {}),
+      ...(blur ? { backdrop: { ...fitBox("cover", size, W, H), effects: [...colorOps(asset), { op: "blur", sigma: 40 }, { op: "lut", args: lutArgs(["eq=brightness=-0.08"]) }] as PlanOp[] } } : {}),
     });
     let first = next;
     let transition: PlanClip["transition"];
@@ -375,7 +382,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         ["setpts=PTS-STARTPTS", `fps=${F}`],
         size[0],
         size[1],
-        "yuva420p",
+        convertsColor(asset) ? "yuva420p10le" : "yuva420p",
         false,
         { src: resolveSrc(asset.src), inPoint: layer.in, speed: 1, sourceDuration: layer.duration },
       );
@@ -385,7 +392,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       ({ source, size } = s);
     }
     const fit: Fit = layer.size.height ? (layer.fit === "blur" ? "contain" : layer.fit) : "stretch";
-    const { ops } = effectsOps(layer.effects, { width: w, height: h, fps: F, duration: layer.duration, alpha: true }, Math.max(1, Math.ceil(layer.duration * F - 1e-6)));
+    const ops = [...colorOps(asset), ...effectsOps(layer.effects, { width: w, height: h, fps: F, duration: layer.duration, alpha: true }, Math.max(1, Math.ceil(layer.duration * F - 1e-6))).ops];
     const item = addItem({ source, width: w, height: h, ...fitBox(fit, size, w, h), fill: [0, 0, 0, 0], ...(ops.length ? { effects: ops } : {}) });
     const fades = (a: MediaLayer["animationIn"]) => (a && a.type !== "none" ? a.duration : 0);
     layers.push({

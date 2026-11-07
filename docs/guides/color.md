@@ -135,6 +135,28 @@ The result is a `colorMatch` effect at the end of the clip, holding the fitted n
 
 Measured: a test scene darkened, warmed and desaturated by known amounts comes back within 1 to 1.9 ΔE 2000 of the original, pixel by pixel; through the renderer, a regraded shot of the same footage went from 21.6 to 1.4 ΔE against its hero shot (`test/render/color-match.test.ts`, `test/render/color-match.integration.test.ts`).
 
+## Camera log and HDR
+
+Footage shot in a camera's log profile looks flat and gray until it is converted; HDR footage looks washed out on an ordinary display. Tell the editor what it is, and it renders as the camera's maker defines it:
+
+```ts
+project = setAssetColorSpace(project, "a001", "slog3-sgamut3cine");
+```
+
+Claude does this with `set_color_space`. HDR files tagged as HLG or PQ are set when they are probed; log footage is usually tagged as ordinary video, so Claude looks at it first (a flat picture with no deep blacks or bright whites) and, when the camera is unknown, offers the likeliest choices.
+
+| `colorSpace` | Footage |
+|---|---|
+| `rec709`, `srgb` | Ordinary video and pictures (the default; used as they are) |
+| `slog3-sgamut3cine`, `slog3-sgamut3` | Sony S-Log3 |
+| `vlog-vgamut` | Panasonic V-Log |
+| `applelog` | iPhone Apple Log |
+| `logc3-awg3`, `logc4-awg4` | ARRI LogC3 (EI 800), LogC4 |
+| `bmdfilm-gen5` | Blackmagic Film, Generation 5 |
+| `hlg-rec2020`, `pq-rec2020` | HDR (HLG, PQ / HDR10) |
+
+Each space's curve and gamut come from its maker's published formulas (`engine/library/color/spaces.ts`, with the source of each). The footage goes to ACES and out through the ACES output transform for Rec.709, a filmic curve that rolls highlights off instead of clipping them; 18% gray lands at about 39% of the range. The conversion comes before any grade, so `color_adjust` and the looks work on the converted picture. Both renderers apply the same 65-point table, written once per space into the app's cache folder; the GPU engine decodes such footage at 10 bits.
+
 ## Notes
 
 - `exposure` works in floating point. The engine clips back to the normal range right after it, so later filters never see values brighter than white.

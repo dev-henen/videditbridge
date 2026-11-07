@@ -10,7 +10,7 @@ The engine model. Pure, with no I/O.
 |---|---|
 | `ProjectSchema`, `parseProject`, `projectJsonSchema`, the types `Project`, `Clip`, `Layer`, `AudioClip`, `Asset`, `Transcript`… | The document schema |
 | `createProject({ aspectRatio, ...})` | New project with defaults |
-| `addAsset`, `upsertAsset`, `removeAsset`, `setTranscript` | Assets |
+| `addAsset`, `upsertAsset`, `removeAsset`, `setTranscript`, `setAssetColorSpace` | Assets (`setAssetColorSpace` marks camera log or HDR footage, `COLOR_SPACE_IDS`) |
 | `addClip`, `updateClip`, `removeClip`, `moveClip`, `trimClip`, `splitClip`, `setTransition`, `setAllTransitions` | Primary track |
 | `addEffect`, `removeEffect` | Effects on a clip, a media layer or `"global"` |
 | `addAudioEffect`, `removeAudioEffect`, `setAudioEffectParams` | Audio effects on a clip, an audio clip, a media layer or `"master"` |
@@ -45,6 +45,7 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 | Components | `COMPONENTS`, `getComponent`, `listComponents`, `registerComponent`, `buildComponentLayers`, `addComponent` |
 | Templates | `TEMPLATES`, `getTemplate`, `listTemplates`, `registerTemplate`, `describeTemplate`, `buildFromTemplate`, `applyTemplate`, `TemplateSpecSchema` |
 | Particles and light | `PARTICLE_PRESETS`, `getParticlePreset`, `resolveParticles`, `ParticleSettingsSchema`, `FLARE_LOOKS` |
+| Color spaces | `COLOR_SPACES`, `colorSpace`, `colorSpaceFromTags`, `GAMUTS`, `ACESCCT`, `gamutMatrix`, `rgbToXyz`, `pqToNits`, `nitsToPq` (from `engine/library/color`: also `acesToRec709`, `toRec709`, `cubeFor`) |
 
 ## `ai-video-editor/tools`
 

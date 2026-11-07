@@ -76,6 +76,9 @@ pub struct Backdrop {
 #[derive(Deserialize, Debug)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum Op {
+    /// A color space transform: a .cube 3D table (its own size and input range), applied with
+    /// tetrahedral interpolation (engine/library/color/transform.ts writes it).
+    Cube { file: String },
     /// A per-pixel color chain baked into a table: ffmpeg `args` write a 512x512 rgb24 Hald image (level 8).
     Lut { args: Vec<String> },
     /// Show a rectangle (x, y, width, height) at full size, per frame (the last holds): "linear" or "bicubic".
@@ -132,60 +135,97 @@ pub enum PixelFormat {
     Yuv420p,
     /// Planar 4:2:0 with a full-size alpha plane after the chroma (video layers).
     Yuva420p,
+    /// 10-bit (16-bit little-endian samples) versions, for footage in a color space (camera log,
+    /// HDR), whose transform would show 8-bit steps.
+    #[serde(rename = "yuv420p10le")]
+    Yuv420p10,
+    #[serde(rename = "yuva420p10le")]
+    Yuva420p10,
 }
 
 impl PixelFormat {
+    /// Bytes per sample on the pipe.
+    fn sample_bytes(self) -> usize {
+        if self.ten_bit() { 2 } else { 1 }
+    }
+
+    pub fn ten_bit(self) -> bool {
+        matches!(self, PixelFormat::Yuv420p10 | PixelFormat::Yuva420p10)
+    }
+
+    pub fn has_alpha(self) -> bool {
+        matches!(self, PixelFormat::Yuva420p | PixelFormat::Yuva420p10)
+    }
+
     /// Bytes of one `width` x `height` frame on the pipe.
     pub fn frame_bytes(self, width: u32, height: u32) -> usize {
         let (w, h) = (width as usize, height as usize);
         let chroma = w.div_ceil(2) * h.div_ceil(2);
         match self {
             PixelFormat::Vuya => w * h * 4,
-            PixelFormat::Yuv420p => w * h + 2 * chroma,
-            PixelFormat::Yuva420p => 2 * w * h + 2 * chroma,
+            _ => ((if self.has_alpha() { 2 } else { 1 }) * w * h + 2 * chroma) * self.sample_bytes(),
         }
     }
 
     /// Rearrange a frame from the pipe for upload (on the decoder's reading thread): planar frames
     /// become the luma (Y, or Y and A interleaved) followed by U and V interleaved, the layouts of
-    /// the r8 or rg8 luma texture and the rg8 chroma texture.
+    /// the luma texture (r8 or rg8) and the chroma texture (rg8). 10-bit samples become half floats
+    /// (r16float, rg16float) over 1020, so they meet the shaders on the 8-bit scale (64 is 16/255).
     pub fn for_upload(self, frame: Vec<u8>, width: u32, height: u32) -> Vec<u8> {
+        if self == PixelFormat::Vuya {
+            return frame;
+        }
         let (w, h) = (width as usize, height as usize);
         let chroma = w.div_ceil(2) * h.div_ceil(2);
-        let interleave = |out: &mut Vec<u8>, a: &[u8], b: &[u8]| {
-            for (x, y) in a.iter().zip(b) {
-                out.push(*x);
-                out.push(*y);
+        let n = self.sample_bytes();
+        let mut out = Vec::with_capacity(frame.len());
+        let push = |out: &mut Vec<u8>, plane: &[u8], i: usize| {
+            if n == 1 {
+                out.push(plane[i]);
+            } else {
+                let v = u16::from_le_bytes([plane[2 * i], plane[2 * i + 1]]);
+                out.extend_from_slice(&crate::effects::half(v as f32 / 1020.0).to_le_bytes());
             }
         };
-        match self {
-            PixelFormat::Vuya => frame,
-            PixelFormat::Yuv420p => {
-                let mut out = Vec::with_capacity(frame.len());
-                out.extend_from_slice(&frame[..w * h]);
-                let (u, v) = frame[w * h..].split_at(chroma);
-                interleave(&mut out, u, v);
-                out
-            }
-            PixelFormat::Yuva420p => {
-                let mut out = Vec::with_capacity(frame.len());
-                let (y, rest) = frame.split_at(w * h);
-                let (u, rest) = rest.split_at(chroma);
-                let (v, a) = rest.split_at(chroma);
-                interleave(&mut out, y, a);
-                interleave(&mut out, u, v);
-                out
+        let (y, rest) = frame.split_at(w * h * n);
+        let (u, rest) = rest.split_at(chroma * n);
+        let (v, a) = rest.split_at(chroma * n);
+        for i in 0..w * h {
+            push(&mut out, y, i);
+            if self.has_alpha() {
+                push(&mut out, a, i);
             }
         }
+        for i in 0..chroma {
+            push(&mut out, u, i);
+            push(&mut out, v, i);
+        }
+        out
     }
 
     pub fn planar(self) -> bool {
         self != PixelFormat::Vuya
     }
 
-    /// Bytes per pixel of the luma texture (r8, or rg8 with alpha).
+    /// Bytes per pixel of the luma texture (Y, or Y and A).
     pub fn luma_bytes(self) -> u32 {
-        if self == PixelFormat::Yuva420p { 2 } else { 1 }
+        ((if self.has_alpha() { 2 } else { 1 }) * self.sample_bytes()) as u32
+    }
+
+    /// Bytes per pixel of the chroma texture (U and V).
+    pub fn chroma_bytes(self) -> u32 {
+        2 * self.sample_bytes() as u32
+    }
+
+    /// Texture formats of the luma and chroma planes.
+    pub fn plane_formats(self) -> (wgpu::TextureFormat, wgpu::TextureFormat) {
+        use wgpu::TextureFormat as T;
+        match (self.ten_bit(), self.has_alpha()) {
+            (false, false) => (T::R8Unorm, T::Rg8Unorm),
+            (false, true) => (T::Rg8Unorm, T::Rg8Unorm),
+            (true, false) => (T::R16Float, T::Rg16Float),
+            (true, true) => (T::Rg16Float, T::Rg16Float),
+        }
     }
 }
 
@@ -233,6 +273,8 @@ impl Seek {
             PixelFormat::Vuya => "vuya",
             PixelFormat::Yuv420p => "yuv420p",
             PixelFormat::Yuva420p => "yuva420p",
+            PixelFormat::Yuv420p10 => "yuv420p10le",
+            PixelFormat::Yuva420p10 => "yuva420p10le",
         };
         args.extend(["-f", "rawvideo", "-pix_fmt", pix_fmt, "pipe:1"].map(String::from));
         args

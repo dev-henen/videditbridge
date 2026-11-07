@@ -109,6 +109,11 @@ export interface ProbeResult {
   fps?: number;
   hasVideo: boolean;
   hasAudio: boolean;
+  /** Pixel format of the video, e.g. "yuv420p10le" (10-bit). */
+  pixelFormat?: string;
+  /** Color primaries and transfer the file is tagged with, e.g. "bt2020" and "arib-std-b67" (HLG) or "smpte2084" (PQ). */
+  colorPrimaries?: string;
+  colorTransfer?: string;
   /** True for still images (single frame, no duration). */
   isImage: boolean;
 }
@@ -136,6 +141,11 @@ export function parseProbeOutput(stderr: string): ProbeResult {
   // decoding, so report the size as it is shown.
   const turned = /displaymatrix: rotation of -?(90|270)(\.0+)? degrees/.test(stderr);
   const [w, h] = size ? [Number(size[1]), Number(size[2])] : [undefined, undefined];
+  // "Video: hevc (Main 10), yuv420p10le(tv, bt2020nc/bt2020/arib-std-b67, progressive), ...": the
+  // pixel format, then matrix/primaries/transfer (one name when all three are the same).
+  const pixel = videoLine ? /, ((?:yuva?|rgba?|bgra?|gbra?|gray|nv|argb|abgr|p0)[a-z0-9]*)(?:\(|,|$)/.exec(videoLine) : null;
+  const tags = videoLine ? /\((?:tv|pc), ([a-z0-9-]+)(?:\/([a-z0-9-]+)\/([a-z0-9-]+))?[,)]/.exec(videoLine) : null;
+  const format = pixel ? [pixel[0], pixel[1], tags?.[1], tags?.[2] ?? tags?.[1], tags?.[3] ?? tags?.[1]] : null;
   return {
     duration: isImage ? undefined : duration,
     width: turned ? h : w,
@@ -144,5 +154,8 @@ export function parseProbeOutput(stderr: string): ProbeResult {
     hasVideo: !!videoLine && !isImage,
     hasAudio,
     isImage,
+    ...(format?.[1] ? { pixelFormat: format[1] } : {}),
+    ...(format?.[3] ? { colorPrimaries: format[3] } : {}),
+    ...(format?.[4] ? { colorTransfer: format[4] } : {}),
   };
 }
