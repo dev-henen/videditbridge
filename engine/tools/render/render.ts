@@ -594,7 +594,8 @@ async function renderOnEngine(p: Project, opts: RenderOptions): Promise<RenderRe
     const args = planned.plan.output.args;
     return { output: path.resolve(opts.output), duration: sound.duration, workDir: opts.keepWorkDir ? workDir : undefined, args };
   } finally {
-    if (!opts.keepWorkDir) await rm(workDir, { recursive: true, force: true });
+    // A failed engine can leave its decoders closing for a moment (Windows then locks the folder): that must not hide the error.
+    if (!opts.keepWorkDir) await rm(workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }).catch(() => undefined);
   }
 }
 

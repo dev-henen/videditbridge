@@ -97,11 +97,58 @@ pub enum Op {
     Shift { red: [i32; 2], green: [i32; 2], blue: [i32; 2] },
     /// FFmpeg's noise on every YUV plane, new each frame: uniform over `strength` levels, or gaussian.
     Noise { strength: f32, uniform: bool, #[serde(default)] rgb: bool },
-    /// FFmpeg's gblur.
-    Blur { sigma: f32 },
+    /// FFmpeg's gblur: on the YUV planes (chroma at half size), or on RGB (`rgb`); `sigmaV` down columns.
+    #[serde(rename_all = "camelCase")]
+    Blur { sigma: f32, #[serde(default)] sigma_v: Option<f32>, #[serde(default)] rgb: bool },
+    /// filmGrain: gaussian luma noise on mid-gray at `size` (the grain's cells), new each frame and
+    /// seeded, scaled up with the bicubic fit and put on with blend's 8-bit softlight on luma.
+    Grain { size: [u32; 2], strength: f32, seed: u32 },
+    /// FFmpeg's perspective (sense=source): per frame (the last holds) the map [a, b, c, d, e, f, g, h]
+    /// from output (x, y) to source ((a x + b y + c) / (g x + h y + 1), ...), cubic or linear.
+    Warp { maps: Vec<[f32; 8]>, cubic: bool },
+    /// FFmpeg's lenscorrection (bilinear) about the center.
+    Lens { k1: f32, k2: f32 },
+    /// lightRays (motion.ts): at `size` (a quarter), the highlight curve (a color table), six passes
+    /// each averaging the picture with a copy scaled to [width, height] and cropped at [x, y] about
+    /// the source, per-channel levels (a table), scaled back up, then blend screen over the picture.
+    Rays { size: [u32; 2], curve: Vec<String>, zooms: Vec<[i32; 4]>, levels: Vec<String> },
+    /// lightLeak and bokehLights: a small gray canvas (`canvas`, light.wgsl) scaled up bicubic and
+    /// used, times `opacity`, as the alpha of `color` laid over the picture. `leak`: the leak's five
+    /// speeds; `orbs`: per frame (the last holds) each orb's left, top, size and alpha factor.
+    #[serde(rename_all = "camelCase")]
+    Light { canvas: [u32; 2], color: [f32; 3], opacity: f32, #[serde(default)] leak: Option<[f32; 5]>, #[serde(default)] orbs: Vec<Vec<[f32; 4]>> },
+    /// A camera move: scaled to `size`, then per frame (the last holds) [x, y, angle]: turned about
+    /// the center as FFmpeg's rotate does (when `rotate`), and the frame-size window at x, y shown.
+    Move { size: [u32; 2], frames: Vec<[f32; 3]>, rotate: bool },
+    /// hflip or vflip.
+    Flip { horizontal: bool },
+    /// drawgrid: lines `thickness` thick every `cell` [across, down] pixels, toward black at `alpha`.
+    Grid { cell: [u32; 2], thickness: u32, alpha: f32 },
+    /// dilation: the 3 x 3 maximum on each plane (YUV, or RGB).
+    Dilate { #[serde(default)] rgb: bool },
+    /// convolution: a square kernel (row by row) times rdiv plus bias, on each plane.
+    Conv { kernel: Vec<f32>, rdiv: f32, bias: f32, #[serde(default)] rgb: bool },
+    /// `ops` on the picture scaled to `size` (`down`: bicubic, area or neighbor), then scaled back (`up`: bicubic or neighbor).
+    /// On YUV frames (not `rgb`) chroma takes the same path at half the size, as FFmpeg scales 4:2:0 chroma planes.
+    At { size: [u32; 2], down: String, up: String, ops: Vec<Op>, #[serde(default)] rgb: bool },
+    /// Red, green and blue multiplied (colorchannelmixer's diagonal).
+    Tint { gains: [f32; 3] },
+    /// `ops` run on a copy of the picture, then blended back over it with FFmpeg's blend.
+    Branch { ops: Vec<Op>, blend: Blend },
+    /// Each branch run from the same picture, the results averaged pairwise in order.
+    Average { branches: Vec<Vec<Op>> },
     /// FFmpeg's eq on the YUV planes as they are, with its integer math.
     #[serde(rename_all = "camelCase")]
     Eq { brightness: f32, contrast: f32, saturation: f32, gamma: f32, gamma_weight: f32 },
+}
+
+/// FFmpeg's blend: `mode` (addition, average, screen, softlight, multiply) at `opacity`, on RGB or on luma alone.
+#[derive(Deserialize, Debug)]
+pub struct Blend {
+    pub mode: String,
+    pub opacity: f32,
+    #[serde(default)]
+    pub luma: bool,
 }
 
 #[derive(Deserialize, Debug)]

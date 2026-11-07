@@ -27,6 +27,42 @@ pub struct Gpu {
     pub blur_rows: wgpu::ComputePipeline,
     pub blur_columns: wgpu::ComputePipeline,
     pub blur_store: wgpu::ComputePipeline,
+    pub blur_load_rgb: wgpu::ComputePipeline,
+    pub blur_store_raw: wgpu::ComputePipeline,
+    pub combine: wgpu::ComputePipeline,
+    pub light: wgpu::ComputePipeline,
+    pub conv: wgpu::ComputePipeline,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct ConvParams {
+    pub size: u32,
+    pub rgb: u32,
+    pub rdiv: f32,
+    pub bias: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct CombineParams {
+    pub mode: u32,
+    pub luma: u32,
+    pub opacity: f32,
+    pub _pad: f32,
+    pub color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct LightParams {
+    pub mode: u32,
+    pub count: u32,
+    pub t: f32,
+    pub _pad: f32,
+    pub speeds: [f32; 4],
+    pub speed5: f32,
+    pub _pad2: [f32; 3],
 }
 
 #[repr(C)]
@@ -70,6 +106,8 @@ pub struct BlurParams {
     pub nu: [f32; 4],
     pub boundary: [f32; 4],
     pub post: [f32; 4],
+    pub nu_v: [f32; 4],
+    pub boundary_v: [f32; 4],
     pub size: [u32; 2],
     pub _pad: [u32; 2],
 }
@@ -164,6 +202,9 @@ impl Gpu {
         let hblur = module("hblur", include_str!("shaders/hblur.wgsl"));
         let pixel = module("pixel", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/pixel.wgsl")));
         let blur = module("blur", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/blur.wgsl")));
+        let combine = module("combine", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/combine.wgsl")));
+        let light = module("light", include_str!("shaders/light.wgsl"));
+        let conv = module("conv", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/conv.wgsl")));
         let pipeline = |m: &wgpu::ShaderModule, entry: &str| {
             device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
                 label: Some(entry),
@@ -190,6 +231,11 @@ impl Gpu {
             blur_rows: pipeline(&blur, "rows"),
             blur_columns: pipeline(&blur, "columns"),
             blur_store: pipeline(&blur, "store_rgb"),
+            blur_load_rgb: pipeline(&blur, "load_rgb"),
+            blur_store_raw: pipeline(&blur, "store_raw"),
+            combine: pipeline(&combine, "main"),
+            light: pipeline(&light, "main"),
+            conv: pipeline(&conv, "main"),
             device,
             queue,
             info,

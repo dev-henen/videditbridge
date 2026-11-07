@@ -3,7 +3,7 @@
 // fades toward a color, channel shifts (rgbashift) and noise. (Prefixed with yuv.wgsl.)
 
 struct Params {
-    // 0 crop, 1 vignette, 2 bars, 3 fade, 4 shift, 5 noise, 6 eq, 7 rounded corners (radius in `bar`).
+    // 0 crop, 1 vignette, 2 bars, 3 fade, 4 shift, 5 noise, 6 eq, 7 rounded corners (radius in `bar`), 8 tint (gains in `color`), 9 lens (k1, k2 in `rect`), 10 warp (map in `rect` and `color`, cubic in `uniform`), 11 camera move window (x, y, angle in `rect`, rotate in `uniform`), 12 flip, 13 grid, 14 dilation, 15 area down, 16 nearest.
     mode: u32,
     backward: u32,
     // shift: [across, down] per channel.
@@ -52,6 +52,35 @@ fn noise(x: u32, y: u32, plane: u32) -> f32 {
     }
     let b = random(x, y, p.frame, plane + 8u);
     return sqrt(-2.0 * log(a)) * cos(6.2831853 * b) * p.strength / sqrt(3.0);
+}
+
+// perspective's cubic weights for a sub-pixel position of `sub` / 256: get_coeff (A = -0.6) at the
+// four taps, normalized to 2048 and rounded, as its table holds them.
+fn cubic_coeff(d0: f32) -> f32 {
+    let a = -0.6;
+    let d = abs(d0);
+    if (d < 1.0) {
+        return 1.0 - (a + 3.0) * d * d + (a + 2.0) * d * d * d;
+    }
+    if (d < 2.0) {
+        return -4.0 * a + 8.0 * a * d - 5.0 * a * d * d + a * d * d * d;
+    }
+    return 0.0;
+}
+
+fn cubic_weights(sub: i32) -> array<i32, 4> {
+    let d = f32(sub) / 256.0;
+    var t: array<f32, 4>;
+    var sum = 0.0;
+    for (var j = 0; j < 4; j++) {
+        t[j] = cubic_coeff(f32(j) - d - 1.0);
+        sum += t[j];
+    }
+    var out: array<i32, 4>;
+    for (var j = 0; j < 4; j++) {
+        out[j] = i32(round(2048.0 * t[j] / sum));
+    }
+    return out;
 }
 
 // One plane through FFmpeg's eq: an 8-bit value, its contrast, brightness, gamma and gamma weight.
@@ -128,6 +157,156 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         case 4u: {
             c = vec4<f32>(load(x - p.shift_red.x, y - p.shift_red.y).r, load(x - p.shift_green.x, y - p.shift_green.y).g, load(x - p.shift_blue.x, y - p.shift_blue.y).b, c.a);
         }
+        case 9u: {
+            // lenscorrection: the radius scaled by 1 + k1 r^2 + k2 r^4 (r^2 against the diagonal,
+            // 4 (dx^2 + dy^2) / (w^2 + h^2)), about a whole-pixel center. Its fixed-point bilinear
+            // reads half a pixel past the point; what falls outside is black.
+            let w = i32(size.x);
+            let h = i32(size.y);
+            let center = vec2<i32>(w / 2, h / 2);
+            let off = vec2<f32>(vec2<i32>(x, y) - center);
+            let r2 = 4.0 * dot(off, off) / f32(w * w + h * h);
+            let mult = 1.0 + p.rect.x * r2 + p.rect.y * r2 * r2;
+            let pos = vec2<f32>(center) + off * mult + 0.5;
+            let i = vec2<i32>(floor(pos));
+            if (i.x < 0 || i.x > w - 1 || i.y < 0 || i.y > h - 1) {
+                c = vuya_to_rgb(vec4<f32>(128.0 / 255.0, 128.0 / 255.0, 16.0 / 255.0, c.a));
+            } else {
+                let f = pos - floor(pos);
+                let n = min(i + 1, vec2<i32>(w - 1, h - 1));
+                let top = mix(load(i.x, i.y), load(n.x, i.y), f.x);
+                let bottom = mix(load(i.x, n.y), load(n.x, n.y), f.x);
+                c = vec4<f32>(mix(top, bottom, f.y).rgb, c.a);
+            }
+        }
+        case 10u: {
+            // perspective (sense=source): the source point in 1/256 pixels, then its cubic with
+            // 11-bit weights (A = -0.6) on 8-bit YUV values, or linear in 1/256 steps.
+            let fx = f32(x);
+            let fy = f32(y);
+            let d = p.color.z * fx + p.color.w * fy + 1.0;
+            let u = i32(round(256.0 * (p.rect.x * fx + p.rect.y * fy + p.rect.z) / d));
+            let v = i32(round(256.0 * (p.rect.w * fx + p.color.x * fy + p.color.y) / d));
+            let su = u & 255;
+            let sv = v & 255;
+            let iu = u >> 8u;
+            let iv = v >> 8u;
+            if (p.uniform == 1u) {
+                let cu = cubic_weights(su);
+                let cv = cubic_weights(sv);
+                var sum = vec4<i32>(0);
+                for (var dy = 0; dy < 4; dy++) {
+                    for (var dx = 0; dx < 4; dx++) {
+                        let s = vec4<i32>(round(clamp(rgb_to_vuya(load(iu + dx - 1, iv + dy - 1)), vec4<f32>(0.0), vec4<f32>(1.0)) * 255.0));
+                        sum += cu[dx] * cv[dy] * s;
+                    }
+                }
+                let o = clamp((sum + vec4<i32>(1 << 21)) >> vec4<u32>(22u), vec4<i32>(0), vec4<i32>(255));
+                c = vec4<f32>(vuya_to_rgb(vec4<f32>(o) / 255.0).rgb, c.a);
+            } else {
+                let f = vec2<f32>(f32(su), f32(sv)) / 256.0;
+                let top = mix(load(iu, iv), load(iu + 1, iv), f.x);
+                let bottom = mix(load(iu, iv + 1), load(iu + 1, iv + 1), f.x);
+                c = vec4<f32>(mix(top, bottom, f.y).rgb, c.a);
+            }
+        }
+        case 11u: {
+            // A camera move's window: (x, y) of the scaled picture (the source here), turned by
+            // the angle about the picture's center first as FFmpeg's rotate turns it: bilinear,
+            // and black where the turned point falls outside.
+            let S = vec2<i32>(textureDimensions(src));
+            var q = vec2<f32>(f32(x) + p.rect.x, f32(y) + p.rect.y);
+            if (p.uniform == 1u) {
+                let half = (vec2<f32>(S) - 1.0) / 2.0;
+                let d = q - half;
+                let cs = cos(p.rect.z);
+                let sn = sin(p.rect.z);
+                q = vec2<f32>(d.x * cs + d.y * sn, -d.x * sn + d.y * cs) + half;
+                let i = vec2<i32>(floor(q));
+                if (i.x < -1 || i.x > S.x || i.y < -1 || i.y > S.y) {
+                    c = vuya_to_rgb(vec4<f32>(128.0 / 255.0, 128.0 / 255.0, 16.0 / 255.0, c.a));
+                } else {
+                    let f = q - floor(q);
+                    let a0 = clamp(i, vec2<i32>(0), S - 1);
+                    let a1 = min(a0 + 1, S - 1);
+                    let top = mix(load(a0.x, a0.y), load(a1.x, a0.y), f.x);
+                    let bottom = mix(load(a0.x, a1.y), load(a1.x, a1.y), f.x);
+                    c = vec4<f32>(mix(top, bottom, f.y).rgb, c.a);
+                }
+            } else {
+                c = vec4<f32>(load(i32(q.x), i32(q.y)).rgb, c.a);
+            }
+        }
+        case 12u: {
+            // hflip (`backward` 0) or vflip (1).
+            let s = vec2<i32>(textureDimensions(src));
+            c = select(load(s.x - 1 - x, y), load(x, s.y - 1 - y), p.backward == 1u);
+        }
+        case 13u: {
+            // drawgrid: lines `bar` thick every rect.x pixels across and rect.y down (from 0, 0),
+            // blended toward black at the color's alpha on 8-bit YUV, as drawutils blends.
+            let cell = vec2<i32>(i32(p.rect.x), i32(p.rect.y));
+            let t = i32(p.bar);
+            if (x % cell.x < t || y % cell.y < t) {
+                let yuv = rgb_to_vuya(c);
+                let black = vec4<f32>(128.0 / 255.0, 128.0 / 255.0, 16.0 / 255.0, yuv.w);
+                c = vuya_to_rgb(mix(yuv, black, p.factor));
+            }
+        }
+        case 14u: {
+            // dilation: the largest of the 3 x 3 neighbors on each plane (8-bit YUV, or RGB with `backward` 1).
+            var m = vec4<f32>(0.0);
+            for (var dy = -1; dy <= 1; dy++) {
+                for (var dx = -1; dx <= 1; dx++) {
+                    let n = load(x + dx, y + dy);
+                    m = max(m, select(rgb_to_vuya(n), n, p.backward == 1u));
+                }
+            }
+            if (p.backward == 1u) {
+                c = vec4<f32>(m.rgb, load(x, y).a);
+            } else {
+                // 4:2:0 chroma is dilated on its half-size planes: the 3 x 3 neighboring 2 x 2
+                // blocks, each block one chroma sample (its mean here).
+                let bx = (x / 2) * 2;
+                let by = (y / 2) * 2;
+                var mc = vec2<f32>(0.0);
+                for (var dy = -1; dy <= 1; dy++) {
+                    for (var dx = -1; dx <= 1; dx++) {
+                        let ox = bx + 2 * dx;
+                        let oy = by + 2 * dy;
+                        let b = (rgb_to_vuya(load(ox, oy)) + rgb_to_vuya(load(ox + 1, oy)) + rgb_to_vuya(load(ox, oy + 1)) + rgb_to_vuya(load(ox + 1, oy + 1))) / 4.0;
+                        mc = max(mc, b.xy);
+                    }
+                }
+                c = vec4<f32>(vuya_to_rgb(vec4<f32>(mc, m.z, 1.0)).rgb, load(x, y).a);
+            }
+        }
+        case 15u: {
+            // swscale's area scaling down: each output pixel the mean of the source area it covers.
+            let s = vec2<f32>(textureDimensions(src));
+            let k = s / vec2<f32>(size);
+            let a0 = vec2<f32>(f32(x), f32(y)) * k;
+            let a1 = a0 + k;
+            var sum = vec4<f32>(0.0);
+            for (var sy = i32(floor(a0.y)); sy < i32(ceil(a1.y)); sy++) {
+                let wy = min(a1.y, f32(sy + 1)) - max(a0.y, f32(sy));
+                for (var sx = i32(floor(a0.x)); sx < i32(ceil(a1.x)); sx++) {
+                    let wx = min(a1.x, f32(sx + 1)) - max(a0.x, f32(sx));
+                    sum += wx * wy * load(sx, sy);
+                }
+            }
+            c = sum / (k.x * k.y);
+        }
+        case 16u: {
+            // scale with flags=neighbor: the source pixel under each output pixel's center.
+            let s = vec2<f32>(textureDimensions(src));
+            let q = vec2<i32>(floor((vec2<f32>(f32(x), f32(y)) + 0.5) * s / vec2<f32>(size)));
+            c = load(q.x, q.y);
+        }
+        case 8u: {
+            // tint: red, green and blue multiplied (colorchannelmixer's diagonal).
+            c = vec4<f32>(c.rgb * p.color.rgb, c.a);
+        }
         case 7u: {
             // compile.ts's rounded corners: alpha cleared outside a rounded rectangle, a hard edge.
             let r = i32(p.bar);
@@ -153,8 +332,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                 textureStore(dst, id.xy, c);
                 return;
             }
-            // Every plane gets its own noise; 4:2:0 chroma shares one value per 2 x 2 block.
-            let n = vec4<f32>(noise(ux / 2u, uy / 2u, 2u), noise(ux / 2u, uy / 2u, 1u), noise(ux, uy, 0u), 0.0) / 255.0;
+            // Every plane gets its own noise; 4:2:0 chroma shares one value per 2 x 2 block. With
+            // `bar` 1 only luma gets it (noise's c0s, as film grain uses it).
+            var n = vec4<f32>(noise(ux / 2u, uy / 2u, 2u), noise(ux / 2u, uy / 2u, 1u), noise(ux, uy, 0u), 0.0) / 255.0;
+            if (p.bar == 1u) {
+                n = vec4<f32>(0.0, 0.0, n.z, 0.0);
+            }
             c = vuya_to_rgb(clamp(rgb_to_vuya(c) + n, vec4<f32>(0.0), vec4<f32>(1.0)));
         }
     }

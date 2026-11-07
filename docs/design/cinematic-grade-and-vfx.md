@@ -26,8 +26,7 @@ Features still to build. Tests are not listed here (section 11), and packaging i
 
 **GPU engine.** It renders every project, taking what it does not draw itself from the FFmpeg backend as pieces (E4 notes). Native ports, so those parts run at the engine's speed:
 
-- The film looks other than `printFilm` (`halation`, `bloom`, `anamorphicFlare`, `filmGrain`, `gateWeave`, `lensDistortion`), `glow` and the light effects.
-- Effects that work across frames or regions: `sharpen`, `denoise`, `stabilize`, the shakes and the rest of the motion catalog, `beauty`, background blur and replacement, sky, depth and removal effects.
+- Effects that work across frames or regions: `sharpen`, `denoise`, `stabilize`, `autoCorrect`, `motionBlur`, `trails`, `zoomBlur`, `rackFocus`, `vhs`, `chromaKey`, `beauty`, background blur and replacement, sky, depth and removal effects. (Done: the film looks, the glows and light effects, the camera moves, `pixelate`, `mirror`, `bokeh`; see the engine ports note in section 13.)
 - Effects with a `mask`, and effects with keyframes.
 - Media layers: scale, rotation, 3D and corner pin keyframes, shadows, layer masks, layers behind the subject.
 - The color panel's vignette and clarity.
@@ -463,7 +462,28 @@ Three tracks run side by side: native kernels (N), the engine (E) and features (
 
 ### Progress notes
 
-A record of each step as it was finished. Their "Open" lists were current when written: section 2 has the features still to build, section 11 the checks still to run, section 12 the packaging on hold.
+A record of each step as it was finished.
+
+**Engine ports, first part (2026-11-08).** Native on the engine, out of the FFmpeg pieces:
+- **Film looks**: `halation`, `bloom`, `anamorphicFlare`, `filmGrain`, `gateWeave`, `lensDistortion`.
+- **Light**: `glow`, `lightRays`, `lightLeak`, `bokehLights`.
+- **Camera moves**: `handheld`, `vibrate`, `earthquake`, `impactShake`, `shake`, `tilt`, `smoothZoom`, `zoomPunch`, `heartbeat`.
+- **Others**: `pixelate`, `mirror`, `bokeh`.
+
+Each one copies its FFmpeg filters, from FFmpeg 6.1's source: blend's formulas; gblur with sigmaV and on RGB; perspective's 1/256 map and 11-bit cubic; lenscorrection's half-pixel bilinear; rotate; crop's rounding. Each has a parity test asserting it is not bridged: mean ΔE 2000 0.02 to 0.68. `filmGrain` matches in noise strength, as `grain` does.
+
+New general parts:
+- `engine/core/expr.ts` evaluates FFmpeg's expression language per frame, as libavutil does.
+- A chain interpreter turns plain filter chains into operations, following FFmpeg's format negotiation.
+- `branch` and `average` operations.
+- A smaller-size operation that scales 4:2:0 chroma on its own, as FFmpeg does. It took pixelate from 7.5 to 0.46.
+
+Also fixed: a failed engine run no longer hides its error behind the work folder's cleanup.
+
+Open in this group:
+- `vhs`: a chain that goes from RGB back to YUV, whose conversion is not copied yet. It is left to FFmpeg until then.
+- `denoise` (hqdn3d), `sharpen` (unsharp), `autoCorrect` (normalize), `motionBlur` (tmix), `trails` (lagfun), `zoomBlur`, `rackFocus`, `chromaKey`, `stabilize` (deshake), and the mask, model and removal effects. FFmpeg's code for each is fetched and read; hqdn3d splits into a row pass and a column pass, so it stays exact on the GPU.
+ Their "Open" lists were current when written: section 2 has the features still to build, section 11 the checks still to run, section 12 the packaging on hold.
 
 **E4, the engine as the default (done 2026-11-07).** Decided with the user: a bridge first, then ports. What the engine does not draw itself becomes a piece the FFmpeg backend draws (`compileProject`'s `piece`, chosen by `engineGaps` in `plan.ts`): a clip's picture, a media layer placed on a clear canvas, or the base picture (the primary track and the layers up to the last one that needs the picture under it: whole-video effects, layer masks, layers behind the subject). The engine reads a piece like any other source, so it matches the backend exactly (pieces next to the engine's own fades, transitions and blends: mean ΔE 2000 0.06 to 0.35), and masks, model mattes and media inputs work as there. `engineUnsupported` is now empty for every project; `engineBridged` lists the pieces. Renders default to `auto` (the engine, and FFmpeg when it is not built or fails, reported on stderr), and the performance test only checks that the engine works (its picture within ΔE 3). Moved to the engine in the same step:
 

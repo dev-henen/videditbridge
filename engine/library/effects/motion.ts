@@ -28,6 +28,63 @@ const rand = (i: number) => {
 const EasingParam = z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]).default("ease-in-out");
 const scaleOf = (ctx: EffectContext) => Math.min(ctx.width, ctx.height) / 1080;
 
+/** lightRays' numbers: the quarter size, the highlight curve, the six zooms (scaled size and crop offset), the per-channel levels. */
+export function lightRays(p: { x: number; y: number; threshold: number; length: number; intensity: number; color: string }, ctx: Pick<EffectContext, "width" | "height">) {
+  const even = (v: number) => Math.max(2, 2 * Math.round(v / 2));
+  const [w, h] = [even(ctx.width / 4), even(ctx.height / 4)];
+  // Radial blur by repeated zooms about the source: each pass averages the picture with a copy
+  // enlarged about the source, doubling the samples along every ray, so 6 passes give 64 samples
+  // spaced evenly in log distance from the source. Highlights at distance d streak out to d * zoom.
+  const zoom = 20 ** p.length;
+  const zooms = Array.from({ length: 6 }, (_, k) => {
+    const f = zoom ** (2 ** k / 2 ** 6);
+    const [sw, sh] = [even(w * f), even(h * f)];
+    return { width: sw, height: sh, x: round3((sw - w) * p.x), y: round3((sh - h) * p.y) };
+  });
+  const { r, g, b } = parseColor(p.color);
+  const tint = [r / 255, g / 255, b / 255] as const;
+  // Averaging spreads the light thin, so it is brought back up: a gain above 1 moves a channel's
+  // input white point down, a gain below 1 its output white point.
+  const levels = (["r", "g", "b"] as const)
+    .map((ch, k) => {
+      const gain = Math.max(1e-3, 1.3 * p.intensity * tint[k]!);
+      return gain >= 1 ? `${ch}imax=${round3(Math.max(0.001, 1 / gain))}` : `${ch}omax=${round3(gain)}`;
+    })
+    .join(":");
+  return { size: [w, h] as [number, number], curve: `curves=all='0/0 ${round3(p.threshold)}/0 1/1'`, zooms, levels: `colorlevels=${levels}` };
+}
+
+/** lightLeak's speeds as its expression rounds them: s, 0.7 s, 0.8 s, 0.6 s and 1.7 s. */
+export function lightLeakSpeeds(p: { speed: number }): [number, number, number, number, number] {
+  const s = round3(0.15 + (p.speed / 100) * 0.9);
+  return [s, round3(s * 0.7), round3(s * 0.8), round3(s * 0.6), round3(s * 1.7)];
+}
+
+/** bokehLights' orbs on the light canvas: start, sway and drift (overlay expressions of t), size, alpha. */
+export function bokehOrbs(p: { count: number; size: number; speed: number }, ctx: EffectContext) {
+  const { w: W, h: H } = lightCanvas(ctx);
+  return Array.from({ length: p.count }, (_, i) => {
+    const R = Math.max(1, Math.round(((p.size / 100) * 0.12 + 0.01) * (0.6 + 0.8 * rand(i * 3 + 1)) * Math.min(W, H)));
+    const span = round3(H + 2 * R);
+    return {
+      x0: round3(rand(i * 3) * W - R),
+      sway: round3(0.04 * W),
+      swaySpeed: round3(0.3 + rand(i + 50)),
+      y0: round3(rand(i * 3 + 7) * span + 1000 * span),
+      v: round3((p.speed / 100) * 0.08 * (0.5 + rand(i * 3 + 2)) * H),
+      span,
+      size: 2 * R,
+      alpha: round3(0.45 + 0.55 * rand(i + 90)),
+    };
+  });
+}
+
+/** The glow effect's numbers (8-bit RGB): the curve that keeps bright parts, the blur, the screen's opacity. */
+export function glowEffect(p: { strength: number; threshold: number; radius: number }, ctx: EffectContext): { curve: string; sigma: number; opacity: number } {
+  const t = round3(0.4 + 0.55 * (p.threshold / 100));
+  return { curve: `curves=all='0/0 ${t}/0 1/1'`, sigma: round3(p.radius * 0.6 * scaleOf(ctx)), opacity: round3(p.strength) };
+}
+
 /** 7x7 disc kernel: out-of-focus lenses turn points of light into discs, not Gaussian smudges. */
 const DISC = (() => {
   const cells: number[] = [];
@@ -156,11 +213,11 @@ export function motionEffects(): EffectDefinition[] {
         const label = labeler(ctx);
         const [o, c, g] = [label("fgo"), label("fgc"), label("fgg")];
         const fmt = ctx.alpha ? "gbrap" : "gbrp";
-        const t = round3(0.4 + 0.55 * (p.threshold / 100));
+        const s = glowEffect(p, ctx);
         return [
           `format=${fmt},split=2[${o}][${c}]`,
-          `[${c}]curves=all='0/0 ${t}/0 1/1',gblur=sigma=${round3(p.radius * 0.6 * scaleOf(ctx))}[${g}]`,
-          `[${o}][${g}]blend=all_mode=screen:all_opacity=${round3(p.strength)},format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+          `[${c}]${s.curve},gblur=sigma=${s.sigma}[${g}]`,
+          `[${o}][${g}]blend=all_mode=screen:all_opacity=${s.opacity},format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
         ].join(";");
       },
     }),
@@ -187,36 +244,21 @@ export function motionEffects(): EffectDefinition[] {
         // rays from small highlights stay continuous.
         const label = labeler(ctx);
         const fmt = ctx.alpha ? "gbrap" : "gbrp";
-        const even = (v: number) => Math.max(2, 2 * Math.round(v / 2));
-        const [w, h] = [even(ctx.width / 4), even(ctx.height / 4)];
+        const spec = lightRays(p, ctx);
+        const [w, h] = spec.size;
         const [o, c] = [label("fro"), label("frc")];
         const lines = [`format=${fmt},split=2[${o}][${c}]`];
         let cur = label("frh");
-        lines.push(`[${c}]scale=${w}:${h},curves=all='0/0 ${round3(p.threshold)}/0 1/1'[${cur}]`);
-        const passes = 6;
-        // Highlights at distance d from the source streak out to d * zoom.
-        const zoom = 20 ** p.length;
-        for (let k = 0; k < passes; k++) {
-          const f = zoom ** (2 ** k / 2 ** passes);
-          const [sw, sh] = [even(w * f), even(h * f)];
+        lines.push(`[${c}]scale=${w}:${h},${spec.curve}[${cur}]`);
+        for (const z0 of spec.zooms) {
           const [a, b, z, next] = [label("fra"), label("frb"), label("frz"), label("frn")];
           lines.push(`[${cur}]split=2[${a}][${b}]`);
-          lines.push(`[${b}]scale=${sw}:${sh},crop=${w}:${h}:${round3((sw - w) * p.x)}:${round3((sh - h) * p.y)}[${z}]`);
+          lines.push(`[${b}]scale=${z0.width}:${z0.height},crop=${w}:${h}:${z0.x}:${z0.y}[${z}]`);
           lines.push(`[${a}][${z}]blend=all_mode=average[${next}]`);
           cur = next;
         }
-        const { r, g, b } = parseColor(p.color);
-        const tint = [r / 255, g / 255, b / 255] as const;
-        // Averaging spreads the light thin, so it is brought back up: a gain above 1 moves a channel's
-        // input white point down, a gain below 1 its output white point.
-        const levels = (["r", "g", "b"] as const)
-          .map((ch, k) => {
-            const gain = Math.max(1e-3, 1.3 * p.intensity * tint[k]!);
-            return gain >= 1 ? `${ch}imax=${round3(Math.max(0.001, 1 / gain))}` : `${ch}omax=${round3(gain)}`;
-          })
-          .join(":");
         const rays = label("frr");
-        lines.push(`[${cur}]colorlevels=${levels},scale=${ctx.width}:${ctx.height}[${rays}]`);
+        lines.push(`[${cur}]${spec.levels},scale=${ctx.width}:${ctx.height}[${rays}]`);
         lines.push(`[${o}][${rays}]blend=all_mode=screen,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`);
         return lines.join(";");
       },
@@ -247,15 +289,13 @@ export function motionEffects(): EffectDefinition[] {
         ];
         let canvas = label("fbc");
         lines.push(`color=c=black:s=${W}x${H}:r=${ctx.fps}:d=${d},format=yuv420p[${canvas}]`);
-        sprites.forEach((s, i) => {
-          const R = Math.max(1, Math.round(((p.size / 100) * 0.12 + 0.01) * (0.6 + 0.8 * rand(i * 3 + 1)) * Math.min(W, H)));
-          const span = round3(H + 2 * R);
-          const v = round3((p.speed / 100) * 0.08 * (0.5 + rand(i * 3 + 2)) * H);
-          const x = `${round3(rand(i * 3) * W - R)}+${round3(0.04 * W)}*sin(t*${round3(0.3 + rand(i + 50))}+${i})`;
-          const y = `mod(${round3(rand(i * 3 + 7) * span + 1000 * span)}-t*${v},${span})-${2 * R}`;
+        bokehOrbs(p, ctx).forEach((o, i) => {
+          const s = sprites[i]!;
+          const x = `${o.x0}+${o.sway}*sin(t*${o.swaySpeed}+${i})`;
+          const y = `mod(${o.y0}-t*${o.v},${o.span})-${o.size}`;
           const orb = label("fbo");
           const next = label("fbc");
-          lines.push(`[${s}]scale=${2 * R}:${2 * R},lutyuv=a='val*${round3(0.45 + 0.55 * rand(i + 90))}'[${orb}]`);
+          lines.push(`[${s}]scale=${o.size}:${o.size},lutyuv=a='val*${o.alpha}'[${orb}]`);
           lines.push(`[${canvas}][${orb}]overlay=x='${x}':y='${y}'[${next}]`);
           canvas = next;
         });
@@ -275,11 +315,11 @@ export function motionEffects(): EffectDefinition[] {
         speed: num(30, 0, 100, "How fast the leaks move"),
       }),
       toFilter: (p, ctx) => {
-        const s = round3(0.15 + (p.speed / 100) * 0.9);
+        const [s, s07, s08, s06, s17] = lightLeakSpeeds(p);
         const r = "(0.32*max(W,H))";
-        const b1 = `exp(-(pow(X-W*(0.0+0.25*sin(T*${s})),2)+pow(Y-H*(0.15+0.25*cos(T*${round3(s * 0.7)})),2))/pow(${r},2))`;
-        const b2 = `exp(-(pow(X-W*(1.0-0.25*sin(T*${round3(s * 0.8)}+1)),2)+pow(Y-H*(0.85-0.2*sin(T*${round3(s * 0.6)}+2)),2))/pow(${r},2))`;
-        return lightLayer(ctx, geqLight(ctx, `255*min(1,(${b1}+0.8*${b2})*(0.75+0.25*sin(T*${round3(s * 1.7)})))`), p.color, p.opacity);
+        const b1 = `exp(-(pow(X-W*(0.0+0.25*sin(T*${s})),2)+pow(Y-H*(0.15+0.25*cos(T*${s07})),2))/pow(${r},2))`;
+        const b2 = `exp(-(pow(X-W*(1.0-0.25*sin(T*${s08}+1)),2)+pow(Y-H*(0.85-0.2*sin(T*${s06}+2)),2))/pow(${r},2))`;
+        return lightLayer(ctx, geqLight(ctx, `255*min(1,(${b1}+0.8*${b2})*(0.75+0.25*sin(T*${s17})))`), p.color, p.opacity);
       },
     }),
     define({

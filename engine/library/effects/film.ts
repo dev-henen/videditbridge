@@ -11,7 +11,7 @@ import { bakeColor, define, labeler, num, type EffectContext, type EffectDefinit
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
-interface Glow {
+export interface Glow {
   /** Brightness (0..1) where the light starts to spill, with a soft knee above it. */
   threshold: number;
   /** Blur radii (gblur sigma) across and down, in pixels; several radii are averaged. */
@@ -26,24 +26,48 @@ interface Glow {
  * on 16-bit RGB. Nothing below the threshold changes the picture: a frame without highlights comes
  * out as it went in.
  */
+/** The highlights a glow keeps: their excess over the threshold, eased in with a soft knee (per-pixel filters). */
+export function glowKeep(threshold: number): string[] {
+  const t = round3(clamp(threshold, 0, 0.98));
+  return [`colorlevels=rimin=${t}:gimin=${t}:bimin=${t}`, "curves=all='0/0 0.3/0.12 1/1'"];
+}
+
+/** A glow's blur radii as gblur takes them (sigma, sigmaV). */
+export const glowSigmas = (g: Glow): [number, number][] => g.sigmas.map(([sx, sy]) => [round3(Math.max(0.5, sx)), round3(Math.max(0.5, sy))]);
+
+/** How much of the light goes on: blend addition's opacity. */
+export const glowOpacity = (g: Glow) => round3(clamp(g.strength, 0, 2) / 2);
+
+/** The glows of halation, bloom and anamorphicFlare from their parameters, for the FFmpeg graph and the engine plan alike. */
+export const GLOWS: Record<"halation" | "bloom" | "anamorphicFlare", (p: Record<string, number>, ctx: Pick<EffectContext, "width" | "height">) => Glow> = {
+  halation: (p, ctx) => {
+    const sigma = ctx.height * 0.015 * p.size!;
+    return { threshold: p.threshold!, sigmas: [[sigma, sigma]], tint: [1, 0.35, 0.12], strength: p.strength! };
+  },
+  bloom: (p, ctx) => {
+    const [tight, wide] = [ctx.height * 0.004 * p.size!, ctx.height * 0.02 * p.size!];
+    return { threshold: p.threshold!, sigmas: [[tight, tight], [wide, wide]], tint: [1, 1, 1], strength: p.strength! };
+  },
+  anamorphicFlare: (p, ctx) => ({ threshold: p.threshold!, sigmas: [[ctx.width * 0.06 * p.length!, Math.max(1, ctx.height * 0.0015)]], tint: [0.35, 0.65, 1], strength: p.strength! }),
+};
+
 function glow(ctx: EffectContext, g: Glow): string {
   const label = labeler(ctx);
   const [orig, copy, light] = [label("glo"), label("glc"), label("gll")];
   const [rgb, out] = ctx.alpha ? ["gbrap16le", "yuva420p"] : ["gbrp16le", "yuv420p"];
-  const t = round3(clamp(g.threshold, 0, 0.98));
-  // A soft knee: the highlights' excess over the threshold, eased in.
-  const keep = `colorlevels=rimin=${t}:gimin=${t}:bimin=${t},curves=all='0/0 0.3/0.12 1/1'`;
+  const keep = glowKeep(g.threshold).join(",");
   const [r, gr, b] = g.tint.map(round3);
   // The light's own alpha is 0, so a layer keeps its transparency.
   const tint = `colorchannelmixer=rr=${r}:gg=${gr}:bb=${b}${ctx.alpha ? ":aa=0" : ""}`;
-  const blur = ([sx, sy]: [number, number]) => `gblur=sigma=${round3(Math.max(0.5, sx))}:sigmaV=${round3(Math.max(0.5, sy))}`;
+  const sigmas = glowSigmas(g);
+  const blur = ([sx, sy]: [number, number]) => `gblur=sigma=${sx}:sigmaV=${sy}`;
   const lines = [`format=${rgb},split=2[${orig}][${copy}]`];
-  if (g.sigmas.length === 1) lines.push(`[${copy}]${keep},${blur(g.sigmas[0]!)},${tint}[${light}]`);
+  if (sigmas.length === 1) lines.push(`[${copy}]${keep},${blur(sigmas[0]!)},${tint}[${light}]`);
   else {
-    const parts = g.sigmas.map(() => label("glb"));
-    const blurred = g.sigmas.map(() => label("glg"));
+    const parts = sigmas.map(() => label("glb"));
+    const blurred = sigmas.map(() => label("glg"));
     lines.push(`[${copy}]${keep},split=${parts.length}${parts.map((p) => `[${p}]`).join("")}`);
-    g.sigmas.forEach((s, i) => lines.push(`[${parts[i]}]${blur(s)}[${blurred[i]}]`));
+    sigmas.forEach((s, i) => lines.push(`[${parts[i]}]${blur(s)}[${blurred[i]}]`));
     // Average the radii pairwise, then tint.
     let acc = blurred[0]!;
     for (let i = 1; i < blurred.length; i++) {
@@ -53,12 +77,52 @@ function glow(ctx: EffectContext, g: Glow): string {
     }
     lines.push(`[${acc}]${tint}[${light}]`);
   }
-  lines.push(`[${orig}][${light}]blend=all_mode=addition:all_opacity=${round3(clamp(g.strength, 0, 2) / 2)},format=${out}`);
+  lines.push(`[${orig}][${light}]blend=all_mode=addition:all_opacity=${glowOpacity(g)},format=${out}`);
   return lines.join(";");
 }
 
 /** Grain cell sizes of the stocks, as a fraction of the frame height. */
 const GRAIN_STOCKS = { fine: 0.0012, medium: 0.002, coarse: 0.0035 } as const;
+
+/** filmGrain's numbers: the grain picture's size (one pixel a cell) and the noise strength. */
+export function grainSpec(p: { amount: number; stock: keyof typeof GRAIN_STOCKS }, ctx: Pick<EffectContext, "width" | "height">): { size: [number, number]; strength: number } {
+  const cell = Math.max(1, ctx.height * GRAIN_STOCKS[p.stock]);
+  return {
+    size: [Math.max(2, Math.round(ctx.width / cell / 2) * 2), Math.max(2, Math.round(ctx.height / cell / 2) * 2)],
+    strength: round3(clamp(p.amount, 0, 100) * 0.6),
+  };
+}
+
+/** lensDistortion's lenscorrection coefficients. */
+export const lensDistortion = (p: { amount: number }) => ({ k1: round3(p.amount * 0.2), k2: round3(p.amount * 0.05) });
+
+/** A smooth wander: two sine waves with seeded speeds and phases, as an expression of a time and as its value. */
+interface Wave {
+  expr: (t: string) => string;
+  at: (t: number) => number;
+}
+
+/**
+ * gateWeave's motion: the x and y drift and the angle (waves), and the frame's corners from its
+ * center. The FFmpeg graph writes the waves as perspective expressions of `on`, and the engine
+ * evaluates the same numbers (in doubles, as FFmpeg's expressions are).
+ */
+export function gateWeave(p: { amount: number; seed: number }, ctx: Pick<EffectContext, "width" | "height">): { waves: [Wave, Wave, Wave]; cx: number; cy: number; corners: [number, number][] } {
+  const wave = (i: number, scale: number): Wave => {
+    const [f1, f2] = [0.35 + seeded(p.seed, i) * 0.6, 1.1 + seeded(p.seed, i + 1) * 1.4];
+    const [a, b] = [round3(seeded(p.seed, i + 2) * 6.283), round3(seeded(p.seed, i + 3) * 6.283)];
+    const [s1, w1, s2, w2] = [round3(scale * 0.65), round3(6.283 * f1), round3(scale * 0.35), round3(6.283 * f2)];
+    return { expr: (t) => `(${s1}*sin(${w1}*${t}+${a})+${s2}*sin(${w2}*${t}+${b}))`, at: (t) => s1 * Math.sin(w1 * t + a) + s2 * Math.sin(w2 * t + b) };
+  };
+  const [cx, cy] = [ctx.width / 2, ctx.height / 2];
+  return {
+    waves: [wave(0, ctx.width * 0.0012 * p.amount), wave(4, ctx.height * 0.0018 * p.amount), wave(8, 0.0005 * p.amount)],
+    cx,
+    cy,
+    // perspective's order: top-left, top-right, bottom-left, bottom-right.
+    corners: [[0 - cx, 0 - cy], [ctx.width - cx, 0 - cy], [0 - cx, ctx.height - cy], [ctx.width - cx, ctx.height - cy]],
+  };
+}
 
 /** A seeded number in 0..1 from an integer (the same in every render). */
 const seeded = (seed: number, i: number) => {
@@ -81,10 +145,7 @@ export function filmEffects(): EffectDefinition[] {
         threshold: num(0.75, 0.3, 0.98, "Brightness where highlights start to glow (0..1)"),
         size: num(1, 0.2, 4, "Spread, relative to the usual 1.5% of the frame height"),
       }),
-      toFilter: (p, ctx) => {
-        const sigma = ctx.height * 0.015 * p.size;
-        return glow(ctx, { threshold: p.threshold, sigmas: [[sigma, sigma]], tint: [1, 0.35, 0.12], strength: p.strength });
-      },
+      toFilter: (p, ctx) => glow(ctx, GLOWS.halation(p, ctx)),
     }),
     define({
       id: "bloom",
@@ -99,10 +160,7 @@ export function filmEffects(): EffectDefinition[] {
         threshold: num(0.7, 0.3, 0.98, "Brightness where highlights start to glow (0..1)"),
         size: num(1, 0.2, 4, "Spread, relative to the usual size"),
       }),
-      toFilter: (p, ctx) => {
-        const [tight, wide] = [ctx.height * 0.004 * p.size, ctx.height * 0.02 * p.size];
-        return glow(ctx, { threshold: p.threshold, sigmas: [[tight, tight], [wide, wide]], tint: [1, 1, 1], strength: p.strength });
-      },
+      toFilter: (p, ctx) => glow(ctx, GLOWS.bloom(p, ctx)),
     }),
     define({
       id: "anamorphicFlare",
@@ -117,7 +175,7 @@ export function filmEffects(): EffectDefinition[] {
         threshold: num(0.85, 0.3, 0.98, "Brightness where lights start to streak (0..1)"),
         length: num(1, 0.2, 3, "Length of the streaks, relative to the usual"),
       }),
-      toFilter: (p, ctx) => glow(ctx, { threshold: p.threshold, sigmas: [[ctx.width * 0.06 * p.length, Math.max(1, ctx.height * 0.0015)]], tint: [0.35, 0.65, 1], strength: p.strength }),
+      toFilter: (p, ctx) => glow(ctx, GLOWS.anamorphicFlare(p, ctx)),
     }),
     define({
       id: "filmGrain",
@@ -136,9 +194,7 @@ export function filmEffects(): EffectDefinition[] {
         const label = labeler(ctx);
         const [orig, noise, grain] = [label("fgo"), label("fgn"), label("fgg")];
         const fmt = ctx.alpha ? "yuva420p" : "yuv420p";
-        const cell = Math.max(1, ctx.height * GRAIN_STOCKS[p.stock]);
-        const [gw, gh] = [Math.max(2, Math.round(ctx.width / cell / 2) * 2), Math.max(2, Math.round(ctx.height / cell / 2) * 2)];
-        const strength = round3(clamp(p.amount, 0, 100) * 0.6);
+        const { size: [gw, gh], strength } = grainSpec(p, ctx);
         // Gray noise around mid-gray at the grain's own size, scaled up smoothly, then soft-light on
         // luma only: soft light moves midtones most and leaves black and white nearly alone.
         return [
@@ -161,24 +217,10 @@ export function filmEffects(): EffectDefinition[] {
         seed: z.number().int().min(0).max(100000).default(1).describe("Motion seed"),
       }),
       toFilter: (p, ctx) => {
-        // A smooth wander from two sine waves per axis, with seeded speeds and phases.
-        const wave = (i: number, scale: number) => {
-          const [f1, f2] = [0.35 + seeded(p.seed, i) * 0.6, 1.1 + seeded(p.seed, i + 1) * 1.4];
-          const [a, b] = [round3(seeded(p.seed, i + 2) * 6.283), round3(seeded(p.seed, i + 3) * 6.283)];
-          // perspective has no time variable: the output frame number over the frame rate.
-          const t = `(on/${ctx.fps})`;
-          return `(${round3(scale * 0.65)}*sin(${round3(6.283 * f1)}*${t}+${a})+${round3(scale * 0.35)}*sin(${round3(6.283 * f2)}*${t}+${b}))`;
-        };
-        const dx = wave(0, ctx.width * 0.0012 * p.amount);
-        const dy = wave(4, ctx.height * 0.0018 * p.amount);
-        const angle = wave(8, 0.0005 * p.amount);
+        const w = gateWeave(p, ctx);
+        const [dx, dy, angle] = w.waves.map((v) => v.expr(`(on/${ctx.fps})`));
         // Where each output corner comes from: rotated about the center, then moved.
-        const [cx, cy] = [ctx.width / 2, ctx.height / 2];
-        const corner = (x: number, y: number) => {
-          const [ox, oy] = [x - cx, y - cy];
-          return [`${cx}+${ox}*cos(${angle})-${oy}*sin(${angle})+${dx}`, `${cy}+${ox}*sin(${angle})+${oy}*cos(${angle})+${dy}`];
-        };
-        const pts = [corner(0, 0), corner(ctx.width, 0), corner(0, ctx.height), corner(ctx.width, ctx.height)];
+        const pts = w.corners.map(([ox, oy]) => [`${w.cx}+${ox}*cos(${angle})-${oy}*sin(${angle})+${dx}`, `${w.cy}+${ox}*sin(${angle})+${oy}*cos(${angle})+${dy}`]);
         const args = pts.flatMap(([x, y], i) => [`x${i}='${x}'`, `y${i}='${y}'`]).join(":");
         return `perspective=${args}:interpolation=cubic:sense=source:eval=frame`;
       },
@@ -215,7 +257,10 @@ export function filmEffects(): EffectDefinition[] {
       description:
         "Barrel (+, a wide-angle or fisheye bulge) or pincushion (-, a telephoto pinch) distortion around the frame's center. Small amounts (0.1-0.3) give a vintage or action-camera lens feel; large ones are a stylized effect. Barrel leaves the corners dark.",
       params: z.object({ amount: num(0.2, -1, 1, "+ barrel, - pincushion") }),
-      toFilter: (p) => `lenscorrection=k1=${round3(p.amount * 0.2)}:k2=${round3(p.amount * 0.05)}:i=bilinear`,
+      toFilter: (p) => {
+        const { k1, k2 } = lensDistortion(p);
+        return `lenscorrection=k1=${k1}:k2=${k2}:i=bilinear`;
+      },
     }),
   ];
 }

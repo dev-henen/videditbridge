@@ -123,11 +123,19 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
     ["vignette", { strength: 0.6 }], ["letterbox"], ["chromaticAberration", { amount: 8 }], ["flash", { duration: 0.4 }],
     ["zoom", { scale: 1.4, x: 0.3, y: 0.6 }], ["kenBurns", { zoomFrom: 1, zoomTo: 1.3, pan: "left" }], ["punchIn", { interval: 0.5, scale: 1.2 }], ["pulse", { bpm: 120 }],
     ["blur", { amount: 6 }],
+    ["halation", { strength: 1, threshold: 0.6 }], ["bloom", { strength: 0.8, threshold: 0.6 }], ["anamorphicFlare", { strength: 1, threshold: 0.6 }], ["glow", { threshold: 40 }],
+    ["gateWeave", { amount: 3, seed: 4 }], ["lensDistortion", { amount: 0.6 }],
+    ["lightRays", { x: 0.5, y: 0.3, threshold: 0.5, intensity: 1.2 }], ["lightLeak", { opacity: 0.7, speed: 80 }], ["bokehLights", { count: 15, size: 50, speed: 80 }],
+    ["handheld"], ["vibrate"], ["earthquake"], ["impactShake"], ["shake"], ["tilt"],
+    ["smoothZoom"], ["zoomPunch"], ["heartbeat"],
+    ["pixelate", { blockSize: 16 }], ["mirror"], ["mirror", { direction: "vertical" }], ["bokeh", { amount: 60 }],
   ];
   for (const [type, params] of EFFECTS) {
     it(`effect ${type}`, async () => {
       let p = base();
       p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 1.4, effects: [{ type, ...(params ? { params } : {}) }] });
+      // Drawn by the engine itself, not taken from FFmpeg as a piece.
+      expect(engineBridged(p)).toEqual([]);
       const r = await compare(`effect-${type}`, p);
       expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
       expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
@@ -184,13 +192,15 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
 
   // Noise is random in both renderers, so these compare pictures blurred over the noise, and
   // how strong the noise is, rather than pixels.
-  for (const [type, params] of [["grain", { amount: 20 }], ["glitch", { amount: 12 }]] as const) {
-    it(`effect ${type}: same picture under the noise, same noise strength`, async () => {
+  for (const [type, params] of [["grain", { amount: 20 }], ["glitch", { amount: 12 }], ["filmGrain", { amount: 70, stock: "coarse" }], ["filmGrain", { amount: 50, stock: "fine", seed: 7 }]] as const) {
+    it(`effect ${type} ${JSON.stringify(params)}: same picture under the noise, same noise strength`, async () => {
       let p = base();
       p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 1, effects: [{ type, params }] });
+      expect(engineBridged(p)).toEqual([]);
       p.export = { ...p.export, crf: 0, preset: "ultrafast" };
       const dir = path.join(OUT_DIR, "engine");
-      const [ff, gpu] = [path.join(dir, `noise-${type}-ffmpeg.mp4`), path.join(dir, `noise-${type}-engine.mp4`)];
+      const tag = `${type}-${JSON.stringify(params).replace(/\W/g, "")}`;
+      const [ff, gpu] = [path.join(dir, `noise-${tag}-ffmpeg.mp4`), path.join(dir, `noise-${tag}-engine.mp4`)];
       await render(p, { output: ff, backend: "ffmpeg", hardware: false });
       await render(p, { output: gpu, backend: "engine", hardware: false });
       const [a, b] = [await frames(ff, "boxblur=4"), await frames(gpu, "boxblur=4")];
@@ -201,6 +211,17 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
       expect(nb / na, `noise ${na} (FFmpeg) against ${nb} (engine)`).toBeLessThan(1.25);
     }, 60_000);
   }
+
+  it("glows on media layers keep their transparency", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "talk", duration: 1.5 });
+    p = addLayer(p, { type: "media", assetId: "pic", start: 0, duration: 1.5, position: { x: 0.35, y: 0.5 }, size: { width: 0.4 }, fit: "contain", effects: [{ type: "halation", params: { strength: 1.5, threshold: 0.5 } }] });
+    p = addLayer(p, { type: "media", assetId: "tall", start: 0.2, duration: 1.2, position: { x: 0.75, y: 0.5 }, size: { width: 0.25, height: 0.6 }, fit: "contain", effects: [{ type: "bloom", params: { strength: 1, threshold: 0.5 } }, { type: "glow" }] });
+    expect(engineBridged(p)).toEqual([]);
+    const r = await compare("layer-glows", p);
+    expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+    expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+  }, 60_000);
 
   it("effects on media layers, with their transparency", async () => {
     let p = base();

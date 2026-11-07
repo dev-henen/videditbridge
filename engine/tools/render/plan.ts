@@ -6,7 +6,7 @@ import { parseColor, round3 } from "../../core/util.js";
 import { effectsToFilter, escapeFilterPath } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { ASS_FILE, compileProject, gradientSource, rampPts, renderSize, type CompileOptions } from "./compile.js";
-import { cropPosition, effectsOps, lutArgs, type PlanOp } from "./plan-effects.js";
+import { cropPosition, effectsOps, joinedTime, lutArgs, type PlanOp } from "./plan-effects.js";
 import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
 import { colorTableFile, convertsColor, inputTableFile, outputTableFile, sceneGradeFor } from "./color-space.js";
 import { gradeConstants, type SceneGrade } from "../../library/color/index.js";
@@ -617,7 +617,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       ...(!gaps.base && transitionsInRgb(project, W, H) ? { rgbTransitions: true } : {}),
       ...(() => {
         if (gaps.base) return {};
-        const { ops } = effectsOps(project.effects, { width: W, height: H, fps: F, duration: timeline.primaryDuration || total }, Math.ceil(total * F - 1e-6));
+        const { ops } = effectsOps(project.effects, { width: W, height: H, fps: F, duration: timeline.primaryDuration || total }, Math.ceil(total * F - 1e-6), joinedTime(F));
         return ops.length ? { effects: ops } : {};
       })(),
       ...(files.length ? { files } : {}),
