@@ -8,7 +8,8 @@ import { getTransition } from "../../library/transitions/index.js";
 import { ASS_FILE, gradientSource, rampPts, renderSize } from "./compile.js";
 import { cropPosition, effectsOps, lutArgs, type PlanOp } from "./plan-effects.js";
 import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
-import { colorTableFile, convertsColor } from "./color-space.js";
+import { colorTableFile, convertsColor, inputTableFile, outputTableFile, sceneGradeFor } from "./color-space.js";
+import { gradeConstants, type SceneGrade } from "../../library/color/index.js";
 
 /**
  * Engine plans: a project turned into what the GPU render engine (native/ave-render) draws on every
@@ -126,7 +127,11 @@ export interface EnginePlan {
   effects?: PlanOp[];
   /** Transitions run on RGB, not YUV, in the FFmpeg backend (see transitionsInRgb). */
   rgbTransitions?: boolean;
-  output: { args: string[] };
+  /**
+   * The encoder's arguments (it reads the frames on stdin). `bitDepth` 10: the engine gives yuv420p10le.
+   * `dither`: 8-bit frames get a light dither (footage in a color space, whose grades would show steps).
+   */
+  output: { args: string[]; bitDepth?: 10; dither?: boolean };
 }
 
 export interface PlanOptions {
@@ -302,7 +307,12 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
   };
   const addItem = (item: PlanItem) => items.push(item) - 1;
   /** Camera log and HDR footage: its color space table, before any effect (the backend converts the source first). */
-  const colorOps = (asset: Asset): PlanOp[] => (convertsColor(asset) ? [{ op: "cube", file: path.resolve(colorTableFile(asset.colorSpace)) }] : []);
+  const colorOps = (asset: Asset, grade?: SceneGrade): PlanOp[] => {
+    if (!convertsColor(asset)) return [];
+    if (!grade) return [{ op: "cube", file: path.resolve(colorTableFile(asset.colorSpace)) }];
+    // Graded in ACEScct: the camera half, the grade as a shader, then the output half.
+    return [{ op: "cube", file: path.resolve(inputTableFile(asset.colorSpace)) }, { op: "grade", ...gradeConstants(grade) }, { op: "cube", file: path.resolve(outputTableFile()) }];
+  };
 
   // Primary track, with the FFmpeg backend's frame counts and xfade offsets.
   const clips: PlanClip[] = [];
@@ -330,7 +340,8 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       ({ source, size } = s);
     }
     // Camera log and HDR footage: its color space table first (10-bit decoding above).
-    const ops = [...colorOps(asset), ...effectsOps(clip.effects, { width: W, height: H, fps: F, duration: tc.duration }, frames).ops];
+    const graded = sceneGradeFor(asset, clip.effects);
+    const ops = [...colorOps(asset, graded.grade), ...effectsOps(graded.effects, { width: W, height: H, fps: F, duration: tc.duration }, frames).ops];
     // fit blur, as compileProject's fit draws it: the picture contained over a cover copy blurred
     // (gblur sigma 40) and darkened (eq brightness -0.08).
     const blur = clip.fit === "blur";
@@ -342,7 +353,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       fill: blur ? [0, 0, 0, 0] : background,
       opaque: true,
       ...(ops.length ? { effects: ops } : {}),
-      ...(blur ? { backdrop: { ...fitBox("cover", size, W, H), effects: [...colorOps(asset), { op: "blur", sigma: 40 }, { op: "lut", args: lutArgs(["eq=brightness=-0.08"]) }] as PlanOp[] } } : {}),
+      ...(blur ? { backdrop: { ...fitBox("cover", size, W, H), effects: [...colorOps(asset, graded.grade), { op: "blur", sigma: 40 }, { op: "lut", args: lutArgs(["eq=brightness=-0.08"]) }] as PlanOp[] } } : {}),
     });
     let first = next;
     let transition: PlanClip["transition"];
@@ -392,7 +403,8 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       ({ source, size } = s);
     }
     const fit: Fit = layer.size.height ? (layer.fit === "blur" ? "contain" : layer.fit) : "stretch";
-    const ops = [...colorOps(asset), ...effectsOps(layer.effects, { width: w, height: h, fps: F, duration: layer.duration, alpha: true }, Math.max(1, Math.ceil(layer.duration * F - 1e-6))).ops];
+    const graded = sceneGradeFor(asset, layer.effects);
+    const ops = [...colorOps(asset, graded.grade), ...effectsOps(graded.effects, { width: w, height: h, fps: F, duration: layer.duration, alpha: true }, Math.max(1, Math.ceil(layer.duration * F - 1e-6))).ops];
     const item = addItem({ source, width: w, height: h, ...fitBox(fit, size, w, h), fill: [0, 0, 0, 0], ...(ops.length ? { effects: ops } : {}) });
     const fades = (a: MediaLayer["animationIn"]) => (a && a.type !== "none" ? a.duration : 0);
     layers.push({
@@ -445,17 +457,20 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
   const exp = project.export;
   // Text goes on in YUV, as in the FFmpeg backend, on frames timed in AV_TIME_BASE as the backend's are:
   // libass takes whole milliseconds, so a frame exactly at an event's start can land on either side of it.
-  const picture = ["settb=AVTB", "format=yuv420p", opts.overlay && `ass=filename=${ASS_FILE}${fonts}`].filter(Boolean).join(",");
+  // 10-bit exports: the engine gives 10-bit frames (no dither), and the encoder keeps them.
+  const tenBit = exp.bitDepth === 10;
+  const pixFmt = tenBit ? "yuv420p10le" : "yuv420p";
+  const picture = ["settb=AVTB", `format=${pixFmt}`, opts.overlay && `ass=filename=${ASS_FILE}${fonts}`].filter(Boolean).join(",");
   const args = [
     "-y", "-hide_banner", "-loglevel", "error", "-nostdin",
-    "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", `${W}x${H}`, "-r", String(F), "-i", "pipe:0",
+    "-f", "rawvideo", "-pix_fmt", pixFmt, "-s", `${W}x${H}`, "-r", String(F), "-i", "pipe:0",
     ...(opts.audio ? ["-i", path.resolve(opts.audio)] : []),
     "-filter_complex", `[0:v]${picture}[v]`,
     "-map", "[v]",
     ...(opts.audio ? ["-map", "1:a"] : []),
-    ...(opts.hardwareEncoder
+    ...(opts.hardwareEncoder && !tenBit
       ? hardwareEncoderArgs(opts.hardwareEncoder, exp.crf)
-      : ["-c:v", exp.videoCodec, "-preset", opts.preset ?? exp.preset, "-crf", String(exp.crf), "-pix_fmt", "yuv420p"]),
+      : ["-c:v", exp.videoCodec, "-preset", opts.preset ?? exp.preset, "-crf", String(exp.crf), "-pix_fmt", pixFmt]),
     "-r", String(F),
     ...(opts.audio ? ["-c:a", exp.audioCodec, "-b:a", exp.audioBitrate, "-ar", "48000"] : []),
     "-movflags", "+faststart",
@@ -481,7 +496,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         const { ops } = effectsOps(project.effects, { width: W, height: H, fps: F, duration: timeline.primaryDuration || total }, Math.ceil(total * F - 1e-6));
         return ops.length ? { effects: ops } : {};
       })(),
-      output: { args },
+      output: { args, ...(tenBit ? { bitDepth: 10 as const } : project.assets.some(convertsColor) ? { dither: true } : {}) },
     },
   };
 }

@@ -15,10 +15,11 @@ use std::time::Instant;
 const DECODE_LEAD: f64 = 1.0;
 
 /// 32-bit words of the packed output's Y plane and of each chroma plane: each plane starts on a
-/// word (the packing shader writes whole words) and `read` joins them.
-fn packed_words(w: u32, h: u32) -> (u64, u64) {
-    let (w, h) = (w as u64, h as u64);
-    ((w * h).div_ceil(4), (w.div_ceil(2) * h.div_ceil(2)).div_ceil(4))
+/// word (the packing shader writes whole words) and `read` joins them. A word holds four 8-bit
+/// samples, or two 10-bit ones in 16 bits.
+fn packed_words(w: u32, h: u32, ten_bit: bool) -> (u64, u64) {
+    let (w, h, per) = (w as u64, h as u64, if ten_bit { 2 } else { 4 });
+    ((w * h).div_ceil(per), (w.div_ceil(2) * h.div_ceil(2)).div_ceil(per))
 }
 
 /// One pass of the packing shader over `words` words, in rows of at most 65535 workgroups of 256.
@@ -202,7 +203,7 @@ impl<'a> Composer<'a> {
         // hblur's row sums (width + 1 per row and clip), only when a transition needs them.
         let sums_size = if kinds.iter().any(|k| *k == Some(HBLUR)) { h as u64 * (w as u64 + 1) * 2 * 16 } else { 32 };
         // The output frame as yuv420p, in whole 32-bit words (the packing shader writes words).
-        let (luma_words, chroma_words) = packed_words(w, h);
+        let (luma_words, chroma_words) = packed_words(w, h, plan.output.bit_depth == Some(10));
         let bytes = 4 * (luma_words + 2 * chroma_words);
         let buffer = |label: &str, size: u64, usage: wgpu::BufferUsages| gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage, mapped_at_creation: false });
         Ok(Composer {
@@ -421,10 +422,12 @@ impl<'a> Composer<'a> {
         let frame = {
             let mapped = slice.get_mapped_range().map_err(|e| format!("reading the frame back: {e}"))?;
             let (w, h) = (self.plan.width as usize, self.plan.height as usize);
-            let (luma_words, chroma_words) = packed_words(self.plan.width, self.plan.height);
-            let (luma, chroma) = (w * h, w.div_ceil(2) * h.div_ceil(2));
+            let ten = self.plan.output.bit_depth == Some(10);
+            let (luma_words, chroma_words) = packed_words(self.plan.width, self.plan.height, ten);
+            let sample = if ten { 2 } else { 1 };
+            let (luma, chroma) = (w * h * sample, w.div_ceil(2) * h.div_ceil(2) * sample);
             let (u, v) = (4 * luma_words as usize, 4 * (luma_words + chroma_words) as usize);
-            let mut frame = Vec::with_capacity(output_bytes(self.plan.width, self.plan.height));
+            let mut frame = Vec::with_capacity(output_bytes(self.plan.width, self.plan.height, ten));
             frame.extend_from_slice(&mapped[..luma]);
             frame.extend_from_slice(&mapped[u..u + chroma]);
             frame.extend_from_slice(&mapped[v..v + chroma]);
@@ -564,9 +567,11 @@ impl<'a> Composer<'a> {
             }
             None => None,
         };
-        let text_on = gpu.uniform(&[text.is_some() as u32, 0, 0, 0]);
+        // The packing pass: text on or off, 10-bit output, dither (8-bit), and the frame (the dither's seed).
+        let out = &plan.output;
+        let text_on = gpu.uniform(&[text.is_some() as u32, (out.bit_depth == Some(10)) as u32, out.dither as u32, n as u32]);
         let text = (text.as_ref().unwrap_or(&blank), &text_on);
-        let (luma_words, chroma_words) = packed_words(w, h);
+        let (luma_words, chroma_words) = packed_words(w, h, out.bit_depth == Some(10));
         let bytes = self.packed.size();
         pack_pass(gpu, &mut enc, &gpu.pack_luma, &canvas_views[cur], &self.packed, text, luma_words);
         pack_pass(gpu, &mut enc, &gpu.pack_chroma, &canvas_views[cur], &self.packed, text, chroma_words);

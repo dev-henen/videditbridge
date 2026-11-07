@@ -2,3 +2,4 @@
 export * from "./spaces.js";
 export * from "./aces.js";
 export * from "./transform.js";
+export * from "./grade.js";

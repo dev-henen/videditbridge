@@ -79,6 +79,9 @@ pub enum Op {
     /// A color space transform: a .cube 3D table (its own size and input range), applied with
     /// tetrahedral interpolation (engine/library/color/transform.ts writes it).
     Cube { file: String },
+    /// The color panel's primaries in ACEScct (engine/library/color/grade.ts gradeConstants), between
+    /// the camera half and the output half of a color space's transform.
+    Grade { gains: [f32; 3], contrast: f32, saturation: f32, shadows: [f32; 3], midtones: [f32; 3], highlights: [f32; 3] },
     /// A per-pixel color chain baked into a table: ffmpeg `args` write a 512x512 rgb24 Hald image (level 8).
     Lut { args: Vec<String> },
     /// Show a rectangle (x, y, width, height) at full size, per frame (the last holds): "linear" or "bicubic".
@@ -229,9 +232,10 @@ impl PixelFormat {
     }
 }
 
-/// Bytes of an output frame as the engine gives it: planar 8-bit 4:2:0 (yuv420p).
-pub fn output_bytes(width: u32, height: u32) -> usize {
-    PixelFormat::Yuv420p.frame_bytes(width, height)
+/// Bytes of an output frame as the engine gives it: planar 4:2:0, 8-bit (yuv420p) or 10-bit in
+/// 16-bit samples (yuv420p10le).
+pub fn output_bytes(width: u32, height: u32, ten_bit: bool) -> usize {
+    (if ten_bit { PixelFormat::Yuv420p10 } else { PixelFormat::Yuv420p }).frame_bytes(width, height)
 }
 
 /// A video source restarted at frame `k`: from in_point + k / fps x speed seconds, with the
@@ -349,8 +353,14 @@ pub struct LayerUse {
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Output {
-    /// ffmpeg arguments of the encoder; it reads RGBA frames from stdin (`-i pipe:0`).
+    /// ffmpeg arguments of the encoder; it reads the frames from stdin (`-i pipe:0`): yuv420p, or
+    /// yuv420p10le with `bit_depth` 10.
     pub args: Vec<String>,
+    #[serde(default)]
+    pub bit_depth: Option<u32>,
+    /// 8-bit frames get a light dither (footage in a color space).
+    #[serde(default)]
+    pub dither: bool,
 }
 
 /// Blend mode numbers shared with layer.wgsl.

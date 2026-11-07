@@ -36,6 +36,8 @@ describe("color spaces", () => {
     ["logc3-awg3", 0.391, 5e-4],
     ["logc4-awg4", 0.2784, 5e-4],
     ["bmdfilm-gen5", 0.3835, 5e-4],
+    // Canon: 18% gray at 34.3%.
+    ["clog3-cinemagamut", 0.3434, 5e-4],
   ] as const)("%s puts 18%% gray where its maker does", (id, code, tolerance) => {
     expect(Math.abs(colorSpace(id)!.curve!.fromLinear(0.18) - code)).toBeLessThan(tolerance);
   });

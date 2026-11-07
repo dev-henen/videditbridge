@@ -1,6 +1,7 @@
 import type { Effect } from "../../core/schema.js";
 import { round3 } from "../../core/util.js";
 import { getEffect, haldClutChain, type EffectContext } from "../../library/effects/index.js";
+import type { GradeConstants } from "../../library/color/index.js";
 
 /**
  * Effects as GPU render engine operations (see plan.ts). Each one follows its FFmpeg filter in the
@@ -14,6 +15,8 @@ export type PlanOp =
   | { op: "lut"; args: string[] }
   /** A color space transform: a .cube table (engine/library/color/transform.ts), with its own input range. */
   | { op: "cube"; file: string }
+  /** The color panel's primaries in ACEScct, between the two halves of a color space's transform (engine/library/color/grade.ts). */
+  | ({ op: "grade" } & GradeConstants)
   /**
    * Show a rectangle of the picture (x, y, width, height in pixels) at full size, per frame of the
    * piece (the last one holds): `linear` samples between pixels (the perspective filter the motion

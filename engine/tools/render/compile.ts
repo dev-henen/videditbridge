@@ -4,7 +4,8 @@ import { numberExpr, positionExpr } from "../../core/keyframes.js";
 import { computeTimeline, type SpeedMap, type Timeline, type TimedClip } from "../../core/timeline.js";
 import { parseColor, round3, toFfmpegColor } from "../../core/util.js";
 import { effectMedia, effectObjects, effectRemovals, effectsToFilter, escapeFilterPath, maskStreams, perClipGlobalEffects, removalKey, type EffectContext } from "../../library/effects/index.js";
-import { colorTableFile, convertsColor } from "./color-space.js";
+import { colorTableFile, convertsColor, gradeTableFile, inputTableFile, outputTableFile, sceneGradeFor } from "./color-space.js";
+import type { SceneGrade } from "../../library/color/index.js";
 import { buildMatte, maskNeeds } from "../../library/effects/masks.js";
 import { getTransition } from "../../library/transitions/index.js";
 import { atempoChain, audioEffectsToFilter } from "../../library/audio-effects/index.js";
@@ -193,10 +194,12 @@ const previewScale = (scale?: number) => (scale && scale > 0 && scale !== 1 ? sc
  * frames read as BT.601 limited range, as the engine reads them, then its .cube table on float RGB.
  * Empty for ordinary video. `alpha` keeps a layer's transparency.
  */
-export function colorConversion(asset: Asset, alpha = false): string[] {
+export function colorConversion(asset: Asset, alpha = false, grade?: SceneGrade): string[] {
   if (!convertsColor(asset)) return [];
-  const file = escapeFilterPath(path.resolve(colorTableFile(asset.colorSpace)));
-  return ["setparams=colorspace=smpte170m:range=tv", `format=${alpha ? "gbrapf32le" : "gbrpf32le"}`, `lut3d=file='${file}':interp=tetrahedral`];
+  const lut = (file: string) => `lut3d=file='${escapeFilterPath(path.resolve(file))}':interp=tetrahedral`;
+  // Graded in ACEScct: camera half, the grade, then the output half; otherwise the whole transform at once.
+  const tables = grade ? [lut(inputTableFile(asset.colorSpace)), lut(gradeTableFile(grade)), lut(outputTableFile())] : [lut(colorTableFile(asset.colorSpace))];
+  return ["setparams=colorspace=smpte170m:range=tv", `format=${alpha ? "gbrapf32le" : "gbrpf32le"}`, ...tables];
 }
 /** Frame size of a render at a preview scale (even numbers, as the encoder needs). */
 export function renderSize(project: Project, scale?: number): { width: number; height: number } {
@@ -376,7 +379,8 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       // Smooth motion: the prepared frames are the clip's retimed picture already (in source order, so a reversed clip turns them round).
       const smooth = opts.interpolated?.[clip.id];
       // Camera log and HDR become Rec.709 first (the smooth frames are still in the camera's colors).
-      const convert = colorConversion(asset);
+      const graded = sceneGradeFor(asset, clip.effects);
+      const convert = colorConversion(asset, false, graded.grade);
       const converted = convert.length ? `,${convert.join(",")}` : "";
       if (smooth) g.add(`[${g.addInput(["-i", smooth])}:v]${chain([clip.reverse && "reverse", "setpts=PTS-STARTPTS", `fps=${F}`, ...convert])}[${raw}]`);
       else g.add(`${timing(`${k}:v`)}${converted}[${raw}]`);
@@ -422,7 +426,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         const labels = modelMasks(removalUses.filter((k) => k === key).length, opts.removals?.[clip.id]?.[key], "yuva420p");
         if (labels.length) removalLabels.set(key, labels);
       }
-      const clipEffects = effectsToFilter(clip.effects, {
+      const clipEffects = effectsToFilter(graded.effects, {
         ...effectCtx(tc.duration),
         ...(personLabels.length ? { personMask: () => personLabels.shift() } : {}),
         ...(faceLabels.length ? { faceMask: () => faceLabels.shift() } : {}),
@@ -659,10 +663,11 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     else h = even((w * 9) / 16);
     const input = sourceInput(asset, layer.in, layer.duration);
     const raw = g.label("lraw");
-    g.add(`[${input}:v]${chain(["setpts=PTS-STARTPTS", `fps=${F}`, ...colorConversion(asset, true), "format=yuva420p"])}[${raw}]`);
+    const graded = sceneGradeFor(asset, layer.effects);
+    g.add(`[${input}:v]${chain(["setpts=PTS-STARTPTS", `fps=${F}`, ...colorConversion(asset, true, graded.grade), "format=yuva420p"])}[${raw}]`);
     const fitted = fit(raw, layer.size.height ? (layer.fit === "blur" ? "contain" : layer.fit) : "stretch", w, h, true);
     let styled = g.label("lfx");
-    g.add(`[${fitted}]${chain(["format=yuva420p", ...effectsToFilter(layer.effects, effectCtx(layer.duration, w, h, true))])}[${styled}]`);
+    g.add(`[${fitted}]${chain(["format=yuva420p", ...effectsToFilter(graded.effects, effectCtx(layer.duration, w, h, true))])}[${styled}]`);
     // Rounded corners: multiply the layer's alpha by a rounded-rectangle mask drawn once.
     const radius = Math.min(Math.round(layer.cornerRadius * k), Math.floor(Math.min(w, h) / 2));
     if (radius > 0) {
@@ -946,9 +951,10 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     outputArgs.push(
       "-map",
       `[${aOut}]`,
-      ...(opts.hardwareEncoder
+      // A 10-bit export is written at 10 bits (the graph itself is 8-bit here; the engine draws in float).
+      ...(opts.hardwareEncoder && exp.bitDepth !== 10
         ? hardwareEncoderArgs(opts.hardwareEncoder, exp.crf)
-        : ["-c:v", exp.videoCodec, "-preset", opts.preset ?? exp.preset, "-crf", String(exp.crf), "-pix_fmt", "yuv420p"]),
+        : ["-c:v", exp.videoCodec, "-preset", opts.preset ?? exp.preset, "-crf", String(exp.crf), "-pix_fmt", exp.bitDepth === 10 ? "yuv420p10le" : "yuv420p"]),
       "-r",
       String(F),
       "-c:a",

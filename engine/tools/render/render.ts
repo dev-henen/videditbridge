@@ -603,7 +603,8 @@ async function engineFrameSession(p: Project, time: number, opts: Omit<RenderOpt
   const fonts = await prepareFontsRecent(opts.fontsDir, p);
   // compileProject is pure: it gives the ASS file without running anything.
   const ass = compileProject(p, { ...opts, ...fonts, frameAt: time, output: "frame.png" }).files.find((f) => f.name === ASS_FILE);
-  const planned = planProject(p, { ...opts, output: "unused.mp4", ffmpeg: resolveFfmpegPath(opts), textLayer: !!ass, fontsDir: fonts.fontsDir });
+  // Previews are 8-bit (picture files, the app's shared frames), whatever the export's bit depth.
+  const planned = planProject({ ...p, export: { ...p.export, bitDepth: undefined } }, { ...opts, output: "unused.mp4", ffmpeg: resolveFfmpegPath(opts), textLayer: !!ass, fontsDir: fonts.fontsDir });
   if (!planned.plan) throw new Error(`The render engine cannot draw: ${planned.unsupported.join("; ")}`);
   const plan = planned.plan;
   const key = createHash("sha256").update(JSON.stringify([plan.items, plan.clips, plan.layers, plan.effects, plan.width, plan.height, ass?.content])).digest("hex");

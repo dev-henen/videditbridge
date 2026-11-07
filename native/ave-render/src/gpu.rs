@@ -19,6 +19,7 @@ pub struct Gpu {
     pub pack_luma: wgpu::ComputePipeline,
     pub pack_chroma: wgpu::ComputePipeline,
     pub planar: wgpu::ComputePipeline,
+    pub grade: wgpu::ComputePipeline,
     pub lut: wgpu::ComputePipeline,
     pub hblur: wgpu::ComputePipeline,
     pub pixel: wgpu::ComputePipeline,
@@ -158,6 +159,7 @@ impl Gpu {
         let layer = module("layer", include_str!("shaders/layer.wgsl"));
         let pack = module("pack", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/pack.wgsl")));
         let planar = module("planar", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/planar.wgsl")));
+        let grade = module("grade", include_str!("shaders/grade.wgsl"));
         let lut = module("lut", include_str!("shaders/lut.wgsl"));
         let hblur = module("hblur", include_str!("shaders/hblur.wgsl"));
         let pixel = module("pixel", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/pixel.wgsl")));
@@ -180,6 +182,7 @@ impl Gpu {
             pack_luma: pipeline(&pack, "luma"),
             pack_chroma: pipeline(&pack, "chroma"),
             planar: pipeline(&planar, "main"),
+            grade: pipeline(&grade, "main"),
             lut: pipeline(&lut, "main"),
             hblur: pipeline(&hblur, "main"),
             pixel: pipeline(&pixel, "main"),
@@ -300,4 +303,16 @@ impl Gpu {
 
 pub fn view(t: &wgpu::Texture) -> wgpu::TextureView {
     t.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+pub struct GradeParams {
+    pub gains: [f32; 4],
+    pub shadows: [f32; 4],
+    pub midtones: [f32; 4],
+    pub highlights: [f32; 4],
+    pub contrast: f32,
+    pub saturation: f32,
+    pub _pad: [f32; 2],
 }

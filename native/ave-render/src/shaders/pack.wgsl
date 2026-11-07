@@ -1,4 +1,5 @@
-// The finished float picture as planar 8-bit 4:2:0 (yuv420p) for the encoder, rounded to nearest:
+// The finished float picture as planar 4:2:0 for the encoder, rounded to nearest: 8-bit (yuv420p,
+// dithered for footage in a color space) or 10-bit in 16-bit samples (yuv420p10le, 10-bit exports):
 // the Y plane, then U and V at half size (rounded up), each plane starting on a 32-bit word (the
 // readback joins them). Chroma that came in at half size is the same over its 2 x 2 block and goes
 // out as it was; other chroma goes down as swscale takes RGB to 4:2:0 (`downsample`). YUV keeps
@@ -40,16 +41,48 @@ fn text_chroma(cx: u32, cy: u32, under: vec2<f32>) -> vec2<f32> {
     return vec2<f32>(over(under.x, low.b, high.b, k, span), over(under.y, low.g, high.g, k, span));
 }
 
-fn to_byte(v: f32) -> u32 {
-    return u32(round(clamp(v, 0.0, 1.0) * 255.0));
+// text_on: x text on, y 10-bit output, z dither (8-bit), w the frame (the dither's seed).
+fn ten_bit() -> bool {
+    return text_on.y == 1u;
+}
+
+// Samples per 32-bit word, and bits per sample.
+fn per_word() -> u32 {
+    return select(4u, 2u, ten_bit());
+}
+
+fn hash(v: u32) -> u32 {
+    let s = v * 747796405u + 2891336453u;
+    let w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+    return (w >> 22u) ^ w;
+}
+
+// Uniform noise of half a step either way, different for each sample, plane and frame: enough to
+// break 8-bit steps into fine grain, at half the noise of a triangular dither.
+fn dither(seed: u32) -> f32 {
+    return f32(hash(seed ^ (text_on.w * 0x9e3779b9u)) >> 8u) / 16777216.0 - 0.5;
+}
+
+// One output sample: 8-bit (dithered when asked), or 10-bit on the decoders' scale (x1020, so 16/255
+// is 64 and 235/255 is 940).
+fn sample(v: f32, seed: u32) -> u32 {
+    if (ten_bit()) {
+        return u32(clamp(round(v * 1020.0), 0.0, 1023.0));
+    }
+    var s = v * 255.0;
+    if (text_on.z == 1u) {
+        s += dither(seed);
+    }
+    return u32(clamp(round(s), 0.0, 255.0));
 }
 
 fn yuv(x: u32, y: u32) -> vec4<f32> {
     return rgb_to_vuya(vec4<f32>(textureLoad(picture, vec2<u32>(x, y), 0).rgb, 1.0));
 }
 
-fn words(bytes: u32) -> u32 {
-    return (bytes + 3u) / 4u;
+// Words of a plane of `samples` samples.
+fn words(samples: u32) -> u32 {
+    return (samples + per_word() - 1u) / per_word();
 }
 
 // The invocation's index, from a grid of rows of workgroups of 256.
@@ -66,12 +99,13 @@ fn luma(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) g
         return;
     }
     var packed = 0u;
-    for (var k = 0u; k < 4u; k++) {
-        let b = word * 4u + k;
+    let bits = 32u / per_word();
+    for (var k = 0u; k < per_word(); k++) {
+        let b = word * per_word() + k;
         if (b < total) {
             let x = b % size.x;
             let y = b / size.x;
-            packed |= to_byte(text_luma(x, y, yuv(x, y).z)) << (8u * k);
+            packed |= sample(text_luma(x, y, yuv(x, y).z), b * 3u) << (bits * k);
         }
     }
     out[word] = packed;
@@ -133,12 +167,13 @@ fn chroma(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups)
     }
     var u = 0u;
     var v = 0u;
-    for (var k = 0u; k < 4u; k++) {
-        let i = word * 4u + k;
+    let bits = 32u / per_word();
+    for (var k = 0u; k < per_word(); k++) {
+        let i = word * per_word() + k;
         if (i < plane) {
             let c = text_chroma(i % cw, i / cw, chroma_sample(i % cw, i / cw, size));
-            v |= to_byte(c.x) << (8u * k);
-            u |= to_byte(c.y) << (8u * k);
+            v |= sample(c.x, i * 3u + 1u) << (bits * k);
+            u |= sample(c.y, i * 3u + 2u) << (bits * k);
         }
     }
     let base = words(size.x * size.y);

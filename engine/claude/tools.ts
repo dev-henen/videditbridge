@@ -3572,7 +3572,7 @@ export const TOOLS: ToolDefinition[] = [
     name: "set_color_space",
     description:
       "Say what color space a video or picture was recorded in, so it renders as its maker defines it: camera log (flat, gray-looking footage) and HDR are converted to the edit's Rec.709 with the maker's published curve and gamut, " +
-      "through ACES with a filmic highlight roll-off, before any grade. Set it before grading log footage. HDR files tagged as HLG or PQ are set when imported. " +
+      "through ACES with a filmic highlight roll-off. Set it before grading log footage: color_adjust's exposure, temperature, tint, contrast, saturation and wheels then grade on scene light (in ACEScct, inside the conversion), the rest of the panel on the finished picture. HDR files tagged as HLG or PQ are set when imported. For delivery without banding after heavy grades, render_video with bitDepth 10. " +
       "Log footage is usually tagged Rec.709, so look at it first (render_frame, render_scopes): a flat, low-contrast picture with no deep blacks and no bright whites is likely log. " +
       "When the camera is unknown, offer_choices with a frame converted with the two or three likeliest spaces. Spaces: " +
       COLOR_SPACES.map((c) => `"${c.id}" (${c.label}: ${c.description})`).join("; ") +
@@ -4132,12 +4132,17 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "render_video",
-    description: "Render the final full-quality video file.",
-    input: z.object({ output: z.string().describe("Output path, e.g. out/final.mp4") }),
+    description:
+      "Render the final full-quality video file. bitDepth 10 writes 10-bit video (H.264 High 10 or HEVC Main 10): smooth skies and gradients after heavy grades of camera log, for delivery where 10-bit plays; 8 (the project's default) plays everywhere.",
+    input: z.object({
+      output: z.string().describe("Output path, e.g. out/final.mp4"),
+      bitDepth: z.union([z.literal(8), z.literal(10)]).optional().describe("Bits per sample of this render (default: the project's export setting, 8)"),
+    }),
     mutates: false,
     run: async (s, i, activity) => {
       const out = s.resolve(i.output);
-      const r = await render(s.project, { output: out, ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
+      const project = i.bitDepth ? { ...s.project, export: { ...s.project.export, bitDepth: i.bitDepth } } : s.project;
+      const r = await render(project, { output: out, ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
       s.recordRender({ kind: "video", path: out });
       return ok(`Rendered ${r.duration}s video to ${out}`);
     },

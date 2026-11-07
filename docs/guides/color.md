@@ -152,10 +152,15 @@ Claude does this with `set_color_space`. HDR files tagged as HLG or PQ are set w
 | `vlog-vgamut` | Panasonic V-Log |
 | `applelog` | iPhone Apple Log |
 | `logc3-awg3`, `logc4-awg4` | ARRI LogC3 (EI 800), LogC4 |
+| `clog3-cinemagamut` | Canon Log 3 / Cinema Gamut |
 | `bmdfilm-gen5` | Blackmagic Film, Generation 5 |
 | `hlg-rec2020`, `pq-rec2020` | HDR (HLG, PQ / HDR10) |
 
-Each space's curve and gamut come from its maker's published formulas (`engine/library/color/spaces.ts`, with the source of each). The footage goes to ACES and out through the ACES output transform for Rec.709, a filmic curve that rolls highlights off instead of clipping them; 18% gray lands at about 39% of the range. The conversion comes before any grade, so `color_adjust` and the looks work on the converted picture. Both renderers apply the same 65-point table, written once per space into the app's cache folder; the GPU engine decodes such footage at 10 bits.
+Each space's curve and gamut come from its maker's published formulas (`engine/library/color/spaces.ts`, with the source of each). The footage goes to ACES and out through the ACES output transform for Rec.709, a filmic curve that rolls highlights off instead of clipping them; 18% gray lands at about 39% of the range. The conversion comes first: the color panel's primaries then grade on scene light inside it, and everything else works on the converted picture (below). Both renderers apply the same 65-point table, written once per space into the app's cache folder; the GPU engine decodes such footage at 10 bits.
+
+**Grading log footage.** For footage in a color space, the color panel's primaries (exposure, temperature, tint, contrast, saturation and the shadow, midtone and highlight wheels) grade in ACEScct, on scene light, between the camera transform and the output transform, as colorists grade camera footage: exposure moves real stops, white balance acts before the tone curve, and contrast pivots on 18% gray. The rest of the panel (curves, HSL, fade, vignette and so on) and the secondaries from `grade_region` work on the finished Rec.709 picture. The GPU engine runs the grade as a shader; the FFmpeg backend applies the same math as a table.
+
+**Precision.** Strong grades of log footage can show steps in 8-bit video. Exports of such footage are dithered (fine grain instead of steps), and `export.bitDepth: 10` writes 10-bit video (H.264 High 10 or HEVC Main 10), which keeps smooth skies and gradients smooth through heavy grades. DJI D-Log M is not offered: DJI has not published its formula.
 
 ## Notes
 

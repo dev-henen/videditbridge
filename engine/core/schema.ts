@@ -32,6 +32,7 @@ export const COLOR_SPACE_IDS = [
   "applelog",
   "logc3-awg3",
   "logc4-awg4",
+  "clog3-cinemagamut",
   "bmdfilm-gen5",
   "hlg-rec2020",
   "pq-rec2020",
@@ -474,6 +475,10 @@ export const SettingsSchema = z.object({
 
 export const ExportSettingsSchema = z.object({
   videoCodec: z.string().default("libx264"),
+  bitDepth: z
+    .union([z.literal(8), z.literal(10)])
+    .optional()
+    .describe("Bits per sample of the exported video: 8 (default, plays everywhere) or 10 (H.264 High 10 or HEVC Main 10: no banding after heavy grades of camera log)"),
   crf: z.number().int().min(0).max(51).default(20),
   preset: z.string().default("medium"),
   audioCodec: z.string().default("aac"),

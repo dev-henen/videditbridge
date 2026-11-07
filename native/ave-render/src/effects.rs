@@ -1,7 +1,7 @@
 //! Effects on a picture: the plan's operations (plan::Op) run as GPU passes, each reading the
 //! previous result and writing the other texture of a pair.
 
-use crate::gpu::{view, BlurParams, Gpu, PixelParams, ResampleParams, FLOAT};
+use crate::gpu::{view, BlurParams, GradeParams, Gpu, PixelParams, ResampleParams, FLOAT};
 use crate::plan::Op;
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
@@ -98,6 +98,11 @@ impl<'a> Effects<'a> {
                 gpu.dispatch(enc, &gpu.pixel, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding()], w, h);
             };
             match op {
+                Op::Grade { gains, contrast, saturation, shadows, midtones, highlights } => {
+                    let v = |x: &[f32; 3]| [x[0], x[1], x[2], 0.0];
+                    let u = gpu.uniform(&GradeParams { gains: v(gains), shadows: v(shadows), midtones: v(midtones), highlights: v(highlights), contrast: *contrast, saturation: *saturation, _pad: [0.0; 2] });
+                    gpu.dispatch(enc, &gpu.grade, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding()], w, h);
+                }
                 Op::Cube { file } => {
                     let (table, domain) = self.cube(file)?;
                     let (table, du) = (view(table), gpu.uniform(&[domain[0], domain[1], 0.0f32, 0.0]));

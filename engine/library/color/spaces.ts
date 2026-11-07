@@ -66,6 +66,7 @@ export const GAMUTS = {
   vgamut: { id: "vgamut", red: [0.73, 0.28], green: [0.165, 0.84], blue: [0.1, -0.03], white: D65 },
   awg3: { id: "awg3", red: [0.684, 0.313], green: [0.221, 0.848], blue: [0.0861, -0.102], white: D65 },
   awg4: { id: "awg4", red: [0.7347, 0.2653], green: [0.1424, 0.8576], blue: [0.0991, -0.0308], white: D65 },
+  cinemagamut: { id: "cinemagamut", red: [0.74, 0.27], green: [0.17, 1.14], blue: [0.08, -0.1], white: D65 },
   bmdwg5: { id: "bmdwg5", red: [0.7177215, 0.3171181], green: [0.228041, 0.861569], blue: [0.1005841, -0.0820452], white: D65 },
 } satisfies Record<string, Gamut>;
 
@@ -105,6 +106,29 @@ const logc4: Curve = {
   id: "logc4",
   toLinear: (e) => (e >= 0 ? (2 ** ((14 * (e - LOGC4.c)) / LOGC4.b + 6) - 64) / LOGC4.a : e * LOGC4.s + LOGC4.t),
   fromLinear: (x) => (x >= LOGC4.t ? ((Math.log2(LOGC4.a * x + 64) - 6) / 14) * LOGC4.b + LOGC4.c : (x - LOGC4.t) / LOGC4.s),
+};
+
+/**
+ * Canon Log 3 (Canon's published Canon Log 3 functions, as given by antlerpost.com's Canon Cinema
+ * Gamut page). Code values span the full 0..1023 range (Canon: recordings are "scaled to the
+ * entire code value range from 0-1023"); the 0.9 turns Canon's scene linear (gray 0.2) into
+ * reflection (gray 0.18), as in Canon's equations.
+ */
+const CLOG3 = { a: 0.36726845, b: 14.98325, low: 0.12783901, high: 0.12240537, slope: 1.9754798, offset: 0.12512219, cutLow: 0.097465473, cutHigh: 0.15277891 };
+const clog3: Curve = {
+  id: "clog3",
+  toLinear: (v) =>
+    v < CLOG3.cutLow
+      ? (0.9 * (1 - 10 ** ((CLOG3.low - v) / CLOG3.a))) / CLOG3.b
+      : v <= CLOG3.cutHigh
+        ? (0.9 * (v - CLOG3.offset)) / CLOG3.slope
+        : (0.9 * (10 ** ((v - CLOG3.high) / CLOG3.a) - 1)) / CLOG3.b,
+  fromLinear: (l) =>
+    l < -0.0126
+      ? -CLOG3.a * Math.log10(1 - (CLOG3.b * l) / 0.9) + CLOG3.low
+      : l <= 0.0126
+        ? (l * CLOG3.slope) / 0.9 + CLOG3.offset
+        : CLOG3.a * Math.log10(1 + (CLOG3.b * l) / 0.9) + CLOG3.high,
 };
 
 /** Apple Log (Apple, "Apple Log Profile" white paper). */
@@ -164,6 +188,7 @@ export const COLOR_SPACES: ColorSpace[] = [
   { id: "applelog", label: "Apple Log", description: "iPhone 15 Pro and later recording in Apple Log (ProRes Log): very flat footage, 18% gray near 49%, Rec.2020 primaries.", gamut: GAMUTS.rec2020, curve: applelog, matrix: "bt2020", range: "full", source: "Apple, Apple Log Profile white paper" },
   { id: "logc3-awg3", label: "ARRI LogC3 / ALEXA Wide Gamut 3", description: "ARRI ALEXA cameras before the ALEXA 35 (LogC3 at EI 800): 18% gray near 39%.", gamut: GAMUTS.awg3, curve: logc3, matrix: "bt709", range: "full", source: "ARRI, ALEXA Log C Curve, Usage in VFX (EI 800)" },
   { id: "logc4-awg4", label: "ARRI LogC4 / ALEXA Wide Gamut 4", description: "ARRI ALEXA 35 footage: 18% gray near 28%.", gamut: GAMUTS.awg4, curve: logc4, matrix: "bt709", range: "full", source: "ARRI, ALEXA LogC4 Specification" },
+  { id: "clog3-cinemagamut", label: "Canon Log 3 / Cinema Gamut", description: "Canon cameras (C70, C300 Mark III, R5 C, R5, R6 II) shot in Canon Log 3: flat footage, 18% gray near 34%.", gamut: GAMUTS.cinemagamut, curve: clog3, matrix: "bt709", range: "full", source: "Canon, Canon Log 3 functions (via antlerpost.com, Canon Cinema Gamut / Canon Log)" },
   { id: "bmdfilm-gen5", label: "Blackmagic Film Gen 5", description: "Blackmagic cameras (Pocket 4K/6K, URSA) in Film mode, Generation 5 color science: 18% gray near 38%.", gamut: GAMUTS.bmdwg5, curve: bmdfilm5, matrix: "bt709", range: "full", source: "Blackmagic Design, Blackmagic Generation 5 Color Science" },
   { id: "hlg-rec2020", label: "HLG (Rec.2020)", description: "HDR video in HLG, as phones and cameras record HDR (often tagged arib-std-b67).", gamut: GAMUTS.rec2020, curve: hlg, matrix: "bt2020", range: "narrow", source: "ITU-R BT.2100; reference white per ITU-R BT.2408" },
   { id: "pq-rec2020", label: "PQ / HDR10 (Rec.2020)", description: "HDR video in PQ (HDR10, Dolby Vision base layers; tagged smpte2084).", gamut: GAMUTS.rec2020, curve: pq, matrix: "bt2020", range: "narrow", source: "SMPTE ST 2084; reference white 203 nits per ITU-R BT.2408" },

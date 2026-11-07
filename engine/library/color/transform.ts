@@ -9,7 +9,7 @@
  */
 
 import { acesToRec709 } from "./aces.js";
-import { GAMUTS, apply, gamutMatrix, type ColorSpace, type Mat3, type Vec3 } from "./spaces.js";
+import { ACESCCT, GAMUTS, apply, gamutMatrix, type ColorSpace, type Mat3, type Vec3 } from "./spaces.js";
 
 /**
  * Input range of the table: pipeline RGB goes past 1 where code values pass video white. It starts
@@ -75,5 +75,29 @@ export function cubeFor(space: ColorSpace, size = CUBE_SIZE): string {
   for (let b = 0; b < size; b++)
     for (let g = 0; g < size; g++)
       for (let r = 0; r < size; r++) lines.push(toRec709(space, [at(r), at(g), at(b)]).map((v) => v.toFixed(6)).join(" "));
+  return `${lines.join("\n")}\n`;
+}
+
+const AP0_TO_AP1 = gamutMatrix(GAMUTS.ap0, GAMUTS.ap1);
+const AP1_TO_AP0 = gamutMatrix(GAMUTS.ap1, GAMUTS.ap0);
+
+/** Pipeline RGB of footage in `space` to ACEScct (ACEScg, log encoded): the camera half, for grading in between. */
+export function toAcescct(space: ColorSpace, rgb: Vec3): Vec3 {
+  return apply(AP0_TO_AP1, codeToAces(space, pipelineToCode(space, rgb))).map((v) => ACESCCT.fromLinear(v)) as Vec3;
+}
+
+/** ACEScct to the Rec.709 picture: the output half, the same for every color space. */
+export function acescctToRec709(cct: Vec3): Vec3 {
+  return acesToRec709(apply(AP1_TO_AP0, cct.map((c) => ACESCCT.toLinear(c)) as Vec3));
+}
+
+/** `cubeFor` split in two around ACEScct, for footage graded there: camera to ACEScct (over `CUBE_DOMAIN`). */
+export function inputCubeFor(space: ColorSpace, size = CUBE_SIZE): string {
+  const [lo, hi] = CUBE_DOMAIN;
+  const at = (i: number) => lo + ((hi - lo) * i) / (size - 1);
+  const lines = [`TITLE "${space.label} to ACEScct"`, `LUT_3D_SIZE ${size}`, `DOMAIN_MIN ${lo} ${lo} ${lo}`, `DOMAIN_MAX ${hi} ${hi} ${hi}`];
+  for (let b = 0; b < size; b++)
+    for (let g = 0; g < size; g++)
+      for (let r = 0; r < size; r++) lines.push(toAcescct(space, [at(r), at(g), at(b)]).map((v) => v.toFixed(6)).join(" "));
   return `${lines.join("\n")}\n`;
 }
