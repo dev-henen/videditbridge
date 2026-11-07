@@ -5,7 +5,7 @@ import path from "node:path";
 import type { MediaLayer, Project } from "../../core/schema.js";
 import { deepClone } from "../../core/util.js";
 import { withProjectPaths } from "../../core/operations.js";
-import { ASS_FILE, compileProject, type CompileOptions, type CompiledRender } from "./compile.js";
+import { ASS_FILE, compileProject, renderSize, type CompileOptions, type CompiledRender } from "./compile.js";
 import { FrameSession, enginePath, runPlan } from "./engine.js";
 import { engineUnsupported, planProject } from "./plan.js";
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
@@ -525,6 +525,11 @@ export function setDefaultBackend(backend: RenderBackend, frames: RenderBackend 
   defaultFrameBackend = frames;
 }
 
+/** The backend single frames use when a render does not name one (`setDefaultBackend`). */
+export function frameBackend(): RenderBackend {
+  return defaultFrameBackend;
+}
+
 /** Why the engine cannot render this project with these options (empty when it can). */
 export function engineBlockers(p: Project, opts: Pick<RenderOptions, "range" | "proxies">): string[] {
   return [...(opts.range ? ["a time range"] : []), ...(opts.proxies ? ["proxies"] : []), ...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
@@ -570,13 +575,23 @@ const frameSessions = new Map<string, Promise<{ session: FrameSession; workDir: 
 const FRAME_SESSIONS = 3;
 
 /**
- * Render one frame on the GPU engine: the project is planned once per version and kept open in the
- * preview engine, which draws the frame with the text and captions as its top layer (libass on a
- * transparent picture in a decoder that stays open, the same ASS file as the FFmpeg backend), and a
- * short ffmpeg run writes the picture. Video clips start their decoder at the frame wanted, so a
- * frame anywhere in the edit is quick.
+ * Close the preview engine's frame sessions and remove their work folders. Their decoders keep the
+ * media open (Windows then locks the files), so the app's host calls this when a project closes;
+ * the next frame opens a session again.
  */
-async function frameOnEngine(p: Project, time: number, opts: Omit<RenderOptions, "range" | "onProgress">): Promise<string> {
+export async function closeFrameSessions(): Promise<void> {
+  const open = [...frameSessions.values()];
+  frameSessions.clear();
+  await Promise.all(open.map((o) => o.then(({ session, workDir }) => session.close().finally(() => rm(workDir, { recursive: true, force: true })), () => undefined)));
+}
+
+/**
+ * The preview engine's session for this version of the project (planned once and kept open, with
+ * a few versions back), and its frame at `time`. The engine draws the text and captions itself
+ * (libass in a decoder that stays open, the same ASS file as the FFmpeg backend). Video clips start
+ * their decoder at the frame wanted, so a frame anywhere in the edit is quick.
+ */
+async function engineFrameSession(p: Project, time: number, opts: Omit<RenderOptions, "range" | "onProgress" | "output">): Promise<{ session: FrameSession; n: number; fps: number; frames: number }> {
   const fonts = await prepareFontsRecent(opts.fontsDir, p);
   // compileProject is pure: it gives the ASS file without running anything.
   const ass = compileProject(p, { ...opts, ...fonts, frameAt: time, output: "frame.png" }).files.find((f) => f.name === ASS_FILE);
@@ -609,12 +624,43 @@ async function frameOnEngine(p: Project, time: number, opts: Omit<RenderOptions,
   }
   const { session } = await open;
   // As an output seek picks it in the FFmpeg backend: the first frame at or after `time`.
-  const n = Math.min(plan.frames - 1, Math.max(0, Math.ceil(time * plan.fps - 1e-6)));
+  return { session, n: Math.min(plan.frames - 1, Math.max(0, Math.ceil(time * plan.fps - 1e-6))), fps: plan.fps, frames: plan.frames };
+}
+
+/** Render one frame on the GPU engine into a picture file: a short ffmpeg run writes the engine's frame. */
+async function frameOnEngine(p: Project, time: number, opts: Omit<RenderOptions, "range" | "onProgress">): Promise<string> {
+  const { session, n } = await engineFrameSession(p, time, opts);
+  const { width, height } = renderSize(p, opts.scale);
   const output = path.resolve(opts.output);
   await mkdir(path.dirname(output), { recursive: true });
-  // The text is already in the frame (the session's text layer): ffmpeg only writes the picture.
-  await session.frame(n, ["-y", "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", `${plan.width}x${plan.height}`, "-i", "pipe:0", "-frames:v", "1", "-update", "1", output]);
+  await session.frame(n, ["-y", "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", `${width}x${height}`, "-i", "pipe:0", "-frames:v", "1", "-update", "1", output]);
   return output;
+}
+
+/** A frame the engine wrote into a memory-mapped file (`renderFrameShared`). */
+export interface SharedFrame {
+  /** The file: a 32-byte header, then width x height BGRA pixels (native/ave-render/src/shared.rs). */
+  shared: string;
+  width: number;
+  height: number;
+  /** Counts up with every frame written into the file. */
+  sequence: number;
+}
+
+/**
+ * Render one frame on the GPU engine into the memory-mapped file `shared` (made as needed), for
+ * the app's viewer: no picture file and no ffmpeg run, and the app copies the pixels out. Throws
+ * when the engine cannot draw the project (use `renderFrame` then).
+ */
+export async function renderFrameShared(project: Project, time: number, opts: Omit<RenderOptions, "range" | "onProgress" | "output"> & { shared: string }): Promise<SharedFrame> {
+  const p = await readyToRender(project, { ...opts, output: opts.shared });
+  const blockers = [...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
+  if (blockers.length) throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
+  const { session, n } = await engineFrameSession(p, time, opts);
+  const shared = path.resolve(opts.shared);
+  await mkdir(path.dirname(shared), { recursive: true });
+  const r = await session.frameShared(n, shared);
+  return { shared, width: r.width, height: r.height, sequence: r.sequence };
 }
 
 /** Render a project to a video file. */
@@ -711,4 +757,51 @@ export async function renderForAnalysis(
   const frames: AnalysisFrame[] = [];
   for (let i = 0; stdout && i < times.length && (i + 1) * size <= stdout.length; i++) frames.push({ time: times[i]!, rgb: stdout.subarray(i * size, (i + 1) * size) });
   return { width: compiled.width, height: compiled.height, frames };
+}
+
+/** Plays an edit on the preview engine: frames by number into a shared frame file (`framePlayer`). */
+export interface FramePlayer {
+  fps: number;
+  frames: number;
+  /** Draw frame `n` into the memory-mapped file `shared` (as `renderFrameShared` does). */
+  draw(n: number, shared: string): Promise<SharedFrame>;
+}
+
+/**
+ * Open the preview engine's session for this version of the edit, for live playback in the app:
+ * frames are drawn by number into a shared frame file, with no planning per frame. Throws when the
+ * engine cannot draw the project.
+ */
+export async function framePlayer(project: Project, opts: Omit<RenderOptions, "range" | "onProgress" | "output">): Promise<FramePlayer> {
+  const p = await readyToRender(project, { ...opts, output: "player" });
+  const blockers = [...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
+  if (blockers.length) throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
+  const { session, fps, frames } = await engineFrameSession(p, 0, opts);
+  return {
+    fps,
+    frames,
+    draw: async (n, shared) => {
+      const file = path.resolve(shared);
+      const r = await session.frameShared(Math.min(frames - 1, Math.max(0, Math.round(n))), file);
+      return { shared: file, width: r.width, height: r.height, sequence: r.sequence };
+    },
+  };
+}
+
+/** The finished sound of an edit as a WAV file at `output`, mixed as renders mix it (for live playback). */
+export async function renderSoundMix(project: Project, opts: Omit<RenderOptions, "range" | "onProgress">): Promise<string> {
+  const p = await readyToRender(project, opts);
+  const fonts = await prepareFonts(opts.fontsDir, p);
+  const rubberband = p.clips.some((c) => c.keyframes?.speed?.length) && (await hasFilter("rubberband", opts));
+  const output = path.resolve(opts.output);
+  await mkdir(path.dirname(output), { recursive: true });
+  const workDir = await mkdtemp(path.join(tmpdir(), "ave-mix-"));
+  try {
+    const sound = compileProject(p, { ...opts, ...fonts, rubberband, scale: 0.05, output: "", analysis: { audio: { mix: output } } });
+    for (const f of sound.files) await writeFile(path.join(workDir, f.name), f.content, "utf8");
+    await runFfmpegOrThrow(sound.args, { ffmpegPath: opts.ffmpegPath, cwd: workDir, signal: opts.signal });
+    return output;
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
 }

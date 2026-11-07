@@ -171,6 +171,14 @@ export class FrameSession {
     return this.engine.call("frame", { session: this.id, frame: n, args }) as Promise<{ draw: number; seconds: number }>;
   }
 
+  /**
+   * Draw output frame `n` as BGRA into the memory-mapped file `shared` (native/ave-render/src/shared.rs
+   * gives its layout), for the app's viewer. Resolves with its size and sequence number.
+   */
+  frameShared(n: number, shared: string): Promise<{ width: number; height: number; sequence: number; draw: number; seconds: number }> {
+    return this.engine.call("frame", { session: this.id, frame: n, shared }) as Promise<{ width: number; height: number; sequence: number; draw: number; seconds: number }>;
+  }
+
   async close(): Promise<void> {
     if (this.alive) await this.engine.call("close", { session: this.id }).catch(() => undefined);
   }

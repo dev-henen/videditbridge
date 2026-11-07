@@ -225,12 +225,49 @@ public sealed class ProjectViewModel : Observable
     }
 
     /// <summary>Quietly render the frame at a time (for the scrubber). Returns the image path, or null if superseded.</summary>
-    public async Task<string?> ScrubAsync(double time)
+    /// <summary>A frame of live playback is in the shared frame file (with its timeline time).</summary>
+    public event Action<ScrubFrame, double>? LiveFrame;
+
+    /// <summary>Live playback reached the end or was stopped.</summary>
+    public event Action? LiveEnded;
+
+    /// <summary>
+    /// Play the edit live on the render engine from a time. Returns whether it plays live (frames come
+    /// through <see cref="LiveFrame"/>) and the sound to play from that time; not live when previews do
+    /// not go to the engine, and a rendered preview video plays instead.
+    /// </summary>
+    public async Task<(bool Live, string? Audio)> PlayLiveAsync(double time)
     {
         try
         {
-            var r = await Call("render.scrub", new { time });
-            return r?["path"]?.GetValue<string>();
+            var r = await Call("render.play", new { time });
+            return (r?["live"]?.GetValue<bool>() == true, r?["audio"]?.GetValue<string>());
+        }
+        catch
+        {
+            return (false, null);
+        }
+    }
+
+    public async Task StopLiveAsync()
+    {
+        try { await Call("render.stop", new { }); }
+        catch { /* the host may be restarting */ }
+    }
+
+    /// <summary>
+    /// The frame at a time: a picture file, or pixels in the project's shared frame file where the
+    /// render engine draws previews. Null when the frame could not be made or a newer scrub took over.
+    /// </summary>
+    public async Task<ScrubFrame?> ScrubAsync(double time, bool before = false)
+    {
+        try
+        {
+            // before: the edit as it was when the latest request to Claude started (A/B).
+            var r = await Call("render.scrub", new { time, before });
+            if (r?["shared"]?.GetValue<string>() is { } shared)
+                return new ScrubFrame(null, shared, r["width"]!.GetValue<int>(), r["height"]!.GetValue<int>());
+            return r?["path"]?.GetValue<string>() is { } path ? new ScrubFrame(path, null, 0, 0) : null;
         }
         catch
         {
@@ -338,6 +375,16 @@ public sealed class ProjectViewModel : Observable
                 break;
             case "activity" when p is not null:
                 UpsertActivity(p);
+                break;
+            case "preview.frame" when (p?["shared"]?.GetValue<string>() is { } shared):
+            {
+                var frame = new ScrubFrame(null, shared, p["width"]!.GetValue<int>(), p["height"]!.GetValue<int>());
+                double time = p["time"] is { } t ? t.GetValue<double>() : 0;
+                LiveFrame?.Invoke(frame, time);
+                break;
+            }
+            case "preview.ended":
+                LiveEnded?.Invoke();
                 break;
             case "agent.text":
                 if (Messages.LastOrDefault() is { IsUser: false } last) last.Append(p?["delta"]?.GetValue<string>() ?? "");

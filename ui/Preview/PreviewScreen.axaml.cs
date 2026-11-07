@@ -30,6 +30,12 @@ public partial class PreviewScreen : UserControl
     private bool _videoShown;
     private bool _playing;
     private Bitmap? _image;
+    // Frames from the render engine's shared memory, drawn into one bitmap reused while its size holds.
+    private readonly SharedFrameReader _sharedReader = new();
+    private WriteableBitmap? _live;
+    // Live playback on the render engine: frames arrive as notifications, the sound plays alongside.
+    private bool _livePlaying;
+    private AudioPlayer? _audio;
     // The screen shows one frame of the edit (a frame or a video, not the overview grid), so a click can point at a spot.
     private bool _pointable;
 
@@ -62,6 +68,8 @@ public partial class PreviewScreen : UserControl
         _vm = vm;
         _vm.ProjectChanged += Reset;
         _vm.StateUpdated += OnState;
+        _vm.LiveFrame += OnLiveFrame;
+        _vm.LiveEnded += OnLiveEnded;
         // The project is open before its tab is built: show what it has now.
         Reset();
         if (_vm.State is { } s) OnState(s);
@@ -93,19 +101,33 @@ public partial class PreviewScreen : UserControl
     /// <summary>Stop playing (the tab was put in the background); the picture stays.</summary>
     public void Pause()
     {
+        if (_livePlaying)
+        {
+            _ = StopLive();
+            return;
+        }
         if (!_playing || _player is null) return;
         _player.Pause();
         _playing = false;
         PlayIcon.Text = Icons.Play;
     }
 
-    public void Dispose() => _player?.Dispose();
+    public void Dispose()
+    {
+        _player?.Dispose();
+        _audio?.Dispose();
+        _sharedReader.Dispose();
+    }
 
     // ------------------------------------------------------------- live output
 
     private void OnState(JsonNode state)
     {
         UpdateTimeText();
+        // A/B is offered once Claude changed the edit since the latest request started.
+        var canCompare = state["canCompare"]?.GetValue<bool>() == true;
+        BeforeButton.IsVisible = canCompare;
+        if (!canCompare) BeforeButton.IsChecked = false;
         var revision = state["revision"]?.ToString();
 
         var latest = state["renders"]?.AsArray().FirstOrDefault();
@@ -167,6 +189,7 @@ public partial class PreviewScreen : UserControl
             _image = bmp;
             FrameImage.Source = bmp;
             old?.Dispose();
+            _live = null;
             FrameImage.IsVisible = true;
             ViewerEmpty.IsVisible = false;
             ViewerCaption.Text = caption;
@@ -244,11 +267,48 @@ public partial class PreviewScreen : UserControl
     {
         if (!_vm.IsProjectOpen || _vm.Duration <= 0) return;
         var t = Math.Clamp(time, 0, Math.Max(0, _vm.Duration - 0.05));
-        var path = await _vm.ScrubAsync(t);
-        if (path is null) return;
-        // Ignore stale answers if the user kept scrubbing or a new render took over.
+        var before = BeforeButton.IsChecked == true;
+        var frame = await _vm.ScrubAsync(t, before);
+        if (frame is null) return;
+        // Ignore stale answers if the user kept scrubbing, a new render took over or A/B flipped.
         if (Math.Abs(Scrubber.Value - time) > 0.01 && !_follow) return;
-        ShowImage(path, $"Frame at {t:0.0}s");
+        if (before != (BeforeButton.IsChecked == true)) return;
+        var caption = before ? $"Before your last request, at {t:0.0}s" : $"Frame at {t:0.0}s";
+        if (frame.Shared is not null) ShowShared(frame, caption);
+        else if (frame.Path is not null) ShowImage(frame.Path, caption);
+    }
+
+    /// <summary>A/B: flip the frame at the playhead between the edit now and before the latest request.</summary>
+    private async void OnBefore(object? sender, RoutedEventArgs e)
+    {
+        SetFollow(false);
+        _scrubDebounce.Stop();
+        await ShowFrameAt(Scrubber.Value);
+    }
+
+    /// <summary>
+    /// Show a frame the render engine wrote into shared memory: its pixels are copied into the
+    /// bitmap already on screen, with no picture file in between.
+    /// </summary>
+    private void ShowShared(ScrubFrame frame, string caption)
+    {
+        StopVideo();
+        var bmp = _sharedReader.Read(frame.Shared!, frame.Width, frame.Height, _live);
+        if (bmp is null) return;
+        if (!ReferenceEquals(bmp, _image))
+        {
+            var old = _image;
+            _image = bmp;
+            old?.Dispose();
+        }
+        _live = bmp;
+        _pointable = true;
+        FrameImage.Source = bmp;
+        FrameImage.InvalidateVisual();
+        FrameImage.IsVisible = true;
+        ViewerEmpty.IsVisible = false;
+        ViewerCaption.Text = caption;
+        PlaceMarker();
     }
 
     private void SetFollow(bool follow)
@@ -289,6 +349,7 @@ public partial class PreviewScreen : UserControl
 
     private void OnUserScrub(double t)
     {
+        if (_livePlaying) _ = StopLive();
         if (_videoShown && _player is { IsLoaded: true })
         {
             _player.Position = t;
@@ -303,6 +364,11 @@ public partial class PreviewScreen : UserControl
 
     private async void OnPlayPause(object? sender, RoutedEventArgs e)
     {
+        if (_livePlaying)
+        {
+            await StopLive();
+            return;
+        }
         if (_videoShown && _player is not null)
         {
             if (_playing)
@@ -320,11 +386,55 @@ public partial class PreviewScreen : UserControl
             }
             return;
         }
-        // No video loaded: play the latest preview, or render one.
+        // No video loaded: play live on the render engine from the playhead, with the edit's sound.
+        var from = Scrubber.Value >= _vm.Duration - 0.05 ? 0 : Scrubber.Value;
+        _livePlaying = true;
+        PlayIcon.Text = Icons.Pause;
+        var (live, audio) = await _vm.PlayLiveAsync(from);
+        if (live)
+        {
+            if (!_livePlaying) return; // paused while it started
+            SetFollow(false);
+            BeforeButton.IsChecked = false;
+            if (audio is not null && Vlc.Instance is { } vlc)
+            {
+                _audio ??= new AudioPlayer(vlc);
+                _audio.Play(audio, from);
+            }
+            return;
+        }
+        _livePlaying = false;
+        PlayIcon.Text = Icons.Play;
+        // Otherwise play the latest preview video, or render one.
         var preview = _vm.State?["renders"]?.AsArray().FirstOrDefault(r => r?["kind"]?.GetValue<string>() is "preview" or "video" && r["stale"]?.GetValue<bool>() != true);
         SetFollow(true);
         if (preview is not null) ShowRender(preview);
         else await _vm.RenderPreviewAsync();
+    }
+
+    // ------------------------------------------------------------- live playback on the render engine
+
+    private void OnLiveFrame(ScrubFrame frame, double time)
+    {
+        if (!_livePlaying) return;
+        ShowShared(frame, $"Playing at {time:0.0}s");
+        SetScrubber(time, fromUser: false);
+    }
+
+    private void OnLiveEnded()
+    {
+        if (!_livePlaying) return;
+        _livePlaying = false;
+        PlayIcon.Text = Icons.Play;
+        _audio?.Stop();
+    }
+
+    private async Task StopLive()
+    {
+        _livePlaying = false;
+        PlayIcon.Text = Icons.Play;
+        _audio?.Stop();
+        await _vm.StopLiveAsync();
     }
 
     // ------------------------------------------------------------- pointing at a spot in the frame

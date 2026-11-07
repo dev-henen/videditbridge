@@ -25,11 +25,12 @@ import { EditorSession } from "../claude/session.js";
 import { TOOLS, executeTool } from "../claude/tools.js";
 import { sessionState } from "../claude/state.js";
 import { computeTimeline } from "../core/timeline.js";
-import { renderFrame } from "../tools/render/render.js";
+import { closeFrameSessions, frameBackend, framePlayer, renderFrame, renderFrameShared, renderSoundMix } from "../tools/render/render.js";
 import { applyPerformance, benchmarkBackends, loadPerformance, savePerformance, type PerformanceReport } from "../tools/render/benchmark.js";
 import { checkFfmpeg, describeFfmpegCheck } from "../tools/render/selftest.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
+import type { Project } from "../core/schema.js";
 import type { AspectRatio } from "../core/util.js";
 import { AGENT_MODELS, DEFAULT_MODEL, EditorAgent } from "./agent.js";
 import { deleteConversation, listConversations, loadConversation, newConversation, saveConversation, titleFrom, type Conversation } from "./conversations.js";
@@ -53,6 +54,12 @@ interface OpenProject {
   detach: () => void;
   scrub: { cache: Map<string, string>; token: number; chain: Promise<unknown> };
   coverTimer?: NodeJS.Timeout;
+  /** The edit as it was when the latest request to Claude started: the "before" of the viewer's A/B. */
+  before?: { project: Project; revision: number };
+  /** Live playback in progress (`render.play`). */
+  playback?: { stopped: boolean };
+  /** The sound mix of a revision, for live playback. */
+  mix?: { revision: number; file: Promise<string | null> };
 }
 
 const open = new Map<string, OpenProject>();
@@ -103,9 +110,12 @@ const handlers: Record<string, Handler> = {
   },
   "project.close": async (p) => {
     const o = target(p);
+    stopPlayback(o);
     close(o);
     // Leave with a cover showing the edit as it is now.
     await writeCover(o).catch(() => undefined);
+    // Its preview sessions hold its media open.
+    await closeFrameSessions();
     return true;
   },
   "project.focus": (p) => {
@@ -124,7 +134,12 @@ const handlers: Record<string, Handler> = {
   "tools.execute": (p) => executeTool(target(p).session, String(p.name), p.input ?? {}),
   "session.undo": (p) => target(p).session.undo() ?? null,
   "session.redo": (p) => target(p).session.redo() ?? null,
-  "render.scrub": (p) => scrub(target(p), Number(p.time ?? 0)),
+  "render.scrub": (p) => scrub(target(p), Number(p.time ?? 0), p.before === true),
+  "render.play": (p) => play(target(p), Number(p.time ?? 0)),
+  "render.stop": (p) => {
+    stopPlayback(target(p));
+    return true;
+  },
   "choices.dismiss": (p) => {
     target(p).session.clearChoices();
     return null;
@@ -180,6 +195,8 @@ const handlers: Record<string, Handler> = {
   "agent.run": async (p) => {
     const o = target(p);
     const s = o.session;
+    // The viewer's A/B compares with the edit as it is now, before this request.
+    o.before = { project: s.project, revision: s.revision };
     // A new request answers (or moves past) any options still on screen.
     s.clearChoices();
     const c = o.conversation;
@@ -274,6 +291,8 @@ function snapshot(o: OpenProject) {
     projectDir: o.dir,
     agentRunning: !!o.agent?.running,
     choices: o.session.pendingChoices ?? null,
+    // The viewer can show the edit as it was before the latest request (`render.scrub` with `before`).
+    canCompare: !!o.before && o.before.revision !== o.session.revision,
     conversation: { id: o.conversation.id, title: o.conversation.title, model: o.conversation.model },
   };
 }
@@ -375,26 +394,122 @@ async function writeCover(o: OpenProject): Promise<string | undefined> {
   return out;
 }
 
-// Frame scrubbing: quiet (no activity/history), cached per revision, and only the latest request renders.
-async function scrub(o: OpenProject, time: number): Promise<{ path: string | null; time: number }> {
+/**
+ * A scrubbed frame: a picture file (`path`), or, where the GPU engine draws previews, BGRA pixels
+ * in the project's memory-mapped frame file (`shared`, layout in native/ave-render/src/shared.rs),
+ * which the app copies out. Null `path` and no `shared` when a newer scrub took over.
+ */
+interface ScrubResult {
+  path: string | null;
+  time: number;
+  shared?: string;
+  width?: number;
+  height?: number;
+  sequence?: number;
+}
+
+// Frame scrubbing: quiet (no activity/history), and only the latest request renders. Engine frames
+// go through shared memory; picture files are cached per revision.
+async function scrub(o: OpenProject, time: number, before = false): Promise<ScrubResult> {
   const s = o.session;
   const state = o.scrub;
-  const key = `${s.revision}:${time.toFixed(2)}`;
+  const viaEngine = frameBackend() !== "ffmpeg";
+  // A/B: the edit as it was before the latest request, in files of its own.
+  const { project, revision } = before && o.before ? o.before : { project: s.project, revision: s.revision };
+  const name = before ? "before" : "frame";
+  const key = `${name}:${revision}:${time.toFixed(2)}`;
   const cached = state.cache.get(key);
-  if (cached) return { path: cached, time };
+  if (cached && !viaEngine) return { path: cached, time };
   const token = ++state.token;
-  const job = state.chain.then(async () => {
-    if (token !== state.token) return null; // superseded by a newer scrub
+  const job = state.chain.then(async (): Promise<ScrubResult> => {
+    if (token !== state.token) return { path: null, time }; // superseded by a newer scrub
     const dir = path.join(s.options.outputDir, "scrub");
     await mkdir(dir, { recursive: true });
-    const out = path.join(dir, `r${s.revision}-${time.toFixed(2)}.png`);
-    await renderFrame(s.project, time, { output: out, scale: 0.5, proxies: true, ...s.renderOptions });
+    if (viaEngine) {
+      try {
+        const frame = await renderFrameShared(project, time, { scale: 0.5, ...s.renderOptions, shared: path.join(dir, `${name}.bin`) });
+        return { path: null, time, ...frame };
+      } catch {
+        // The engine cannot draw this edit (or is not built): a picture file from the FFmpeg backend.
+      }
+    }
+    const out = path.join(dir, `${name}-r${revision}-${time.toFixed(2)}.png`);
+    await renderFrame(project, time, { output: out, scale: 0.5, proxies: true, ...s.renderOptions });
     if (state.cache.size > 300) state.cache.clear();
     state.cache.set(key, out);
-    return out;
+    return { path: out, time };
   });
   state.chain = job.catch(() => undefined);
-  return { path: await job, time };
+  return job;
+}
+
+/** Stop live playback of a project, if it plays. */
+function stopPlayback(o: OpenProject): void {
+  if (o.playback) o.playback.stopped = true;
+  o.playback = undefined;
+}
+
+/** The sound of the edit as it is now (a WAV file, made once per revision), or null without sound. */
+function soundMix(o: OpenProject): Promise<string | null> {
+  const s = o.session;
+  if (o.mix?.revision !== s.revision) {
+    const file = path.join(s.options.outputDir, "scrub", `mix-r${s.revision}.wav`);
+    o.mix = { revision: s.revision, file: renderSoundMix(s.project, { ...s.renderOptions, output: file }).catch(() => null) };
+  }
+  return o.mix.file;
+}
+
+/**
+ * Live playback from `time` on the GPU engine: frames are drawn at the edit's pace into the
+ * project's shared frame file (`scrub/play.bin`) and announced with `preview.frame` notifications
+ * ({ project, time, shared, width, height, sequence }); frames the engine cannot keep up with are
+ * skipped. `preview.ended` follows the last one, or a stop. The answer comes when the first frame is
+ * ready and gives the sound to play from `time` (null for none). `{ live: false }` where previews do
+ * not go to the engine or it cannot draw the edit: the app then plays a rendered preview video.
+ */
+async function play(o: OpenProject, time: number): Promise<{ live: boolean; audio?: string | null; time?: number }> {
+  stopPlayback(o);
+  if (frameBackend() === "ffmpeg") return { live: false };
+  const s = o.session;
+  const state = { stopped: false };
+  o.playback = state;
+  const shared = path.join(s.options.outputDir, "scrub", "play.bin");
+  let player: Awaited<ReturnType<typeof framePlayer>>;
+  let audio: string | null;
+  try {
+    [player, audio] = await Promise.all([framePlayer(s.project, { scale: 0.5, ...s.renderOptions }), soundMix(o)]);
+  } catch {
+    if (o.playback === state) o.playback = undefined;
+    return { live: false };
+  }
+  if (state.stopped) return { live: true, audio, time };
+  const first = Math.min(player.frames - 1, Math.max(0, Math.round(time * player.fps)));
+  const frame = await player.draw(first, shared);
+  rpc.notify("preview.frame", { project: o.dir, time: first / player.fps, ...frame });
+  // Paced by the clock from now, when the app starts the sound.
+  const started = performance.now() - (first / player.fps - time) * 1000;
+  void (async () => {
+    let last = first;
+    try {
+      while (!state.stopped) {
+        const n = Math.round(time * player.fps + ((performance.now() - started) / 1000) * player.fps);
+        if (n >= player.frames) break;
+        if (n <= last) {
+          await new Promise((r) => setTimeout(r, Math.max(1, ((last + 1 - time * player.fps) / player.fps) * 1000 - (performance.now() - started))));
+          continue;
+        }
+        const f = await player.draw(n, shared);
+        if (state.stopped) break;
+        rpc.notify("preview.frame", { project: o.dir, time: n / player.fps, ...f });
+        last = n;
+      }
+    } catch {
+      // The session closed under it (a project closed): playback ends.
+    }
+    if (o.playback === state) o.playback = undefined;
+    rpc.notify("preview.ended", { project: o.dir, stopped: state.stopped });
+  })();
+  return { live: true, audio, time };
 }
 
 // Remote control: other local processes (scripts, Claude Code, a future MCP connector) can drive

@@ -53,7 +53,8 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
 
   afterAll(async () => {
     host.proc.kill();
-    await rm(dir, { recursive: true, force: true });
+    // The engine's decoders may hold the media for a moment after the host goes (Windows locks them).
+    await rm(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   });
 
   it("creates a project, edits it, streams activities and autosaves", async () => {
@@ -70,8 +71,9 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     const added = await host.call<{ text: string; isError?: boolean }>("tools.execute", { name: "add_clip", input: { assetId: "talk" } });
     expect(added.isError).toBeFalsy();
 
-    const frame = await host.call<{ path: string }>("render.scrub", { time: 1 });
-    expect(existsSync(frame.path)).toBe(true);
+    const frame = await host.call<{ path: string | null; shared?: string }>("render.scrub", { time: 1 });
+    // A picture file, or the shared frame file where the render engine draws previews.
+    expect(existsSync(frame.shared ?? frame.path!)).toBe(true);
 
     const state = await host.call<{ duration: number; clips: unknown[]; activities: { label: string; status: string }[] }>("state.get");
     expect(state.duration).toBe(4);
@@ -83,9 +85,9 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     expect(methods.has("state")).toBe(true);
 
     // Options Claude offers reach the app in its state, and dismissing them clears it.
-    await host.call("tools.execute", { name: "offer_choices", input: { question: "Which look?", options: [{ label: "Warm", image: frame.path }, { label: "Cool" }] } });
+    await host.call("tools.execute", { name: "offer_choices", input: { question: "Which look?", options: [{ label: "Warm", image: fx.image }, { label: "Cool" }] } });
     const offered = await host.call<{ choices: { question: string; options: { label: string; image?: string }[] } | null }>("state.get");
-    expect(offered.choices).toMatchObject({ question: "Which look?", options: [{ label: "Warm", image: frame.path }, { label: "Cool" }] });
+    expect(offered.choices).toMatchObject({ question: "Which look?", options: [{ label: "Warm", image: fx.image }, { label: "Cool" }] });
     await host.call("choices.dismiss");
     expect((await host.call<{ choices: unknown }>("state.get")).choices).toBeNull();
 
@@ -96,6 +98,36 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     const list = await host.call<{ name: string }[]>("project.list");
     expect(list[0]!.name).toBe("My Test Film");
 
+    // A/B: once a request starts and the edit changes, the viewer can show a frame from before it.
+    expect((await host.call<{ canCompare: boolean }>("state.get")).canCompare).toBe(false);
+    await expect(host.call("agent.run", { prompt: "make it longer", display: "make it longer" })).rejects.toThrow();
+    await host.call("tools.execute", { name: "add_clip", input: { assetId: "talk" } });
+    expect((await host.call<{ canCompare: boolean }>("state.get")).canCompare).toBe(true);
+    type Scrubbed = { path: string | null; shared?: string };
+    const now = await host.call<Scrubbed>("render.scrub", { time: 1 });
+    const before = await host.call<Scrubbed>("render.scrub", { time: 1, before: true });
+    const [nowFile, beforeFile] = [now.shared ?? now.path!, before.shared ?? before.path!];
+    expect(existsSync(nowFile) && existsSync(beforeFile)).toBe(true);
+    expect(beforeFile).not.toBe(nowFile);
+
+    // Live playback: on the engine, frames come as notifications with the edit's sound to play
+    // alongside; elsewhere the app plays a rendered preview video instead.
+    const played = await host.call<{ live: boolean; audio?: string | null }>("render.play", { time: 0.5 });
+    if (process.env.PARITY_LOG) console.log(`render.play: live ${played.live}`);
+    if (played.live) {
+      expect(existsSync(played.audio!)).toBe(true);
+      await new Promise((r) => setTimeout(r, 700));
+      await host.call("render.stop");
+      await new Promise((r) => setTimeout(r, 200));
+      const frames = host.notifications.filter((n) => n.method === "preview.frame").map((n) => (n.params as { time: number }).time);
+      if (process.env.PARITY_LOG) console.log(`live playback: ${frames.length} frames in 0.7 s, from ${frames[0]} to ${frames.at(-1)}`);
+      expect(frames.length).toBeGreaterThan(3);
+      expect(frames[0]).toBeCloseTo(0.5, 1);
+      expect(frames.every((t, i) => i === 0 || t > frames[i - 1]!)).toBe(true);
+      expect(host.notifications.some((n) => n.method === "preview.ended")).toBe(true);
+    }
+
+    await host.call("session.undo");
     await host.call("session.undo");
     expect((await host.call<{ clips: unknown[] }>("state.get")).clips).toHaveLength(0);
   });

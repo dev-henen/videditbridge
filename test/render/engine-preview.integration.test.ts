@@ -1,12 +1,13 @@
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { addAsset, addClip, addLayer, createProject } from "../../engine/core/index.js";
-import { enginePath, render, renderFrame, runFfmpegOrThrow } from "../../engine/tools/index.js";
+import { enginePath, render, renderFrame, renderFrameShared, runFfmpegOrThrow } from "../../engine/tools/index.js";
 import { deltaE2000, rgbToLab } from "../../engine/library/effects/color-match.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "../helpers/media.js";
 
-// Engine previews draw text and captions as a layer (libass on a transparent picture, in a
-// decoder that stays open) instead of an ffmpeg run per frame. Small and short, so it runs quickly.
+// Engine previews: the engine draws text and captions itself (libass in a decoder that stays
+// open), and writes frames for the app into shared memory. Small and short, so it runs quickly.
 const hasFfmpeg = await ffmpegAvailable();
 const [W, H, FPS] = [320, 180, 15];
 
@@ -28,7 +29,7 @@ function deltaE(a: Buffer, b: Buffer, fromRow = 0): number {
   return sum / n;
 }
 
-describe.skipIf(!hasFfmpeg || !enginePath())("engine previews: text as a layer", () => {
+describe.skipIf(!hasFfmpeg || !enginePath())("engine previews", () => {
   let fx: Fixtures;
   beforeAll(async () => {
     fx = await makeFixtures();
@@ -57,6 +58,37 @@ describe.skipIf(!hasFfmpeg || !enginePath())("engine previews: text as a layer",
       // Measured over the text's band, where a difference would show.
       expect(deltaE(all[n]!, b, band), `frame at ${time} s against the engine's export`).toBeLessThan(0.3);
       expect(deltaE(a, b, band), `frame at ${time} s against FFmpeg's`).toBeLessThan(1);
+    }
+  }, 60_000);
+
+  it("writes frames for the app into shared memory, the same picture as the frame files", async () => {
+    let p = createProject({ settings: { width: W, height: H, fps: FPS } });
+    p = addAsset(p, { id: "talk", type: "video", src: fx.talk, width: 1280, height: 720, duration: 4, hasAudio: true });
+    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 1 });
+    p = addLayer(p, { type: "text", text: "Shared", start: 0, duration: 1, position: { x: 0.5, y: 0.8 } });
+    const dir = path.join(OUT_DIR, "engine");
+    const shared = path.join(dir, "shared-frame.bin");
+    let sequence = 0;
+    for (const time of [0.6, 0.6667, 0.2]) {
+      const started = performance.now();
+      const f = await renderFrameShared(p, time, { shared });
+      const took = performance.now() - started;
+      expect([f.width, f.height]).toEqual([W, H]);
+      expect(f.sequence).toBeGreaterThan(sequence);
+      expect(f.sequence % 2).toBe(0);
+      sequence = f.sequence;
+      // The header, then BGRA pixels: compare with the frame file the engine writes at that time.
+      const bytes = await readFile(shared);
+      expect(bytes.subarray(0, 4).toString()).toBe("AVEF");
+      expect([bytes.readUInt32LE(16), bytes.readUInt32LE(20)]).toEqual([W, H]);
+      const rgb = Buffer.alloc(W * H * 3);
+      for (let i = 0; i < W * H; i++) [rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]] = [bytes[32 + i * 4 + 2]!, bytes[32 + i * 4 + 1]!, bytes[32 + i * 4]!];
+      const png = path.join(dir, `shared-${time}.png`);
+      await renderFrame(p, time, { output: png, backend: "engine" });
+      const d = deltaE((await frames(png))[0]!, rgb);
+      if (process.env.PARITY_LOG) console.log(`shared frame ${time} s: ${took.toFixed(0)} ms, against the frame file ${d.toFixed(3)}`);
+      // The app's copy turns 4:2:0 into RGB more simply than ffmpeg does for the picture file.
+      expect(d, `frame at ${time} s against the frame file`).toBeLessThan(0.5);
     }
   }, 60_000);
 });

@@ -7,7 +7,8 @@
 //! - `cancel` (a notification) stops the render in progress.
 //! - `open` keeps a plan ready for drawing single frames (previews, scrubbing) and returns a session
 //!   id; `frame` ({ session, frame, args }) draws one and hands it to ffmpeg with `args`, which read
-//!   yuv420p frames on stdin (to burn in the text and write a picture); `close` ends a session. A
+//!   yuv420p frames on stdin (to write a picture), or with `shared` (a path) writes it as BGRA into
+//!   that memory-mapped file for the app's viewer (shared.rs); `close` ends a session. A
 //!   session keeps its decoders, so nearby frames come quickly.
 //! - `shutdown` ends the process.
 //!
@@ -19,6 +20,7 @@ mod gpu;
 mod media;
 mod plan;
 mod render;
+mod shared;
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -105,8 +107,14 @@ fn main() {
                 "frame" => {
                     let id = params["session"].as_u64().ok_or("frame needs a session")?;
                     let c = sessions.get_mut(&id).ok_or_else(|| format!("no session {id}"))?;
-                    let args: Vec<String> = serde_json::from_value(params["args"].clone()).map_err(|e| format!("invalid args: {e}"))?;
-                    render::frame(c, params["frame"].as_i64().unwrap_or(0), &args)
+                    let n = params["frame"].as_i64().unwrap_or(0);
+                    match params["shared"].as_str() {
+                        Some(path) => render::frame_shared(c, n, path),
+                        None => {
+                            let args: Vec<String> = serde_json::from_value(params["args"].clone()).map_err(|e| format!("invalid args: {e}"))?;
+                            render::frame(c, n, &args)
+                        }
+                    }
                 }
                 "close" => {
                     sessions.remove(&params["session"].as_u64().unwrap_or(0));

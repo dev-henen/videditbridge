@@ -219,9 +219,10 @@ public sealed class AudioPlayer : IDisposable
         _player.EndReached += (_, _) => Dispatcher.UIThread.Post(() => Ended?.Invoke());
     }
 
-    public void Play(string path)
+    public void Play(string path, double start = 0)
     {
         using var media = new LibVLCSharp.Shared.Media(_vlc, new Uri(path));
+        if (start > 0) media.AddOption($":start-time={start.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         _player.Media = media;
         _player.Play();
     }

@@ -643,3 +643,15 @@ pub fn frame(c: &mut Composer, n: i64, args: &[String]) -> Result<Value, String>
     out.finish()?;
     Ok(json!({ "draw": drawn, "seconds": started.elapsed().as_secs_f64() }))
 }
+
+/// Draw one frame of an open composer into the memory-mapped file at `path` for the app's viewer
+/// (shared.rs). Returns its size, sequence number and how long the parts took.
+pub fn frame_shared(c: &mut Composer, n: i64, path: &str) -> Result<Value, String> {
+    let started = Instant::now();
+    let last = c.plan.frames.saturating_sub(1) as i64;
+    let pixels = c.frame(n.clamp(0, last))?;
+    let drawn = started.elapsed().as_secs_f64();
+    let (width, height) = (c.plan.width, c.plan.height);
+    let sequence = crate::shared::write(path, width, height, &pixels)?;
+    Ok(json!({ "draw": drawn, "seconds": started.elapsed().as_secs_f64(), "width": width, "height": height, "sequence": sequence }))
+}

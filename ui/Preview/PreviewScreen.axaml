@@ -46,6 +46,14 @@
         </Button>
         <TextBlock x:Name="TimeText" DockPanel.Dock="Right" Width="96" TextAlignment="Right" VerticalAlignment="Center"
                    Foreground="{StaticResource Muted}" FontSize="11" Text="00:00.0 / 00:00.0"/>
+        <!-- A/B: the frame as it was before the latest request to Claude -->
+        <ToggleButton x:Name="BeforeButton" DockPanel.Dock="Right" Click="OnBefore" IsVisible="False" MinHeight="24" Padding="6,2" Margin="4,0,0,0"
+                      ToolTip.Tip="Show this frame as it was before your last request" AutomationProperties.Name="Show the frame before your last request">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.History}" FontSize="13" Margin="0,0,5,0"/>
+            <TextBlock Text="Before" FontSize="11" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ToggleButton>
         <Slider x:Name="Scrubber" Minimum="0" Maximum="{Binding Duration}" VerticalAlignment="Center" Margin="4,0" MinHeight="0" Padding="0"
                 IsSnapToTickEnabled="False"/>
       </DockPanel>
