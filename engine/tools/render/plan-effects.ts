@@ -43,7 +43,8 @@ export type PlanOp =
   | { op: "eq"; brightness: number; contrast: number; saturation: number; gamma: number; gammaWeight: number };
 
 /** Filters that change each pixel from its own value alone, so a chain of them can be baked into a table. */
-const PIXEL_FILTERS = new Set(["eq", "colorbalance", "colortemperature", "curves", "hue", "colorchannelmixer", "negate", "colorize", "vibrance", "huesaturation", "exposure", "format", "lut3d", "null"]);
+/** Filters that work pixel by pixel (a color table can stand for them). */
+export const PIXEL_FILTERS = new Set(["eq", "colorbalance", "colortemperature", "curves", "hue", "colorchannelmixer", "negate", "colorize", "vibrance", "huesaturation", "exposure", "format", "lut3d", "null"]);
 
 /** Split a filter chain at its top-level commas (not inside quotes or brackets). Undefined for a graph with labels or branches. */
 export function splitChain(chain: string): string[] | undefined {
@@ -66,7 +67,7 @@ export function splitChain(chain: string): string[] | undefined {
   return out.map((f) => f.trim()).filter(Boolean);
 }
 
-const filterName = (f: string) => f.split("=")[0]!.trim();
+export const filterName = (f: string) => f.split("=")[0]!.trim();
 
 /** The ffmpeg arguments that bake a chain of per-pixel filters into a Hald table on stdout. */
 export function lutArgs(filters: string[]): string[] {

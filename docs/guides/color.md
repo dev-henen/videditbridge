@@ -162,6 +162,26 @@ Each space's curve and gamut come from its maker's published formulas (`engine/l
 
 **Precision.** Strong grades of log footage can show steps in 8-bit video. Exports of such footage are dithered (fine grain instead of steps), and `export.bitDepth: 10` writes 10-bit video (H.264 High 10 or HEVC Main 10), which keeps smooth skies and gradients smooth through heavy grades. DJI D-Log M is not offered: DJI has not published its formula.
 
+## Film looks
+
+Effects for the look of film, each with clear settings and sizes relative to the frame (previews and 4K match):
+
+| Effect | What it does |
+|---|---|
+| `halation` | A warm red-orange glow around bright highlights; nothing below the threshold changes |
+| `bloom` | A soft neutral glow around highlights, a tight and a wide halo together |
+| `anamorphicFlare` | Horizontal blue-cyan streaks through bright points of light |
+| `filmGrain` | Grain strongest in the midtones, new every frame, by stock (`fine`, `medium`, `coarse`), seeded so renders repeat |
+| `gateWeave` | The slow sub-pixel wander of a frame in a projector gate |
+| `printFilm` | A print-film-like curve, mild color crosstalk, warm highlights and cool shadows |
+| `lensDistortion` | Barrel (+) or pincushion (-) distortion |
+
+**Looks** combine a grade with these effects: `blockbuster` (teal and orange), `warm-70s-print`, `cold-thriller`, `bleach-bypass`, `dreamy` and `night-anamorphic` (`engine/library/looks`, data like templates). Claude puts one on with `apply_look` (a clip, a layer, every clip or the whole video, at a strength); it goes after the edit's own grade, and another look replaces it.
+
+**Exporting a grade.** `export_lut` saves a clip's grade as a 33- or 65-point `.cube` for DaVinci Resolve, Premiere or a monitor: the camera's color space conversion, the grade and every per-pixel effect. Spatial effects (secondaries, grain, glows, vignette) cannot be in a LUT and are named in the result. For log footage the LUT takes the camera's own log signal.
+
+The GPU engine draws `printFilm`; edits with the other film effects render with FFmpeg (on 16-bit RGB for the glows) until the engine draws them.
+
 ## Notes
 
 - `exposure` works in floating point. The engine clips back to the normal range right after it, so later filters never see values brighter than white.

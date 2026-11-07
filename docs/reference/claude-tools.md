@@ -2,7 +2,7 @@
 
 # Claude tools
 
-112 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+114 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [set_color_space](#set_color_space), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [set_color_space](#set_color_space), [apply_look](#apply_look), [export_lut](#export_lut), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -1400,6 +1400,26 @@ _No parameters._
 |---|---|---|---|---|
 | `assetIds` | string[] | yes |  | Video or picture assets recorded in this space |
 | `colorSpace` | "rec709" \| "srgb" \| "slog3-sgamut3cine" \| "slog3-sgamut3" \| "vlog-vgamut" \| "applelog" \| "logc3-awg3" \| "logc4-awg4" \| "clog3-cinemagamut" \| "bmdfilm-gen5" \| "hlg-rec2020" \| "pq-rec2020" | yes |  |  |
+
+### apply_look
+
+**edits**. Give a clip, a media layer, every clip or the whole video a finished film look: a grade plus film effects (print-film curve, halation, bloom, anamorphic flare, film grain, gate weave), placed after the edit's own grade so color_adjust still corrects underneath. Applying another look replaces this one; "none" removes it. strength (0..1) scales the whole look. Correct exposure and white balance first, then pick a look that suits the content, and check it with render_frame. Looks: "blockbuster" (Teal and orange blockbuster: Warm skin against teal shadows and backgrounds, punchy contrast, a print-like curve and fine grain: the big action and adventure look. Best with people in the frame; heavy on scenes without skin.); "warm-70s-print" (Warm 70s print: Faded, warm and soft: lifted blacks, golden highlights, coarse grain, glowing highlights and a slight gate weave, like a projected print from the seventies. For nostalgia, memories, travel and music videos.); "cold-thriller" (Cold thriller: Cool, desaturated and contrasty, with green-teal shadows: tension, crime, sci-fi and night interiors. Skin goes pale; avoid for warm or friendly content.); "bleach-bypass" (Bleach bypass: Silvery, low saturation and hard contrast, as when the bleach step is skipped in film processing: gritty war, drama and sports. Strong; lower the strength for a hint of it.); "dreamy" (Dreamy glow: Soft, bright and warm, with glowing highlights and gentle contrast: weddings, romance, beauty and slow, peaceful moments.); "night-anamorphic" (Anamorphic night: Cool night with horizontal blue streaks through the lights and medium grain: city streets, cars and neon. Needs bright points of light in the frame to show its streaks.). For one effect on its own (halation, bloom, anamorphicFlare, filmGrain, gateWeave, printFilm, lensDistortion), use add_effect.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string |  | `"all-clips"` | "all-clips", "global" (the whole video, after the clips are joined), a clip id or a media layer id |
+| `look` | string | yes |  | A look id, or "none" to remove the look |
+| `strength` | number |  | `1` | How much of the look (0..1) (≥ 0, ≤ 1) |
+
+### export_lut
+
+**read-only**. Save a clip's grade as a .cube 3D LUT for DaVinci Resolve, Premiere, Final Cut or a camera monitor: its color space conversion (for log footage, the LUT takes the camera's own log signal), the grade and every per-pixel effect (the color panel, a look's grade and print-film curve, LUT files). Spatial effects (secondaries, grain, glows, vignette, sharpening) cannot be in a LUT: the result names what it left out. 33 points is the common size; 65 is finer.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipId` | string | yes |  |  |
+| `output` | string | yes |  | Where to save it, e.g. luts/scene1.cube |
+| `size` | 33 \| 65 |  | `33` |  |
 
 ### match_color
 

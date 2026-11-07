@@ -4,8 +4,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { addAsset, addClip, createProject, setEffectParams, type Project } from "../../engine/core/index.js";
 import { acesToRec709, acescctToRec709, codeToAces, colorSpace, gradeAcescct, toAcescct, type SceneGrade } from "../../engine/library/color/index.js";
 import { deltaE2000, rgbToLab } from "../../engine/library/effects/color-match.js";
-import { enginePath, render, runFfmpegOrThrow } from "../../engine/tools/index.js";
+import { enginePath, exportLut, render, runFfmpegOrThrow } from "../../engine/tools/index.js";
 import { OUT_DIR, ffmpegAvailable } from "../helpers/media.js";
+import { escapeFilterPath } from "../../engine/library/effects/index.js";
 
 // Camera log through both renderers: synthetic 10-bit S-Log3 footage (an 18% gray card and a ramp
 // of stops), small and one second long, so it runs quickly.
@@ -169,4 +170,48 @@ describe.skipIf(!hasFfmpeg)("footage in a color space", () => {
     expect(ten.levels).toBeGreaterThan(300);
     expect(ten.longest).toBeLessThanOrEqual(4);
   }, 120_000);
+
+  // Section 4.5: the exported LUT, applied with lut3d to the camera's signal, gives the rendered grade.
+  it("export_lut: the table reproduces the rendered grade within ΔE 1", async () => {
+    // Colorful log footage: S-Log3 luma from deep shadow to highlights across, moderate colors down.
+    const colorful = path.join(dir, "slog3-color.mkv");
+    await runFfmpegOrThrow([
+      "-y", "-hide_banner", "-loglevel", "error",
+      "-f", "lavfi", "-i", `color=c=black:s=${W}x${H}:r=${FPS}:d=1,format=yuv420p10le,geq=lum='150+600*X/${W - 1}':cb='512+110*sin(Y/9)':cr='512+110*cos(Y/13+X/40)'`,
+      "-c:v", "ffv1", colorful,
+    ]);
+    const look = { exposure: 0.4, contrast: 20, saturation: -15, temperature: 15 };
+    const build = (withVignette: boolean) => {
+      let p = createProject({ settings: { width: W, height: H, fps: FPS } });
+      p = addAsset(p, { id: "cam", type: "video", src: colorful, width: W, height: H, duration: 1, hasAudio: false, colorSpace: "slog3-sgamut3cine" });
+      p = addClip(p, { id: "a", assetId: "cam", duration: 1, effects: [{ type: "printFilm", params: { strength: 0.7 } }] as never });
+      p = setEffectParams(p, "a", "color", { ...look, ...(withVignette ? { vignette: 40 } : {}) }, { prepend: true });
+      p.export = { ...p.export, crf: 0, preset: "ultrafast" };
+      return p;
+    };
+    const lut = path.join(dir, "graded.cube");
+    const r = await exportLut(build(true), "a", { output: lut, size: 65 });
+    if (process.env.PARITY_LOG) console.log(`export_lut: holds ${r.included.join(", ")}; left out ${r.skipped.join(", ")}`);
+    expect(r.included).toEqual(["Sony S-Log3 / S-Gamut3.Cine to Rec.709 (ACES)", "the grade in ACEScct", "printFilm"]);
+    expect(r.skipped).toEqual(["color: vignette"]);
+    // The rendered grade (no vignette, which a table cannot hold).
+    const rendered = path.join(dir, "lut-rendered.mp4");
+    await render(build(false), { output: rendered, backend: "ffmpeg", hardware: false });
+    const [a] = [await frame(rendered)];
+    // The other application: the camera's code values (full range, BT.709), then the table.
+    const { stdoutBuffer } = await runFfmpegOrThrow(
+      ["-hide_banner", "-loglevel", "error", "-i", colorful, "-frames:v", "1", "-vf", `scale=in_range=pc:in_color_matrix=bt709,format=gbrpf32le,lut3d=file='${escapeFilterPath(lut)}':interp=tetrahedral,format=rgb24`, "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"],
+      { binaryStdout: true },
+    );
+    const b = stdoutBuffer!;
+    let sum = 0;
+    let n = 0;
+    for (let i = 0; i < a.length; i += 12) {
+      const lab = (f: Buffer) => rgbToLab([f[i]! / 255, f[i + 1]! / 255, f[i + 2]! / 255]);
+      sum += deltaE2000(lab(a), lab(b));
+      n++;
+    }
+    if (process.env.PARITY_LOG) console.log(`export_lut against the render: mean ΔE ${(sum / n).toFixed(3)}`);
+    expect(sum / n).toBeLessThan(1);
+  }, 60_000);
 });

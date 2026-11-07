@@ -8,4 +8,5 @@ export * from "./components/index.js";
 export * from "./templates/index.js";
 export * from "./sound-effects/index.js";
 export * from "./particles/index.js";
+export { LOOKS, getLook, lookEffects, type LookPreset } from "./looks/index.js";
 export { ACESCCT, COLOR_SPACES, GAMUTS, colorSpace, colorSpaceFromTags, gamutMatrix, nitsToPq, pqToNits, rgbToXyz, type ColorSpace, type Curve, type Gamut } from "./color/index.js";

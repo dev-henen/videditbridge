@@ -101,3 +101,14 @@ export function inputCubeFor(space: ColorSpace, size = CUBE_SIZE): string {
       for (let r = 0; r < size; r++) lines.push(toAcescct(space, [at(r), at(g), at(b)]).map((v) => v.toFixed(6)).join(" "));
   return `${lines.join("\n")}\n`;
 }
+
+/** The inverse of `pipelineToCode`: the file's R'G'B' code values (0..1) as the pipeline's RGB. */
+export function codeToPipeline(space: Pick<ColorSpace, "matrix" | "range">, [red, green, blue]: Vec3): Vec3 {
+  const [kr, kb] = KR_KB[space.matrix];
+  const y = kr * red + (1 - kr - kb) * green + kb * blue;
+  const [cb, cr] = [(blue - y) / (2 * (1 - kb)), (red - y) / (2 * (1 - kr))];
+  const [Y, Cb, Cr] = space.range === "full" ? [y, cb + 128 / 255, cr + 128 / 255] : [16 / 255 + (y * 219) / 255, 128 / 255 + (cb * 224) / 255, 128 / 255 + (cr * 224) / 255];
+  // BT.601 limited range to RGB, as both renderers decode.
+  const [l, u, v] = [(Y - 16 / 255) / (219 / 255), (Cb - 128 / 255) / (224 / 255), (Cr - 128 / 255) / (224 / 255)];
+  return [l + 1.402 * v, l - 0.344136 * u - 0.714136 * v, l + 1.772 * u];
+}

@@ -28,6 +28,7 @@ import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, isAbsolutePath, isUrl, newId, round3, type AspectRatio } from "../core/util.js";
 import { CUSTOM_FILTERS, ColorSettingsSchema, RemoveObjectParams, SubjectRegionSchema, checkCustomFilter, describeColorSettings, describeMask, effectStates, getEffect, listEffects, mergeColorSettings, removalKey, removalSpec, SKIN_LINE, type ColorSettings, type RemovalSpec, type Vec3 } from "../library/effects/index.js";
 import { COLOR_SPACES } from "../library/color/index.js";
+import { LOOKS, getLook, lookEffects } from "../library/looks/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { getTransition, listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
@@ -47,6 +48,7 @@ import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voi
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { depthInClips, interpolateInClips, removalInClips, render, renderContactSheet, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
+import { exportLut } from "../tools/render/export-lut.js";
 import { clipFrameTimes, framePlan } from "../tools/video/interpolate.js";
 import { depthInBox, readDepthFrames } from "../tools/vision/depth.js";
 import { effectsOf } from "../tools/render/compile.js";
@@ -3587,6 +3589,48 @@ export const TOOLS: ToolDefinition[] = [
       for (const id of i.assetIds) p = ops.setAssetColorSpace(p, id, i.colorSpace);
       const space = COLOR_SPACES.find((c) => c.id === i.colorSpace)!;
       return commit(s, p, "set_color_space", i, `${i.assetIds.join(", ")} ${i.assetIds.length > 1 ? "are" : "is"} now ${space.label}${i.colorSpace === "rec709" ? " (used as it is)" : ", converted to Rec.709 when rendered"}.`);
+    },
+  }),
+  tool({
+    name: "apply_look",
+    description:
+      "Give a clip, a media layer, every clip or the whole video a finished film look: a grade plus film effects (print-film curve, halation, bloom, anamorphic flare, film grain, gate weave), placed after the edit's own grade so color_adjust still corrects underneath. " +
+      'Applying another look replaces this one; "none" removes it. strength (0..1) scales the whole look. Correct exposure and white balance first, then pick a look that suits the content, and check it with render_frame. Looks: ' +
+      LOOKS.map((l) => `"${l.id}" (${l.name}: ${l.description})`).join("; ") +
+      ". For one effect on its own (halation, bloom, anamorphicFlare, filmGrain, gateWeave, printFilm, lensDistortion), use add_effect.",
+    input: z.object({
+      target: z.string().default("all-clips").describe('"all-clips", "global" (the whole video, after the clips are joined), a clip id or a media layer id'),
+      look: z.string().describe('A look id, or "none" to remove the look'),
+      strength: z.number().min(0).max(1).default(1).describe("How much of the look (0..1)"),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const look = i.look === "none" ? undefined : getLook(i.look);
+      if (!look && i.look !== "none") return { text: `Unknown look "${i.look}". Looks: ${LOOKS.map((l) => l.id).join(", ")}.`, isError: true };
+      const targets = i.target === "all-clips" ? s.project.clips.map((c) => c.id) : [i.target];
+      if (!targets.length) return { text: "There are no clips to give a look.", isError: true };
+      let p = s.project;
+      for (const target of targets) p = ops.setLook(p, target, look ? lookEffects(look, i.strength) : []);
+      return commit(s, p, "apply_look", i, look ? `Look "${look.name}" at ${Math.round(i.strength * 100)}% on ${i.target}.` : `Removed the look from ${i.target}.`);
+    },
+  }),
+  tool({
+    name: "export_lut",
+    description:
+      "Save a clip's grade as a .cube 3D LUT for DaVinci Resolve, Premiere, Final Cut or a camera monitor: its color space conversion (for log footage, the LUT takes the camera's own log signal), the grade and every per-pixel effect (the color panel, a look's grade and print-film curve, LUT files). " +
+      "Spatial effects (secondaries, grain, glows, vignette, sharpening) cannot be in a LUT: the result names what it left out. 33 points is the common size; 65 is finer.",
+    input: z.object({
+      clipId: z.string(),
+      output: z.string().describe("Where to save it, e.g. luts/scene1.cube"),
+      size: z.union([z.literal(33), z.literal(65)]).default(33),
+    }),
+    mutates: false,
+    run: async (s, i) => {
+      const r = await exportLut(s.project, i.clipId, { output: s.resolve(i.output), size: i.size, ...s.renderOptions });
+      return ok(
+        `Saved a ${r.size}-point LUT to ${r.output}. Input: ${r.input}. Holds: ${r.included.join(", ") || "nothing (the clip is ungraded)"}.` +
+          (r.skipped.length ? ` Left out (spatial): ${r.skipped.join(", ")}.` : ""),
+      );
     },
   }),
   tool({

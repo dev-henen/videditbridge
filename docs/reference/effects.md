@@ -2,7 +2,7 @@
 
 # Effects
 
-92 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
+99 visual effects. Apply them to a clip (`clips[].effects`), a media layer (`layers[].effects`), or the whole video (`project.effects`). With Claude, use the `add_effect` tool and target a clip id, a layer id, or `"global"`.
 
 ```json
 { "type": "kenBurns", "params": { "zoomTo": 1.2, "pan": "right" } }
@@ -12,14 +12,14 @@ Parameters you omit take their defaults. Each effect compiles to an FFmpeg filte
 
 ## Contents
 
-- **color**: [adjust](#adjust), [temperature](#temperature), [grayscale](#grayscale), [sepia](#sepia), [invert](#invert), [hueShift](#hueshift), [tint](#tint), [color](#color), [saturation](#saturation), [vibrance](#vibrance), [hue](#hue), [whiteBalance](#whitebalance), [hsl](#hsl), [autoCorrect](#autocorrect), [colorMatch](#colormatch)
+- **color**: [adjust](#adjust), [temperature](#temperature), [grayscale](#grayscale), [sepia](#sepia), [invert](#invert), [hueShift](#hueshift), [tint](#tint), [color](#color), [saturation](#saturation), [vibrance](#vibrance), [hue](#hue), [whiteBalance](#whitebalance), [hsl](#hsl), [autoCorrect](#autocorrect), [colorMatch](#colormatch), [printFilm](#printfilm)
 - **grade**: [lut](#lut), [cinematic](#cinematic), [tealOrange](#tealorange), [warm](#warm), [cool](#cool), [vintage](#vintage), [noir](#noir), [vibrant](#vibrant), [faded](#faded), [moody](#moody), [bright](#bright), [sunset](#sunset), [matrix](#matrix), [crossProcess](#crossprocess), [curves](#curves), [colorWheels](#colorwheels), [fade](#fade)
-- **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [lightRays](#lightrays), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe), [depthFog](#depthfog)
-- **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs), [custom](#custom)
+- **light**: [exposure](#exposure), [brightness](#brightness), [contrast](#contrast), [highlights](#highlights), [shadows](#shadows), [whites](#whites), [blacks](#blacks), [brilliance](#brilliance), [glow](#glow), [lightRays](#lightrays), [bokehLights](#bokehlights), [lightLeak](#lightleak), [flashHits](#flashhits), [strobe](#strobe), [depthFog](#depthfog), [halation](#halation), [bloom](#bloom), [anamorphicFlare](#anamorphicflare)
+- **stylize**: [clarity](#clarity), [vignette](#vignette), [grain](#grain), [pixelate](#pixelate), [chromaticAberration](#chromaticaberration), [glitch](#glitch), [letterbox](#letterbox), [trails](#trails), [vhs](#vhs), [filmGrain](#filmgrain), [custom](#custom)
 - **retouch**: [beauty](#beauty), [backgroundBlur](#backgroundblur), [backgroundReplace](#backgroundreplace), [skyReplace](#skyreplace), [maskView](#maskview), [denoise](#denoise), [depthView](#depthview), [removeObject](#removeobject)
 - **blur**: [blur](#blur), [sharpen](#sharpen), [bokeh](#bokeh), [zoomBlur](#zoomblur), [rackFocus](#rackfocus), [motionBlur](#motionblur), [depthOfField](#depthoffield)
-- **motion**: [stabilize](#stabilize), [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat), [parallax](#parallax)
-- **distort**: [mirror](#mirror), [chromaKey](#chromakey), [tilt](#tilt)
+- **motion**: [stabilize](#stabilize), [kenBurns](#kenburns), [zoom](#zoom), [punchIn](#punchin), [pulse](#pulse), [smoothZoom](#smoothzoom), [zoomPunch](#zoompunch), [heartbeat](#heartbeat), [parallax](#parallax), [gateWeave](#gateweave)
+- **distort**: [mirror](#mirror), [chromaKey](#chromakey), [tilt](#tilt), [lensDistortion](#lensdistortion)
 - **shake**: [shake](#shake), [handheld](#handheld), [vibrate](#vibrate), [earthquake](#earthquake), [impactShake](#impactshake)
 - **time**: [fadeIn](#fadein), [fadeOut](#fadeout), [flash](#flash)
 
@@ -255,6 +255,15 @@ _No parameters._
 | `curves.blue` | unknown[][] |  |  | Curve points [input, output] in 0..1, e.g. [[0,0],[0.25,0.2],[0.75,0.8],[1,1]] for an S-curve |
 | `curves.preset` | "increase_contrast" \| "medium_contrast" \| "strong_contrast" \| "linear_contrast" \| "lighter" \| "darker" \| "vintage" \| "cross_process" \| "color_negative" \| "negative" |  |  | Built-in curve shape (applied before custom points) |
 | `reference` | string |  |  | The clip or image matched to, for the record |
+
+### printFilm
+
+**Print Film Look**. A print-film-like response: an S-curve with a soft toe and a gently rolled shoulder, mild crosstalk between the colors, warm highlights and cool shadows. The classic projected-film feel; works on most footage as a base for other looks. warmth tilts the split between warm highlights and cool shadows.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `strength` | number |  | `1` | How much of the look (0..1) (≥ 0, ≤ 1) |
+| `warmth` | number |  | `0.5` | Warm highlights and cool shadows (0..1) (≥ 0, ≤ 1) |
 
 ## Grade
 
@@ -522,6 +531,36 @@ _No parameters._
 | `start` | number |  | `0.25` | Distance where the fog begins (0 near .. 1 far) (≥ 0, ≤ 0.95) |
 | `falloff` | number |  | `3` | How fast the fog thickens with distance past start (higher is a denser wall of fog) (≥ 0.5, ≤ 10) |
 
+### halation
+
+**Halation**. Film halation: a warm red-orange glow that spills around bright highlights (lamps, windows, sun on skin, specular edges), as light scatters back through film. Only highlights above the threshold glow, more for brighter ones; the rest of the picture is untouched. Subtle (0.3-0.6) reads as filmic; strong reads as dreamy.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `strength` | number |  | `0.5` | How much light spills (0..2) (≥ 0, ≤ 2) |
+| `threshold` | number |  | `0.75` | Brightness where highlights start to glow (0..1) (≥ 0.3, ≤ 0.98) |
+| `size` | number |  | `1` | Spread, relative to the usual 1.5% of the frame height (≥ 0.2, ≤ 4) |
+
+### bloom
+
+**Bloom**. A soft neutral glow around highlights, as through diffusion filters or old lenses: a tight halo and a wider one together. Only highlights above the threshold glow. Use for a dreamy, romantic or nostalgic feel; keep it low (0.2-0.4) for a gentle lift.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `strength` | number |  | `0.35` | How much light spills (0..2) (≥ 0, ≤ 2) |
+| `threshold` | number |  | `0.7` | Brightness where highlights start to glow (0..1) (≥ 0.3, ≤ 0.98) |
+| `size` | number |  | `1` | Spread, relative to the usual size (≥ 0.2, ≤ 4) |
+
+### anamorphicFlare
+
+**Anamorphic Flare**. Horizontal blue-cyan streaks through bright points of light (headlights, street lamps, the sun), as anamorphic lenses draw them. Only highlights above the threshold streak. Works best on night scenes and practical lights; on a bright daylight shot it washes the frame.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `strength` | number |  | `0.6` | Brightness of the streaks (0..2) (≥ 0, ≤ 2) |
+| `threshold` | number |  | `0.85` | Brightness where lights start to streak (0..1) (≥ 0.3, ≤ 0.98) |
+| `length` | number |  | `1` | Length of the streaks, relative to the usual (≥ 0.2, ≤ 3) |
+
 ## Stylize
 
 ### clarity
@@ -595,6 +634,16 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `amount` | number |  | `50` | Strength (≥ 0, ≤ 100) |
+
+### filmGrain
+
+**Film Grain (stock)**. Grain that behaves like film's: strongest in the midtones, fading in deep shadows and bright highlights, new every frame, with a grain size relative to the frame (so previews and 4K match). Stocks: "fine" (slow, clean daylight stock), "medium" (an all-round stock), "coarse" (fast tungsten stock, pushed look). The same seed gives the same grain in every render. Prefer it over grain for a filmic look.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `amount` | number |  | `30` | Strength (0..100) (≥ 0, ≤ 100) |
+| `stock` | "fine" \| "medium" \| "coarse" |  | `"medium"` | Grain size and character |
+| `seed` | integer |  | `1` | Pattern seed; renders with the same seed match (≥ 0, ≤ 100000) |
 
 ### custom
 
@@ -898,6 +947,15 @@ _No parameters._
 | `zoom` | number |  | `0.08` | How far it pushes in (+) or pulls out (-) over the clip: near things grow the most (≥ -0.5, ≤ 0.5) |
 | `layers` | integer |  | `8` | Depth layers the picture is cut into (more is smoother, and slower) (≥ 3, ≤ 12) |
 
+### gateWeave
+
+**Gate Weave**. The slight, slow wander of a film frame in the projector gate: sub-pixel drift and a tiny rotation, smooth and random-looking. Adds the feel of projected film to digital footage; keep it barely noticeable (amount 0.5-1). The same seed repeats in every render.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `amount` | number |  | `1` | How far the frame wanders (1 = a projector's typical weave) (≥ 0, ≤ 3) |
+| `seed` | integer |  | `1` | Motion seed (≥ 0, ≤ 100000) |
+
 ## Distort
 
 ### mirror
@@ -928,6 +986,14 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `degrees` | number |  | `6` | Rotation, positive = clockwise (≥ -45, ≤ 45) |
+
+### lensDistortion
+
+**Lens Distortion**. Barrel (+, a wide-angle or fisheye bulge) or pincushion (-, a telephoto pinch) distortion around the frame's center. Small amounts (0.1-0.3) give a vintage or action-camera lens feel; large ones are a stylized effect. Barrel leaves the corners dark.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `amount` | number |  | `0.2` | + barrel, - pincushion (≥ -1, ≤ 1) |
 
 ## Shake
 

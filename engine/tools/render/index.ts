@@ -8,5 +8,7 @@ export * from "./hardware.js";
 export * from "./proxy.js";
 export * from "./selftest.js";
 export * from "./plan.js";
+export * from "./export-lut.js";
+export * from "./color-space.js";
 export * from "./engine.js";
 export * from "./benchmark.js";

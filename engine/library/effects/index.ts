@@ -9,6 +9,7 @@ import { maskIsTemporal, maskNeeds, maskObjects, maskViewFilter, maskedEffect } 
 import { SkyReplaceParams, skyReplaceFilter } from "./sky.js";
 import { depthEffects } from "./depth.js";
 import { removalEffects, type RemovalSpec } from "./removal.js";
+import { filmEffects } from "./film.js";
 
 export { CUSTOM_FILTERS, checkCustomFilter } from "./custom.js";
 import { ColorSettingsSchema, colorFilter, type ColorSettings } from "./color.js";
@@ -496,6 +497,7 @@ export const EFFECTS: EffectDefinition[] = [
   ...motionEffects(),
   ...depthEffects(),
   ...removalEffects(),
+  ...filmEffects(),
 
   // --- time -----------------------------------------------------------------------
   define({

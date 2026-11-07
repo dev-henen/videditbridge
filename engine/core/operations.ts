@@ -289,11 +289,25 @@ export function addEffect(p: Project, target: string, effect: Effect): Project {
   return edit(p, (d) => effectList(d, target).push(e));
 }
 
+/** The label of a look preset's effects (apply_look): they are replaced together, apart from the edit's own grade. */
+export const LOOK_LABEL = "look";
+
 /**
  * The effect of a type on a target that applies to the whole picture: masked effects (secondary
- * corrections, see setMaskedEffect) are separate and found by their label.
+ * corrections, see setMaskedEffect) are separate and found by their label, and a look preset's
+ * effects belong to the look.
  */
-const wholeFrame = (list: Effect[], effectType: string) => list.find((e) => e.type === effectType && !e.mask);
+const wholeFrame = (list: Effect[], effectType: string) => list.find((e) => e.type === effectType && !e.mask && e.label !== LOOK_LABEL);
+
+/** Replace a target's look (its effects labeled `LOOK_LABEL`) with `effects`, at the end of its chain; none removes it. */
+export function setLook(p: Project, target: string, effects: Effect[]): Project {
+  const parsed = effects.map((e) => EffectSchema.parse({ ...e, label: LOOK_LABEL }));
+  return edit(p, (d) => {
+    const list = effectList(d, target);
+    const kept = list.filter((e) => e.label !== LOOK_LABEL);
+    list.splice(0, list.length, ...kept, ...parsed);
+  });
+}
 
 /** The params of the first unmasked effect of a type on a target, if any. */
 export function getEffectParams(p: Project, target: string, effectType: string): Record<string, unknown> | undefined {

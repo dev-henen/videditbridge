@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACESCCT, AP1_Y, COLOR_SPACES, acescctToRec709, gradeAcescct, splitSceneGrade, toAcescct, toRec709, type Vec3 } from "../../engine/library/color/index.js";
+import { ACESCCT, AP1_Y, COLOR_SPACES, acescctToRec709, codeToPipeline, gradeAcescct, pipelineToCode, splitSceneGrade, toAcescct, toRec709, type Vec3 } from "../../engine/library/color/index.js";
 
 const cct = (lin: number): Vec3 => [ACESCCT.fromLinear(lin), ACESCCT.fromLinear(lin), ACESCCT.fromLinear(lin)];
 const linear = (c: Vec3): Vec3 => c.map((v) => ACESCCT.toLinear(v)) as Vec3;
@@ -44,6 +44,15 @@ describe("grading in ACEScct", () => {
       for (const rgb of [[0.4, 0.4, 0.4], [0.2, 0.5, 0.7], [0.9, 0.6, 0.3]] as Vec3[]) {
         const whole = toRec709(space, rgb);
         acescctToRec709(toAcescct(space, rgb)).forEach((v, i) => expect(v, space.id).toBeCloseTo(whole[i]!, 6));
+      }
+    }
+  });
+
+  it("reading code values back as pipeline RGB undoes pipelineToCode", () => {
+    for (const space of COLOR_SPACES.filter((s) => s.curve)) {
+      for (const code of [[0.41, 0.41, 0.41], [0.2, 0.5, 0.7], [0.6, 0.35, 0.3]] as Vec3[]) {
+        // Within the rounding of the BT.601 decode constants (0.344136, 0.714136).
+        pipelineToCode(space, codeToPipeline(space, code)).forEach((v, i) => expect(v, space.id).toBeCloseTo(code[i]!, 6));
       }
     }
   });
