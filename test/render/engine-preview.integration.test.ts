@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { addAsset, addClip, addLayer, createProject } from "../../engine/core/index.js";
-import { enginePath, render, renderFrame, renderFrameShared, runFfmpegOrThrow } from "../../engine/tools/index.js";
+import { addAsset, addClip, addLayer, createProject, setTransition } from "../../engine/core/index.js";
+import { contactSheetFrames, enginePath, render, renderContactSheet, renderFrame, renderFrameShared, runFfmpegOrThrow } from "../../engine/tools/index.js";
 import { deltaE2000, rgbToLab } from "../../engine/library/effects/color-match.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "../helpers/media.js";
 
@@ -91,4 +91,45 @@ describe.skipIf(!hasFfmpeg || !enginePath())("engine previews", () => {
       expect(d, `frame at ${time} s against the frame file`).toBeLessThan(0.5);
     }
   }, 60_000);
+
+  it("contact sheets: the frames FFmpeg picks, drawn by the engine", async () => {
+    let p = createProject({ settings: { width: W, height: H, fps: FPS } });
+    p = addAsset(p, { id: "talk", type: "video", src: fx.talk, width: 1280, height: 720, duration: 4, hasAudio: true });
+    p = addAsset(p, { id: "pic", type: "image", src: fx.image, width: 640, height: 480 });
+    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 1.2 });
+    p = addClip(p, { id: "b", assetId: "pic", duration: 1 });
+    p = setTransition(p, "b", { type: "fade", duration: 0.2 });
+    p = addLayer(p, { type: "text", text: "Sheet", start: 0.5, duration: 1, position: { x: 0.5, y: 0.8 } });
+    const dir = path.join(OUT_DIR, "engine");
+    const sheet = { columns: 3, rows: 2, thumbWidth: 100 };
+    const [ff, gpu] = [path.join(dir, "sheet-ffmpeg.png"), path.join(dir, "sheet-engine.png")];
+    await renderContactSheet(p, { output: ff, backend: "ffmpeg", ...sheet });
+    const started = performance.now();
+    await renderContactSheet(p, { output: gpu, backend: "engine", ...sheet });
+    const took = performance.now() - started;
+    const rgb = async (file: string) =>
+      (await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", file, "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"], { binaryStdout: true })).stdoutBuffer!;
+    const [a, b] = [await rgb(ff), await rgb(gpu)];
+    expect(b.length).toBe(a.length);
+    const d = deltaE(a, b);
+    if (process.env.PARITY_LOG) console.log(`contact sheet: ${took.toFixed(0)} ms on the engine, against FFmpeg's ${d.toFixed(3)}`);
+    // FFmpeg's own sheet sits about a pixel off its own frames (measured: 2.5 on the fractal still
+    // against its single frame there, where the engine's sheet is within 0.5 of both renderers'
+    // frames), so the sheets are compared loosely; the frame choice is checked exactly below.
+    expect(d).toBeLessThan(2);
+  }, 60_000);
+
+  it("contact sheets pick the frames FFmpeg's select picks", async () => {
+    // FFmpeg's own select (as compile.ts writes it) over frames on AV_TIME_BASE, as the backend's are.
+    for (const [duration, fps, count] of [[2, 15, 6], [7.3, 30, 12], [1, 24, 4], [12.5, 25, 9]] as const) {
+      const [first, step] = [Math.round((duration / count / 2) * 1000) / 1000, Math.round((duration / count) * 1000) / 1000];
+      const { stderr } = await runFfmpegOrThrow([
+        "-hide_banner", "-nostdin", "-f", "lavfi", "-i", `color=c=black:s=16x16:r=${fps}:d=${duration}`,
+        "-vf", `settb=AVTB,select='isnan(prev_selected_t)*gte(t,${first})+gte(t-prev_selected_t,${step})',showinfo`,
+        "-f", "null", "-",
+      ]);
+      const picked = [...stderr.matchAll(/pts_time:([0-9.]+)/g)].map((m) => Math.round(Number(m[1]) * fps)).slice(0, count);
+      expect(contactSheetFrames(duration, fps, count), `${duration} s at ${fps} fps, ${count} pictures`).toEqual(picked);
+    }
+  }, 30_000);
 });

@@ -5,9 +5,9 @@ import path from "node:path";
 import type { MediaLayer, Project } from "../../core/schema.js";
 import { deepClone } from "../../core/util.js";
 import { withProjectPaths } from "../../core/operations.js";
-import { ASS_FILE, compileProject, renderSize, type CompileOptions, type CompiledRender } from "./compile.js";
+import { ASS_FILE, compileProject, even, renderSize, type CompileOptions, type CompiledRender } from "./compile.js";
 import { FrameSession, enginePath, runPlan } from "./engine.js";
-import { engineUnsupported, planProject } from "./plan.js";
+import { contactSheetFrames, engineUnsupported, planProject } from "./plan.js";
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
@@ -710,6 +710,27 @@ export async function renderFrame(
 }
 
 /**
+ * A contact sheet on the preview engine: the frames FFmpeg's `select` would pick (`contactSheetFrames`)
+ * drawn by the engine, then scaled and tiled by one short ffmpeg run, as the backend tiles them. The
+ * engine only draws those frames, where FFmpeg runs its graph over the whole edit.
+ */
+async function sheetOnEngine(p: Project, opts: Omit<RenderOptions, "range" | "onProgress"> & { columns?: number; rows?: number; thumbWidth?: number }): Promise<string> {
+  const [columns, rows, thumbWidth] = [opts.columns ?? 4, opts.rows ?? 3, opts.thumbWidth ?? 360];
+  const { session, fps } = await engineFrameSession(p, 0, opts);
+  const { width, height } = renderSize(p, opts.scale);
+  const list = contactSheetFrames(computeTimeline(p).duration, fps, columns * rows);
+  const output = path.resolve(opts.output);
+  await mkdir(path.dirname(output), { recursive: true });
+  await session.frames(list, [
+    "-y", "-hide_banner", "-loglevel", "error", "-nostdin",
+    "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", `${width}x${height}`, "-r", String(fps), "-i", "pipe:0",
+    "-vf", `scale=${even(thumbWidth)}:-2,tile=${columns}x${rows}:padding=4:margin=4`,
+    "-frames:v", "1", "-update", "1", output,
+  ]);
+  return output;
+}
+
+/**
  * Render a contact sheet: a grid of frames sampled evenly across the video.
  * One image gives an AI a quick overview of the whole edit.
  */
@@ -718,6 +739,13 @@ export async function renderContactSheet(
   opts: Omit<RenderOptions, "range" | "onProgress"> & { columns?: number; rows?: number; thumbWidth?: number },
 ): Promise<string> {
   const p = await readyToRender(project, opts);
+  // Like single frames: on the preview engine where previews go there, or when asked.
+  const backend = opts.backend ?? defaultFrameBackend;
+  if (backend === "engine" || backend === "auto") {
+    const blockers = [...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
+    if (!blockers.length) return sheetOnEngine(p, opts);
+    if (backend === "engine") throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
+  }
   const { project: q, segments, masks, fonts } = await prepare(p, opts, true);
   const compiled = compileProject(q, {
     ...opts,

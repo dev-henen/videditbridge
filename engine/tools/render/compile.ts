@@ -109,7 +109,7 @@ const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=ster
 /** Seconds of crossfade where a J or L cut hands the sound from one clip to the other (no click). */
 const SPLIT_FADE = 0.03;
 
-const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+export const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
 /**
  * FFmpeg blend modes for each layer blend. The picture under the layer is blend's first input, so

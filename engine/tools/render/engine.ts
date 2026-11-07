@@ -172,6 +172,14 @@ export class FrameSession {
   }
 
   /**
+   * Draw output frames `list` in that order and hand them all to one ffmpeg run with `args`, which
+   * read them on stdin as yuv420p (plan.width x plan.height), e.g. to tile a contact sheet.
+   */
+  frames(list: number[], args: string[]): Promise<{ frames: number; draw: number; seconds: number }> {
+    return this.engine.call("frames", { session: this.id, frames: list, args }) as Promise<{ frames: number; draw: number; seconds: number }>;
+  }
+
+  /**
    * Draw output frame `n` as BGRA into the memory-mapped file `shared` (native/ave-render/src/shared.rs
    * gives its layout), for the app's viewer. Resolves with its size and sequence number.
    */

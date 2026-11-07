@@ -536,3 +536,24 @@ function layerSize(layer: MediaLayer, asset: Asset, W: number, H: number): [numb
   return [w, even((w * 9) / 16)];
 }
 
+
+/**
+ * The output frames a contact sheet of `count` pictures shows, as the FFmpeg backend's `select`
+ * picks them (compile.ts): the first frame at or after the middle of the first of `count` equal
+ * slices, then each frame at least a slice after the one picked before. `t` is the frame's time as
+ * select sees it there: microseconds (the frames are on AV_TIME_BASE) times 1e-6, in doubles.
+ */
+export function contactSheetFrames(duration: number, fps: number, count: number): number[] {
+  const frames = Math.ceil(duration * fps - 1e-6);
+  const [first, step] = [round3(duration / count / 2), round3(duration / count)];
+  const picked: number[] = [];
+  let previous: number | undefined;
+  for (let n = 0; n < frames && picked.length < count; n++) {
+    const t = Math.round((n * 1e6) / fps) * 1e-6;
+    if (previous === undefined ? t >= first : t - previous >= step) {
+      picked.push(n);
+      previous = t;
+    }
+  }
+  return picked;
+}

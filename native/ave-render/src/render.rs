@@ -655,3 +655,26 @@ pub fn frame_shared(c: &mut Composer, n: i64, path: &str) -> Result<Value, Strin
     let sequence = crate::shared::write(path, width, height, &pixels)?;
     Ok(json!({ "draw": drawn, "seconds": started.elapsed().as_secs_f64(), "width": width, "height": height, "sequence": sequence }))
 }
+
+/// Draw several frames of an open composer, in the order given, and hand them all to one ffmpeg
+/// run with `args` (which read yuv420p frames on stdin, e.g. to tile a contact sheet).
+pub fn frames(c: &mut Composer, list: &[i64], args: &[String]) -> Result<Value, String> {
+    let started = Instant::now();
+    let last = c.plan.frames.saturating_sub(1) as i64;
+    let mut out = Encoder::start(&c.plan.ffmpeg, args, c.plan.cwd.as_deref())?;
+    let mut drawn = 0.0;
+    for &n in list {
+        let t = Instant::now();
+        let pixels = match c.frame(n.clamp(0, last)) {
+            Ok(p) => p,
+            Err(e) => {
+                out.abort();
+                return Err(e);
+            }
+        };
+        drawn += t.elapsed().as_secs_f64();
+        out.write(pixels)?;
+    }
+    out.finish()?;
+    Ok(json!({ "frames": list.len(), "draw": drawn, "seconds": started.elapsed().as_secs_f64() }))
+}

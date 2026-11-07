@@ -9,7 +9,8 @@
 //!   id; `frame` ({ session, frame, args }) draws one and hands it to ffmpeg with `args`, which read
 //!   yuv420p frames on stdin (to write a picture), or with `shared` (a path) writes it as BGRA into
 //!   that memory-mapped file for the app's viewer (shared.rs); `close` ends a session. A
-//!   session keeps its decoders, so nearby frames come quickly.
+//!   session keeps its decoders, so nearby frames come quickly. `frames` ({ session, frames, args })
+//!   draws several and hands them all to one ffmpeg run (contact sheets).
 //! - `shutdown` ends the process.
 //!
 //! stdout carries protocol messages only. A failure, panics included, is an error reply; the
@@ -115,6 +116,13 @@ fn main() {
                             render::frame(c, n, &args)
                         }
                     }
+                }
+                "frames" => {
+                    let id = params["session"].as_u64().ok_or("frames needs a session")?;
+                    let c = sessions.get_mut(&id).ok_or_else(|| format!("no session {id}"))?;
+                    let list: Vec<i64> = serde_json::from_value(params["frames"].clone()).map_err(|e| format!("invalid frames: {e}"))?;
+                    let args: Vec<String> = serde_json::from_value(params["args"].clone()).map_err(|e| format!("invalid args: {e}"))?;
+                    render::frames(c, &list, &args)
                 }
                 "close" => {
                     sessions.remove(&params["session"].as_u64().unwrap_or(0));
