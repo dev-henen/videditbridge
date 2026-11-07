@@ -164,8 +164,8 @@ export class FrameSession {
   }
 
   /**
-   * Draw output frame `n` and hand it to ffmpeg with `args`, which read it on stdin as packed VUYA
-   * (plan.width x plan.height). Resolves with seconds spent drawing and in all.
+   * Draw output frame `n` and hand it to ffmpeg with `args`, which read it on stdin as planar 4:2:0 (yuv420p,
+   * plan.width x plan.height). Resolves with seconds spent drawing and in all.
    */
   frame(n: number, args: string[]): Promise<{ draw: number; seconds: number }> {
     return this.engine.call("frame", { session: this.id, frame: n, args }) as Promise<{ draw: number; seconds: number }>;

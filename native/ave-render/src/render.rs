@@ -3,9 +3,9 @@
 //! encoder.
 
 use crate::effects::Effects;
-use crate::gpu::{view, Gpu, HblurParams, LayerParams, PrimaryParams, ResampleParams, FLOAT};
+use crate::gpu::{view, Gpu, HblurParams, LayerParams, PlanarParams, PrimaryParams, ResampleParams, FLOAT};
 use crate::media::{Decoder, Encoder};
-use crate::plan::{blend_mode, transition_kind, Item, Plan, Source, HBLUR, PLAN_VERSION};
+use crate::plan::{blend_mode, output_bytes, transition_kind, Item, PixelFormat, Plan, Source, HBLUR, PLAN_VERSION};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -14,11 +14,28 @@ use std::time::Instant;
 /// Seconds of lookahead for starting decoders, so ffmpeg's start and seek are hidden.
 const DECODE_LEAD: f64 = 1.0;
 
+/// 32-bit words of the packed output's Y plane and of each chroma plane: each plane starts on a
+/// word (the packing shader writes whole words) and `read` joins them.
+fn packed_words(w: u32, h: u32) -> (u64, u64) {
+    let (w, h) = (w as u64, h as u64);
+    ((w * h).div_ceil(4), (w.div_ceil(2) * h.div_ceil(2)).div_ceil(4))
+}
+
+/// One pass of the packing shader over `words` words, in rows of at most 65535 workgroups of 256.
+fn pack_pass(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, pipeline: &wgpu::ComputePipeline, picture: &wgpu::TextureView, packed: &wgpu::Buffer, words: u64) {
+    let groups = words.div_ceil(256) as u32;
+    let (gx, gy) = (groups.clamp(1, 65535), groups.div_ceil(65535).max(1));
+    gpu.dispatch_bound(enc, pipeline, &[(0, wgpu::BindingResource::TextureView(picture)), (1, packed.as_entire_binding())], gx, gy);
+}
+
 /// An item's decoder and textures while it is in use.
 #[derive(Default)]
 struct ItemState {
     decoder: Option<Decoder>,
+    /// The decoded frame: VUYA, or a planar source's luma (Y, or Y and A).
     source: Option<wgpu::Texture>,
+    /// Planar sources: the decoded chroma (U and V) at half size.
+    chroma: Option<Planes>,
     tmp: Option<wgpu::Texture>,
     out: Option<wgpu::Texture>,
     uploaded: Option<i64>,
@@ -76,10 +93,11 @@ fn xfade_progress(n: i64, fps: f64, offset: f64, duration: f64) -> f32 {
     (1.0f32 - (pts - start) as f32 / length as f32).clamp(0.0, 1.0)
 }
 
-/// Fit a decoded VUYA frame into an item image: scaled to `scaled`, placed at `offset`, the rest `fill`
-/// (two bicubic passes through `rows`).
+/// Fit a decoded frame into an item image: scaled to `scaled`, placed at `offset`, the rest `fill`
+/// (two bicubic passes through `rows`). `yuv_in` turns a VUYA frame into RGB; without it the
+/// values stay as they are (a plane of a planar frame).
 #[allow(clippy::too_many_arguments)]
-fn fit(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, src: &wgpu::TextureView, rows: &wgpu::TextureView, out: &wgpu::TextureView, (sw, sh): (u32, u32), scaled: [u32; 2], offset: [i32; 2], (w, h): (u32, u32), opaque: bool, fill: [f32; 4]) {
+fn fit(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, src: &wgpu::TextureView, rows: &wgpu::TextureView, out: &wgpu::TextureView, (sw, sh): (u32, u32), scaled: [u32; 2], offset: [i32; 2], (w, h): (u32, u32), opaque: bool, fill: [f32; 4], yuv_in: bool) {
     let hp = gpu.uniform(&ResampleParams { src_len: sw, scaled_len: scaled[0], offset: offset[0], opaque: 0, out_size: [w, sh], x_range: [0, 0], fill: [0.0; 4], origin: 0, line_origin: 0, yuv_in: 0, _pad: 0 });
     gpu.dispatch(enc, &gpu.resample_h, &[wgpu::BindingResource::TextureView(src), wgpu::BindingResource::TextureView(rows), hp.as_entire_binding()], w, sh);
     let vp = gpu.uniform(&ResampleParams {
@@ -92,10 +110,53 @@ fn fit(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, src: &wgpu::TextureView, rows:
         fill,
         origin: 0,
         line_origin: 0,
-        yuv_in: 1,
+        yuv_in: yuv_in as u32,
         _pad: 0,
     });
     gpu.dispatch(enc, &gpu.resample_v, &[wgpu::BindingResource::TextureView(rows), wgpu::BindingResource::TextureView(out), vp.as_entire_binding()], w, h);
+}
+
+/// A planar source's chroma and the textures its fit goes through: the decoded U and V (rg8, half
+/// size), the chroma rows after the horizontal pass, the fitted luma and the fitted chroma.
+struct Planes {
+    uv: wgpu::Texture,
+    rows: wgpu::Texture,
+    luma: wgpu::Texture,
+    chroma: wgpu::Texture,
+}
+
+impl Planes {
+    fn new(gpu: &Gpu, (sw, sh): (u32, u32), (w, h): (u32, u32)) -> Planes {
+        let (cw, ch) = (sw.div_ceil(2), sh.div_ceil(2));
+        Planes {
+            uv: gpu.texture("source-chroma", cw, ch, wgpu::TextureFormat::Rg8Unorm, false),
+            rows: gpu.texture("fit-chroma-rows", w.div_ceil(2), ch, FLOAT, true),
+            luma: gpu.texture("fit-luma", w, h, FLOAT, true),
+            chroma: gpu.texture("fit-chroma", w.div_ceil(2), h.div_ceil(2), FLOAT, true),
+        }
+    }
+}
+
+/// A color as limited-range BT.601 YUV in float (Y, U, V), the inverse of the shaders' `vuya_to_rgb`.
+fn yuv_of(c: [f32; 4]) -> [f32; 3] {
+    let y = 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+    [(16.0 + 219.0 * y) / 255.0, (128.0 + 224.0 * (c[2] - y) / 1.772) / 255.0, (128.0 + 224.0 * (c[0] - y) / 1.402) / 255.0]
+}
+
+/// Fit a planar 4:2:0 frame into an item image as FFmpeg's scale does with 4:2:0: luma to `scaled`
+/// at `offset`, chroma from its half-size planes to half of that (sizes rounded up, the offset
+/// halved), both with the same bicubic passes and centered chroma (swscale's default siting), then
+/// joined into float RGB. `rows` is the luma's row texture.
+#[allow(clippy::too_many_arguments)]
+fn fit_planar(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, luma: &wgpu::TextureView, planes: &Planes, rows: &wgpu::TextureView, out: &wgpu::TextureView, (sw, sh): (u32, u32), scaled: [u32; 2], offset: [i32; 2], (w, h): (u32, u32), opaque: bool, alpha: bool, fill: [f32; 4]) {
+    let [y, u, v] = yuv_of(fill);
+    fit(gpu, enc, luma, rows, &view(&planes.luma), (sw, sh), scaled, offset, (w, h), false, [y, fill[3], 0.0, fill[3]], false);
+    let half = |n: u32| n.div_ceil(2);
+    let chroma_scaled = [half(scaled[0]), half(scaled[1])];
+    let chroma_offset = [offset[0].div_euclid(2), offset[1].div_euclid(2)];
+    fit(gpu, enc, &view(&planes.uv), &view(&planes.rows), &view(&planes.chroma), (half(sw), half(sh)), chroma_scaled, chroma_offset, (half(w), half(h)), false, [u, v, 0.0, 1.0], false);
+    let pp = gpu.uniform(&PlanarParams { opaque: opaque as u32, alpha: alpha as u32, _pad: [0; 2] });
+    gpu.dispatch(enc, &gpu.planar, &[wgpu::BindingResource::TextureView(&view(&planes.luma)), wgpu::BindingResource::TextureView(&view(&planes.chroma)), wgpu::BindingResource::TextureView(out), pp.as_entire_binding()], w, h);
 }
 
 /// Frames past what a decoder has read that are worth reading through rather than restarting it at
@@ -134,7 +195,9 @@ impl<'a> Composer<'a> {
         let kinds = plan.clips.iter().map(|c| c.transition.as_ref().map(|t| transition_kind(&t.kind)).transpose()).collect::<Result<Vec<_>, _>>()?;
         // hblur's row sums (width + 1 per row and clip), only when a transition needs them.
         let sums_size = if kinds.iter().any(|k| *k == Some(HBLUR)) { h as u64 * (w as u64 + 1) * 2 * 16 } else { 32 };
-        let bytes = (w * h * 4) as u64;
+        // The output frame as yuv420p, in whole 32-bit words (the packing shader writes words).
+        let (luma_words, chroma_words) = packed_words(w, h);
+        let bytes = 4 * (luma_words + 2 * chroma_words);
         let buffer = |label: &str, size: u64, usage: wgpu::BufferUsages| gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size, usage, mapped_at_creation: false });
         Ok(Composer {
             gpu,
@@ -159,11 +222,11 @@ impl<'a> Composer<'a> {
     fn start_decoder(&mut self, i: usize, at: Option<i64>) -> Result<(), String> {
         let plan = self.plan.clone();
         let state = &mut self.states[i];
-        if let Source::Decode { width, height, args, seek, .. } = &plan.items[i].source {
-            let bytes = (*width * *height * 4) as usize;
+        if let Source::Decode { width, height, args, seek, format, .. } = &plan.items[i].source {
+            let size = (*width, *height);
             state.decoder = Some(match (at, seek) {
-                (Some(k), Some(seek)) if k > 0 => Decoder::start(&plan.ffmpeg, &seek.args(k, plan.fps), plan.cwd.as_deref(), bytes, k)?,
-                _ => Decoder::start(&plan.ffmpeg, args, plan.cwd.as_deref(), bytes, 0)?,
+                (Some(k), Some(seek)) if k > 0 => Decoder::start(&plan.ffmpeg, &seek.args(k, plan.fps, *format), plan.cwd.as_deref(), *format, size, k)?,
+                _ => Decoder::start(&plan.ffmpeg, args, plan.cwd.as_deref(), *format, size, 0)?,
             });
         }
         Ok(())
@@ -221,14 +284,14 @@ impl<'a> Composer<'a> {
                 state.decoder.as_mut().unwrap().seek(0)?;
                 (*width, *height, 0)
             }
-            Source::Decode { width, height, args, .. } => {
+            Source::Decode { width, height, args, format, .. } => {
                 let need = if hold || exact { k } else { k + 1 };
                 if let Err(e) = state.decoder.as_mut().unwrap().seek(need) {
                     // A seek past the end of the source gives nothing: read it from the start instead.
                     if state.decoder.as_ref().unwrap().base == 0 {
                         return Err(e);
                     }
-                    state.decoder = Some(Decoder::start(&plan.ffmpeg, args, plan.cwd.as_deref(), (*width * *height * 4) as usize, 0)?);
+                    state.decoder = Some(Decoder::start(&plan.ffmpeg, args, plan.cwd.as_deref(), *format, (*width, *height), 0)?);
                     state.decoder.as_mut().unwrap().seek(need)?;
                 }
                 let decoder = state.decoder.as_mut().unwrap();
@@ -243,8 +306,20 @@ impl<'a> Composer<'a> {
             }
             Source::Color { .. } => (1, 1, 0),
         };
+        let format = match &item.source {
+            Source::Decode { format, .. } => *format,
+            Source::Color { .. } => PixelFormat::Vuya,
+        };
         if state.source.is_none() {
-            state.source = Some(gpu.texture("source", sw, sh, wgpu::TextureFormat::Rgba8Unorm, false));
+            let luma = match format {
+                PixelFormat::Vuya => wgpu::TextureFormat::Rgba8Unorm,
+                PixelFormat::Yuv420p => wgpu::TextureFormat::R8Unorm,
+                PixelFormat::Yuva420p => wgpu::TextureFormat::Rg8Unorm,
+            };
+            state.source = Some(gpu.texture("source", sw, sh, luma, false));
+            if format.planar() {
+                state.chroma = Some(Planes::new(gpu, (sw, sh), (item.width, item.height)));
+            }
             state.tmp = Some(gpu.texture("fit-rows", item.width, sh, FLOAT, true));
             state.out = Some(gpu.texture("item", item.width, item.height, FLOAT, true));
         }
@@ -253,7 +328,17 @@ impl<'a> Composer<'a> {
                 Source::Decode { still, .. } => {
                     let decoder = state.decoder.as_ref().unwrap();
                     let frame = if *still { decoder.frame(0) } else { decoder.frame(shown) };
-                    gpu.upload(state.source.as_ref().unwrap(), frame.ok_or("a decoded frame went missing")?, sw, sh)
+                    let frame = frame.ok_or("a decoded frame went missing")?;
+                    match &state.chroma {
+                        None => gpu.upload(state.source.as_ref().unwrap(), frame, sw, sh),
+                        Some(planes) => {
+                            // As `PixelFormat::for_upload` lays it out: the luma, then U and V interleaved.
+                            let lb = format.luma_bytes();
+                            let luma = (lb * sw * sh) as usize;
+                            gpu.upload_pixels(state.source.as_ref().unwrap(), &frame[..luma], sw, sh, lb);
+                            gpu.upload_pixels(&planes.uv, &frame[luma..], sw.div_ceil(2), sh.div_ceil(2), 2);
+                        }
+                    }
                 }
                 Source::Color { color } => {
                     // As the backend makes a color: RGB to 8-bit BT.601 YUV (VUYA, as decoders give).
@@ -268,8 +353,13 @@ impl<'a> Composer<'a> {
         let (w, h) = (item.width, item.height);
         let (src, tmp) = (view(state.source.as_ref().unwrap()), view(state.tmp.as_ref().unwrap()));
         let refit = state.fitted != Some(shown);
+        let alpha = format == PixelFormat::Yuva420p;
+        let fit_into = |planes: Option<&Planes>, enc: &mut wgpu::CommandEncoder, out: &wgpu::TextureView, scaled: [u32; 2], offset: [i32; 2], opaque: bool| match planes {
+            None => fit(gpu, enc, &src, &tmp, out, (sw, sh), scaled, offset, (w, h), opaque, item.fill, true),
+            Some(planes) => fit_planar(gpu, enc, &src, planes, &tmp, out, (sw, sh), scaled, offset, (w, h), opaque, alpha, item.fill),
+        };
         if refit {
-            fit(gpu, enc, &src, &tmp, &view(state.out.as_ref().unwrap()), (sw, sh), item.scaled, item.offset, (w, h), item.opaque, item.fill);
+            fit_into(state.chroma.as_ref(), enc, &view(state.out.as_ref().unwrap()), item.scaled, item.offset, item.opaque);
             state.fitted = Some(shown);
         }
         // fit blur: the backdrop from the same frame, through its effects, with the picture laid over it.
@@ -278,7 +368,7 @@ impl<'a> Composer<'a> {
             let t = state.back.get_or_insert_with(|| ["backdrop", "backdrop-a", "backdrop-b", "laid"].map(|l| gpu.texture(l, w, h, FLOAT, true)));
             let [fitted, a, b, laid] = [view(&t[0]), view(&t[1]), view(&t[2]), view(&t[3])];
             if refit {
-                fit(gpu, enc, &src, &tmp, &fitted, (sw, sh), back.scaled, back.offset, (w, h), true, item.fill);
+                fit_into(state.chroma.as_ref(), enc, &fitted, back.scaled, back.offset, true);
                 let under = match self.effects.run(enc, &back.effects, &fitted, [&a, &b], 0, (w, h), k)? {
                     Some(s) => [&a, &b][s].clone(),
                     None => fitted.clone(),
@@ -307,7 +397,7 @@ impl<'a> Composer<'a> {
         }
     }
 
-    /// Draw output frame `n` and read it back: packed 8-bit VUYA, width x height.
+    /// Draw output frame `n` and read it back: planar 8-bit 4:2:0 (yuv420p), width x height.
     pub fn frame(&mut self, n: i64) -> Result<Vec<u8>, String> {
         let slot = self.draw(n)?;
         self.read(slot)
@@ -319,7 +409,18 @@ impl<'a> Composer<'a> {
         let slice = self.staging[slot].slice(..);
         slice.map_async(wgpu::MapMode::Read, |_| {});
         self.gpu.device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: None }).map_err(|e| format!("graphics device: {e}"))?;
-        let frame = slice.get_mapped_range().map_err(|e| format!("reading the frame back: {e}"))?.to_vec();
+        let frame = {
+            let mapped = slice.get_mapped_range().map_err(|e| format!("reading the frame back: {e}"))?;
+            let (w, h) = (self.plan.width as usize, self.plan.height as usize);
+            let (luma_words, chroma_words) = packed_words(self.plan.width, self.plan.height);
+            let (luma, chroma) = (w * h, w.div_ceil(2) * h.div_ceil(2));
+            let (u, v) = (4 * luma_words as usize, 4 * (luma_words + chroma_words) as usize);
+            let mut frame = Vec::with_capacity(output_bytes(self.plan.width, self.plan.height));
+            frame.extend_from_slice(&mapped[..luma]);
+            frame.extend_from_slice(&mapped[u..u + chroma]);
+            frame.extend_from_slice(&mapped[v..v + chroma]);
+            frame
+        };
         self.staging[slot].unmap();
         Ok(frame)
     }
@@ -406,8 +507,12 @@ impl<'a> Composer<'a> {
         );
         // Whole-video effects on the primary picture, before the layers.
         let mut cur = self.effects.run(&mut enc, &plan.effects, &canvas_views[0], [&canvas_views[0], &canvas_views[1]], 1, (w, h), n)?.unwrap_or(0);
+        // A layer is on where the backend's `enable='between(t,start,end)'` is: there `t` is the
+        // frame's time in microseconds (AV_TIME_BASE) times 1e-6, in doubles, which lands just under
+        // some starts (frame 12 at 15 fps is 0.7999999999999999), so such a layer shows a frame late.
+        let enable_t = (n as f64 * 1e6 / fps).round() * 1e-6;
         for (li, l) in plan.layers.iter().enumerate() {
-            if t < l.start - 1e-9 || t > l.end + 1e-9 {
+            if enable_t < l.start || enable_t > l.end {
                 continue;
             }
             let pos = (t - l.start) * fps;
@@ -442,8 +547,10 @@ impl<'a> Composer<'a> {
             );
             cur = 1 - cur;
         }
-        let bytes = (w * h * 4) as u64;
-        gpu.dispatch(&mut enc, &gpu.pack, &[wgpu::BindingResource::TextureView(&canvas_views[cur]), self.packed.as_entire_binding()], w, h);
+        let (luma_words, chroma_words) = packed_words(w, h);
+        let bytes = self.packed.size();
+        pack_pass(gpu, &mut enc, &gpu.pack_luma, &canvas_views[cur], &self.packed, luma_words);
+        pack_pass(gpu, &mut enc, &gpu.pack_chroma, &canvas_views[cur], &self.packed, chroma_words);
         let slot = self.next_slot;
         if self.filled[slot].is_some() {
             return Err("both readback slots are waiting to be read".into());
@@ -501,7 +608,7 @@ pub fn render(gpu: &Gpu, plan: Arc<Plan>, cancel: &AtomicBool, progress: &mut dy
     }
 }
 
-/// Draw one frame of an open composer and hand it to ffmpeg with `args` (which read VUYA frames
+/// Draw one frame of an open composer and hand it to ffmpeg with `args` (which read yuv420p frames
 /// on stdin, e.g. to burn in the text and write a picture). Returns how long the parts took.
 pub fn frame(c: &mut Composer, n: i64, args: &[String]) -> Result<Value, String> {
     let started = Instant::now();

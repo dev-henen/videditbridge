@@ -1,15 +1,113 @@
-// The finished float picture as packed 8-bit VUYA for the encoder, rounded to nearest. YUV keeps
-// what lies past video black and white, as the FFmpeg backend does. (Prefixed with yuv.wgsl.)
+// The finished float picture as planar 8-bit 4:2:0 (yuv420p) for the encoder, rounded to nearest:
+// the Y plane, then U and V at half size (rounded up), each plane starting on a 32-bit word (the
+// readback joins them). Chroma that came in at half size is the same over its 2 x 2 block and goes
+// out as it was; other chroma goes down as swscale takes RGB to 4:2:0 (`downsample`). YUV keeps
+// what lies past video black and white, as the FFmpeg backend does. Each invocation writes one
+// word of Y (`luma`), or one word each of U and V (`chroma`). (Prefixed with yuv.wgsl.)
 
 @group(0) @binding(0) var picture: texture_2d<f32>;
 @group(0) @binding(1) var<storage, read_write> out: array<u32>;
 
-@compute @workgroup_size(16, 16)
-fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+fn to_byte(v: f32) -> u32 {
+    return u32(round(clamp(v, 0.0, 1.0) * 255.0));
+}
+
+fn yuv(x: u32, y: u32) -> vec4<f32> {
+    return rgb_to_vuya(vec4<f32>(textureLoad(picture, vec2<u32>(x, y), 0).rgb, 1.0));
+}
+
+fn words(bytes: u32) -> u32 {
+    return (bytes + 3u) / 4u;
+}
+
+// The invocation's index, from a grid of rows of workgroups of 256.
+fn index(id: vec3<u32>, groups: vec3<u32>) -> u32 {
+    return id.y * groups.x * 256u + id.x;
+}
+
+@compute @workgroup_size(256)
+fn luma(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) groups: vec3<u32>) {
     let size = textureDimensions(picture);
-    if (id.x >= size.x || id.y >= size.y) {
+    let total = size.x * size.y;
+    let word = index(id, groups);
+    if (word >= words(total)) {
         return;
     }
-    let c = textureLoad(picture, id.xy, 0);
-    out[id.y * size.x + id.x] = pack4x8unorm(rgb_to_vuya(vec4<f32>(c.rgb, 1.0)));
+    var packed = 0u;
+    for (var k = 0u; k < 4u; k++) {
+        let b = word * 4u + k;
+        if (b < total) {
+            packed |= to_byte(yuv(b % size.x, b / size.x).z) << (8u * k);
+        }
+    }
+    out[word] = packed;
+}
+
+fn bicubic(d: f32) -> f32 {
+    let x = abs(d);
+    if (x < 1.0) {
+        return (1.4 * x - 2.4) * x * x + 1.0;
+    }
+    if (x < 2.0) {
+        return ((-0.6 * x + 3.0) * x - 4.8) * x + 2.4;
+    }
+    return 0.0;
+}
+
+// Chroma that differs within its 2 x 2 block went through full-size RGB; FFmpeg brings such
+// pictures back to 4:2:0 with swscale, which averages each horizontal pair and scales the rows
+// down with its bicubic (widened by 2, centered). Measured against swscale's own output this is
+// within its fixed-point rounding; a plain 2 x 2 mean was half a level further off.
+fn downsample(x0: u32, x1: u32, cy: u32, size: vec2<u32>) -> vec2<f32> {
+    let s = 2.0 * f32(cy) + 0.5;
+    var acc = vec2<f32>(0.0);
+    var total = 0.0;
+    for (var j = i32(floor(s - 4.0)) + 1; j <= i32(floor(s + 4.0)); j++) {
+        let w = bicubic((f32(j) - s) / 2.0);
+        let y = u32(clamp(j, 0, i32(size.y) - 1));
+        acc += w * (yuv(x0, y).xy + yuv(x1, y).xy) * 0.5;
+        total += w;
+    }
+    return acc / total;
+}
+
+// V and U of chroma sample (cx, cy).
+fn chroma_sample(cx: u32, cy: u32, size: vec2<u32>) -> vec2<f32> {
+    let x0 = cx * 2u;
+    let y0 = cy * 2u;
+    let x1 = min(x0 + 1u, size.x - 1u);
+    let y1 = min(y0 + 1u, size.y - 1u);
+    let q00 = yuv(x0, y0).xy;
+    let q10 = yuv(x1, y0).xy;
+    let q01 = yuv(x0, y1).xy;
+    let q11 = yuv(x1, y1).xy;
+    let spread = max(max(abs(q00 - q10), abs(q00 - q01)), abs(q00 - q11));
+    if (max(spread.x, spread.y) > 0.25 / 255.0) {
+        return downsample(x0, x1, cy, size);
+    }
+    return (q00 + q10 + q01 + q11) * 0.25;
+}
+
+@compute @workgroup_size(256)
+fn chroma(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) groups: vec3<u32>) {
+    let size = textureDimensions(picture);
+    let cw = (size.x + 1u) / 2u;
+    let plane = cw * ((size.y + 1u) / 2u);
+    let word = index(id, groups);
+    if (word >= words(plane)) {
+        return;
+    }
+    var u = 0u;
+    var v = 0u;
+    for (var k = 0u; k < 4u; k++) {
+        let i = word * 4u + k;
+        if (i < plane) {
+            let c = chroma_sample(i % cw, i / cw, size);
+            v |= to_byte(c.x) << (8u * k);
+            u |= to_byte(c.y) << (8u * k);
+        }
+    }
+    let base = words(size.x * size.y);
+    out[base + word] = u;
+    out[base + words(plane) + word] = v;
 }

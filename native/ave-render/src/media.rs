@@ -1,6 +1,7 @@
-//! ffmpeg processes: decoders that write RGBA frames to a pipe, read on their own threads a few
+//! ffmpeg processes: decoders that write YUV frames to a pipe, read on their own threads a few
 //! frames ahead, and the encoder that takes the finished frames on its stdin.
 
+use crate::plan::PixelFormat;
 use std::io::{Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
@@ -67,14 +68,17 @@ pub struct Decoder {
 }
 
 impl Decoder {
-    pub fn start(ffmpeg: &str, args: &[String], cwd: Option<&str>, frame_bytes: usize, base: i64) -> Result<Decoder, String> {
+    /// Start ffmpeg with `args`, which write `width` x `height` frames in `format`; frames are
+    /// rearranged for upload (`PixelFormat::for_upload`) on the reading thread.
+    pub fn start(ffmpeg: &str, args: &[String], cwd: Option<&str>, format: PixelFormat, (width, height): (u32, u32), base: i64) -> Result<Decoder, String> {
         let mut child = command(ffmpeg, args, cwd).stdout(Stdio::piped()).stdin(Stdio::null()).spawn().map_err(|e| format!("cannot start ffmpeg ({ffmpeg}): {e}"))?;
         let log = collect_stderr(&mut child);
         let mut out = child.stdout.take().unwrap();
         let (tx, rx) = sync_channel::<Vec<u8>>(READ_AHEAD);
+        let frame_bytes = format.frame_bytes(width, height);
         std::thread::spawn(move || loop {
             let mut frame = vec![0u8; frame_bytes];
-            if out.read_exact(&mut frame).is_err() || tx.send(frame).is_err() {
+            if out.read_exact(&mut frame).is_err() || tx.send(format.for_upload(frame, width, height)).is_err() {
                 break;
             }
         });

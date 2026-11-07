@@ -1,6 +1,6 @@
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { addAsset, addClip, addLayer, createProject, setTransition, type Project } from "../../engine/core/index.js";
+import { addAsset, addClip, addLayer, computeTimeline, createProject, cutTimelineRanges, setTransition, type Project } from "../../engine/core/index.js";
 import { enginePath, engineUnsupported, planProject, render, renderFrame, runFfmpegOrThrow } from "../../engine/tools/index.js";
 import { deltaE2000, rgbToLab } from "../../engine/library/effects/color-match.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "../helpers/media.js";
@@ -12,6 +12,8 @@ const hasFfmpeg = await ffmpegAvailable();
 const W = 480;
 const H = 270;
 const FPS = 15;
+/** No test edit is longer than this, so the file runs quickly. */
+const MAX_SECONDS = 2;
 
 /** Every frame of a video as packed RGB, optionally through a filter first. */
 async function frames(file: string, filter?: string): Promise<Buffer[]> {
@@ -52,6 +54,7 @@ async function compare(
   opts: { scale?: number; filter?: string; skip?: (frame: number) => boolean } = {},
 ): Promise<{ mean: number; worst: number; frames: number; repeatedByFfmpeg: number; skipped: number }> {
   expect(engineUnsupported(p)).toEqual([]);
+  expect(computeTimeline(p).duration, "test edits stay short").toBeLessThanOrEqual(MAX_SECONDS + 1e-6);
   p.export = { ...p.export, crf: 0, preset: "ultrafast" };
   const dir = path.join(OUT_DIR, "engine");
   const [ff, gpu] = [path.join(dir, `${name}-ffmpeg.mp4`), path.join(dir, `${name}-engine.mp4`)];
@@ -67,7 +70,9 @@ async function compare(
   const skipped = a.map((_, i) => i).filter((i) => opts.skip?.(i)).length;
   const kept = a.map((_, i) => i).filter((i) => !repeated(i) && !opts.skip?.(i));
   const scores = kept.map((i) => meanDeltaE(a[i]!, b[i]!));
-  return { mean: scores.reduce((x, y) => x + y, 0) / scores.length, worst: Math.max(...scores), frames: a.length, repeatedByFfmpeg: a.length - kept.length - skipped, skipped };
+  const result = { mean: scores.reduce((x, y) => x + y, 0) / scores.length, worst: Math.max(...scores), frames: a.length, repeatedByFfmpeg: a.length - kept.length - skipped, skipped };
+  if (process.env.PARITY_LOG) console.log(`parity ${name}: mean ${result.mean.toFixed(3)}, worst ${result.worst.toFixed(3)}`);
+  return result;
 }
 
 describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the FFmpeg backend", () => {
@@ -87,12 +92,12 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
 
   it("clips: cover, contain, speed, fades and transitions", async () => {
     let p = base();
-    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 2, fadeIn: 0.4 });
-    p = addClip(p, { id: "b", assetId: "tall", duration: 1.5, fit: "contain", speed: 1.5 });
-    p = addClip(p, { id: "c", assetId: "pic", duration: 1.2, focus: { x: 0.2, y: 0.8 } });
-    p = addClip(p, { id: "d", assetId: "blue", duration: 0.8, fadeOut: 0.5 });
-    p = setTransition(p, "b", { type: "fade", duration: 0.5 });
-    p = setTransition(p, "c", { type: "fadeblack", duration: 0.4 });
+    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 0.6, fadeIn: 0.3 });
+    p = addClip(p, { id: "b", assetId: "tall", duration: 0.6, fit: "contain", speed: 1.5 });
+    p = addClip(p, { id: "c", assetId: "pic", duration: 0.6, focus: { x: 0.2, y: 0.8 } });
+    p = addClip(p, { id: "d", assetId: "blue", duration: 0.5, fadeOut: 0.3 });
+    p = setTransition(p, "b", { type: "fade", duration: 0.2 });
+    p = setTransition(p, "c", { type: "fadeblack", duration: 0.2 });
     const r = await compare("clips", p);
     expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
     expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
@@ -100,11 +105,11 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
 
   it("layers: opacity, fades, blend modes and text", async () => {
     let p = base();
-    p = addClip(p, { id: "a", assetId: "talk", duration: 3 });
-    p = addLayer(p, { type: "media", assetId: "pic", start: 0.2, duration: 2, position: { x: 0.3, y: 0.4 }, size: { width: 0.4 }, opacity: 0.7, animationIn: { type: "fade", duration: 0.5 } });
-    p = addLayer(p, { type: "media", assetId: "blue", start: 1, duration: 1.5, position: { x: 0.75, y: 0.5 }, size: { width: 0.4, height: 0.6 }, blend: "multiply" });
-    p = addLayer(p, { type: "media", assetId: "tall", start: 0.5, duration: 2, position: { x: 0.6, y: 0.7 }, size: { width: 0.3, height: 0.4 }, fit: "contain", blend: "screen" });
-    p = addLayer(p, { type: "text", text: "Engine", start: 0, duration: 3, position: { x: 0.5, y: 0.85 } });
+    p = addClip(p, { id: "a", assetId: "talk", duration: 2 });
+    p = addLayer(p, { type: "media", assetId: "pic", start: 0.2, duration: 1.4, position: { x: 0.3, y: 0.4 }, size: { width: 0.4 }, opacity: 0.7, animationIn: { type: "fade", duration: 0.4 } });
+    p = addLayer(p, { type: "media", assetId: "blue", start: 0.8, duration: 1, position: { x: 0.75, y: 0.5 }, size: { width: 0.4, height: 0.6 }, blend: "multiply" });
+    p = addLayer(p, { type: "media", assetId: "tall", start: 0.4, duration: 1.4, position: { x: 0.6, y: 0.7 }, size: { width: 0.3, height: 0.4 }, fit: "contain", blend: "screen" });
+    p = addLayer(p, { type: "text", text: "Engine", start: 0, duration: 2, position: { x: 0.5, y: 0.85 } });
     const r = await compare("layers", p);
     expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
     expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
@@ -149,7 +154,7 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
 
   it("fit blur: the picture over a blurred, darkened copy", async () => {
     let p = base();
-    p = addClip(p, { id: "a", assetId: "tall", duration: 1.2, fit: "blur" });
+    p = addClip(p, { id: "a", assetId: "tall", duration: 1, fit: "blur" });
     p = addClip(p, { id: "b", assetId: "pic", duration: 1, fit: "blur", effects: [{ type: "warm" }] });
     const r = await compare("fit-blur", p);
     expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
@@ -158,17 +163,17 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
 
   it("layers: slides, position and opacity keyframes", async () => {
     let p = base();
-    p = addClip(p, { id: "a", assetId: "talk", duration: 2.5 });
-    p = addLayer(p, { type: "media", assetId: "pic", start: 0.2, duration: 2, position: { x: 0.3, y: 0.5 }, size: { width: 0.35 }, animationIn: { type: "slide-up", duration: 0.5 }, animationOut: { type: "slide-right", duration: 0.4, easing: "ease-in" } });
+    p = addClip(p, { id: "a", assetId: "talk", duration: 2 });
+    p = addLayer(p, { type: "media", assetId: "pic", start: 0.2, duration: 1.6, position: { x: 0.3, y: 0.5 }, size: { width: 0.35 }, animationIn: { type: "slide-up", duration: 0.4 }, animationOut: { type: "slide-right", duration: 0.3, easing: "ease-in" } });
     p = addLayer(p, {
       type: "media",
       assetId: "blue",
-      start: 0.5,
-      duration: 1.8,
+      start: 0.3,
+      duration: 1.5,
       size: { width: 0.2, height: 0.2 },
       keyframes: {
-        position: [{ time: 0, value: { x: 0.2, y: 0.2 }, easing: "linear" }, { time: 1.5, value: { x: 0.8, y: 0.7 }, easing: "ease-in-out" }],
-        opacity: [{ time: 0, value: 0.2, easing: "linear" }, { time: 1, value: 1, easing: "ease-out" }],
+        position: [{ time: 0, value: { x: 0.2, y: 0.2 }, easing: "linear" }, { time: 1.2, value: { x: 0.8, y: 0.7 }, easing: "ease-in-out" }],
+        opacity: [{ time: 0, value: 0.2, easing: "linear" }, { time: 0.8, value: 1, easing: "ease-out" }],
       },
     });
     const r = await compare("layer-motion", p);
@@ -208,19 +213,19 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
 
   it("single frames: anywhere in the edit, in any order, like FFmpeg's", async () => {
     let p = base();
-    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 2.5 });
-    p = addClip(p, { id: "b", assetId: "pic", duration: 2, effects: [{ type: "kenBurns", params: { zoomTo: 1.3 } }] });
-    p = addClip(p, { id: "c", assetId: "talk", in: 1, duration: 2, speed: 1.5 });
-    p = setTransition(p, "b", { type: "fade", duration: 0.5 });
-    p = addLayer(p, { type: "media", assetId: "tall", start: 0.5, duration: 4, position: { x: 0.8, y: 0.5 }, size: { width: 0.2, height: 0.5 }, fit: "contain" });
-    p = addLayer(p, { type: "text", text: "Frames", start: 1, duration: 4, position: { x: 0.5, y: 0.85 } });
+    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 0.8 });
+    p = addClip(p, { id: "b", assetId: "pic", duration: 0.8, effects: [{ type: "kenBurns", params: { zoomTo: 1.3 } }] });
+    p = addClip(p, { id: "c", assetId: "talk", in: 1, duration: 0.6, speed: 1.5 });
+    p = setTransition(p, "b", { type: "fade", duration: 0.2 });
+    p = addLayer(p, { type: "media", assetId: "tall", start: 0.2, duration: 1.6, position: { x: 0.8, y: 0.5 }, size: { width: 0.2, height: 0.5 }, fit: "contain" });
+    p = addLayer(p, { type: "text", text: "Frames", start: 0.4, duration: 1.6, position: { x: 0.5, y: 0.85 } });
     const dir = path.join(OUT_DIR, "engine");
     // The engine's export, losslessly: a frame on its own must be the same picture.
     const exported = path.join(dir, "frames-export.mp4");
     await render({ ...p, export: { ...p.export, crf: 0, preset: "ultrafast" } }, { output: exported, backend: "engine", hardware: false });
     const all = await frames(exported);
     // Jumps forward and back (decoders start again at the frame), then a neighbor (they read on).
-    for (const time of [3.4, 0.6, 5.2, 2.3, 2.4, 1.0]) {
+    for (const time of [1.2, 0.2, 1.7, 0.9, 1.0, 0.5]) {
       const [ff, gpu] = [path.join(dir, `frame-${time}-ffmpeg.png`), path.join(dir, `frame-${time}-engine.png`)];
       await renderFrame(p, time, { output: ff, backend: "ffmpeg" });
       await renderFrame(p, time, { output: gpu, backend: "engine" });
@@ -235,9 +240,9 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
 
   it("whole-video effects run on the joined picture", async () => {
     let p = base();
-    p = addClip(p, { id: "a", assetId: "talk", duration: 1.5 });
-    p = addClip(p, { id: "b", assetId: "pic", duration: 1.5 });
-    p = setTransition(p, "b", { type: "fade", duration: 0.5 });
+    p = addClip(p, { id: "a", assetId: "talk", duration: 1.2 });
+    p = addClip(p, { id: "b", assetId: "pic", duration: 1.2 });
+    p = setTransition(p, "b", { type: "fade", duration: 0.4 });
     p.effects = [{ type: "cinematic" }, { type: "vignette" }];
     const r = await compare("global", p);
     expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
@@ -248,12 +253,18 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
   // FULL_RENDER=1), with captions, at half size. Noise (grain, glitch) is compared blurred.
   const SUBSET = ["viral-talking-head", "listicle-countdown", "documentary", "real-estate-tour", "announcement", "wedding-memories", "reaction-split"];
   const transcript = {
-    words: "This is a sample sentence for captions. And here is another one to read.".split(" ").map((text, i) => ({ text, start: 0.2 + i * 0.25, end: 0.2 + i * 0.25 + 0.22 })),
+    words: "This is a sample sentence for captions. And here is another one to read.".split(" ").map((text, i) => ({ text, start: 0.1 + i * 0.12, end: 0.1 + i * 0.12 + 0.1 })),
   };
   for (const t of TEMPLATES.filter((t) => process.env.FULL_RENDER === "1" || SUBSET.includes(t.id))) {
     it(`template ${t.id}`, async () => {
-      const inputs = sampleInputs(t, { video: fx.talk, image: fx.image, audio: fx.music, videoDuration: 4, audioDuration: 8, transcript }, 2);
-      const { project } = await applyTemplate(t, inputs, { probe: (src) => probe(src) });
+      const inputs = sampleInputs(t, { video: fx.talk, image: fx.image, audio: fx.music, videoDuration: 2, audioDuration: 2, transcript }, 2);
+      // Only the first 2 seconds: templates with fixed parts (intros, cards) run longer.
+      // A cut can leave the head of a clip whose transition began before it, a little past the
+      // limit: cut again until it fits.
+      let project = (await applyTemplate(t, inputs, { probe: (src) => probe(src) })).project;
+      for (let i = 0, length = computeTimeline(project).duration; length > MAX_SECONDS && i < 5; i++, length = computeTimeline(project).duration) {
+        project = cutTimelineRanges(project, [{ start: MAX_SECONDS - 0.1 * i, end: length }]);
+      }
       const noisy = /"type":"(grain|glitch)"/.test(JSON.stringify(project));
       // zoomin fills the frame with one sample of the outgoing clip halfway through. On these test
       // pictures (a fractal still, the test pattern) neighboring pixels differ a lot in color, where

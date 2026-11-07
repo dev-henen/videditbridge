@@ -16,10 +16,17 @@ import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
  * Keep the types in step with native/ave-render/src/plan.rs.
  */
 
-export const PLAN_VERSION = 1;
+export const PLAN_VERSION = 2;
+
+/**
+ * How a decoder writes frames: packed `vuya` (stills, which may have alpha), or planar 4:2:0 as
+ * the FFmpeg backend keeps video, `yuv420p` for clips and `yuva420p` for layers. Planar chroma is
+ * scaled at half size on the GPU, as FFmpeg's scale does.
+ */
+export type PlanPixelFormat = "vuya" | "yuv420p" | "yuva420p";
 
 export type PlanSource =
-  | { kind: "decode"; width: number; height: number; args: string[]; still?: boolean; seek?: PlanSeek }
+  | { kind: "decode"; width: number; height: number; args: string[]; format?: PlanPixelFormat; still?: boolean; seek?: PlanSeek }
   | { kind: "color"; color: [number, number, number, number] };
 
 /**
@@ -213,15 +220,17 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
   const items: PlanItem[] = [];
 
   /**
-   * Frames of a source as RGBA on stdout. The YUV to RGB matrix is fixed to the one the encoder uses
-   * back (swscale's BT.601 default), so YUV values come out as they went in, as in the FFmpeg backend.
+   * Frames of a source as limited-range YUV on stdout, in `format`. The YUV to RGB matrix is fixed
+   * to the one the encoder uses back (swscale's BT.601 default), so YUV values come out as they went
+   * in, as in the FFmpeg backend. Video that is already 4:2:0 passes through without a conversion.
    */
-  const decode = (input: string[], filters: (string | false | undefined)[], width: number, height: number, still = false, seek?: Omit<PlanSeek, "tail">): PlanSource => {
-    const tail = [`scale=${width}:${height}:out_range=tv:flags=bicubic+accurate_rnd+full_chroma_int`, "format=vuya"];
+  const decode = (input: string[], filters: (string | false | undefined)[], width: number, height: number, format: PlanPixelFormat, still = false, seek?: Omit<PlanSeek, "tail">): PlanSource => {
+    const tail = [`scale=${width}:${height}:out_range=tv:flags=bicubic+accurate_rnd+full_chroma_int`, `format=${format}`];
     return {
       kind: "decode",
       width,
       height,
+      format,
       still,
       args: [
         "-hide_banner", "-loglevel", "error", "-nostdin",
@@ -229,17 +238,25 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         "-an", "-sn",
         "-vf", [...filters, ...tail].filter(Boolean).join(","),
         ...(still ? ["-frames:v", "1"] : []),
-        "-f", "rawvideo", "-pix_fmt", "vuya", "pipe:1",
+        "-f", "rawvideo", "-pix_fmt", format, "pipe:1",
       ],
       ...(seek ? { seek: { ...seek, tail } } : {}),
     };
   };
-  /** A still or generated source for `duration` seconds (images, colors, gradients), as the FFmpeg backend makes them. */
-  const stillSource = (asset: Asset): { source: PlanSource; size: [number, number] } | undefined => {
+  /**
+   * A still or generated source for `duration` seconds (images, colors, gradients), as the FFmpeg
+   * backend makes them. Layers (`yuva420p`) are 4:2:0 from the start in the backend. Clips are
+   * scaled in the source's own format there: JPEG pictures as 4:2:0, other pictures and gradients
+   * in RGB, at full chroma (`vuya`).
+   */
+  const stillSource = (asset: Asset, layer: boolean): { source: PlanSource; size: [number, number] } | undefined => {
     if (asset.type === "color") return { source: { kind: "color", color: rgba(asset.color) }, size: [W, H] };
-    if (asset.type === "image") return { source: decode(["-i", resolveSrc(asset.src)], [], asset.width!, asset.height!, true), size: [asset.width!, asset.height!] };
+    if (asset.type === "image") {
+      const format = layer ? "yuva420p" : /\.jpe?g$/i.test(asset.src) ? "yuv420p" : "vuya";
+      return { source: decode(["-i", resolveSrc(asset.src)], [], asset.width!, asset.height!, format, true), size: [asset.width!, asset.height!] };
+    }
     if (asset.type === "gradient") {
-      return { source: decode(["-f", "lavfi", "-i", gradientSource(asset, W, H, F)], [], W, H, true), size: [W, H] };
+      return { source: decode(["-f", "lavfi", "-i", gradientSource(asset, W, H, F)], [], W, H, layer ? "yuva420p" : "vuya", true), size: [W, H] };
     }
     return undefined;
   };
@@ -274,11 +291,12 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         [clip.reverse && "reverse", "setpts=PTS-STARTPTS", ...retime(tc), `fps=${F}`, "tpad=stop_mode=clone:stop=-1", `trim=end_frame=${frames}`],
         size[0],
         size[1],
+        "yuv420p",
         false,
         clip.reverse || tc.speedMap ? undefined : { src: resolveSrc(asset.src), inPoint: clip.in, speed: clip.speed, sourceDuration: tc.sourceDuration, frames },
       );
     } else {
-      const s = stillSource(asset);
+      const s = stillSource(asset, false);
       if (!s) throw new Error(`Clip "${clip.id}" uses audio asset "${asset.id}" as a picture`);
       ({ source, size } = s);
     }
@@ -334,11 +352,12 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         ["setpts=PTS-STARTPTS", `fps=${F}`],
         size[0],
         size[1],
+        "yuva420p",
         false,
         { src: resolveSrc(asset.src), inPoint: layer.in, speed: 1, sourceDuration: layer.duration },
       );
     } else {
-      const s = stillSource(asset);
+      const s = stillSource(asset, true);
       if (!s) throw new Error(`Layer "${layer.id}" uses audio asset "${asset.id}" as a picture`);
       ({ source, size } = s);
     }
@@ -370,7 +389,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
   const picture = ["settb=AVTB", "format=yuv420p", opts.overlay && `ass=filename=${ASS_FILE}${fonts}`].filter(Boolean).join(",");
   const args = [
     "-y", "-hide_banner", "-loglevel", "error", "-nostdin",
-    "-f", "rawvideo", "-pix_fmt", "vuya", "-s", `${W}x${H}`, "-r", String(F), "-i", "pipe:0",
+    "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", `${W}x${H}`, "-r", String(F), "-i", "pipe:0",
     ...(opts.audio ? ["-i", path.resolve(opts.audio)] : []),
     "-filter_complex", `[0:v]${picture}[v]`,
     "-map", "[v]",

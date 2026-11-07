@@ -16,7 +16,9 @@ pub struct Gpu {
     pub resample_v: wgpu::ComputePipeline,
     pub primary: wgpu::ComputePipeline,
     pub layer: wgpu::ComputePipeline,
-    pub pack: wgpu::ComputePipeline,
+    pub pack_luma: wgpu::ComputePipeline,
+    pub pack_chroma: wgpu::ComputePipeline,
+    pub planar: wgpu::ComputePipeline,
     pub lut: wgpu::ComputePipeline,
     pub hblur: wgpu::ComputePipeline,
     pub pixel: wgpu::ComputePipeline,
@@ -98,6 +100,14 @@ pub struct HblurParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+pub struct PlanarParams {
+    pub opaque: u32,
+    pub alpha: u32,
+    pub _pad: [u32; 2],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 pub struct LayerParams {
     pub pos: [i32; 2],
     pub size: [u32; 2],
@@ -146,6 +156,7 @@ impl Gpu {
         let primary = module("primary", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/primary.wgsl")));
         let layer = module("layer", include_str!("shaders/layer.wgsl"));
         let pack = module("pack", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/pack.wgsl")));
+        let planar = module("planar", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/planar.wgsl")));
         let lut = module("lut", include_str!("shaders/lut.wgsl"));
         let hblur = module("hblur", include_str!("shaders/hblur.wgsl"));
         let pixel = module("pixel", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/pixel.wgsl")));
@@ -165,7 +176,9 @@ impl Gpu {
             resample_v: pipeline(&resample, "vertical"),
             primary: pipeline(&primary, "main"),
             layer: pipeline(&layer, "main"),
-            pack: pipeline(&pack, "main"),
+            pack_luma: pipeline(&pack, "luma"),
+            pack_chroma: pipeline(&pack, "chroma"),
+            planar: pipeline(&planar, "main"),
             lut: pipeline(&lut, "main"),
             hblur: pipeline(&hblur, "main"),
             pixel: pipeline(&pixel, "main"),
@@ -225,10 +238,15 @@ impl Gpu {
     }
 
     pub fn upload(&self, texture: &wgpu::Texture, rgba: &[u8], width: u32, height: u32) {
+        self.upload_pixels(texture, rgba, width, height, 4);
+    }
+
+    /// Upload `width` x `height` pixels of `bytes_per_pixel` bytes each, rows packed.
+    pub fn upload_pixels(&self, texture: &wgpu::Texture, pixels: &[u8], width: u32, height: u32, bytes_per_pixel: u32) {
         self.queue.write_texture(
             wgpu::TexelCopyTextureInfo { texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-            rgba,
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * width), rows_per_image: Some(height) },
+            &pixels[..(bytes_per_pixel * width * height) as usize],
+            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(bytes_per_pixel * width), rows_per_image: Some(height) },
             wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
         );
     }

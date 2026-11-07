@@ -7,7 +7,7 @@
 //! - `cancel` (a notification) stops the render in progress.
 //! - `open` keeps a plan ready for drawing single frames (previews, scrubbing) and returns a session
 //!   id; `frame` ({ session, frame, args }) draws one and hands it to ffmpeg with `args`, which read
-//!   VUYA frames on stdin (to burn in the text and write a picture); `close` ends a session. A
+//!   yuv420p frames on stdin (to burn in the text and write a picture); `close` ends a session. A
 //!   session keeps its decoders, so nearby frames come quickly.
 //! - `shutdown` ends the process.
 //!

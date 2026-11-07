@@ -4,7 +4,7 @@
 
 use serde::Deserialize;
 
-pub const PLAN_VERSION: u32 = 1;
+pub const PLAN_VERSION: u32 = 2;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -92,12 +92,14 @@ pub enum Op {
 #[derive(Deserialize, Debug)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Source {
-    /// Frames from ffmpeg: `args` write `width` x `height` RGBA frames to stdout, one per output frame.
+    /// Frames from ffmpeg: `args` write `width` x `height` frames in `format` to stdout, one per output frame.
     #[serde(rename_all = "camelCase")]
     Decode {
         width: u32,
         height: u32,
         args: Vec<String>,
+        #[serde(default)]
+        format: PixelFormat,
         #[serde(default)]
         still: bool,
         /// How to start the decoder at a later frame (previews that jump around).
@@ -106,6 +108,79 @@ pub enum Source {
     },
     /// A flat color.
     Color { color: [f32; 4] },
+}
+
+/// How a decoder's frames are laid out on its pipe.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PixelFormat {
+    /// Packed 8-bit V, U, Y, A per pixel (stills, which may have alpha).
+    #[default]
+    Vuya,
+    /// Planar 8-bit 4:2:0 (video on the primary track): chroma planes of half the size, rounded up.
+    Yuv420p,
+    /// Planar 4:2:0 with a full-size alpha plane after the chroma (video layers).
+    Yuva420p,
+}
+
+impl PixelFormat {
+    /// Bytes of one `width` x `height` frame on the pipe.
+    pub fn frame_bytes(self, width: u32, height: u32) -> usize {
+        let (w, h) = (width as usize, height as usize);
+        let chroma = w.div_ceil(2) * h.div_ceil(2);
+        match self {
+            PixelFormat::Vuya => w * h * 4,
+            PixelFormat::Yuv420p => w * h + 2 * chroma,
+            PixelFormat::Yuva420p => 2 * w * h + 2 * chroma,
+        }
+    }
+
+    /// Rearrange a frame from the pipe for upload (on the decoder's reading thread): planar frames
+    /// become the luma (Y, or Y and A interleaved) followed by U and V interleaved, the layouts of
+    /// the r8 or rg8 luma texture and the rg8 chroma texture.
+    pub fn for_upload(self, frame: Vec<u8>, width: u32, height: u32) -> Vec<u8> {
+        let (w, h) = (width as usize, height as usize);
+        let chroma = w.div_ceil(2) * h.div_ceil(2);
+        let interleave = |out: &mut Vec<u8>, a: &[u8], b: &[u8]| {
+            for (x, y) in a.iter().zip(b) {
+                out.push(*x);
+                out.push(*y);
+            }
+        };
+        match self {
+            PixelFormat::Vuya => frame,
+            PixelFormat::Yuv420p => {
+                let mut out = Vec::with_capacity(frame.len());
+                out.extend_from_slice(&frame[..w * h]);
+                let (u, v) = frame[w * h..].split_at(chroma);
+                interleave(&mut out, u, v);
+                out
+            }
+            PixelFormat::Yuva420p => {
+                let mut out = Vec::with_capacity(frame.len());
+                let (y, rest) = frame.split_at(w * h);
+                let (u, rest) = rest.split_at(chroma);
+                let (v, a) = rest.split_at(chroma);
+                interleave(&mut out, y, a);
+                interleave(&mut out, u, v);
+                out
+            }
+        }
+    }
+
+    pub fn planar(self) -> bool {
+        self != PixelFormat::Vuya
+    }
+
+    /// Bytes per pixel of the luma texture (r8, or rg8 with alpha).
+    pub fn luma_bytes(self) -> u32 {
+        if self == PixelFormat::Yuva420p { 2 } else { 1 }
+    }
+}
+
+/// Bytes of an output frame as the engine gives it: planar 8-bit 4:2:0 (yuv420p).
+pub fn output_bytes(width: u32, height: u32) -> usize {
+    PixelFormat::Yuv420p.frame_bytes(width, height)
 }
 
 /// A video source restarted at frame `k`: from in_point + k / fps x speed seconds, with the
@@ -123,8 +198,8 @@ pub struct Seek {
 }
 
 impl Seek {
-    /// ffmpeg arguments that decode the source from frame `k` on.
-    pub fn args(&self, k: i64, fps: f64) -> Vec<String> {
+    /// ffmpeg arguments that decode the source from frame `k` on, writing `format`.
+    pub fn args(&self, k: i64, fps: f64, format: PixelFormat) -> Vec<String> {
         let skipped = k as f64 / fps * self.speed;
         let mut filters = vec!["setpts=PTS-STARTPTS".to_string()];
         if self.speed != 1.0 {
@@ -143,7 +218,12 @@ impl Seek {
         args.extend(["-t".into(), format!("{:.6}", (self.source_duration - skipped).max(1.0 / fps)), "-i".into(), self.src.clone()]);
         args.extend(["-an", "-sn", "-vf"].map(String::from));
         args.push(filters.join(","));
-        args.extend(["-f", "rawvideo", "-pix_fmt", "vuya", "pipe:1"].map(String::from));
+        let pix_fmt = match format {
+            PixelFormat::Vuya => "vuya",
+            PixelFormat::Yuv420p => "yuv420p",
+            PixelFormat::Yuva420p => "yuva420p",
+        };
+        args.extend(["-f", "rawvideo", "-pix_fmt", pix_fmt, "pipe:1"].map(String::from));
         args
     }
 }
@@ -250,4 +330,27 @@ pub const HBLUR: u32 = 32;
 
 pub fn transition_kind(name: &str) -> Result<u32, String> {
     TRANSITIONS.iter().position(|t| *t == name).map(|i| i as u32).ok_or_else(|| format!("unknown transition {name}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PixelFormat;
+
+    #[test]
+    fn planar_frames_are_laid_out_for_upload() {
+        // 3 x 3: chroma planes of 2 x 2, rounded up.
+        let (w, h) = (3, 3);
+        assert_eq!(PixelFormat::Yuv420p.frame_bytes(w, h), 9 + 2 * 4);
+        assert_eq!(PixelFormat::Yuva420p.frame_bytes(w, h), 18 + 2 * 4);
+        let y: Vec<u8> = (0..9).collect();
+        let (u, v, a) = ([20, 21, 22, 23], [30, 31, 32, 33], [40u8; 9]);
+        let frame = [&y[..], &u, &v].concat();
+        let out = PixelFormat::Yuv420p.for_upload(frame, w, h);
+        assert_eq!(&out[..9], &y[..]);
+        assert_eq!(&out[9..], &[20, 30, 21, 31, 22, 32, 23, 33]);
+        let frame = [&y[..], &u, &v, &a].concat();
+        let out = PixelFormat::Yuva420p.for_upload(frame, w, h);
+        assert_eq!(&out[..4], &[0, 40, 1, 40]);
+        assert_eq!(&out[18..], &[20, 30, 21, 31, 22, 32, 23, 33]);
+    }
 }

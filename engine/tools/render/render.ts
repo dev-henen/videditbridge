@@ -614,7 +614,7 @@ async function frameOnEngine(p: Project, time: number, opts: Omit<RenderOptions,
   const picture = [`settb=AVTB,setpts=${Math.round((n * 1e6) / plan.fps)}`, "format=yuv420p", ass && `ass=filename=${ASS_FILE}${fontsArg}`].filter(Boolean).join(",");
   const output = path.resolve(opts.output);
   await mkdir(path.dirname(output), { recursive: true });
-  await session.frame(n, ["-y", "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "rawvideo", "-pix_fmt", "vuya", "-s", `${plan.width}x${plan.height}`, "-i", "pipe:0", "-vf", picture, "-frames:v", "1", "-update", "1", output]);
+  await session.frame(n, ["-y", "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", `${plan.width}x${plan.height}`, "-i", "pipe:0", "-vf", picture, "-frames:v", "1", "-update", "1", output]);
   return output;
 }
 
