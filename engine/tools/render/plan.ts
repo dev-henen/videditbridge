@@ -5,7 +5,7 @@ import { easeValue, numberAt, positionAt } from "../../core/keyframes.js";
 import { parseColor, round3 } from "../../core/util.js";
 import { effectsToFilter, escapeFilterPath } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
-import { ASS_FILE, gradientSource, rampPts, renderSize } from "./compile.js";
+import { ASS_FILE, compileProject, gradientSource, rampPts, renderSize, type CompileOptions } from "./compile.js";
 import { cropPosition, effectsOps, lutArgs, type PlanOp } from "./plan-effects.js";
 import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
 import { colorTableFile, convertsColor, inputTableFile, outputTableFile, sceneGradeFor } from "./color-space.js";
@@ -94,6 +94,12 @@ export interface PlanLayer {
   end: number;
   /** Frames a still or generated source lasts (video layers end where their decoder does). */
   frames?: number;
+  /**
+   * The output frame that shows the layer's frame 0. The backend moves the layer's frames by
+   * `setpts=PTS+start/TB` on its 1/fps timebase, which truncates: a layer starting between frames
+   * shows its frames from the frame before (Math.trunc of start / (1 / fps), in doubles as there).
+   */
+  offset: number;
   /** Top-left corner, pixels. */
   x: number;
   y: number;
@@ -132,6 +138,8 @@ export interface EnginePlan {
    * `dither`: 8-bit frames get a light dither (footage in a color space, whose grades would show steps).
    */
   output: { args: string[]; bitDepth?: 10; dither?: boolean };
+  /** Files the pieces' ffmpeg runs read from the work folder (`cwd`), which the caller writes before running the plan. */
+  files?: { name: string; content: string }[];
 }
 
 export interface PlanOptions {
@@ -154,7 +162,15 @@ export interface PlanOptions {
   fontsDir?: string;
   hardwareEncoder?: HardwareEncoder;
   extraOutputArgs?: string[];
+  /**
+   * What pieces the FFmpeg backend draws (engineGaps) read besides the media: the clips' model masks,
+   * removals and smooth motion frames, and the finished picture's mattes (layer masks, layers
+   * behind the subject), as render() prepares them for the backend.
+   */
+  pieceInputs?: PieceInputs;
 }
+
+export type PieceInputs = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "depthMasks" | "removals" | "interpolated" | "subjectMask" | "skyMatte">;
 
 /** Filters that take RGB frames only: after a transition, FFmpeg's format negotiation then runs xfade on RGB too. */
 const RGB_FILTERS = new Set(["colorbalance", "colortemperature", "curves", "colorchannelmixer", "lut3d", "haldclut", "exposure", "vibrance", "huesaturation", "rgbashift"]);
@@ -179,6 +195,7 @@ const TRANSITIONS = new Set([
   "fade", "fadeblack", "fadewhite", "wipeleft", "wiperight", "wipeup", "wipedown", "slideleft", "slideright", "slideup", "slidedown",
   "smoothleft", "smoothright", "smoothup", "smoothdown", "circleopen", "circleclose", "horzopen", "horzclose", "vertopen", "vertclose",
   "diagtl", "zoomin", "circlecrop", "rectcrop", "coverleft", "coverright", "revealleft", "revealright", "fadegrays", "pixelize", "hblur",
+  "dissolve", "radial", "distance", "squeezeh", "squeezev", "hlslice", "hrslice", "vuslice", "vdslice", "hlwind", "hrwind",
 ]);
 const FITS = new Set<Fit>(["cover", "contain", "stretch", "blur"]);
 
@@ -191,56 +208,104 @@ const rgba = (hex: string): [number, number, number, number] => {
 };
 
 /**
- * What the engine cannot draw yet in a project, one line per feature and place (empty when it can
- * render the whole project). Those projects render with the FFmpeg backend.
+ * What the engine does not draw itself in a project, by place. Those places become pieces the
+ * FFmpeg backend draws for it (compileProject's `piece`), read like any other source, so the engine
+ * renders every project and the pieces match the backend exactly:
+ *
+ * - `clips`: a clip's picture (fit and effects) comes from the backend; fades, transitions and the
+ *   rest stay on the engine.
+ * - `layers`: a media layer placed on a clear frame-size canvas comes from the backend (keyframes,
+ *   rounded corners, shadow, 3D and effects included); the engine blends it.
+ * - `base`: the primary track and the media layers up to `layers` (an index into project.layers,
+ *   -1 for none) come from the backend as one picture, when what is wrong there needs the picture
+ *   under it (whole-video effects, transitions, layer masks, layers behind the subject).
  */
-export function engineUnsupported(project: Project): string[] {
-  const out: string[] = [];
+export interface EngineGaps {
+  clips: Map<string, string[]>;
+  layers: Map<string, string[]>;
+  base?: { reasons: string[]; layers: number };
+}
+
+export function engineGaps(project: Project): EngineGaps {
+  const gaps: EngineGaps = { clips: new Map(), layers: new Map() };
   const { width, height, fps } = project.settings;
   const timeline = computeTimeline(project);
   const ctx = (duration: number) => ({ width, height, fps, duration });
-  for (const r of effectsOps(project.effects, ctx(timeline.primaryDuration || timeline.duration), 1).unsupported) out.push(`whole-video effects: ${r}`);
-  const sized = (a: Asset | undefined, where: string) => {
-    if ((a?.type === "video" || a?.type === "image") && !(a.width && a.height)) out.push(`${where}: size of asset "${a.id}" unknown (probe it first)`);
-  };
+  const base: string[] = [];
+  let baseLayers = -1;
+  for (const r of effectsOps(project.effects, ctx(timeline.primaryDuration || timeline.duration), 1).unsupported) base.push(`whole-video effects: ${r}`);
+  const sized = (a: Asset | undefined) => !((a?.type === "video" || a?.type === "image") && !(a.width && a.height));
   for (const clip of project.clips) {
     const where = `clip "${clip.id}"`;
+    const out: string[] = [];
     const duration = timeline.clips.find((c) => c.clip === clip)?.duration ?? 1;
-    for (const r of effectsOps(clip.effects, ctx(duration), 1).unsupported) out.push(`${where}: ${r}`);
-    if (!FITS.has(clip.fit)) out.push(`${where}: fit ${clip.fit}`);
-    if (clip.keyframes?.focus?.length) out.push(`${where}: moving crop focus`);
-    if (clip.interpolate) out.push(`${where}: smooth motion`);
+    for (const r of effectsOps(clip.effects, ctx(duration), 1).unsupported) out.push(r);
+    if (!FITS.has(clip.fit)) out.push(`fit ${clip.fit}`);
+    if (clip.keyframes?.focus?.length) out.push("moving crop focus");
+    if (clip.interpolate) out.push("smooth motion");
     const t = clip.transition && getTransition(clip.transition.type);
-    if (clip.transition && (!t || (t.custom ? t.id !== "circlereveal" : !TRANSITIONS.has(t.xfade)))) out.push(`${where}: transition ${clip.transition.type}`);
+    if (clip.transition && (!t || (t.custom ? t.id !== "circlereveal" : !TRANSITIONS.has(t.xfade)))) base.push(`${where}: transition ${clip.transition.type}`);
     const asset = project.assets.find((a) => a.id === clip.assetId);
-    sized(asset, where);
+    if (!sized(asset)) out.push(`size of asset "${asset!.id}" unknown`);
     // The engine converts after the fit, so the background around a contained picture would go through the camera's table too.
-    if (clip.fit === "contain" && asset && convertsColor(asset)) out.push(`${where}: fit contain on footage with a color space`);
+    if (clip.fit === "contain" && asset && convertsColor(asset)) out.push("fit contain on footage with a color space");
+    if (out.length) gaps.clips.set(clip.id, out);
   }
-  for (const layer of project.layers) {
-    if (layer.type !== "media") continue;
+  project.layers.forEach((layer, index) => {
+    if (layer.type !== "media") return;
     const where = `layer "${layer.id}"`;
+    const out: string[] = [];
     const asset = project.assets.find((a) => a.id === layer.assetId);
     if (layer.effects.length && asset) {
       // Effects run on the layer's own picture, at its size and with its transparency.
       const [w, h] = layerSize(layer, asset, width, height);
-      for (const r of effectsOps(layer.effects, { width: w, height: h, fps, duration: layer.duration, alpha: true }, 1).unsupported) out.push(`${where}: ${r}`);
+      for (const r of effectsOps(layer.effects, { width: w, height: h, fps, duration: layer.duration, alpha: true }, 1).unsupported) out.push(r);
     }
-    if (layer.mask) out.push(`${where}: mask`);
-    if (layer.behindSubject) out.push(`${where}: behind the subject`);
-    if (layer.cornerRadius > 0) out.push(`${where}: rounded corners`);
-    if (layer.shadow > 0) out.push(`${where}: shadow`);
-    if (layer.rotateX || layer.rotateY) out.push(`${where}: 3D rotation`);
-    for (const [name, keys] of Object.entries(layer.keyframes ?? {})) if (keys?.length && !["position", "opacity"].includes(name)) out.push(`${where}: ${name} keyframes`);
-    sized(project.assets.find((a) => a.id === layer.assetId), where);
+    if (layer.mask || layer.behindSubject) {
+      // Both need the picture under the layer, which only the base piece has.
+      base.push(`${where}: ${layer.mask ? "mask" : "behind the subject"}`);
+      baseLayers = index;
+    }
+    if (layer.shadow > 0) out.push("shadow");
+    if (layer.rotateX || layer.rotateY) out.push("3D rotation");
+    for (const [name, keys] of Object.entries(layer.keyframes ?? {})) if (keys?.length && !["position", "opacity"].includes(name)) out.push(`${name} keyframes`);
+    if (!sized(asset)) out.push(`size of asset "${asset!.id}" unknown`);
+    if (out.length) gaps.layers.set(layer.id, out);
+  });
+  if (base.length) {
+    gaps.base = { reasons: base, layers: baseLayers };
+    // Everything in the base piece is the backend's already.
+    gaps.clips.clear();
+    project.layers.forEach((l, i) => i <= baseLayers && gaps.layers.delete(l.id));
   }
-  return out;
+  return gaps;
+}
+
+/** What the engine leaves to FFmpeg pieces in a project (engineGaps), one line per place; empty when it draws everything itself. */
+export function engineBridged(project: Project): string[] {
+  const gaps = engineGaps(project);
+  return [
+    ...(gaps.base?.reasons.map((r) => `base picture: ${r}`) ?? []),
+    ...[...gaps.clips].map(([id, rs]) => `clip "${id}": ${rs.join(", ")}`),
+    ...[...gaps.layers].map(([id, rs]) => `layer "${id}": ${rs.join(", ")}`),
+  ];
+}
+
+/**
+ * What keeps the engine from rendering a project at all (empty when it can). Since the engine takes
+ * what it cannot draw itself from the FFmpeg backend as pieces (engineGaps), nothing in a project
+ * does; renders still fall back to FFmpeg when the engine is not built or the graphics card fails.
+ */
+export function engineUnsupported(_project: Project): string[] {
+  return [];
 }
 
 /** The engine plan of a project, or what it uses that the engine cannot draw yet. */
 export function planProject(project: Project, opts: PlanOptions): { plan: EnginePlan; unsupported?: undefined } | { plan?: undefined; unsupported: string[] } {
   const unsupported = engineUnsupported(project);
   if (unsupported.length) return { unsupported };
+  const gaps = engineGaps(project);
+  const files: { name: string; content: string }[] = [];
   const timeline = computeTimeline(project);
   const total = timeline.duration;
   if (total <= 0) throw new Error("Project is empty: add clips, layers or audio before rendering");
@@ -314,16 +379,50 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
     return [{ op: "cube", file: path.resolve(inputTableFile(asset.colorSpace)) }, { op: "grade", ...gradeConstants(grade) }, { op: "cube", file: path.resolve(outputTableFile()) }];
   };
 
+  /**
+   * A piece the FFmpeg backend draws (engineGaps): its graph from compileProject, written to a file
+   * in the work folder, and raw frames on stdout. Sessions start it later with an output seek, which
+   * still runs the graph from the start, but only hands over the frames wanted.
+   */
+  const piece = (pieceProject: Project, kind: PieceKind, width: number, height: number, format: "yuv420p" | "yuva420p"): PlanSource => {
+    const script = `piece-${items.length}.txt`;
+    const compileOpts = { output: "", scale: opts.scale, baseDir, ...opts.pieceInputs };
+    const compiled = compileProject(pieceProject, { ...compileOpts, piece: { ...kind, script } });
+    const seeking = compileProject(pieceProject, { ...compileOpts, piece: { ...kind, script, ss: "{time}" } });
+    for (const f of compiled.files) {
+      const had = files.find((x) => x.name === f.name);
+      if (had && had.content !== f.content) throw new Error(`Two pieces of the engine plan need different files named ${f.name}`);
+      if (!had) files.push(f);
+    }
+    return { kind: "decode", width, height, format, args: compiled.args, seekArgs: seeking.args };
+  };
+  /** Pieces are pictures only: no sound, no text. */
+  const silent = (p: Project): Project => ({ ...p, clips: p.clips.map((c) => ({ ...c, muted: true })), audio: [], captions: undefined, audioEffects: [] });
+
   // Primary track, with the FFmpeg backend's frame counts and xfade offsets.
   const clips: PlanClip[] = [];
   let curDur = 0;
   let next = 0;
-  for (const tc of timeline.clips) {
+  if (gaps.base) {
+    // The primary track and the layers under the last one the engine cannot put on, from the backend.
+    const frames = Math.ceil(total * F - 1e-6);
+    const below = project.layers.slice(0, gaps.base.layers + 1).filter((l) => l.type === "media");
+    const source = piece(silent({ ...project, layers: below }), { kind: "base", frames }, W, H, "yuv420p");
+    const item = addItem({ source, width: W, height: H, scaled: [W, H], offset: [0, 0], fill: background, opaque: true });
+    clips.push({ item, first: 0, frames, duration: total });
+  }
+  for (const tc of gaps.base ? [] : timeline.clips) {
     const { clip, asset } = tc;
     const frames = Math.max(1, Math.ceil(tc.end * F - 1e-6) - Math.ceil(tc.start * F - 1e-6));
     let source: PlanSource;
     let size: [number, number];
-    if (asset.type === "video") {
+    const pieced = gaps.clips.has(clip.id);
+    if (pieced) {
+      // The clip as the backend fits it and runs its effects; fades and transitions stay here.
+      const one = silent({ ...project, clips: [{ ...clip, transition: undefined, fadeIn: undefined, fadeOut: undefined }], layers: [], effects: [] });
+      source = piece(one, { kind: "clip", frames }, W, H, "yuv420p");
+      size = [W, H];
+    } else if (asset.type === "video") {
       size = [asset.width!, asset.height!];
       source = decode(
         [...(clip.in > 0 ? ["-ss", String(round3(clip.in))] : []), "-t", String(round3(tc.sourceDuration)), "-i", resolveSrc(asset.src)],
@@ -341,15 +440,15 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
     }
     // Camera log and HDR footage: its color space table first (10-bit decoding above).
     const graded = sceneGradeFor(asset, clip.effects);
-    const ops = [...colorOps(asset, graded.grade), ...effectsOps(graded.effects, { width: W, height: H, fps: F, duration: tc.duration }, frames).ops];
+    const ops = pieced ? [] : [...colorOps(asset, graded.grade), ...effectsOps(graded.effects, { width: W, height: H, fps: F, duration: tc.duration }, frames).ops];
     // fit blur, as compileProject's fit draws it: the picture contained over a cover copy blurred
     // (gblur sigma 40) and darkened (eq brightness -0.08).
-    const blur = clip.fit === "blur";
+    const blur = clip.fit === "blur" && !pieced;
     const item = addItem({
       source,
       width: W,
       height: H,
-      ...fitBox(blur ? "contain" : clip.fit, size, W, H, clip.focus),
+      ...(pieced ? { scaled: [W, H] as [number, number], offset: [0, 0] as [number, number] } : fitBox(blur ? "contain" : clip.fit, size, W, H, clip.focus)),
       fill: blur ? [0, 0, 0, 0] : background,
       opaque: true,
       ...(ops.length ? { effects: ops } : {}),
@@ -379,10 +478,26 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
 
   // Media overlays, sized and placed as mediaLayerStream and overlayMotion do.
   const layers: PlanLayer[] = [];
-  for (const layer of project.layers) {
-    if (layer.type !== "media") continue;
+  const totalFrames = Math.ceil(total * F - 1e-6);
+  for (const [index, layer] of project.layers.entries()) {
+    if (layer.type !== "media" || index <= (gaps.base?.layers ?? -1)) continue;
     const asset = project.assets.find((a) => a.id === layer.assetId);
     if (!asset) throw new Error(`Layer "${layer.id}" references unknown asset "${layer.assetId}"`);
+    if (gaps.layers.has(layer.id)) {
+      // The layer placed on a clear canvas by the backend, for the frames it can show on (a frame of
+      // margin each side); the engine blends it over the picture as it is.
+      const end = round3(layer.start + layer.duration);
+      const first = Math.max(0, Math.floor(layer.start * F) - 1);
+      const last = Math.min(totalFrames - 1, Math.ceil(end * F) + 1);
+      const frames = Math.max(1, last - first + 1);
+      const one = silent({ ...project, clips: [], layers: [layer], effects: [] });
+      const source = piece(one, { kind: "layer", layerId: layer.id, first, frames }, W, H, "yuva420p");
+      const item = addItem({ source, width: W, height: H, scaled: [W, H], offset: [0, 0], fill: [0, 0, 0, 0] });
+      // Frame-exact: frame k of the piece is output frame first + k (the backend's enable is in it already).
+      const start = first / F - 1e-9;
+      layers.push({ item, start, end: (first + frames - 1) / F + 1e-9, frames, offset: first, x: 0, y: 0, opacity: 1, blend: layer.blend, duration: frames / F });
+      continue;
+    }
     const [w, h] = layerSize(layer, asset, W, H);
     let source: PlanSource;
     let size: [number, number];
@@ -404,7 +519,13 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
     }
     const fit: Fit = layer.size.height ? (layer.fit === "blur" ? "contain" : layer.fit) : "stretch";
     const graded = sceneGradeFor(asset, layer.effects);
-    const ops = [...colorOps(asset, graded.grade), ...effectsOps(graded.effects, { width: w, height: h, fps: F, duration: layer.duration, alpha: true }, Math.max(1, Math.ceil(layer.duration * F - 1e-6))).ops];
+    // Rounded corners after the effects, as compile.ts cuts them (its radius scales with previews).
+    const radius = Math.min(Math.round(layer.cornerRadius * (opts.scale && opts.scale > 0 ? opts.scale : 1)), Math.floor(Math.min(w, h) / 2));
+    const ops = [
+      ...colorOps(asset, graded.grade),
+      ...effectsOps(graded.effects, { width: w, height: h, fps: F, duration: layer.duration, alpha: true }, Math.max(1, Math.ceil(layer.duration * F - 1e-6))).ops,
+      ...(radius > 0 ? [{ op: "corners", radius } as const] : []),
+    ];
     const item = addItem({ source, width: w, height: h, ...fitBox(fit, size, w, h), fill: [0, 0, 0, 0], ...(ops.length ? { effects: ops } : {}) });
     const fades = (a: MediaLayer["animationIn"]) => (a && a.type !== "none" ? a.duration : 0);
     layers.push({
@@ -413,6 +534,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       end: round3(layer.start + layer.duration),
       // Stills loop for the layer's duration in the FFmpeg backend: that many frames.
       ...(asset.type === "video" ? {} : { frames: Math.ceil(layer.duration * F - 1e-6) }),
+      offset: Math.trunc(layer.start / (1 / F)),
       x: chromaAligned(W * layer.position.x - w / 2),
       y: chromaAligned(H * layer.position.y - h / 2),
       ...layerMotion(layer, w, h, W, H, F),
@@ -491,11 +613,14 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       clips,
       layers,
       ...(text !== undefined ? { text } : {}),
-      ...(transitionsInRgb(project, W, H) ? { rgbTransitions: true } : {}),
+      // The base piece has the transitions and whole-video effects in it already.
+      ...(!gaps.base && transitionsInRgb(project, W, H) ? { rgbTransitions: true } : {}),
       ...(() => {
+        if (gaps.base) return {};
         const { ops } = effectsOps(project.effects, { width: W, height: H, fps: F, duration: timeline.primaryDuration || total }, Math.ceil(total * F - 1e-6));
         return ops.length ? { effects: ops } : {};
       })(),
+      ...(files.length ? { files } : {}),
       output: { args, ...(tenBit ? { bitDepth: 10 as const } : project.assets.some(convertsColor) ? { dither: true } : {}) },
     },
   };
@@ -579,3 +704,6 @@ export function contactSheetFrames(duration: number, fps: number, count: number)
   }
   return picked;
 }
+
+/** A piece's kind for compileProject, without the file names the plan gives it. */
+type PieceKind = { kind: "clip"; frames: number } | { kind: "base"; frames: number } | { kind: "layer"; layerId: string; first: number; frames: number };

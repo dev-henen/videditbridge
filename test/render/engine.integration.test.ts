@@ -1,7 +1,7 @@
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { addAsset, addClip, addLayer, computeTimeline, createProject, cutTimelineRanges, setTransition, type Project } from "../../engine/core/index.js";
-import { enginePath, engineUnsupported, planProject, render, renderFrame, runFfmpegOrThrow } from "../../engine/tools/index.js";
+import { engineBridged, enginePath, engineUnsupported, planProject, render, renderFrame, runFfmpegOrThrow } from "../../engine/tools/index.js";
 import { deltaE2000, rgbToLab } from "../../engine/library/effects/color-match.js";
 import { OUT_DIR, ffmpegAvailable, makeFixtures, type Fixtures } from "../helpers/media.js";
 import { sampleInputs } from "../helpers/inputs.js";
@@ -135,7 +135,8 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
   }
 
   // Transitions between moving footage and a still: one of each kind of xfade formula.
-  const TRANSITION_TYPES = ["wiperight", "wipedown", "slideleft", "slideup", "smoothleft", "circleopen", "circleclose", "horzopen", "diagtl", "zoomin", "circlecrop", "rectcrop", "coverleft", "revealright", "fadegrays", "circlereveal", "pixelize", "hblur"];
+  const TRANSITION_TYPES = ["wiperight", "wipedown", "slideleft", "slideup", "smoothleft", "circleopen", "circleclose", "horzopen", "diagtl", "zoomin", "circlecrop", "rectcrop", "coverleft", "revealright", "fadegrays", "circlereveal", "pixelize", "hblur",
+    "dissolve", "radial", "distance", "squeezeh", "squeezev", "hlslice", "hrslice", "vuslice", "vdslice", "hlwind", "hrwind"];
   for (const type of TRANSITION_TYPES) {
     it(`transition ${type}`, async () => {
       let p = base();
@@ -211,6 +212,17 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
     expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
   }, 60_000);
 
+  it("rounded corners on media layers", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "talk", duration: 1.5 });
+    p = addLayer(p, { type: "media", assetId: "pic", start: 0.1, duration: 1.3, position: { x: 0.3, y: 0.45 }, size: { width: 0.4 }, cornerRadius: 40, opacity: 0.9, animationIn: { type: "fade", duration: 0.3 } });
+    p = addLayer(p, { type: "media", assetId: "tall", start: 0.3, duration: 1, position: { x: 0.75, y: 0.5 }, size: { width: 0.25, height: 0.5 }, fit: "contain", cornerRadius: 300, blend: "screen" });
+    expect(engineBridged(p)).toEqual([]);
+    const r = await compare("corners", p);
+    expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+    expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+  }, 60_000);
+
   it("single frames: anywhere in the edit, in any order, like FFmpeg's", async () => {
     let p = base();
     p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 0.8 });
@@ -280,12 +292,78 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
     }, 180_000);
   }
 
-  it("refuses what it cannot draw yet, and auto falls back to FFmpeg", async () => {
+  // What the engine does not draw itself comes from the FFmpeg backend as pieces (engineGaps), so
+  // these match the backend closely: only the engine's own fades, transitions and blends differ.
+  it("pieces: clip effects the engine does not draw come from the backend", async () => {
     let p = base();
-    p = addClip(p, { id: "a", assetId: "talk", duration: 1, effects: [{ type: "denoise" }] });
-    expect(engineUnsupported(p)).toEqual(['clip "a": effect denoise']);
-    await expect(render(p, { output: path.join(OUT_DIR, "engine", "refused.mp4"), backend: "engine" })).rejects.toThrow(/cannot render this: clip "a": effect denoise/);
-    const out = await render(p, { output: path.join(OUT_DIR, "engine", "auto.mp4"), backend: "auto", preset: "ultrafast" });
-    expect(out.args.some((a) => a === "-filter_complex_script")).toBe(true);
-  }, 60_000);
+    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 0.5, effects: [{ type: "denoise" }, { type: "warm" }] });
+    p = addClip(p, { id: "b", assetId: "talk", in: 1, duration: 0.5, effects: [{ type: "glow" }, { type: "sharpen" }], fadeIn: 0.2 });
+    p = addClip(p, { id: "c", assetId: "pic", duration: 0.5, effects: [{ type: "halation" }, { type: "lensDistortion" }] });
+    p = addClip(p, { id: "d", assetId: "talk", in: 2, duration: 0.5, effects: [{ type: "blur", params: { amount: 8 }, mask: { kind: "shape", shape: { type: "ellipse", x: 0.5, y: 0.5, width: 0.5, height: 0.6 } } as never }] });
+    p = setTransition(p, "b", { type: "fade", duration: 0.2 });
+    p = setTransition(p, "c", { type: "wiperight", duration: 0.2 });
+    expect(engineBridged(p).map((l) => l.split(":")[0])).toEqual(['clip "a"', 'clip "b"', 'clip "c"', 'clip "d"']);
+    const r = await compare("pieces-clips", p);
+    expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+    expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+  }, 120_000);
+
+  it("pieces: whole-video effects and transitions the engine does not draw, under the engine's layers", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "talk", duration: 1 });
+    p = addClip(p, { id: "b", assetId: "pic", duration: 1 });
+    p = setTransition(p, "b", { type: "fade", duration: 0.4 });
+    p.effects = [{ type: "glow" }];
+    p = addLayer(p, { type: "media", assetId: "tall", start: 0.2, duration: 1.4, position: { x: 0.7, y: 0.5 }, size: { width: 0.25, height: 0.5 }, blend: "screen" });
+    expect(engineBridged(p)).toEqual(["base picture: whole-video effects: effect glow"]);
+    const r = await compare("pieces-base", p);
+    expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+    expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+  }, 120_000);
+
+  it("pieces: layers with rounded corners, shadows, keyframes and masks", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "talk", duration: 2 });
+    // Below a masked layer: in the base piece with it.
+    p = addLayer(p, { id: "round", type: "media", assetId: "pic", start: 0.1, duration: 1.6, position: { x: 0.3, y: 0.4 }, size: { width: 0.35 }, cornerRadius: 30, shadow: 12 });
+    p = addLayer(p, { id: "keyed", type: "media", assetId: "blue", start: 0.3, duration: 1.2, position: { x: 0.5, y: 0.5 }, size: { width: 0.5, height: 0.5 }, blend: "multiply", mask: { kind: "luma", luma: [0.5, 1] } as never });
+    // Above it: layer pieces and an ordinary layer on the engine.
+    p = addLayer(p, {
+      id: "spin",
+      type: "media",
+      assetId: "pic",
+      start: 0.2,
+      duration: 1.5,
+      position: { x: 0.75, y: 0.35 },
+      size: { width: 0.25 },
+      opacity: 0.8,
+      animationIn: { type: "fade", duration: 0.3 },
+      keyframes: { rotation: [{ time: 0, value: 0, easing: "linear" }, { time: 1.5, value: 90, easing: "linear" }], scale: [{ time: 0, value: 1, easing: "linear" }, { time: 1.5, value: 0.6, easing: "ease-out" }] },
+    });
+    p = addLayer(p, { id: "tilt", type: "media", assetId: "tall", start: 0.5, duration: 1.2, position: { x: 0.25, y: 0.75 }, size: { width: 0.2, height: 0.35 }, rotateY: 35, blend: "screen" });
+    p = addLayer(p, { id: "plain", type: "media", assetId: "pic", start: 0, duration: 2, position: { x: 0.85, y: 0.8 }, size: { width: 0.2 } });
+    p = addLayer(p, { type: "text", text: "Pieces", start: 0, duration: 2, position: { x: 0.5, y: 0.9 } });
+    expect(engineBridged(p)).toEqual(['base picture: layer "keyed": mask', 'layer "spin": scale keyframes, rotation keyframes', 'layer "tilt": 3D rotation']);
+    const r = await compare("pieces-layers", p);
+    expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+    expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+  }, 120_000);
+
+  it("pieces: single frames anywhere in the edit match the engine's export", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 0.8, effects: [{ type: "sharpen" }] });
+    p = addClip(p, { id: "b", assetId: "talk", in: 1.5, duration: 0.8 });
+    p = setTransition(p, "b", { type: "fade", duration: 0.2 });
+    p = addLayer(p, { type: "media", assetId: "pic", start: 0.3, duration: 1.2, position: { x: 0.7, y: 0.4 }, size: { width: 0.3 }, shadow: 10 });
+    const dir = path.join(OUT_DIR, "engine");
+    const exported = path.join(dir, "pieces-frames-export.mp4");
+    await render({ ...p, export: { ...p.export, crf: 0, preset: "ultrafast" } }, { output: exported, backend: "engine", hardware: false });
+    const all = await frames(exported);
+    for (const time of [1.2, 0.2, 0.9, 1.0, 0.5]) {
+      const gpu = path.join(dir, `pieces-frame-${time}-engine.png`);
+      await renderFrame(p, time, { output: gpu, backend: "engine" });
+      const n = Math.ceil(time * FPS - 1e-6);
+      expect(meanDeltaE(all[n]!, (await frames(gpu))[0]!), `frame at ${time} s against the engine's export`).toBeLessThan(0.1);
+    }
+  }, 120_000);
 });

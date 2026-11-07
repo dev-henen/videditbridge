@@ -41,7 +41,8 @@ fn text_chroma(cx: u32, cy: u32, under: vec2<f32>) -> vec2<f32> {
     return vec2<f32>(over(under.x, low.b, high.b, k, span), over(under.y, low.g, high.g, k, span));
 }
 
-// text_on: x text on, y 10-bit output, z dither (8-bit), w the frame (the dither's seed).
+// text_on: x text on, y 10-bit output, z bit 0 dither (8-bit) and bit 1 chroma from 4:4:4 YUV (a
+// transition's frame, see downsample_planar), w the frame (the dither's seed).
 fn ten_bit() -> bool {
     return text_on.y == 1u;
 }
@@ -70,7 +71,7 @@ fn sample(v: f32, seed: u32) -> u32 {
         return u32(clamp(round(v * 1020.0), 0.0, 1023.0));
     }
     var s = v * 255.0;
-    if (text_on.z == 1u) {
+    if ((text_on.z & 1u) == 1u) {
         s += dither(seed);
     }
     return u32(clamp(round(s), 0.0, 255.0));
@@ -139,6 +140,25 @@ fn downsample(x0: u32, x1: u32, cy: u32, size: vec2<u32>) -> vec2<f32> {
     return acc / total;
 }
 
+// xfade works on yuv444p, and FFmpeg scales its frames to 4:2:0 as planes: the chroma planes go
+// down with swscale's bicubic (widened by 2, centered) both across and down.
+fn downsample_planar(cx: u32, cy: u32, size: vec2<u32>) -> vec2<f32> {
+    let sx = 2.0 * f32(cx) + 0.5;
+    let sy = 2.0 * f32(cy) + 0.5;
+    var acc = vec2<f32>(0.0);
+    var total = 0.0;
+    for (var j = i32(floor(sy - 4.0)) + 1; j <= i32(floor(sy + 4.0)); j++) {
+        let wy = bicubic((f32(j) - sy) / 2.0);
+        let y = u32(clamp(j, 0, i32(size.y) - 1));
+        for (var i = i32(floor(sx - 4.0)) + 1; i <= i32(floor(sx + 4.0)); i++) {
+            let w = wy * bicubic((f32(i) - sx) / 2.0);
+            acc += w * yuv(u32(clamp(i, 0, i32(size.x) - 1)), y).xy;
+            total += w;
+        }
+    }
+    return acc / total;
+}
+
 // V and U of chroma sample (cx, cy).
 fn chroma_sample(cx: u32, cy: u32, size: vec2<u32>) -> vec2<f32> {
     let x0 = cx * 2u;
@@ -151,6 +171,9 @@ fn chroma_sample(cx: u32, cy: u32, size: vec2<u32>) -> vec2<f32> {
     let q11 = yuv(x1, y1).xy;
     let spread = max(max(abs(q00 - q10), abs(q00 - q01)), abs(q00 - q11));
     if (max(spread.x, spread.y) > 0.25 / 255.0) {
+        if ((text_on.z & 2u) == 2u) {
+            return downsample_planar(cx, cy, size);
+        }
         return downsample(x0, x1, cy, size);
     }
     return (q00 + q10 + q01 + q11) * 0.25;

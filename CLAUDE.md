@@ -44,7 +44,7 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 ## GPU render engine (plan.ts, native/ave-render)
 - `render` takes `backend` (`ffmpeg`, `engine`, `auto`); the default comes from the app's first-start performance test (`setDefaultBackend`). See `docs/guides/render-engine.md`.
 - `plan.ts` copies `compile.ts`'s timing and rounding (frame counts, xfade offsets, fit sizes, crop and overlay positions). Change both together, and run `test/render/engine.integration.test.ts` (both backends, compared frame by frame).
-- A feature the engine cannot draw yet goes in `engineUnsupported`, so those projects render with FFmpeg. `native/ave-render/src/plan.rs` mirrors the plan types.
+- The engine is the default (`auto`, FFmpeg on failure). A feature the engine cannot draw yet goes in `engineGaps`, which makes that part of the picture a piece the FFmpeg backend draws for it (`compileProject`'s `piece`); porting a feature means drawing it natively and taking it out of `engineGaps`. `native/ave-render/src/plan.rs` mirrors the plan types.
 
 ## Renderer gotchas (compile.ts)
 - Every primary segment ends with `fps`, `format=yuv420p`, `setsar=1` and `settb=AVTB`. `concat` outputs AV_TIME_BASE, and `xfade` fails if the timebases differ.

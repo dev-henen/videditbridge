@@ -7,6 +7,7 @@ import { parseProject } from "../../engine/core/index.js";
 import { usesPersonMask } from "../../engine/library/index.js";
 import {
   FACE_INPUT,
+  closeFrameSessions,
   FaceDetector,
   PERSON_INPUT,
   PersonSegmenter,
@@ -236,6 +237,8 @@ describe.skipIf(!ready)("face detection on real footage", () => {
       await renderFrame(p, 0.5, { output: path.join(dir, "frame.png"), cacheDir: dir });
       expect((await readdir(path.join(dir, "masks"))).filter((f) => f.startsWith("face-") && f.endsWith(".mkv"))).toHaveLength(1);
     } finally {
+      // Preview frames come from the engine, whose open session reads the masks (Windows locks them).
+      await closeFrameSessions();
       await rm(dir, { recursive: true, force: true });
     }
   }, 60_000);
@@ -332,6 +335,8 @@ describe.skipIf(!segReady)("person cutout on real footage", () => {
       expect(at(110, 300)[2]).toBeLessThan(200); // her shirt is not
       expect((await readdir(path.join(dir, "masks"))).filter((f) => f.endsWith(".mkv"))).toHaveLength(1);
     } finally {
+      // Preview frames come from the engine, whose open session reads the masks (Windows locks them).
+      await closeFrameSessions();
       await rm(dir, { recursive: true, force: true });
     }
   });

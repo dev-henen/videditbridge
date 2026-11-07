@@ -83,6 +83,22 @@ export interface CompileOptions {
   rubberband?: boolean;
   /** Encode the video on the graphics card instead of with x264, at matching quality. */
   hardwareEncoder?: HardwareEncoder;
+  /**
+   * Compile one piece of the picture for the GPU render engine, which reads it as a source where it
+   * cannot draw that piece itself (see plan.ts): raw frames on stdout, no sound and no text, the
+   * filter graph in the file `script`. `clip`: the project's only clip as the primary track shows it
+   * (the caller leaves out its fades and the whole-video effects), `frames` long as the edit shows it. `layer`: the media layer `layerId`
+   * placed on a clear frame-size canvas as yuva420p, frames `first` to `first + frames - 1`.
+   * `base`: the primary track and the project's media layers (the caller passes those the piece
+   * covers), as the picture under the rest. `ss`: start the output at this time instead (previews).
+   */
+  /**
+   * With `analysis.audio`: build the sound only. Pictures become flat frames, so ffmpeg decodes no
+   * video and needs no masks or mattes (the GPU engine draws the picture and takes the sound and the
+   * text file from here). The text file is still written.
+   */
+  audioOnly?: boolean;
+  piece?: { script: string; ss?: string } & ({ kind: "clip"; frames: number } | { kind: "base"; frames: number } | { kind: "layer"; layerId: string; first: number; frames: number });
 }
 
 export interface CompiledRender {
@@ -364,11 +380,13 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     // alone rounds each clip up (a 2.3 s clip of 23.976 fps footage gave 70 frames, not 69), and
     // filters such as blend can drop a last frame, so cuts drifted from captions and overlays.
     // A cache entry keeps its natural frames, so it stays valid wherever the clip moves.
-    const frames = Math.max(1, Math.ceil(tc.end * F - 1e-6) - Math.ceil(tc.start * F - 1e-6));
+    const frames = opts.piece?.kind === "clip" ? opts.piece.frames : Math.max(1, Math.ceil(tc.end * F - 1e-6) - Math.ceil(tc.start * F - 1e-6));
     const exact = opts.segment ? [] : ["tpad=stop_mode=clone:stop=-1", `trim=end_frame=${frames}`];
     // concat outputs AV_TIME_BASE; keep every segment on it so xfade inputs always match.
     const finish = [`fps=${F}`, "format=yuv420p", "setsar=1", ...exact, "settb=AVTB"];
-    if (cached) {
+    if (opts.audioOnly) {
+      g.add(`color=c=black:s=${W}x${H}:r=${F}:d=${round3(tc.duration)},${chain(finish)}[${v}]`);
+    } else if (cached) {
       g.add(`[${g.addInput(["-i", cached])}:v]${chain(["setpts=PTS-STARTPTS", ...finish])}[${v}]`);
     } else {
       const raw = g.label("raw");
@@ -549,7 +567,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     }
   }
 
-  if (joinedEffects.length && !opts.segment) {
+  if (joinedEffects.length && !opts.segment && !opts.audioOnly) {
     const out = g.label("graded");
     g.add(`[${vCur}]${chain(effectsToFilter(joinedEffects, effectCtx(timeline.primaryDuration || total)))}[${out}]`);
     vCur = out;
@@ -563,7 +581,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // people are, so they stay in front of it (and of nothing else that was not already there).
   const behind = opts.subjectMask && !opts.segment ? project.layers.filter((l) => l.type === "media" && l.behindSubject).map((l) => l.id) : [];
   const subjectLabels = new Map(behind.map((id) => [id, g.label("subj")]));
-  const maskedLayers = opts.segment ? [] : project.layers.filter((l): l is MediaLayer => l.type === "media" && !!l.mask);
+  const maskedLayers = opts.segment || opts.audioOnly ? [] : project.layers.filter((l): l is MediaLayer => l.type === "media" && !!l.mask);
   // Mattes of the finished picture (person, sky): one copy per layer mask that uses each, and the
   // person cutout for each layer behind the subject.
   const finished = (file: string | undefined, kind: "person" | "sky", grown: string[] = []) => {
@@ -581,8 +599,38 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   };
   const personCopies = finished(opts.subjectMask, "person", behind.map((id) => subjectLabels.get(id)!));
   const skyCopies = finished(opts.skyMatte, "sky");
+  // A layer piece for the engine: the layer placed on a clear canvas, as the blend path places it.
+  let layerPiece: string | undefined;
+  const pieceLayer = opts.piece?.kind === "layer" ? opts.piece : undefined;
   project.layers.forEach((layer) => {
     if (layer.type !== "media") return;
+    if (opts.audioOnly) {
+      // Only the layer's sound.
+      const asset = project.assets.find((a) => a.id === layer.assetId);
+      if (asset?.type === "video" && asset.hasAudio !== false && layer.volume > 0) overlayAudio.push(layerAudio(layer, sourceInput(asset, layer.in, layer.duration)));
+      return;
+    }
+    if (pieceLayer) {
+      if (layer.id !== pieceLayer.layerId) return;
+      const asset = project.assets.find((a) => a.id === layer.assetId);
+      if (!asset) throw new Error(`Layer "${layer.id}" references unknown asset "${layer.assetId}"`);
+      const { v } = mediaLayerStream(layer, asset);
+      const end = round3(layer.start + layer.duration);
+      const keys = layer.keyframes?.position;
+      const moving = keys?.length ? positionExpr(keys, `(t-${layer.start})`) : undefined;
+      const motion = layer.keyframes?.corners?.length
+        ? { x: String(-PIN_PAD), y: String(-PIN_PAD) }
+        : overlayMotion(`main_w*${moving ? `(${moving.x})` : layer.position.x}-overlay_w/2`, `main_h*${moving ? `(${moving.y})` : layer.position.y}-overlay_h/2`, layer.start, end, layer.animationIn, layer.animationOut);
+      const [canvas, out] = [g.label("pcv"), g.label("pcl")];
+      // On AV_TIME_BASE, as the primary picture the backend overlays layers on, so `enable` sees the same times.
+      g.add(`color=c=black@0:s=${W}x${H}:r=${F}:d=${total},format=yuva420p,settb=AVTB[${canvas}]`);
+      g.add(
+        `[${canvas}][${v}]overlay=x='${motion.x}':y='${motion.y}':enable='between(t,${layer.start},${end})':eof_action=pass:format=auto,` +
+          `trim=start_frame=${pieceLayer.first}:end_frame=${pieceLayer.first + pieceLayer.frames},setpts=PTS-STARTPTS,format=yuva420p[${out}]`,
+      );
+      layerPiece = out;
+      return;
+    }
     const subject = subjectLabels.get(layer.id);
     const keep = subject && g.label("lsk");
     if (keep) {
@@ -752,15 +800,15 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         `setpts=PTS+${layer.start}/TB`,
       ])}[${v}]`,
     );
-    let a: string | undefined;
-    if (asset.type === "video" && asset.hasAudio !== false && layer.volume > 0) {
-      a = g.label("la");
-      const ms = Math.round(layer.start * 1000);
-      g.add(
-        `[${input}:a]${chain(["asetpts=PTS-STARTPTS", ...audioEffectsToFilter(layer.audioEffects), `volume=${layer.volume}`, AUDIO_FMT, `adelay=${ms}|${ms}`])}[${a}]`,
-      );
-    }
+    const a = asset.type === "video" && asset.hasAudio !== false && layer.volume > 0 ? layerAudio(layer, input) : undefined;
     return { v, a };
+  }
+
+  function layerAudio(layer: MediaLayer, input: number): string {
+    const a = g.label("la");
+    const ms = Math.round(layer.start * 1000);
+    g.add(`[${input}:a]${chain(["asetpts=PTS-STARTPTS", ...audioEffectsToFilter(layer.audioEffects), `volume=${layer.volume}`, AUDIO_FMT, `adelay=${ms}|${ms}`])}[${a}]`);
+    return a;
   }
 
   // -------------------------------------------------------------------------
@@ -784,8 +832,10 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       ev.text = ev.text.replace(/^\{/, "{\\q2");
     }
   }
-  if (!ass.isEmpty) {
+  if (!ass.isEmpty && !opts.piece) {
     files.push({ name: ASS_FILE, content: ass.toString() });
+  }
+  if (!ass.isEmpty && !opts.piece && !opts.audioOnly) {
     const out = g.label("txt");
     const fonts = opts.fontsDir ? `:fontsdir='${escapeFilterPath(path.resolve(opts.fontsDir))}'` : "";
     g.add(`[${vCur}]ass=filename=${ASS_FILE}${fonts}[${out}]`);
@@ -882,6 +932,29 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   // -------------------------------------------------------------------------
   const vOut = "vout";
   const sheet = opts.contactSheet;
+  const piece = opts.piece;
+  if (piece) {
+    const layer = piece.kind === "layer";
+    if (layer && !layerPiece) throw new Error(`No media layer "${piece.layerId}" to compile as a piece`);
+    if (layer) g.add(`[${vCur}]nullsink`);
+    const pixFmt = layer ? "yuva420p" : "yuv420p";
+    // The base piece is cut to the edit's frames (the encoder's -t), clips have theirs already.
+    const tail = piece.kind === "base" ? `,trim=end_frame=${piece.frames}` : "";
+    g.add(`[${layer ? layerPiece : vCur}]format=${pixFmt}${tail}[${vOut}]`);
+    g.add(`[${aOut}]anullsink`);
+    const filterGraph = g.lines.join(";\n");
+    files.push({ name: piece.script, content: filterGraph });
+    const args = [
+      "-hide_banner", "-loglevel", "error", "-nostdin",
+      ...g.inputArgs,
+      "-filter_complex_script", piece.script,
+      "-map", `[${vOut}]`,
+      ...(piece.ss ? ["-ss", piece.ss] : []),
+      "-fps_mode", "passthrough",
+      "-f", "rawvideo", "-pix_fmt", pixFmt, "pipe:1",
+    ];
+    return { args, files, filterGraph, timeline, duration: total, width: W, height: H };
+  }
   if (opts.segment) {
     g.add(`[${vCur}]format=yuv420p[${vOut}]`);
     g.add(`[${aOut}]anullsink`);

@@ -89,6 +89,8 @@ pub enum Op {
     Vignette { angle: f32, #[serde(default)] backward: bool },
     /// Black bars at the top and bottom.
     Bars { height: u32 },
+    /// A media layer's rounded corners: alpha cleared outside a rounded rectangle of `radius` pixels.
+    Corners { radius: u32 },
     /// Fade toward `color`: in from it, or out to it.
     Fade { color: [f32; 3], out: bool, start: f64, duration: f64 },
     /// Red, green and blue moved by whole pixels, [across, down] each.
@@ -330,6 +332,9 @@ pub struct LayerUse {
     /// Frames the source has; after them the layer is gone. None: a still, shown throughout.
     #[serde(default)]
     pub frames: Option<i64>,
+    /// The output frame showing the layer's frame 0 (the backend truncates the layer's start to
+    /// whole frames on its 1/fps timebase).
+    pub offset: i64,
     /// Top-left corner, output pixels.
     pub x: i32,
     pub y: i32,
@@ -381,12 +386,17 @@ pub fn blend_mode(name: &str) -> Result<u32, String> {
 }
 
 /// Transition numbers shared with primary.wgsl.
-pub const TRANSITIONS: [&str; 33] = [
+pub const TRANSITIONS: [&str; 44] = [
     "fade", "fadeblack", "fadewhite", "wipeleft", "wiperight", "wipeup", "wipedown", "slideleft", "slideright", "slideup", "slidedown",
     "smoothleft", "smoothright", "smoothup", "smoothdown", "circleopen", "circleclose", "horzopen", "horzclose", "vertopen", "vertclose",
     "diagtl", "zoomin", "circlecrop", "rectcrop", "coverleft", "coverright", "revealleft", "revealright", "fadegrays", "circlereveal", "pixelize",
-    "hblur",
+    "hblur", "dissolve", "radial", "distance", "squeezeh", "squeezev", "hlslice", "hrslice", "vuslice", "vdslice", "hlwind", "hrwind",
 ];
+
+/// Transitions that read xfade's frand table (dissolve and the winds).
+pub fn needs_noise(kind: u32) -> bool {
+    matches!(kind, 33 | 42 | 43)
+}
 
 /// The transition number of hblur, which needs its row sums before the primary pass.
 pub const HBLUR: u32 = 32;

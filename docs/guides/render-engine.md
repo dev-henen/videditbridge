@@ -1,6 +1,6 @@
 # GPU render engine & performance test
 
-The GPU render engine draws the picture of an edit on the graphics card, in float, instead of in FFmpeg's filter graph. It is step E1 of [the cinematic design](../design/cinematic-grade-and-vfx.md) (section 3.4), and it is still growing: it draws part of what the FFmpeg backend draws, and projects that use anything else render with FFmpeg as before. The first time the desktop app starts, a short performance test decides which of the two renders this machine's videos.
+The GPU render engine draws the picture of an edit on the graphics card, in float, instead of in FFmpeg's filter graph. It is the default renderer (step E4 of [the cinematic design](../design/cinematic-grade-and-vfx.md), section 3.4). What it does not draw itself yet comes from the FFmpeg backend as pieces (see Pieces), so it renders every project. The FFmpeg backend stays as the fallback and the reference. The first time the desktop app starts, a short performance test checks that the engine works on this machine.
 
 ## Using it
 
@@ -10,9 +10,9 @@ await render(project, { output: "out.mp4", backend: "auto" });
 
 | `backend` | What renders the picture |
 |---|---|
-| `"ffmpeg"` | The FFmpeg filter graph on the processor. The default until `setDefaultBackend` is called |
-| `"engine"` | The GPU engine. An error names what it cannot draw yet (`engineUnsupported(project)` lists the same) |
-| `"auto"` | The engine when it can draw the whole project and is built, else FFmpeg |
+| `"ffmpeg"` | The FFmpeg filter graph on the processor |
+| `"engine"` | The GPU engine. An error when it is not built or fails |
+| `"auto"` | The engine, and FFmpeg when the engine is not built, the options need FFmpeg, or the engine fails (reported on stderr). The default until `setDefaultBackend` is called |
 
 Videos with a `range` or `proxies`, and analysis renders, use FFmpeg. Single frames (`renderFrame`, `renderFrameShared`), live playback and contact sheets draw on the engine's long-lived preview sessions (see Previews). `setDefaultBackend(backend, frames)` sets the backend of renders that do not name one, and of frames and contact sheets; the app's host sets both from the performance test.
 
@@ -24,12 +24,24 @@ Videos with a `range` or `proxies`, and analysis renders, use FFmpeg. Single fra
 |---|---|
 | Clips | Video, images, colors and gradients; every fit (cover with focus, contain, stretch, blur); speed, speed ramps and reverse; fade in and out |
 | Effects | On clips, media layers and the whole video: every per-pixel color effect (grades, `adjust`, `color` without its spatial controls, temperature, tint, curves, LUT files and more), `blur`, `vignette`, `letterbox`, `chromaticAberration`, `grain`, `glitch`, `flash`, `fadeIn`, `fadeOut`, `zoom`, `kenBurns`, `punchIn`, `pulse` |
-| Transitions | Every xfade transition in the catalog except `dissolve`, `radial`, `distance`, the squeezes, the slices and the winds, plus the custom `circlereveal` |
-| Media layers | Position, size, fit, opacity, every blend mode, fades and slide animations, position and opacity keyframes, effects |
+| Transitions | Every transition in the catalog, xfade's and the custom `circlereveal` |
+| Media layers | Position, size, fit, opacity, every blend mode, fades and slide animations, position and opacity keyframes, rounded corners, effects |
 | Text, shapes, captions | Burned in by the encoder from the same ASS file as the FFmpeg backend |
-| Sound | Mixed by the FFmpeg backend's graph, muxed by the engine's encoder |
+| Sound | Mixed by the FFmpeg backend's graph on its own (`audioOnly`: no video is decoded for it), muxed by the engine's encoder |
 
-Every template renders on the engine. Not yet: effects with masks or keyframes, effects that work across frames or regions (denoise, stabilize, sharpen, beauty, background blur and replacement, sky, depth, removal, the motion effects of the motion catalog), the remaining transitions, scale, rotation, 3D and corner pin keyframes on layers, layer masks, rounded corners, shadows, layers behind the subject, smooth motion.
+Every template renders on the engine. Drawn as FFmpeg pieces for now (`engineBridged(project)` lists them in a project): effects with masks or keyframes, effects that work across frames or regions (denoise, stabilize, sharpen, beauty, background blur and replacement, sky, depth, removal, glows and film looks other than `printFilm`, the motion effects of the motion catalog), the color panel's vignette and clarity, scale, rotation, 3D and corner pin keyframes on layers, shadows, layer masks, layers behind the subject, smooth motion and moving crop focus.
+
+## Pieces
+
+Where the engine does not draw something itself, the FFmpeg backend draws that piece of the picture and the engine reads it like any other source: `compileProject` with `piece` writes the backend's own graph for the piece, with raw frames on stdout, no sound and no text, and the engine's decoder runs it (`engineGaps` in `plan.ts` decides what becomes a piece). So a piece is the backend's picture, and masks, model mattes and media inputs work as there (`render` makes them first, `enginePieceInputs`).
+
+| Piece | When | What the backend draws | The engine adds |
+|---|---|---|---|
+| Clip | A clip's fit or effects | The clip as the primary track shows it, fades left out | Fades, transitions, whole-video effects, layers |
+| Layer | A media layer's effects, keyframes, shadow, 3D | The layer placed on a clear frame-size canvas (`yuva420p`), for the frames it can show on | The blend over the picture |
+| Base | Whole-video effects, layer masks, layers behind the subject | The primary track and the media layers up to the last such layer | The layers above, the text |
+
+Parity (`test/render/engine.integration.test.ts`, "pieces"): mean ΔE 2000 0.35 for clip pieces next to the engine's own transitions and fades, 0.09 for a base piece under an engine layer, 0.06 for layer pieces. A piece runs at FFmpeg's speed, and in previews it starts again with an output seek (`{time}` in `seekArgs`), which still runs the graph from the piece's start. Preview sessions keep the masks a piece reads open, as they keep media open (Windows locks the files); `closeFrameSessions` closes them.
 
 ## How it works
 
@@ -52,6 +64,9 @@ Every template renders on the engine. Not yet: effects with masks or keyframes, 
 - xfade's black and white are luma 0 and 255 with chroma 127, past video black and white.
 - A layer is gone after its source's last frame, and that last frame shows only at its own time (overlay's end of stream).
 - A layer is on where the backend's `enable='between(t,start,end)'` is, and there `t` is the frame's time in microseconds times 1e-6, in doubles. That lands just under some starts (frame 12 at 15 fps gives 0.7999999999999999), so a layer starting at 0.2, 0.4 or 0.8 s at 15 fps shows a frame late, and the engine does the same.
+- A layer's frames are moved to its start with `setpts=PTS+start/TB` on the 1/fps timebase, and setpts truncates: frame k of a layer shows at output frame k + trunc(start / (1 / fps)), in doubles (`offset` in the plan). A layer starting between frames (0.1 s at 15 fps) shows its fades and keyframes a frame earlier than its start suggests.
+- xfade works on `yuv444p` (FFmpeg converts its inputs), and its result is scaled back to 4:2:0 as planes, chroma with swscale's bicubic both across and down. The engine packs a transition's frames that way when chroma differs within a block, where other pictures go down as swscale takes RGB to 4:2:0. dissolve shows it most: its pixels switch between two pictures one by one (mean ΔE 2000 1.57 before, 0.69 after).
+- dissolve and the winds use xfade's `frand`, the fraction of sinf of angles up to about 1e5 times 43758.545: the GPU's sin does not match there, so the engine works it out on the processor once per plan (a table of one float a pixel), pixel-exact against FFmpeg on a black to white dissolve. The slices' bands fall on whole numbers every tenth of the frame, where the GPU's division can fall just under, so their fraction comes from integers.
 - Blend modes run on RGB clipped to 0..1, as FFmpeg's `gbrp` blend does; normal layers mix unclamped, as overlay does in YUV.
 - The `perspective` filter (the zoompan-style motion effects) counts frames from 1.
 - `crop` rounds its position to nearest, ties to even (`lrint`), before the chroma grid; `pad` and `overlay` truncate. A 9:16 cover of 16:9 footage lands on a half pixel, so this moved the picture by 2 pixels.
@@ -74,7 +89,7 @@ Drawing alone (output thrown away), a 1080p30 clip graded with `cinematic` and a
 
 ## Previews
 
-`renderFrame` draws on the engine when `backend` asks for it, or by default once the performance test found the engine working (`setDefaultBackend`'s second argument; even where FFmpeg exports faster, the engine draws single frames several times faster). The preview engine is one long-lived process (`FrameSession` in `engine.ts`): each version of a project is planned once and kept open (the last three), with its color tables and decoders, so the app's scrubbing and Claude's `render_frame` do not start over. Video sources that play forwards at constant speed can start their decoder at any frame (`PlanSeek`); a decoder behind the frame wanted, or more than 1.5 s short of it, starts again there, and nearby frames read on. A frame on its own is the same picture as in an export (the parity test checks it against the engine's export, frame for frame).
+`renderFrame` draws on the engine by default (`setDefaultBackend`'s second argument), and on FFmpeg where the performance test found the engine not working. The preview engine is one long-lived process (`FrameSession` in `engine.ts`): each version of a project is planned once and kept open (the last three), with its color tables and decoders, so the app's scrubbing and Claude's `render_frame` do not start over. Video sources that play forwards at constant speed can start their decoder at any frame (`PlanSeek`); a decoder behind the frame wanted, or more than 1.5 s short of it, starts again there, and nearby frames read on. A frame on its own is the same picture as in an export (the parity test checks it against the engine's export, frame for frame).
 
 **Frames for the app (2026-11-07).** `renderFrameShared(project, time, { shared })` draws a frame on the preview engine and writes it into a memory-mapped file as BGRA (a 32-byte header with a sequence number that is odd while a frame is being written, then the pixels; `native/ave-render/src/shared.rs`), with no picture file and no ffmpeg run. The app's host answers `render.scrub` this way when previews go to the engine (the project's `scrub/frame.bin`), and with a picture file otherwise, or when the engine cannot draw the edit; the app maps the file and copies the pixels into the bitmap on screen (`ui/Preview/SharedFrame.cs`). On the reference laptop a neighboring 320x180 frame took 27 ms this way against 65 to 94 ms as a picture file, and the pixels match the picture file within a mean ΔE 2000 of 0.19 (the copy turns 4:2:0 into RGB more simply than ffmpeg). Closing a project closes the preview sessions (`closeFrameSessions`), whose decoders keep its media open.
 
@@ -89,12 +104,12 @@ Drawing alone (output thrown away), a 1080p30 clip graded with `cinematic` and a
 
 ## Performance test
 
-`benchmarkBackends()` renders a 4.5 s 1920x1080 test edit (generated footage, a crossfade, a blended picture overlay, a title) with each renderer, compares 5 frames of the two videos, and picks a default:
+`benchmarkBackends()` renders a 4.5 s 1920x1080 test edit (generated footage, a crossfade, a blended picture overlay, a title) with each renderer, compares 5 frames of the two videos, and checks the engine works:
 
 - The engine's picture must match FFmpeg's within a mean ΔE 2000 of 3, or it is not used (a driver bug shows up as far more).
-- The graphics card is chosen only when it is at least 5% faster: closer results are noise, and FFmpeg draws every effect.
-- The report (`PerformanceReport`: choice, reason, adapter, frames per second of each) is kept in the app's data folder (`performance.json`, see `performanceFile()`); `applyPerformance` makes its choice the default (`"auto"` for the graphics card, so projects it cannot draw yet still render).
+- The engine is the default wherever it works, whichever was faster on the test (it also draws previews live); FFmpeg is the default only where it fails or draws a wrong picture.
+- The report (`PerformanceReport`: choice, reason, adapter, frames per second of each) is kept in the app's data folder (`performance.json`, see `performanceFile()`); `applyPerformance` sets `"auto"` when the engine worked and `"ffmpeg"` when it did not. Reports from before the engine became the default (2026-11-07), which chose by speed, are read the same way.
 
-The whole test takes about 35 s on the reference laptop. Repeated runs there gave 9 to 10 frames per second for each renderer, sometimes one ahead and sometimes the other, so the processor stays the default on it.
+The whole test takes about 35 s on the reference laptop. Repeated runs there gave 9 to 10 frames per second for each renderer.
 
 **In the app.** On the first start (no report yet), the app opens a performance window before the editor (`ui/Setup/PerformanceWindow`): a gauge with the live render speed in frames per second and a mark at real time, then the speed of each renderer, whether the pictures match, and the choice. The host methods are `performance.get` and `performance.run` (with `performance.progress` notifications: stage, step, progress, adapter, frames). Deleting `performance.json` runs the test again at the next start.

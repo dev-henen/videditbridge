@@ -27,6 +27,8 @@ export type PlanOp =
   | { op: "vignette"; angle: number; backward?: boolean }
   /** Black bars of `height` pixels at the top and bottom (letterbox). */
   | { op: "bars"; height: number }
+  /** A media layer's rounded corners (compile.ts): alpha cleared outside a rounded rectangle of `radius` pixels. */
+  | { op: "corners"; radius: number }
   /** FFmpeg's fade toward `color` (RGB 0..1): in from it, or out to it, `start` and `duration` in seconds of the piece. */
   | { op: "fade"; color: [number, number, number]; out: boolean; start: number; duration: number }
   /** Move the red, green and blue channels by whole pixels, [across, down] each (rgbashift). */

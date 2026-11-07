@@ -5,11 +5,12 @@
 use crate::effects::Effects;
 use crate::gpu::{view, Gpu, HblurParams, LayerParams, PlanarParams, PrimaryParams, ResampleParams, FLOAT};
 use crate::media::{Decoder, Encoder};
-use crate::plan::{blend_mode, output_bytes, transition_kind, Item, PixelFormat, Plan, Source, HBLUR, PLAN_VERSION};
+use crate::plan::{blend_mode, needs_noise, output_bytes, transition_kind, Item, PixelFormat, Plan, Source, HBLUR, PLAN_VERSION};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use wgpu::util::DeviceExt;
 
 /// Seconds of lookahead for starting decoders, so ffmpeg's start and seek are hidden.
 const DECODE_LEAD: f64 = 1.0;
@@ -100,6 +101,19 @@ fn xfade_progress(n: i64, fps: f64, offset: f64, duration: f64) -> f32 {
     (1.0f32 - (pts - start) as f32 / length as f32).clamp(0.0, 1.0)
 }
 
+/// xfade's frand(x, y) = fract(sinf(x * 12.9898 + y * 78.233) * 43758.545), in 32-bit floats as
+/// it computes it, for every pixel of a `w` x `h` frame (row by row).
+fn frand_table(w: u32, h: u32) -> Vec<f32> {
+    let mut out = Vec::with_capacity((w * h) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let r = (x as f32 * 12.9898f32 + y as f32 * 78.233f32).sin() * 43758.545f32;
+            out.push(r - r.floor());
+        }
+    }
+    out
+}
+
 /// Fit a decoded frame into an item image: scaled to `scaled`, placed at `offset`, the rest `fill`
 /// (two bicubic passes through `rows`). `yuv_in` turns a VUYA frame into RGB; without it the
 /// values stay as they are (a plane of a planar frame).
@@ -184,6 +198,8 @@ pub struct Composer<'a> {
     canvas: [wgpu::Texture; 2],
     blank: wgpu::Texture,
     sums: wgpu::Buffer,
+    /// xfade's frand for every pixel (dissolve, the winds), or a placeholder.
+    noise: wgpu::Buffer,
     packed: wgpu::Buffer,
     /// Two readback buffers, so one frame can be read while the next draws, and the submission that
     /// last filled each.
@@ -200,6 +216,7 @@ impl<'a> Composer<'a> {
         let (w, h) = (plan.width, plan.height);
         let blends = plan.layers.iter().map(|l| blend_mode(&l.blend)).collect::<Result<Vec<_>, _>>()?;
         let kinds = plan.clips.iter().map(|c| c.transition.as_ref().map(|t| transition_kind(&t.kind)).transpose()).collect::<Result<Vec<_>, _>>()?;
+        let noisy = kinds.iter().flatten().any(|k| needs_noise(*k));
         // hblur's row sums (width + 1 per row and clip), only when a transition needs them.
         let sums_size = if kinds.iter().any(|k| *k == Some(HBLUR)) { h as u64 * (w as u64 + 1) * 2 * 16 } else { 32 };
         // The output frame as yuv420p, in whole 32-bit words (the packing shader writes words).
@@ -216,6 +233,10 @@ impl<'a> Composer<'a> {
             canvas: [gpu.texture("canvas-a", w, h, FLOAT, true), gpu.texture("canvas-b", w, h, FLOAT, true)],
             blank: gpu.texture("blank", 1, 1, FLOAT, true),
             sums: buffer("row-sums", sums_size, wgpu::BufferUsages::STORAGE),
+            noise: {
+                let values = if noisy { frand_table(w, h) } else { vec![0.0f32; 4] };
+                gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("noise"), contents: bytemuck::cast_slice(&values), usage: wgpu::BufferUsages::STORAGE })
+            },
             packed: buffer("packed", bytes, wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC),
             staging: ["staging-a", "staging-b"].map(|l| buffer(l, bytes, wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST)),
             filled: [None, None],
@@ -233,10 +254,12 @@ impl<'a> Composer<'a> {
             let size = (*width, *height);
             state.decoder = Some(match (at, seek) {
                 (Some(k), Some(seek)) if k > 0 => Decoder::start(&plan.ffmpeg, &seek.args(k, plan.fps, *format), plan.cwd.as_deref(), *format, size, k)?,
-                // A generated source started at frame k, for the frames left in the edit.
+                // A generated source started at frame k, for the frames left in the edit. `{time}` is
+                // half a frame before frame k, for an output seek (pieces the FFmpeg backend draws).
                 (Some(k), None) if k > 0 && seek_args.is_some() => {
                     let left = (plan.frames as i64 - k).max(1).to_string();
-                    let args: Vec<String> = seek_args.as_ref().unwrap().iter().map(|a| a.replace("{frame}", &k.to_string()).replace("{left}", &left)).collect();
+                    let time = format!("{:.6}", (k as f64 - 0.5) / plan.fps);
+                    let args: Vec<String> = seek_args.as_ref().unwrap().iter().map(|a| a.replace("{frame}", &k.to_string()).replace("{left}", &left).replace("{time}", &time)).collect();
                     Decoder::start(&plan.ffmpeg, &args, plan.cwd.as_deref(), *format, size, k)?
                 }
                 _ => Decoder::start(&plan.ffmpeg, args, plan.cwd.as_deref(), *format, size, 0)?,
@@ -443,7 +466,6 @@ impl<'a> Composer<'a> {
         let plan = self.plan.clone();
         let gpu = self.gpu;
         let (w, h, fps) = (plan.width, plan.height, plan.fps);
-        let t = n as f64 / fps;
         let canvas_views = [view(&self.canvas[0]), view(&self.canvas[1])];
         let blank = view(&self.blank);
         let mut enc = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -513,6 +535,7 @@ impl<'a> Composer<'a> {
                 wgpu::BindingResource::TextureView(&canvas_views[0]),
                 pu.as_entire_binding(),
                 self.sums.as_entire_binding(),
+                self.noise.as_entire_binding(),
             ],
             w,
             h,
@@ -527,9 +550,9 @@ impl<'a> Composer<'a> {
             if enable_t < l.start || enable_t > l.end {
                 continue;
             }
-            let pos = (t - l.start) * fps;
-            let k = (pos + 1e-6).floor() as i64;
-            let exact = (pos - k as f64).abs() < 1e-6;
+            // The layer's frames land on whole output frames from `offset` on.
+            let k = n - l.offset;
+            let exact = true;
             if l.frames.is_some_and(|f| k > f - 1 || (k == f - 1 && !exact)) {
                 continue;
             }
@@ -569,7 +592,9 @@ impl<'a> Composer<'a> {
         };
         // The packing pass: text on or off, 10-bit output, dither (8-bit), and the frame (the dither's seed).
         let out = &plan.output;
-        let text_on = gpu.uniform(&[text.is_some() as u32, (out.bit_depth == Some(10)) as u32, out.dither as u32, n as u32]);
+        // A transition's frame on YUV: FFmpeg scales xfade's 4:4:4 result to 4:2:0 as planes.
+        let planar_chroma = params.mode == 2 && !plan.rgb_transitions;
+        let text_on = gpu.uniform(&[text.is_some() as u32, (out.bit_depth == Some(10)) as u32, out.dither as u32 | (planar_chroma as u32) << 1, n as u32]);
         let text = (text.as_ref().unwrap_or(&blank), &text_on);
         let (luma_words, chroma_words) = packed_words(w, h, out.bit_depth == Some(10));
         let bytes = self.packed.size();

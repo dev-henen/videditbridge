@@ -29,6 +29,26 @@ struct Params {
 @group(0) @binding(3) var<uniform> p: Params;
 // hblur: running sums of both clips along every row (hblur.wgsl); a small placeholder otherwise.
 @group(0) @binding(4) var<storage, read> sums: array<vec4<f32>>;
+// xfade's frand(x, y) for every pixel, worked out on the processor (its sinf of large angles, which
+// the GPU's sin does not match); dissolve and the winds read it. A small placeholder otherwise.
+@group(0) @binding(5) var<storage, read> noise: array<f32>;
+
+fn frand(x: i32, y: i32) -> f32 {
+    return noise[u32(y) * u32(textureDimensions(dst).x) + u32(x)];
+}
+
+// xfade's smoothstep, also for edges given high to low (the winds).
+fn xsmooth(e0: f32, e1: f32, x: f32) -> f32 {
+    let t = clamp((x - e0) / (e1 - e0), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+// xfade's slices: the share of b at position u (0..1 across or down), in ten bands.
+// `bands` is the value whose fraction makes the ten bands, worked out as xfade does for each kind.
+fn slice(u: f32, bands: f32, t: f32) -> f32 {
+    let s = xsmooth(-0.5, 0.0, u - t * 1.5);
+    return select(1.0, 0.0, s <= fract(bands));
+}
 
 // xfade's mix: m of x, 1 - m of y.
 fn mixf(x: vec3<f32>, y: vec3<f32>, m: f32) -> vec3<f32> {
@@ -201,6 +221,55 @@ fn transition(x: i32, y: i32, w: i32, h: i32) -> vec3<f32> {
                 sy = i32(min((floor(f32(y) / sq) + 0.5) * sq, fh - 1.0));
             }
             return mixf(load_a(sx, sy), load_b(sx, sy), t);
+        }
+        case 33u: {
+            // dissolve: each pixel switches from a to b at its own random moment.
+            return select(cb, ca, frand(x, y) * 2.0 + t * 2.0 - 1.5 >= 0.5);
+        }
+        case 34u: {
+            // radial: a clock hand sweeping round the center (whole-pixel center, as xfade's ints).
+            let sweep = atan2(f32(x - w / 2), f32(y - h / 2)) - (t - 0.5) * (3.14159265358979 * 2.5);
+            return mixf(cb, ca, smoothstep(0.0, 1.0, sweep));
+        }
+        case 35u: {
+            // distance: pixels where the two pictures are close switch first. xfade measures on its
+            // planes (Y, U and V, or R, G and B), each over 255.
+            var da = ca;
+            var db = cb;
+            if (p.rgb == 0u) {
+                da = rgb_to_vuya(vec4<f32>(ca, 1.0)).xyz;
+                db = rgb_to_vuya(vec4<f32>(cb, 1.0)).xyz;
+            }
+            let near = select(0.0, 1.0, length(da - db) <= t);
+            return mixf(mixf(ca, cb, near), cb, t);
+        }
+        case 36u: {
+            // squeezeh: a squeezed toward the middle row, b around it.
+            let z = 0.5 + (f32(y) / fh - 0.5) / t;
+            if (z < 0.0 || z > 1.0) {
+                return cb;
+            }
+            return load_a(x, i32(round(z * (fh - 1.0))));
+        }
+        case 37u: {
+            let z = 0.5 + (f32(x) / fw - 0.5) / t;
+            if (z < 0.0 || z > 1.0) {
+                return cb;
+            }
+            return load_a(i32(round(z * (fw - 1.0))), y);
+        }
+        // hlslice and vuslice band 10.f * x / w (10x first), the others 10.f * xx of their own xx.
+        // 10x / w lands exactly on whole numbers every w / 10 pixels, where the GPU's division can
+        // fall just under: its fraction comes from integers (exact where xfade's is exact).
+        case 38u: { return mixf(cb, ca, slice(f32(x) / fw, f32((10 * x) % w) / fw, t)); }
+        case 39u: { let u = (fw - 1.0 - f32(x)) / fw; return mixf(cb, ca, slice(u, 10.0 * u, t)); }
+        case 40u: { return mixf(cb, ca, slice(f32(y) / fh, f32((10 * y) % h) / fh, t)); }
+        case 41u: { let u = (fh - 1.0 - f32(y)) / fh; return mixf(cb, ca, slice(u, 10.0 * u, t)); }
+        case 42u, 43u: {
+            // hlwind, hrwind: streaks of random length per row.
+            let fx = select(f32(x) / fw, 1.0 - f32(x) / fw, p.kind == 42u);
+            let m = xsmooth(0.0, -0.2, fx * (1.0 - 0.2) + 0.2 * frand(0, y) - (1.0 - t) * (1.0 + 0.2));
+            return mixf(cb, ca, m);
         }
         case 32u: {
             // hblur: each pixel averages a window running right from it, widest in the middle.

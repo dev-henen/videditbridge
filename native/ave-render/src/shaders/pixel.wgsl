@@ -3,7 +3,7 @@
 // fades toward a color, channel shifts (rgbashift) and noise. (Prefixed with yuv.wgsl.)
 
 struct Params {
-    // 0 crop, 1 vignette, 2 bars, 3 fade, 4 shift, 5 noise, 6 eq.
+    // 0 crop, 1 vignette, 2 bars, 3 fade, 4 shift, 5 noise, 6 eq, 7 rounded corners (radius in `bar`).
     mode: u32,
     backward: u32,
     // shift: [across, down] per channel.
@@ -127,6 +127,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         }
         case 4u: {
             c = vec4<f32>(load(x - p.shift_red.x, y - p.shift_red.y).r, load(x - p.shift_green.x, y - p.shift_green.y).g, load(x - p.shift_blue.x, y - p.shift_blue.y).b, c.a);
+        }
+        case 7u: {
+            // compile.ts's rounded corners: alpha cleared outside a rounded rectangle, a hard edge.
+            let r = i32(p.bar);
+            let dx = max(r - x, x - (i32(size.x) - 1 - r));
+            let dy = max(r - y, y - (i32(size.y) - 1 - r));
+            if (length(vec2<f32>(f32(max(dx, 0)), f32(max(dy, 0)))) > f32(r)) {
+                c = vec4<f32>(c.rgb, 0.0);
+            }
         }
         case 6u: {
             // eq on the YUV planes: luma by contrast, brightness and gamma, chroma by saturation.

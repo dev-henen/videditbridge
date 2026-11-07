@@ -11,8 +11,9 @@ import { render, setDefaultBackend, type RenderBackend } from "./render.js";
 
 /**
  * The first-run performance test: render the same short edit with the FFmpeg backend (on the
- * processor) and the GPU render engine, check the engine's picture matches, and choose the faster
- * renderer that works as the default for this machine.
+ * processor) and the GPU render engine, and check the engine's picture matches. The engine is the
+ * default wherever it works (it takes what it does not draw itself from FFmpeg); FFmpeg is the
+ * default only on machines where the engine fails or draws a wrong picture.
  */
 
 export type PictureRenderer = "ffmpeg" | "engine";
@@ -32,7 +33,7 @@ export interface PerformanceReport {
   version: 1;
   /** ISO time of the test. */
   measuredAt: string;
-  /** The renderer chosen, and the render backend that gives it (the engine falls back to FFmpeg for what it cannot draw yet). */
+  /** The renderer chosen, and the render backend that gives it ("auto" for the engine, which falls back to FFmpeg if it fails). */
   choice: PictureRenderer;
   backend: RenderBackend;
   /** Why it was chosen, in a sentence for people. */
@@ -47,8 +48,6 @@ export interface PerformanceReport {
 
 /** Above this mean ΔE 2000 against the FFmpeg render, the engine's picture counts as wrong (a driver bug, black frames). */
 const MAX_DELTA_E = 3;
-/** The graphics card is chosen when it is at least this much faster; a closer result is noise, and FFmpeg draws everything. */
-const MIN_SPEEDUP = 1.05;
 /** Size of the frames compared. */
 const [CW, CH] = [320, 180];
 
@@ -69,11 +68,14 @@ export async function savePerformance(report: PerformanceReport, file = performa
   await writeFile(file, JSON.stringify(report, null, 2), "utf8");
 }
 
-/** Use a report's choice for renders that do not name a backend, and the engine for single frames when it works. */
+/**
+ * Renders that do not name a backend go to the engine when the report found it working (falling
+ * back to FFmpeg on failure), and to FFmpeg when it did not. Reports from before the engine became
+ * the default chose by speed; they are read by whether the engine worked too. No report: "auto".
+ */
 export function applyPerformance(report: PerformanceReport | undefined): void {
-  // Single frames go to the engine whenever it works: there it is several times faster either way.
-  const engineWorks = !!report?.results.find((r) => r.renderer === "engine")?.ok;
-  setDefaultBackend(report?.backend ?? "ffmpeg", engineWorks ? "auto" : "ffmpeg");
+  const backend: RenderBackend = !report || report.results.find((r) => r.renderer === "engine")?.ok ? "auto" : "ffmpeg";
+  setDefaultBackend(backend, backend);
 }
 
 /** The test's stages, in order. */
@@ -201,16 +203,16 @@ export async function benchmarkBackends(opts: BenchmarkOptions = {}): Promise<Pe
     let reason: string;
     const speedup = cpu.ok && gpu.ok ? cpu.seconds! / gpu.seconds! : undefined;
     const percent = (x: number) => `${Math.round(Math.abs(x - 1) * 100)}%`;
-    if (gpu.ok && (!cpu.ok || speedup! >= MIN_SPEEDUP)) {
+    if (gpu.ok) {
       choice = "engine";
-      reason = cpu.ok ? `The graphics card rendered ${percent(speedup!)} faster than the processor.` : "Rendering on the processor failed, and the graphics card works.";
+      reason = !cpu.ok
+        ? "Rendering on the processor failed, and the graphics card works."
+        : speedup! >= 1
+          ? `The graphics card works and rendered ${percent(speedup!)} faster than the processor.`
+          : `The graphics card works, so it renders (the processor was ${percent(1 / speedup!)} faster on this test, but the graphics card also draws previews live).`;
     } else {
       choice = "ffmpeg";
-      reason = !gpu.ok
-        ? `The graphics card cannot be used: ${gpu.error!.replace(/.$/, "")}.`
-        : speedup! >= 1
-          ? `The graphics card was only ${percent(speedup!)} faster, so the processor, which draws every effect, stays in use.`
-          : `The processor rendered ${percent(1 / speedup!)} faster than the graphics card.`;
+      reason = `The graphics card cannot be used: ${gpu.error!.replace(/.$/, "")}.`;
     }
     progress("done", "Done", 1);
     return { version: 1, measuredAt: new Date().toISOString(), frames: TEST_FRAMES, frameRate: TEST_FPS, choice, backend: choice === "engine" ? "auto" : "ffmpeg", reason, adapter, results };

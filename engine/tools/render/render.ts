@@ -7,7 +7,7 @@ import { deepClone } from "../../core/util.js";
 import { withProjectPaths } from "../../core/operations.js";
 import { ASS_FILE, compileProject, even, renderSize, type CompileOptions, type CompiledRender } from "./compile.js";
 import { FrameSession, enginePath, runPlan } from "./engine.js";
-import { contactSheetFrames, engineUnsupported, planProject } from "./plan.js";
+import { contactSheetFrames, engineBridged, engineUnsupported, planProject, type EnginePlan, type PieceInputs } from "./plan.js";
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
@@ -51,9 +51,10 @@ export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segment
   proxies?: boolean;
   /**
    * Which renderer draws the picture: "ffmpeg" (the CPU filter graph), "engine" (the
-   * GPU render engine; an error when it cannot draw something in the project), or "auto" (the
-   * engine when it can draw the whole project and is built, else FFmpeg). Default: setDefaultBackend's,
-   * "ffmpeg" until it is called. See the render engine guide.
+   * GPU render engine, an error when it cannot render), or "auto" (the engine, and FFmpeg when the
+   * engine is not built, the options need FFmpeg, or the engine fails). The engine takes what it does
+   * not draw itself from FFmpeg as pieces (engineGaps). Default: setDefaultBackend's, "auto" until it
+   * is called. See the render engine guide.
    */
   backend?: RenderBackend;
   /** Keep the work directory (graph + ASS files) for debugging. */
@@ -520,13 +521,13 @@ const after = (opts: Omit<RenderOptions, "output">, share: number) => (opts.onPr
 
 export type RenderBackend = "ffmpeg" | "engine" | "auto";
 
-let defaultBackend: RenderBackend = "ffmpeg";
-let defaultFrameBackend: RenderBackend = "ffmpeg";
+let defaultBackend: RenderBackend = "auto";
+let defaultFrameBackend: RenderBackend = "auto";
 
 /**
- * The backend of renders that do not name one, and of single frames (renderFrame), which can differ:
- * the engine draws a frame anywhere in the edit several times faster than FFmpeg runs its graph up
- * to it, even where FFmpeg exports faster. The app sets both from its first-run performance test.
+ * The backend of renders that do not name one, and of single frames (renderFrame), which can differ.
+ * Both are "auto" (the engine, falling back to FFmpeg) until the app's first-run performance test
+ * finds the engine does not work on this machine and sets "ffmpeg".
  */
 export function setDefaultBackend(backend: RenderBackend, frames: RenderBackend = backend): void {
   defaultBackend = backend;
@@ -544,8 +545,25 @@ export function engineBlockers(p: Project, opts: Pick<RenderOptions, "range" | "
 }
 
 /**
+ * The masks and mattes the engine's pieces read (planProject's pieceInputs): what the FFmpeg backend
+ * draws for the engine needs them as a render on the backend does, made the same way and shared
+ * with it through the cache folder.
+ */
+async function enginePieceInputs(p: Project, opts: Omit<RenderOptions, "output">): Promise<PieceInputs> {
+  if (!engineBridged(p).length) return {};
+  const jobs = await planMasks(p, opts);
+  await makeMasks(jobs, p.clips.map((c) => c.id), opts);
+  return { ...maskFiles(jobs), ...(await finishedMattes(p, opts)) };
+}
+
+/** Write the files a plan's pieces read into its work folder. */
+async function writePlanFiles(plan: EnginePlan, workDir: string): Promise<void> {
+  for (const f of plan.files ?? []) await writeFile(path.join(workDir, f.name), f.content, "utf8");
+}
+
+/**
  * Render on the GPU engine: the sound and the text overlay come from the FFmpeg backend (the sound
- * mix on its own, from a tiny picture), the picture from the engine, which muxes both in its encoder.
+ * mix alone, without decoding any video: audioOnly), the picture from the engine, which muxes both.
  */
 async function renderOnEngine(p: Project, opts: RenderOptions): Promise<RenderResult> {
   const fonts = await prepareFonts(opts.fontsDir, p);
@@ -553,7 +571,7 @@ async function renderOnEngine(p: Project, opts: RenderOptions): Promise<RenderRe
   const workDir = await mkdtemp(path.join(tmpdir(), "ave-engine-"));
   try {
     const mix = path.join(workDir, "mix.wav");
-    const sound = compileProject(p, { ...opts, ...fonts, rubberband, scale: 0.05, output: "", analysis: { audio: { mix } } });
+    const sound = compileProject(p, { ...opts, ...fonts, rubberband, scale: 0.05, output: "", audioOnly: true, analysis: { audio: { mix } } });
     for (const f of sound.files) await writeFile(path.join(workDir, f.name), f.content, "utf8");
     await runFfmpegOrThrow(sound.args, { ffmpegPath: opts.ffmpegPath, cwd: workDir, signal: opts.signal });
     opts.onProgress?.(0.1);
@@ -566,8 +584,10 @@ async function renderOnEngine(p: Project, opts: RenderOptions): Promise<RenderRe
       overlay: sound.files.some((f) => f.name === ASS_FILE),
       fontsDir: fonts.fontsDir,
       hardwareEncoder,
+      pieceInputs: await enginePieceInputs(p, opts),
     });
     if (!planned.plan) throw new Error(`The render engine cannot draw: ${planned.unsupported.join("; ")}`);
+    await writePlanFiles(planned.plan, workDir);
     await mkdir(path.dirname(path.resolve(opts.output)), { recursive: true });
     await runPlan({ ...planned.plan, cwd: workDir }, { signal: opts.signal, onProgress: opts.onProgress && ((f) => opts.onProgress!(0.1 + 0.9 * f)) });
     opts.onProgress?.(1);
@@ -604,10 +624,10 @@ async function engineFrameSession(p: Project, time: number, opts: Omit<RenderOpt
   // compileProject is pure: it gives the ASS file without running anything.
   const ass = compileProject(p, { ...opts, ...fonts, frameAt: time, output: "frame.png" }).files.find((f) => f.name === ASS_FILE);
   // Previews are 8-bit (picture files, the app's shared frames), whatever the export's bit depth.
-  const planned = planProject({ ...p, export: { ...p.export, bitDepth: undefined } }, { ...opts, output: "unused.mp4", ffmpeg: resolveFfmpegPath(opts), textLayer: !!ass, fontsDir: fonts.fontsDir });
+  const planned = planProject({ ...p, export: { ...p.export, bitDepth: undefined } }, { ...opts, output: "unused.mp4", ffmpeg: resolveFfmpegPath(opts), textLayer: !!ass, fontsDir: fonts.fontsDir, pieceInputs: await enginePieceInputs(p, opts) });
   if (!planned.plan) throw new Error(`The render engine cannot draw: ${planned.unsupported.join("; ")}`);
   const plan = planned.plan;
-  const key = createHash("sha256").update(JSON.stringify([plan.items, plan.clips, plan.layers, plan.effects, plan.width, plan.height, ass?.content])).digest("hex");
+  const key = createHash("sha256").update(JSON.stringify([plan.items, plan.clips, plan.layers, plan.effects, plan.width, plan.height, ass?.content, plan.files])).digest("hex");
   let open = frameSessions.get(key);
   if (open) {
     const s = await open.catch(() => undefined);
@@ -617,6 +637,7 @@ async function engineFrameSession(p: Project, time: number, opts: Omit<RenderOpt
     open = (async () => {
       const workDir = await mkdtemp(path.join(tmpdir(), "ave-frames-"));
       if (ass) await writeFile(path.join(workDir, ASS_FILE), ass.content, "utf8");
+      await writePlanFiles(plan, workDir);
       return { session: await FrameSession.open({ ...plan, cwd: workDir }), workDir };
     })();
     frameSessions.set(key, open);
@@ -663,7 +684,7 @@ export interface SharedFrame {
  */
 export async function renderFrameShared(project: Project, time: number, opts: Omit<RenderOptions, "range" | "onProgress" | "output"> & { shared: string }): Promise<SharedFrame> {
   const p = await readyToRender(project, { ...opts, output: opts.shared });
-  const blockers = [...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
+  const blockers = frameBlockers(p);
   if (blockers.length) throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
   const { session, n } = await engineFrameSession(p, time, opts);
   const shared = path.resolve(opts.shared);
@@ -672,15 +693,34 @@ export async function renderFrameShared(project: Project, time: number, opts: Om
   return { shared, width: r.width, height: r.height, sequence: r.sequence };
 }
 
+/**
+ * Run `onEngine` when `backend` sends this render to the engine, or undefined when FFmpeg should
+ * draw it: the backend is "ffmpeg", the engine cannot render it, or (for "auto") it failed, which is
+ * reported on stderr. "engine" never falls back.
+ */
+async function viaEngine<T>(backend: RenderBackend, blockers: string[], onEngine: () => Promise<T>, signal?: AbortSignal): Promise<T | undefined> {
+  if (backend === "ffmpeg") return undefined;
+  if (blockers.length) {
+    if (backend === "engine") throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
+    return undefined;
+  }
+  try {
+    return await onEngine();
+  } catch (e) {
+    if (backend === "engine" || signal?.aborted) throw e;
+    console.error(`The render engine failed, so FFmpeg renders this instead: ${e instanceof Error ? e.message : String(e)}`);
+    return undefined;
+  }
+}
+
+/** Why the engine cannot draw single frames and contact sheets of this project (empty when it can). */
+const frameBlockers = (p: Project) => [...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
+
 /** Render a project to a video file. */
 export async function render(project: Project, opts: RenderOptions): Promise<RenderResult> {
   const p = await readyToRender(project, opts);
-  const backend = opts.backend ?? defaultBackend;
-  if (backend === "engine" || backend === "auto") {
-    const blockers = engineBlockers(p, opts);
-    if (!blockers.length) return renderOnEngine(p, opts);
-    if (backend === "engine") throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
-  }
+  const done = await viaEngine(opts.backend ?? defaultBackend, engineBlockers(p, opts), () => renderOnEngine(p, opts), opts.signal);
+  if (done) return done;
   const { project: q, segments, share, masks, rubberband, fonts } = await prepare(p, opts, true, opts.range?.end);
   const hardwareEncoder =
     opts.hardware !== false && wantsHardware(p.export.videoCodec, opts.preset ?? p.export.preset) ? await detectHardwareEncoder(opts) : undefined;
@@ -705,12 +745,8 @@ export async function renderFrame(
   opts: Omit<RenderOptions, "range" | "onProgress">,
 ): Promise<string> {
   const p = await readyToRender(project, opts);
-  const backend = opts.backend ?? defaultFrameBackend;
-  if (backend === "engine" || backend === "auto") {
-    const blockers = [...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
-    if (!blockers.length) return frameOnEngine(p, time, opts);
-    if (backend === "engine") throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
-  }
+  const done = await viaEngine(opts.backend ?? defaultFrameBackend, frameBlockers(p), () => frameOnEngine(p, time, opts), opts.signal);
+  if (done) return done;
   // One frame does not pay for caching clips, but uses those already cached.
   const { project: q, segments, masks, fonts } = await prepare(p, opts, false);
   const compiled = compileProject(q, { ...opts, ...fonts, segments, ...masks, frameAt: time });
@@ -749,12 +785,8 @@ export async function renderContactSheet(
 ): Promise<string> {
   const p = await readyToRender(project, opts);
   // Like single frames: on the preview engine where previews go there, or when asked.
-  const backend = opts.backend ?? defaultFrameBackend;
-  if (backend === "engine" || backend === "auto") {
-    const blockers = [...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
-    if (!blockers.length) return sheetOnEngine(p, opts);
-    if (backend === "engine") throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
-  }
+  const done = await viaEngine(opts.backend ?? defaultFrameBackend, frameBlockers(p), () => sheetOnEngine(p, opts), opts.signal);
+  if (done) return done;
   const { project: q, segments, masks, fonts } = await prepare(p, opts, true);
   const compiled = compileProject(q, {
     ...opts,
@@ -811,7 +843,7 @@ export interface FramePlayer {
  */
 export async function framePlayer(project: Project, opts: Omit<RenderOptions, "range" | "onProgress" | "output">): Promise<FramePlayer> {
   const p = await readyToRender(project, { ...opts, output: "player" });
-  const blockers = [...(enginePath() ? [] : ["the engine is not built (npm run native)"]), ...engineUnsupported(p)];
+  const blockers = frameBlockers(p);
   if (blockers.length) throw new Error(`The render engine cannot render this: ${blockers.join("; ")}`);
   const { session, fps, frames } = await engineFrameSession(p, 0, opts);
   return {
@@ -834,7 +866,7 @@ export async function renderSoundMix(project: Project, opts: Omit<RenderOptions,
   await mkdir(path.dirname(output), { recursive: true });
   const workDir = await mkdtemp(path.join(tmpdir(), "ave-mix-"));
   try {
-    const sound = compileProject(p, { ...opts, ...fonts, rubberband, scale: 0.05, output: "", analysis: { audio: { mix: output } } });
+    const sound = compileProject(p, { ...opts, ...fonts, rubberband, scale: 0.05, output: "", audioOnly: true, analysis: { audio: { mix: output } } });
     for (const f of sound.files) await writeFile(path.join(workDir, f.name), f.content, "utf8");
     await runFfmpegOrThrow(sound.args, { ffmpegPath: opts.ffmpegPath, cwd: workDir, signal: opts.signal });
     return output;

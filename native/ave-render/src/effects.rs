@@ -130,6 +130,7 @@ impl<'a> Effects<'a> {
                 }
                 Op::Vignette { angle, backward } => pixel(enc, PixelParams { mode: 1, angle: *angle, backward: *backward as u32, ..Default::default() }),
                 Op::Bars { height } => pixel(enc, PixelParams { mode: 2, bar: (*height).min(h / 2), ..Default::default() }),
+                Op::Corners { radius } => pixel(enc, PixelParams { mode: 7, bar: *radius, ..Default::default() }),
                 Op::Fade { color, out, start, duration } => {
                     let factor = fade_factor(j, self.fps, *start, *duration, *out);
                     pixel(enc, PixelParams { mode: 3, color: [color[0], color[1], color[2], 1.0], factor, ..Default::default() })
