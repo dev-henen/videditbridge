@@ -126,7 +126,7 @@ Everything still goes through the same tools, so all changes share one undo hist
 
 ## Next: cinematic grading and CGI effects
 
-The plan for movie-level color grading (log footage, secondary corrections, film looks, scene matching) and common CGI effects (blend modes, any-object masks and tracking, sky and screen replacement, atmospherics, depth, object removal, smooth slow motion), including a GPU render engine with OpenColorIO and ACES, is in [Cinematic grading and CGI effects](design/cinematic-grade-and-vfx.md).
+The plan for movie-level color grading (log footage, secondary corrections, film looks, scene matching) and common CGI effects (blend modes, any-object masks and tracking, sky and screen replacement, atmospherics, depth, object removal, smooth slow motion), including the GPU render engine (now the default renderer) and ACES color management, is in [Cinematic grading and CGI effects](design/cinematic-grade-and-vfx.md).
 
 ## Next: Windows, macOS and Linux
 
