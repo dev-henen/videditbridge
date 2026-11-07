@@ -26,6 +26,10 @@ pub struct Plan {
     pub clips: Vec<ClipUse>,
     /// Media overlays, bottom to top.
     pub layers: Vec<LayerUse>,
+    /// The item holding the text drawn over black and over (235, 240, 240), stacked: the engine
+    /// puts it on in YUV as it packs the frame (engine sessions).
+    #[serde(default)]
+    pub text: Option<usize>,
     /// Whole-video effects on the primary track, before the layers; time counts in output frames.
     #[serde(default)]
     pub effects: Vec<Op>,
@@ -55,6 +59,9 @@ pub struct Item {
     /// fit blur: the same source fitted again behind the picture, through its own effects.
     #[serde(default)]
     pub backdrop: Option<Backdrop>,
+    /// Keep the fitted picture as YUV (Y, U, V in red, green, blue): the text source.
+    #[serde(default)]
+    pub keep_yuv: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -102,6 +109,10 @@ pub enum Source {
         format: PixelFormat,
         #[serde(default)]
         still: bool,
+        /// A generated source that can start at any frame (the text layer): `args` with `{frame}` and
+        /// `{left}` replaced by the first frame and the frames from there to the end.
+        #[serde(default)]
+        seek_args: Option<Vec<String>>,
         /// How to start the decoder at a later frame (previews that jump around).
         #[serde(default)]
         seek: Option<Seek>,

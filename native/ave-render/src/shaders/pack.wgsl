@@ -7,6 +7,38 @@
 
 @group(0) @binding(0) var picture: texture_2d<f32>;
 @group(0) @binding(1) var<storage, read_write> out: array<u32>;
+// The text (engine sessions): libass's drawing over black (Y 16, U and V 128) on top and over
+// (235, 240, 240) below, as Y, U, V in red, green, blue, each chroma sample on its 2 x 2 block.
+@group(0) @binding(2) var text: texture_2d<f32>;
+@group(0) @binding(3) var<uniform> text_on: vec4<u32>;
+
+// The text over `under` on one plane: libass blends each plane linearly, so its drawings over the
+// two backgrounds (`low` and `high`, `span` apart) give the blend factor and what it adds.
+fn over(under: f32, on_low: f32, on_high: f32, low: f32, span: f32) -> f32 {
+    let keep = (on_high - on_low) / span;
+    return under * keep + on_low - low * keep;
+}
+
+fn text_luma(x: u32, y: u32, under: f32) -> f32 {
+    if (text_on.x == 0u) {
+        return under;
+    }
+    let h = textureDimensions(picture).y;
+    return over(under, textureLoad(text, vec2<u32>(x, y), 0).r, textureLoad(text, vec2<u32>(x, y + h), 0).r, 16.0 / 255.0, 219.0 / 255.0);
+}
+
+// V and U of chroma sample (cx, cy) with the text over them.
+fn text_chroma(cx: u32, cy: u32, under: vec2<f32>) -> vec2<f32> {
+    if (text_on.x == 0u) {
+        return under;
+    }
+    let h = textureDimensions(picture).y;
+    let low = textureLoad(text, vec2<u32>(cx * 2u, cy * 2u), 0);
+    let high = textureLoad(text, vec2<u32>(cx * 2u, cy * 2u + h), 0);
+    let k = 128.0 / 255.0;
+    let span = 112.0 / 255.0;
+    return vec2<f32>(over(under.x, low.b, high.b, k, span), over(under.y, low.g, high.g, k, span));
+}
 
 fn to_byte(v: f32) -> u32 {
     return u32(round(clamp(v, 0.0, 1.0) * 255.0));
@@ -37,7 +69,9 @@ fn luma(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups) g
     for (var k = 0u; k < 4u; k++) {
         let b = word * 4u + k;
         if (b < total) {
-            packed |= to_byte(yuv(b % size.x, b / size.x).z) << (8u * k);
+            let x = b % size.x;
+            let y = b / size.x;
+            packed |= to_byte(text_luma(x, y, yuv(x, y).z)) << (8u * k);
         }
     }
     out[word] = packed;
@@ -102,7 +136,7 @@ fn chroma(@builtin(global_invocation_id) id: vec3<u32>, @builtin(num_workgroups)
     for (var k = 0u; k < 4u; k++) {
         let i = word * 4u + k;
         if (i < plane) {
-            let c = chroma_sample(i % cw, i / cw, size);
+            let c = text_chroma(i % cw, i / cw, chroma_sample(i % cw, i / cw, size));
             v |= to_byte(c.x) << (8u * k);
             u |= to_byte(c.y) << (8u * k);
         }

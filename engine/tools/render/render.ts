@@ -11,7 +11,7 @@ import { engineUnsupported, planProject } from "./plan.js";
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
-import { effectObjects, effectRemovals, escapeFilterPath, removalKey, usesDepthMask, usesFaceMask, usesPersonMask, usesSkyMask, type RemovalSpec } from "../../library/effects/index.js";
+import { effectObjects, effectRemovals, removalKey, usesDepthMask, usesFaceMask, usesPersonMask, usesSkyMask, type RemovalSpec } from "../../library/effects/index.js";
 import { maskNeeds } from "../../library/effects/masks.js";
 import { ObjectSegmenter, objectMaskFile, writeObjectMask, type ObjectSpec, type ObjectTrack } from "../vision/objects.js";
 import { PersonSegmenter, maskFile } from "../vision/segment.js";
@@ -571,15 +571,16 @@ const FRAME_SESSIONS = 3;
 
 /**
  * Render one frame on the GPU engine: the project is planned once per version and kept open in the
- * preview engine, which draws the frame; a short ffmpeg run then burns in the text and captions
- * (the same ASS file as the FFmpeg backend, at the frame's time) and writes the picture. Video
- * clips start their decoder at the frame wanted, so a frame anywhere in the edit is quick.
+ * preview engine, which draws the frame with the text and captions as its top layer (libass on a
+ * transparent picture in a decoder that stays open, the same ASS file as the FFmpeg backend), and a
+ * short ffmpeg run writes the picture. Video clips start their decoder at the frame wanted, so a
+ * frame anywhere in the edit is quick.
  */
 async function frameOnEngine(p: Project, time: number, opts: Omit<RenderOptions, "range" | "onProgress">): Promise<string> {
   const fonts = await prepareFontsRecent(opts.fontsDir, p);
   // compileProject is pure: it gives the ASS file without running anything.
   const ass = compileProject(p, { ...opts, ...fonts, frameAt: time, output: "frame.png" }).files.find((f) => f.name === ASS_FILE);
-  const planned = planProject(p, { ...opts, output: "unused.mp4", ffmpeg: resolveFfmpegPath(opts), overlay: !!ass, fontsDir: fonts.fontsDir });
+  const planned = planProject(p, { ...opts, output: "unused.mp4", ffmpeg: resolveFfmpegPath(opts), textLayer: !!ass, fontsDir: fonts.fontsDir });
   if (!planned.plan) throw new Error(`The render engine cannot draw: ${planned.unsupported.join("; ")}`);
   const plan = planned.plan;
   const key = createHash("sha256").update(JSON.stringify([plan.items, plan.clips, plan.layers, plan.effects, plan.width, plan.height, ass?.content])).digest("hex");
@@ -609,12 +610,10 @@ async function frameOnEngine(p: Project, time: number, opts: Omit<RenderOptions,
   const { session } = await open;
   // As an output seek picks it in the FFmpeg backend: the first frame at or after `time`.
   const n = Math.min(plan.frames - 1, Math.max(0, Math.ceil(time * plan.fps - 1e-6)));
-  const fontsArg = fonts.fontsDir ? `:fontsdir='${escapeFilterPath(path.resolve(fonts.fontsDir))}'` : "";
-  // Timed in AV_TIME_BASE at the frame's own time, so libass shows what the backend shows there.
-  const picture = [`settb=AVTB,setpts=${Math.round((n * 1e6) / plan.fps)}`, "format=yuv420p", ass && `ass=filename=${ASS_FILE}${fontsArg}`].filter(Boolean).join(",");
   const output = path.resolve(opts.output);
   await mkdir(path.dirname(output), { recursive: true });
-  await session.frame(n, ["-y", "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", `${plan.width}x${plan.height}`, "-i", "pipe:0", "-vf", picture, "-frames:v", "1", "-update", "1", output]);
+  // The text is already in the frame (the session's text layer): ffmpeg only writes the picture.
+  await session.frame(n, ["-y", "-hide_banner", "-loglevel", "error", "-nostdin", "-f", "rawvideo", "-pix_fmt", "yuv420p", "-s", `${plan.width}x${plan.height}`, "-i", "pipe:0", "-frames:v", "1", "-update", "1", output]);
   return output;
 }
 

@@ -8,7 +8,9 @@ struct Params {
     // 1 when the luma image holds alpha in green; otherwise its own alpha (1 inside the picture,
     // the fill's outside) is used.
     alpha: u32,
-    _pad: vec2<u32>,
+    // 1 keeps Y, U and V (in red, green and blue) instead of turning them into RGB.
+    yuv_out: u32,
+    _pad: u32,
 }
 
 @group(0) @binding(0) var luma: texture_2d<f32>;
@@ -29,6 +31,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var a = l.a;
     if (p.alpha == 1u && p.opaque == 0u) {
         a = l.g;
+    }
+    if (p.yuv_out == 1u) {
+        textureStore(dst, id.xy, vec4<f32>(l.r, c.r, c.g, a));
+        return;
     }
     textureStore(dst, id.xy, vuya_to_rgb(vec4<f32>(c.g, c.r, l.r, a)));
 }

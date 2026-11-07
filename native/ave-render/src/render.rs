@@ -22,10 +22,16 @@ fn packed_words(w: u32, h: u32) -> (u64, u64) {
 }
 
 /// One pass of the packing shader over `words` words, in rows of at most 65535 workgroups of 256.
-fn pack_pass(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, pipeline: &wgpu::ComputePipeline, picture: &wgpu::TextureView, packed: &wgpu::Buffer, words: u64) {
+fn pack_pass(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, pipeline: &wgpu::ComputePipeline, picture: &wgpu::TextureView, packed: &wgpu::Buffer, (text, text_on): (&wgpu::TextureView, &wgpu::Buffer), words: u64) {
     let groups = words.div_ceil(256) as u32;
     let (gx, gy) = (groups.clamp(1, 65535), groups.div_ceil(65535).max(1));
-    gpu.dispatch_bound(enc, pipeline, &[(0, wgpu::BindingResource::TextureView(picture)), (1, packed.as_entire_binding())], gx, gy);
+    let resources = [
+        (0, wgpu::BindingResource::TextureView(picture)),
+        (1, packed.as_entire_binding()),
+        (2, wgpu::BindingResource::TextureView(text)),
+        (3, text_on.as_entire_binding()),
+    ];
+    gpu.dispatch_bound(enc, pipeline, &resources, gx, gy);
 }
 
 /// An item's decoder and textures while it is in use.
@@ -146,16 +152,16 @@ fn yuv_of(c: [f32; 4]) -> [f32; 3] {
 /// Fit a planar 4:2:0 frame into an item image as FFmpeg's scale does with 4:2:0: luma to `scaled`
 /// at `offset`, chroma from its half-size planes to half of that (sizes rounded up, the offset
 /// halved), both with the same bicubic passes and centered chroma (swscale's default siting), then
-/// joined into float RGB. `rows` is the luma's row texture.
+/// joined into float RGB (or kept as YUV with `yuv_out`). `rows` is the luma's row texture.
 #[allow(clippy::too_many_arguments)]
-fn fit_planar(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, luma: &wgpu::TextureView, planes: &Planes, rows: &wgpu::TextureView, out: &wgpu::TextureView, (sw, sh): (u32, u32), scaled: [u32; 2], offset: [i32; 2], (w, h): (u32, u32), opaque: bool, alpha: bool, fill: [f32; 4]) {
+fn fit_planar(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, luma: &wgpu::TextureView, planes: &Planes, rows: &wgpu::TextureView, out: &wgpu::TextureView, (sw, sh): (u32, u32), scaled: [u32; 2], offset: [i32; 2], (w, h): (u32, u32), opaque: bool, (alpha, yuv_out): (bool, bool), fill: [f32; 4]) {
     let [y, u, v] = yuv_of(fill);
     fit(gpu, enc, luma, rows, &view(&planes.luma), (sw, sh), scaled, offset, (w, h), false, [y, fill[3], 0.0, fill[3]], false);
     let half = |n: u32| n.div_ceil(2);
     let chroma_scaled = [half(scaled[0]), half(scaled[1])];
     let chroma_offset = [offset[0].div_euclid(2), offset[1].div_euclid(2)];
     fit(gpu, enc, &view(&planes.uv), &view(&planes.rows), &view(&planes.chroma), (half(sw), half(sh)), chroma_scaled, chroma_offset, (half(w), half(h)), false, [u, v, 0.0, 1.0], false);
-    let pp = gpu.uniform(&PlanarParams { opaque: opaque as u32, alpha: alpha as u32, _pad: [0; 2] });
+    let pp = gpu.uniform(&PlanarParams { opaque: opaque as u32, alpha: alpha as u32, yuv_out: yuv_out as u32, _pad: 0 });
     gpu.dispatch(enc, &gpu.planar, &[wgpu::BindingResource::TextureView(&view(&planes.luma)), wgpu::BindingResource::TextureView(&view(&planes.chroma)), wgpu::BindingResource::TextureView(out), pp.as_entire_binding()], w, h);
 }
 
@@ -222,10 +228,16 @@ impl<'a> Composer<'a> {
     fn start_decoder(&mut self, i: usize, at: Option<i64>) -> Result<(), String> {
         let plan = self.plan.clone();
         let state = &mut self.states[i];
-        if let Source::Decode { width, height, args, seek, format, .. } = &plan.items[i].source {
+        if let Source::Decode { width, height, args, seek, seek_args, format, .. } = &plan.items[i].source {
             let size = (*width, *height);
             state.decoder = Some(match (at, seek) {
                 (Some(k), Some(seek)) if k > 0 => Decoder::start(&plan.ffmpeg, &seek.args(k, plan.fps, *format), plan.cwd.as_deref(), *format, size, k)?,
+                // A generated source started at frame k, for the frames left in the edit.
+                (Some(k), None) if k > 0 && seek_args.is_some() => {
+                    let left = (plan.frames as i64 - k).max(1).to_string();
+                    let args: Vec<String> = seek_args.as_ref().unwrap().iter().map(|a| a.replace("{frame}", &k.to_string()).replace("{left}", &left)).collect();
+                    Decoder::start(&plan.ffmpeg, &args, plan.cwd.as_deref(), *format, size, k)?
+                }
                 _ => Decoder::start(&plan.ffmpeg, args, plan.cwd.as_deref(), *format, size, 0)?,
             });
         }
@@ -263,14 +275,15 @@ impl<'a> Composer<'a> {
         let plan = self.plan.clone();
         let item: &Item = &plan.items[i];
         let gpu = self.gpu;
-        if let Source::Decode { still, seek, .. } = &item.source {
+        if let Source::Decode { still, seek, seek_args, .. } = &item.source {
+            let seekable = seek.is_some() || seek_args.is_some();
             let need = if *still { 0 } else if hold || exact { k } else { k + 1 };
             let restart = match &self.states[i].decoder {
                 None => true,
                 Some(d) => {
                     let have = d.current.as_ref().map_or(d.base, |(index, _)| *index - 1);
                     // A finished decoder has nothing further on: the source ended there.
-                    !*still && (need < have || (seek.is_some() && !d.ended && need - d.next() > READ_THROUGH))
+                    !*still && (need < have || (seekable && !d.ended && need - d.next() > READ_THROUGH))
                 }
             };
             if restart {
@@ -356,7 +369,7 @@ impl<'a> Composer<'a> {
         let alpha = format == PixelFormat::Yuva420p;
         let fit_into = |planes: Option<&Planes>, enc: &mut wgpu::CommandEncoder, out: &wgpu::TextureView, scaled: [u32; 2], offset: [i32; 2], opaque: bool| match planes {
             None => fit(gpu, enc, &src, &tmp, out, (sw, sh), scaled, offset, (w, h), opaque, item.fill, true),
-            Some(planes) => fit_planar(gpu, enc, &src, planes, &tmp, out, (sw, sh), scaled, offset, (w, h), opaque, alpha, item.fill),
+            Some(planes) => fit_planar(gpu, enc, &src, planes, &tmp, out, (sw, sh), scaled, offset, (w, h), opaque, (alpha, item.keep_yuv), item.fill),
         };
         if refit {
             fit_into(state.chroma.as_ref(), enc, &view(state.out.as_ref().unwrap()), item.scaled, item.offset, item.opaque);
@@ -547,10 +560,20 @@ impl<'a> Composer<'a> {
             );
             cur = 1 - cur;
         }
+        // The text (engine sessions) goes on in YUV as the frame is packed.
+        let text = match plan.text {
+            Some(ti) => {
+                self.prepare(ti, n, true, true, &mut enc)?;
+                Some(self.shown(ti))
+            }
+            None => None,
+        };
+        let text_on = gpu.uniform(&[text.is_some() as u32, 0, 0, 0]);
+        let text = (text.as_ref().unwrap_or(&blank), &text_on);
         let (luma_words, chroma_words) = packed_words(w, h);
         let bytes = self.packed.size();
-        pack_pass(gpu, &mut enc, &gpu.pack_luma, &canvas_views[cur], &self.packed, luma_words);
-        pack_pass(gpu, &mut enc, &gpu.pack_chroma, &canvas_views[cur], &self.packed, chroma_words);
+        pack_pass(gpu, &mut enc, &gpu.pack_luma, &canvas_views[cur], &self.packed, text, luma_words);
+        pack_pass(gpu, &mut enc, &gpu.pack_chroma, &canvas_views[cur], &self.packed, text, chroma_words);
         let slot = self.next_slot;
         if self.filled[slot].is_some() {
             return Err("both readback slots are waiting to be read".into());

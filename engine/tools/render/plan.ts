@@ -26,7 +26,20 @@ export const PLAN_VERSION = 2;
 export type PlanPixelFormat = "vuya" | "yuv420p" | "yuva420p";
 
 export type PlanSource =
-  | { kind: "decode"; width: number; height: number; args: string[]; format?: PlanPixelFormat; still?: boolean; seek?: PlanSeek }
+  | {
+      kind: "decode";
+      width: number;
+      height: number;
+      args: string[];
+      format?: PlanPixelFormat;
+      still?: boolean;
+      seek?: PlanSeek;
+      /**
+       * A generated source that can start at any frame (the text layer): `args` with `{frame}`
+       * replaced by the first frame wanted and `{left}` by the frames from there to the end.
+       */
+      seekArgs?: string[];
+    }
   | { kind: "color"; color: [number, number, number, number] };
 
 /**
@@ -57,6 +70,8 @@ export interface PlanItem {
   effects?: PlanOp[];
   /** fit blur: the same source fitted again behind the picture, through its own effects (blurred and darkened). */
   backdrop?: { scaled: [number, number]; offset: [number, number]; effects: PlanOp[] };
+  /** Keep the fitted picture as YUV (Y, U, V in red, green, blue) instead of turning it into RGB: the text source. */
+  keepYuv?: boolean;
 }
 
 export interface PlanClip {
@@ -104,6 +119,8 @@ export interface EnginePlan {
   items: PlanItem[];
   clips: PlanClip[];
   layers: PlanLayer[];
+  /** The item holding the text drawn over black and over (235, 240, 240), stacked (`PlanOptions.textLayer`). */
+  text?: number;
   /** Whole-video effects on the primary track (clips and transitions), before the layers; time counts in output frames. */
   effects?: PlanOp[];
   /** Transitions run on RGB, not YUV, in the FFmpeg backend (see transitionsInRgb). */
@@ -122,6 +139,12 @@ export interface PlanOptions {
   audio?: string;
   /** Text, shapes and captions: the encoder burns in overlay.ass from its working directory. */
   overlay?: boolean;
+  /**
+   * Text, shapes and captions drawn by the engine instead (engine sessions, which draw single
+   * frames): libass draws overlay.ass from the working directory in a decoder that stays open, so
+   * fonts load once, not for every frame, and the engine puts it on as it packs the frame (`text`).
+   */
+  textLayer?: boolean;
   fontsDir?: string;
   hardwareEncoder?: HardwareEncoder;
   extraOutputArgs?: string[];
@@ -382,8 +405,37 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
     });
   }
 
-  const exp = project.export;
   const fonts = opts.fontsDir ? `:fontsdir='${escapeFilterPath(path.resolve(opts.fontsDir))}'` : "";
+  let text: number | undefined;
+  if (opts.textLayer) {
+    // libass draws the text twice per frame, on frames timed in AV_TIME_BASE as the encoder's are:
+    // over black (Y 16, U and V 128) and over (235, 240, 240), stacked. Its blending is linear per
+    // plane, so the two give each plane's blend factor and what it adds, and the engine puts the
+    // text on in YUV as it packs the frame, as libass does on the encoder's 4:2:0 frames. (Over a
+    // transparent picture libass applies the color's own opacity to the alpha twice, which fades
+    // cannot undo.)
+    const count = Math.ceil(total * F - 1e-6);
+    const pass = (label: string, [y, u, v]: number[], first: string) =>
+      `color=c=black:s=${W}x${H}:r=${F},format=yuv420p,lutyuv=y=${y}:u=${u}:v=${v},settb=AVTB,setpts=round((N+${first})*1000000/${F}),ass=filename=${ASS_FILE}${fonts}[${label}]`;
+    const args = (first: string, left: string) => [
+      "-hide_banner", "-loglevel", "error", "-nostdin",
+      "-filter_complex", `${pass("b", [16, 128, 128], first)};${pass("w", [235, 240, 240], first)};[b][w]vstack,format=yuv420p`,
+      // Frames start at the frame wanted: without passthrough ffmpeg repeats the first to fill from 0.
+      "-fps_mode", "passthrough", "-frames:v", left,
+      "-f", "rawvideo", "-pix_fmt", "yuv420p", "pipe:1",
+    ];
+    text = addItem({
+      source: { kind: "decode", width: W, height: 2 * H, format: "yuv420p", args: args("0", String(count)), seekArgs: args("{frame}", "{left}") },
+      width: W,
+      height: 2 * H,
+      scaled: [W, 2 * H],
+      offset: [0, 0],
+      fill: [0, 0, 0, 1],
+      keepYuv: true,
+    });
+  }
+
+  const exp = project.export;
   // Text goes on in YUV, as in the FFmpeg backend, on frames timed in AV_TIME_BASE as the backend's are:
   // libass takes whole milliseconds, so a frame exactly at an event's start can land on either side of it.
   const picture = ["settb=AVTB", "format=yuv420p", opts.overlay && `ass=filename=${ASS_FILE}${fonts}`].filter(Boolean).join(",");
@@ -416,6 +468,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
       items,
       clips,
       layers,
+      ...(text !== undefined ? { text } : {}),
       ...(transitionsInRgb(project, W, H) ? { rgbTransitions: true } : {}),
       ...(() => {
         const { ops } = effectsOps(project.effects, { width: W, height: H, fps: F, duration: timeline.primaryDuration || total }, Math.ceil(total * F - 1e-6));

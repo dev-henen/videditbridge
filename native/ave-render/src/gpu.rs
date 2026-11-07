@@ -103,7 +103,8 @@ pub struct HblurParams {
 pub struct PlanarParams {
     pub opaque: u32,
     pub alpha: u32,
-    pub _pad: [u32; 2],
+    pub yuv_out: u32,
+    pub _pad: u32,
 }
 
 #[repr(C)]
