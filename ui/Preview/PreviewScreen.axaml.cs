@@ -38,6 +38,11 @@ public partial class PreviewScreen : UserControl
     private AudioPlayer? _audio;
     // The screen shows one frame of the edit (a frame or a video, not the overview grid), so a click can point at a spot.
     private bool _pointable;
+    // The overlay (matte or outline) for the frame shown; a newer request supersedes an older one.
+    private int _overlayToken;
+
+    /// <summary>The clip picked on the timeline, whose mask the matte shows (else the clip at the playhead).</summary>
+    public Func<string?>? MatteTarget { get; set; }
 
     /// <summary>The playhead moved (playback, scrubbing or a render at a time).</summary>
     public event Action<double>? PlayheadMoved;
@@ -167,11 +172,14 @@ public partial class PreviewScreen : UserControl
                 break;
             case "contact-sheet":
                 ShowImage(path, "Overview of the whole video", pointable: false);
+                HideOverlay();
                 break;
             default:
                 var t = render["time"]?.GetValue<double>();
                 ShowImage(path, t is null ? "Frame" : $"Frame at {t:0.0}s");
                 if (t is not null) SetScrubber(t.Value, fromUser: false);
+                if (t is not null) _ = RefreshOverlay(t.Value);
+                else HideOverlay();
                 break;
         }
     }
@@ -203,6 +211,7 @@ public partial class PreviewScreen : UserControl
 
     private void ShowVideo(string path, string caption)
     {
+        HideOverlay();
         if (Vlc.Instance is not { } vlc)
         {
             ShowEmpty(Vlc.Error ?? "Video playback is unavailable.");
@@ -255,6 +264,7 @@ public partial class PreviewScreen : UserControl
 
     private void ShowEmpty(string message)
     {
+        HideOverlay();
         StopVideo();
         FrameImage.IsVisible = false;
         ViewerEmpty.IsVisible = true;
@@ -276,6 +286,7 @@ public partial class PreviewScreen : UserControl
         var caption = before ? $"Before your last request, at {t:0.0}s" : $"Frame at {t:0.0}s";
         if (frame.Shared is not null) ShowShared(frame, caption);
         else if (frame.Path is not null) ShowImage(frame.Path, caption);
+        _ = RefreshOverlay(t);
     }
 
     /// <summary>A/B: flip the frame at the playhead between the edit now and before the latest request.</summary>
@@ -417,6 +428,7 @@ public partial class PreviewScreen : UserControl
     private void OnLiveFrame(ScrubFrame frame, double time)
     {
         if (!_livePlaying) return;
+        HideOverlay();
         ShowShared(frame, $"Playing at {time:0.0}s");
         SetScrubber(time, fromUser: false);
     }
@@ -435,6 +447,67 @@ public partial class PreviewScreen : UserControl
         PlayIcon.Text = Icons.Play;
         _audio?.Stop();
         await _vm.StopLiveAsync();
+    }
+
+    // ------------------------------------------------------------- matte and object outline
+
+    private void OnOverlayToggle(object? sender, RoutedEventArgs e)
+    {
+        // One overlay at a time: the matte replaces the picture, the outline goes over it.
+        if (ReferenceEquals(sender, MatteButton) && MatteButton.IsChecked == true) OutlineButton.IsChecked = false;
+        if (ReferenceEquals(sender, OutlineButton) && OutlineButton.IsChecked == true) MatteButton.IsChecked = false;
+        _ = RefreshOverlay(Scrubber.Value);
+    }
+
+    private void HideOverlay()
+    {
+        _overlayToken++;
+        OverlayImage.IsVisible = false;
+    }
+
+    /// <summary>
+    /// Lay the matte (white on black, in place of the picture) or the outline of the object Claude
+    /// selected (in the accent color, over the picture) on the still frame at `time`.
+    /// </summary>
+    private async Task RefreshOverlay(double time)
+    {
+        var token = ++_overlayToken;
+        var matte = MatteButton.IsChecked == true;
+        var outline = !matte && OutlineButton.IsChecked == true && _vm.HasObjects;
+        if (!(matte || outline) || _videoShown || _livePlaying || !_pointable)
+        {
+            OverlayImage.IsVisible = false;
+            return;
+        }
+        var m = await _vm.MatteAsync(time, matte ? MatteTarget?.Invoke() : null, objectOnly: !matte);
+        if (token != _overlayToken) return; // superseded by a newer frame or toggle
+        if (m?.Path is null)
+        {
+            OverlayImage.IsVisible = false;
+            if (matte) ViewerCaption.Text = m?.Reason ?? "No mask here";
+            return;
+        }
+        try
+        {
+            Bitmap bmp;
+            using (var s = File.OpenRead(m.Path)) bmp = new Bitmap(s);
+            IImage shown = bmp;
+            if (!matte)
+            {
+                var accent = (this.Brush("Accent") as ISolidColorBrush)?.Color ?? Color.FromRgb(0x3B, 0x82, 0xF6);
+                shown = MatteOutline.From(bmp, accent);
+                bmp.Dispose();
+            }
+            var old = OverlayImage.Source as IDisposable;
+            OverlayImage.Source = shown;
+            old?.Dispose();
+            OverlayImage.IsVisible = true;
+            ViewerCaption.Text = matte ? $"Matte of {m.Label} at {time:0.0}s (white is selected)" : $"Object {m.Label} at {time:0.0}s";
+        }
+        catch
+        {
+            OverlayImage.IsVisible = false;
+        }
     }
 
     // ------------------------------------------------------------- pointing at a spot in the frame

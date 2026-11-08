@@ -90,6 +90,13 @@
               </Button>
               <TextBlock Text="{Binding ReviewSummary}" Foreground="{StaticResource Muted}" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
             </DockPanel>
+            <!-- Scopes of the frame where the selected finding happens -->
+            <Border x:Name="ScopesPanel" DockPanel.Dock="Bottom" IsVisible="False" Background="Black" CornerRadius="6" Margin="4,4,4,2" Padding="4">
+              <StackPanel>
+                <TextBlock x:Name="ScopesCaption" FontSize="10" Foreground="{StaticResource Faint}" Margin="2,0,0,3"/>
+                <Image x:Name="ScopesImage" Stretch="Uniform" MaxHeight="190" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+              </StackPanel>
+            </Border>
             <ListBox ItemsSource="{Binding Findings}" SelectionChanged="OnFindingSelected">
               <ListBox.ItemTemplate>
                 <DataTemplate>

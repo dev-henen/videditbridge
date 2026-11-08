@@ -132,6 +132,34 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     expect((await host.call<{ clips: unknown[] }>("state.get")).clips).toHaveLength(0);
   });
 
+  it("renders the viewer's matte and the Review tab's scopes", async () => {
+    const created = await host.call<{ projectDir: string }>("project.create", { name: "Mattes" });
+    const project = created.projectDir;
+    await host.call("project.importMedia", { project, paths: [fx.talk] });
+    await host.call("tools.execute", { project, name: "add_clip", input: { assetId: "talk", duration: 2 } });
+    const clip = (await host.call<{ clips: { id: string }[] }>("state.get", { project })).clips[0]!.id;
+    // A grade on the left half of the frame.
+    const graded = await host.call<{ isError?: boolean; text: string }>("tools.execute", { project, name: "grade_region", input: { target: clip, label: "left", mask: { kind: "shape", feather: 0, shape: { type: "rect", x: 0.25, y: 0.5, width: 0.5, height: 1 } }, color: { exposure: 0.5 } } });
+    expect(graded.isError, graded.text).toBeFalsy();
+    const m = await host.call<{ path: string | null; label?: string }>("render.matte", { project, time: 1 });
+    expect(m.label).toBe("left");
+    expect(existsSync(m.path!)).toBe(true);
+    // White where the mask selects, black elsewhere.
+    const { runFfmpegOrThrow } = await import("../../engine/tools/index.js");
+    const { stdoutBuffer } = await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", m.path!, "-vf", "scale=64:36,format=gray", "-f", "rawvideo", "pipe:1"], { binaryStdout: true });
+    expect(stdoutBuffer![18 * 64 + 10]).toBeGreaterThan(200);
+    expect(stdoutBuffer![18 * 64 + 54]).toBeLessThan(40);
+    // No object selected in this clip: nothing to outline, with the reason.
+    const none = await host.call<{ path: string | null; reason?: string }>("render.matte", { project, time: 1, object: true });
+    expect(none.path).toBeNull();
+    expect(none.reason).toMatch(/No selected object/);
+    // Scopes at a finding's time.
+    const scopes = await host.call<{ path: string; time: number }>("render.scopes", { project, time: 1.5 });
+    expect(existsSync(scopes.path)).toBe(true);
+    expect(scopes.time).toBeCloseTo(1.5, 2);
+    await host.call("project.close", { project });
+  });
+
   it("keeps several projects open at once, each with its own state, conversations and cover", async () => {
     const a = await host.call<{ projectDir: string }>("project.create", { name: "Tab A" });
     const b = await host.call<{ projectDir: string }>("project.create", { name: "Tab B" });

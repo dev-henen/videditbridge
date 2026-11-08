@@ -10,7 +10,7 @@
  *
  * Requests: host.info, project.list, project.create, project.open, project.close, project.focus,
  *           project.importMedia, state.get, tools.list, tools.execute, session.undo, session.redo,
- *           render.scrub, choices.dismiss, chat.list, chat.current, chat.open, chat.new, chat.rename, chat.delete,
+ *           render.scrub, render.play, render.stop, render.matte, render.scopes, choices.dismiss, chat.list, chat.current, chat.open, chat.new, chat.rename, chat.delete,
  *           agent.run, agent.cancel, performance.get, performance.run
  * Notifications (each with `project`): state, activity, agent.text, agent.end, log, project.cover, and
  * project.opened / project.closed when remote control opens or closes a project, so the app shows it.
@@ -24,7 +24,9 @@ import { parseArgs } from "node:util";
 import { EditorSession } from "../claude/session.js";
 import { TOOLS, executeTool } from "../claude/tools.js";
 import { sessionState } from "../claude/state.js";
-import { computeTimeline } from "../core/timeline.js";
+import { clipAtTime, computeTimeline } from "../core/timeline.js";
+import { MaskSchema } from "../core/schema.js";
+import { renderScopes } from "../tools/render/color-analysis.js";
 import { closeFrameSessions, frameBackend, framePlayer, renderFrame, renderFrameShared, renderSoundMix } from "../tools/render/render.js";
 import { applyPerformance, benchmarkBackends, loadPerformance, savePerformance, type PerformanceReport } from "../tools/render/benchmark.js";
 import { checkFfmpeg, describeFfmpegCheck } from "../tools/render/selftest.js";
@@ -136,6 +138,8 @@ const handlers: Record<string, Handler> = {
   "session.redo": (p) => target(p).session.redo() ?? null,
   "render.scrub": (p) => scrub(target(p), Number(p.time ?? 0), p.before === true),
   "render.play": (p) => play(target(p), Number(p.time ?? 0)),
+  "render.matte": (p) => matte(target(p), Number(p.time ?? 0), typeof p.target === "string" ? p.target : undefined, p.object === true),
+  "render.scopes": (p) => scopes(target(p), Number(p.time ?? 0)),
   "render.stop": (p) => {
     stopPlayback(target(p));
     return true;
@@ -441,6 +445,52 @@ async function scrub(o: OpenProject, time: number, before = false): Promise<Scru
   });
   state.chain = job.catch(() => undefined);
   return job;
+}
+
+/**
+ * The matte at a time for the viewer (white on black, a picture file, not recorded as a render): the
+ * first masked effect on the clip `target` (or the clip at that time), else, or with `object`, the
+ * object last selected in that clip's video. `label` says what it is; `object` its id, for the outline.
+ */
+async function matte(o: OpenProject, time: number, targetId?: string, objectOnly = false): Promise<{ path: string | null; label?: string; object?: string; reason?: string }> {
+  const s = o.session;
+  const p = s.project;
+  const tl = computeTimeline(p);
+  const clip = (targetId ? tl.clips.find((c) => c.clip.id === targetId) : undefined) ?? clipAtTime(tl, time);
+  if (!clip) return { path: null, reason: "No clip here" };
+  const masked = objectOnly ? undefined : clip.clip.effects.find((e) => e.mask);
+  const objects = Object.entries(p.objects).filter(([, x]) => x.assetId === clip.asset.id);
+  const objectId = masked ? undefined : objects[objects.length - 1]?.[0];
+  if (!masked && !objectId) return { path: null, reason: objectOnly ? "No selected object in this clip" : "No mask or selected object in this clip" };
+  const mask = masked ? masked.mask! : MaskSchema.parse({ kind: "object", object: objectId });
+  // The mask cut from the picture as it reaches its effect: the effects before it, then the matte.
+  const before = masked ? clip.clip.effects.slice(0, clip.clip.effects.indexOf(masked)) : [];
+  const q: Project = {
+    ...p,
+    layers: [],
+    effects: [],
+    captions: undefined,
+    clips: p.clips.map((c) => (c.id === clip.clip.id ? { ...c, effects: [...before, { type: "maskView", params: { mask, style: "matte" } }] } : c)),
+  };
+  const t = Math.min(Math.max(time, clip.start), Math.max(clip.start, clip.end - 0.01));
+  const dir = path.join(s.options.outputDir, "scrub");
+  await mkdir(dir, { recursive: true });
+  const out = path.join(dir, `matte-r${s.revision}-${clip.clip.id}-${objectOnly ? "object" : "mask"}-${t.toFixed(2)}.png`);
+  await renderFrame(q, t, { output: out, scale: 0.5, ...s.renderOptions });
+  return { path: out, label: masked ? (masked.label ?? masked.type) : objectId, ...(objectId ? { object: objectId } : {}) };
+}
+
+/** Scopes (histogram, waveform, parade, vectorscope) of the frame at a time, for the Review tab; not recorded as a render. */
+async function scopes(o: OpenProject, time: number): Promise<{ path: string; time: number }> {
+  const s = o.session;
+  const dir = path.join(s.options.outputDir, "scrub");
+  await mkdir(dir, { recursive: true });
+  const t = Math.min(Math.max(0, time), Math.max(0, computeTimeline(s.project).duration - 0.05));
+  const frame = path.join(dir, `scopes-frame-r${s.revision}-${t.toFixed(2)}.png`);
+  await renderFrame(s.project, t, { output: frame, scale: 0.5, ...s.renderOptions });
+  const out = path.join(dir, `scopes-r${s.revision}-${t.toFixed(2)}.png`);
+  await renderScopes(frame, out, undefined, { ffmpegPath: s.options.ffmpegPath });
+  return { path: out, time: t };
 }
 
 /** Stop live playback of a project, if it plays. */

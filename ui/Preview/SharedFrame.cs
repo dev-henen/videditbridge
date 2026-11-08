@@ -112,3 +112,6 @@ public sealed class SharedFrameReader : IDisposable
 
 /// <summary>A scrubbed frame: a picture file, or <paramref name="Width"/> x <paramref name="Height"/> pixels in a shared frame file.</summary>
 public sealed record ScrubFrame(string? Path, string? Shared, int Width, int Height);
+
+/// <summary>A matte for the viewer: its picture file (white on black), what it is, or why there is none.</summary>
+public sealed record MatteFrame(string? Path, string? Label, string? Reason);

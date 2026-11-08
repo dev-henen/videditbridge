@@ -276,6 +276,35 @@ public sealed class ProjectViewModel : Observable
     }
 
     /// <summary>
+    /// The matte at a time for the viewer (a picture file, white on black): the first masked effect on
+    /// the clip `target` (or the clip at that time), or with `objectOnly` the object last selected in
+    /// that clip's video. Null with a reason when there is none, or when it could not be made.
+    /// </summary>
+    public async Task<MatteFrame?> MatteAsync(double time, string? target, bool objectOnly)
+    {
+        try
+        {
+            var r = await Call("render.matte", new { time, target, @object = objectOnly });
+            return new MatteFrame(r?["path"]?.GetValue<string>(), r?["label"]?.GetValue<string>(), r?["reason"]?.GetValue<string>());
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Scopes (histogram, waveform, parade, vectorscope) of the frame at a time, a picture file; null when they could not be made.</summary>
+    public async Task<string?> ScopesAsync(double time)
+    {
+        try { return (await Call("render.scopes", new { time }))?["path"]?.GetValue<string>(); }
+        catch { return null; }
+    }
+
+    private bool _hasObjects;
+    /// <summary>Claude selected objects (select_object): the viewer can outline the last one.</summary>
+    public bool HasObjects { get => _hasObjects; private set => Set(ref _hasObjects, value); }
+
+    /// <summary>
     /// Ask Claude to edit. With an item picked on the timeline, or a spot clicked in the frame, the
     /// request is about it: a note with its id, times or position leads the message, so "slow this
     /// down" and "put the title here" know what "this" and "here" are. Attached files are brought
@@ -453,6 +482,7 @@ public sealed class ProjectViewModel : Observable
         CanUndo = s["canUndo"]?.GetValue<bool>() ?? false;
         CanRedo = s["canRedo"]?.GetValue<bool>() ?? false;
         Summary = s["summary"]?.GetValue<string>() ?? "";
+        HasObjects = (s["objects"]?.AsArray().Count ?? 0) > 0;
         if (s["conversation"]?["title"]?.GetValue<string>() is { } title && s["conversation"]?["id"]?.GetValue<string>() == _conversationId) ConversationTitle = title;
         ApplyChoices(s["choices"]);
         if (_reviewedRevision is not null && s["revision"]?.ToString() != _reviewedRevision && !ReviewSummary.EndsWith("check again"))

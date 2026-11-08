@@ -20,6 +20,8 @@ public partial class ProjectView : UserControl
         if (project is null) return; // the designer
         DataContext = project;
         Screen.Attach(project);
+        // The matte shows the mask of the clip picked on the timeline.
+        Screen.MatteTarget = () => Strip.Selected is { Kind: "clip" } item ? item.Id : null;
         Side.Attach(project);
         Chat.Attach(project);
         project.StateUpdated += Strip.Update;

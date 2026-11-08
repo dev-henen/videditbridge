@@ -31,7 +31,7 @@ Movie-level color grading and the visual effects editors ask for most: log foota
 - [x] 5. **FFmpeg backend precision** (3.3): the 10-bit pipeline, 16-bit masks, `gbrp16le` RGB stages, ProRes 422 HQ export and a 10-bit segment cache.
 - [x] 6. **Hardware encoding** with VideoToolbox (macOS) and VAAPI (Linux) (3.6).
 - [x] 7. **Claude's checks** (section 8): `review_edit` findings for clipping, skin hue off the skin line, banding, matte flicker, track drift and sky slide.
-- [ ] 8. **Desktop app** (section 9): the selected object's blue outline, the matte toggle in the viewer, and scopes next to the findings.
+- [x] 8. **Desktop app** (section 9): the selected object's blue outline, the matte toggle in the viewer, and scopes next to the findings.
 
 When all eight are done, the whole test suite runs once (section 10). Packaging is on hold until then (section 11).
 
@@ -145,7 +145,7 @@ RIFE 4.9 makes the frames slow motion and frame rate conversion need; `set_speed
 
 ## 9. Desktop app
 
-Built: a click in the viewer marks a spot that goes to Claude for `select_object`; look variants show as choice cards; the live viewer is drawn by the engine. Left (checklist 8): the selected object's blue outline, a matte toggle in the viewer, scopes in the Review tab next to the findings. UI rules from CLAUDE.md apply.
+Built: a click in the viewer marks a spot that goes to Claude for `select_object`, and the object Claude selected last shows as a blue outline on still frames (Object toggle); a Matte toggle shows the mask of the clip at the playhead or the clip picked on the timeline, white on black; picking a review finding shows the scopes of its frame under the Review list; look variants show as choice cards; the live viewer is drawn by the engine. The host draws the matte and the scopes (`render.matte`, `render.scopes`); the app traces the outline. UI rules from CLAUDE.md apply.
 
 ## 10. Testing
 

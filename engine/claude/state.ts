@@ -26,6 +26,8 @@ export function sessionState(session: EditorSession) {
     settings: project.settings,
     duration: timeline?.duration ?? 0,
     timelineError,
+    /** Objects selected with select_object, in the order they were selected (the viewer outlines the last). */
+    objects: Object.keys(project.objects),
     clips: (timeline?.clips ?? []).map((c) => ({
       id: c.clip.id,
       assetId: c.clip.assetId,

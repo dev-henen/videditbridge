@@ -89,7 +89,7 @@ Browse the [template reference](../reference/templates.md) or run `ave templates
 
 ## Watch edits live
 
-Open the project in the desktop app (ui; build it with `dotnet build ui`). It shows the timeline, frames and preview video as Claude edits. See [Rendering & preview](rendering-and-preview.md).
+Open the project in the desktop app (ui; build it with `dotnet build ui`). It shows the timeline, frames and preview video as Claude edits. Click the picture to point Claude at a spot (for example to select an object); once Claude selected one, its outline shows in blue on still frames (the Object toggle). Matte shows the mask of the clip under the playhead, or of the clip picked on the timeline, white on black. In the Review tab, picking a finding goes to its moment and shows the scopes of that frame under the list. See [Rendering & preview](rendering-and-preview.md).
 
 ## Next
 

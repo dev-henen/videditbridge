@@ -28,6 +28,8 @@
         <Grid x:Name="ViewerArea" Background="Transparent" PointerReleased="OnViewerClick" SizeChanged="OnViewerResized" Cursor="Cross">
           <!-- Frames, the overview and video playback all show here (video frames come from the player) -->
           <Image x:Name="FrameImage" Stretch="Uniform" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+          <!-- The matte (white on black, in place of the picture) or the selected object's outline (over it) -->
+          <Image x:Name="OverlayImage" Stretch="Uniform" IsHitTestVisible="False" IsVisible="False" RenderOptions.BitmapInterpolationMode="HighQuality"/>
           <TextBlock x:Name="ViewerEmpty" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{StaticResource Faint}"
                      TextAlignment="Center" TextWrapping="Wrap" Margin="20" Text="Nothing to show yet"/>
           <Canvas IsHitTestVisible="False">
@@ -46,6 +48,21 @@
         </Button>
         <TextBlock x:Name="TimeText" DockPanel.Dock="Right" Width="96" TextAlignment="Right" VerticalAlignment="Center"
                    Foreground="{StaticResource Muted}" FontSize="11" Text="00:00.0 / 00:00.0"/>
+        <!-- The selected object's outline (shown once Claude selected one) and the matte of the mask in this clip -->
+        <ToggleButton x:Name="OutlineButton" DockPanel.Dock="Right" Click="OnOverlayToggle" IsVisible="{Binding HasObjects}" IsChecked="True" MinHeight="24" Padding="6,2" Margin="4,0,0,0"
+                      ToolTip.Tip="Outline the object Claude selected" AutomationProperties.Name="Outline the selected object">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Sparkle}" FontSize="13" Margin="0,0,5,0"/>
+            <TextBlock Text="Object" FontSize="11" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ToggleButton>
+        <ToggleButton x:Name="MatteButton" DockPanel.Dock="Right" Click="OnOverlayToggle" MinHeight="24" Padding="6,2" Margin="4,0,0,0"
+                      ToolTip.Tip="Show the mask of this clip (or of the clip picked on the timeline), white on black" AutomationProperties.Name="Show the mask">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Image}" FontSize="13" Margin="0,0,5,0"/>
+            <TextBlock Text="Matte" FontSize="11" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ToggleButton>
         <!-- A/B: the frame as it was before the latest request to Claude -->
         <ToggleButton x:Name="BeforeButton" DockPanel.Dock="Right" Click="OnBefore" IsVisible="False" MinHeight="24" Padding="6,2" Margin="4,0,0,0"
                       ToolTip.Tip="Show this frame as it was before your last request" AutomationProperties.Name="Show the frame before your last request">
