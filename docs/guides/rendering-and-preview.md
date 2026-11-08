@@ -44,10 +44,12 @@ All of these call `probeAssets` first unless you pass `probe: false`. Probing fi
 | `speech` | Words cut off at an edit, words shown twice in captions, captions over silence, and speech the transcript skipped |
 | `audio` | Integrated loudness away from the target (-14 LUFS by default), true peaks over -1 dBTP, a voice driven past full scale, music less than 10 dB under the voice |
 | `key` | Screen color a chroma key left behind |
+| `grade` | Highlights blown (two channels or more at the top) or shadows crushed by the grade over 0.5% of the frame, skin more than 10° off the vectorscope skin line inside detected faces, and banding the grade brings out in smooth areas (flat runs with steps of 2 levels or more); each against the same frame rendered without the grade, so what the footage already had is not blamed on it |
+| `vfx` | Model mattes (person, face, object, sky, depth) that flicker (pixels switching on, off and on again over three frames), tracks that pinned layers and masks follow (`track`, set by `pin_layer`, `pin_mask` and `replace_screen`) where they are unsure, and a replaced sky sliding against the scenery under it |
 
 It costs one analysis render: `renderForAnalysis` runs the graph once at about 360 px, without text and captions, and writes raw frames at the sample times plus the audio mix and its voice and music parts as WAV files. Black and frozen footage is found by scanning the source clips. A 60 s edit takes about a minute and a half, against several minutes for a full render.
 
-Readability is judged from the text's estimated box (font size times length) and its fill color; text with its own outline, shadow or box counts as readable anywhere. Faces are not detected yet, so text over a face is not reported.
+Readability is judged from the text's estimated box (font size times length) and its fill color; text with its own outline, shadow or box counts as readable anywhere. Text and captions over a face are found with the local face detector (`faces: false` skips it).
 
 `compileProject(project, opts)` is pure. It returns `{ args, files, filterGraph, timeline, duration, width, height }` without touching disk, which helps for inspecting or testing the generated graph.
 

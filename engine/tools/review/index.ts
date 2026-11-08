@@ -11,6 +11,7 @@ import { timelineWords } from "../captions/build.js";
 import { runFfmpeg, runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
 import { probeAssets, renderForAnalysis, type AnalysisFrame } from "../render/render.js";
 import { FaceDetector, type Face } from "../vision/faces.js";
+import { lookChecks } from "./look.js";
 import {
   REVIEW_CHECKS,
   captionBoxes,
@@ -27,6 +28,7 @@ import {
 } from "./checks.js";
 
 export * from "./checks.js";
+export * from "./look.js";
 
 export interface ReviewOptions extends FfmpegOptions, StructuralOptions {
   /** Directory relative asset paths resolve against. */
@@ -170,8 +172,10 @@ export async function reviewEdit(project: Project, opts: ReviewOptions): Promise
   }
   opts.onProgress?.(0.75);
   if (checks.has("frames")) await footageChecks(p, timeline, opts, issues);
-  opts.onProgress?.(0.9);
+  opts.onProgress?.(0.8);
   if (checks.has("key")) await keyChecks(p, timeline, opts, issues);
+  if (checks.has("grade") || checks.has("vfx"))
+    await lookChecks(p, timeline, { ...opts, checks: checks as Set<string>, faces: detector, onProgress: (x) => opts.onProgress?.(0.8 + 0.2 * x) }, issues, notes);
   opts.onProgress?.(1);
   issues.sort((a, b) => a.start - b.start || (a.severity === b.severity ? 0 : a.severity === "problem" ? -1 : 1));
   return { issues, ...(loudness ? { loudness } : {}), notes };

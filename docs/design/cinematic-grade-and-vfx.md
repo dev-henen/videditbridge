@@ -30,7 +30,7 @@ Movie-level color grading and the visual effects editors ask for most: log foota
 - [x] 4. **`replace_screen`:** the insert's matched blur, glare and color, and occlusion by an object mask (5.4).
 - [x] 5. **FFmpeg backend precision** (3.3): the 10-bit pipeline, 16-bit masks, `gbrp16le` RGB stages, ProRes 422 HQ export and a 10-bit segment cache.
 - [x] 6. **Hardware encoding** with VideoToolbox (macOS) and VAAPI (Linux) (3.6).
-- [ ] 7. **Claude's checks** (section 8): `review_edit` findings for clipping, skin hue off the skin line, banding, matte flicker, track drift and sky slide.
+- [x] 7. **Claude's checks** (section 8): `review_edit` findings for clipping, skin hue off the skin line, banding, matte flicker, track drift and sky slide.
 - [ ] 8. **Desktop app** (section 9): the selected object's blue outline, the matte toggle in the viewer, and scopes next to the findings.
 
 When all eight are done, the whole test suite runs once (section 10). Packaging is on hold until then (section 11).
@@ -140,7 +140,7 @@ RIFE 4.9 makes the frames slow motion and frame rate conversion need; `set_speed
 1. Look: `render_frame` at representative times, `render_scopes` for the grade.
 2. Change one stage at a time (input, primary, secondaries, look).
 3. Check: scopes for clipping and the skin line, `render_mask` at the first, middle and last frame and at fast motion, a contact sheet for flicker and drift.
-4. `review_edit`. Left (checklist 7): findings for highlight or shadow clipping over 0.5% of pixels, skin hue more than 10 degrees off the skin line, banding, matte flicker, track drift and sky slide (today it checks text, safe zones, frames, speech, sound and keys).
+4. `review_edit`, whose `grade` and `vfx` checks report highlight or shadow clipping the grade adds over 0.5% of pixels, skin hue more than 10 degrees off the skin line, banding the grade brings out, matte flicker, track drift and sky slide (engine/tools/review/look.ts).
 5. Offer taste decisions as choices (`offer_choices` with look variants).
 
 ## 9. Desktop app

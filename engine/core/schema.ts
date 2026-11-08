@@ -171,6 +171,7 @@ const maskSelection = {
         .array(keyframe(CornersSchema))
         .optional()
         .describe("Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set"),
+      track: z.string().optional().describe("The track the corners follow (pin_mask sets it); review_edit checks it for drift"),
     })
     .superRefine((s, ctx) => {
       if (s.type === "polygon" ? !s.points : [s.x, s.y, s.width, s.height].some((v) => v === undefined))
@@ -337,6 +338,7 @@ const layerBase = {
   animationIn: AnimationSchema.optional(),
   animationOut: AnimationSchema.optional(),
   keyframes: LayerKeyframesSchema.optional(),
+  track: z.string().optional().describe("The track (track_points) its keyframes follow, set by pin_layer and replace_screen; review_edit checks it for drift"),
   label: z.string().optional(),
 };
 

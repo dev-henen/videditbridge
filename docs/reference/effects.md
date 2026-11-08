@@ -741,7 +741,7 @@ _No parameters._
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
 | `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
 | `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
-| `mask.shape` | { type, x, y, width, height, points, keyframes, corners } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
+| `mask.shape` | { type, x, y, width, height, points, keyframes, corners, track } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
 | `mask.shape.type` | "ellipse" \| "rect" \| "polygon" |  | `"ellipse"` |  |
 | `mask.shape.x` | number |  |  | ellipse and rect: center x as a frame fraction (≥ 0, ≤ 1) |
 | `mask.shape.y` | number |  |  | ellipse and rect: center y as a frame fraction (≥ 0, ≤ 1) |
@@ -750,6 +750,7 @@ _No parameters._
 | `mask.shape.points` | unknown[][] |  |  | polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face |
 | `mask.shape.keyframes` | { time, value, easing }[] |  |  | Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box |
 | `mask.shape.corners` | { time, value, easing }[] |  |  | Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set |
+| `mask.shape.track` | string |  |  | The track the corners follow (pin_mask sets it); review_edit checks it for drift |
 | `mask.invert` | boolean |  | `false` | Select everything except this |
 | `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |

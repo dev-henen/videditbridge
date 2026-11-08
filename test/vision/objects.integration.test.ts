@@ -90,6 +90,11 @@ describe.skipIf(!hasFfmpeg || !hasModels)("selecting and tracking objects", () =
     expect(frame.isError, frame.text).toBeFalsy();
     const wrong = await executeTool(session, "grade_region", { target: clipId, label: "nope", mask: { kind: "object", object: "missing" }, color: { saturation: 10 } });
     expect(wrong.isError).toBe(true);
+    // The card's matte, tracked on a clean synthetic clip, does not flicker (review_edit vfx).
+    const review = await executeTool(session, "review_edit", { checks: ["vfx"] });
+    expect(review.isError, review.text).toBeFalsy();
+    expect((review.data as { issues: { message: string }[] }).issues.filter((i) => /flickers/.test(i.message)), review.text).toEqual([]);
+    expect((review.data as { notes: string[] }).notes.filter((n) => /flicker/.test(n)), review.text).toEqual([]);
 
     // A red layer over the whole frame, behind the card: the card stays in front, the rest turns red.
     let p = addAsset(session.project, { type: "color", id: "red", color: "#E02020" });

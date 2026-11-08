@@ -3,7 +3,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { addAsset, addClip, createProject, type Project } from "../../engine/core/index.js";
-import { renderForAnalysis, runFfmpegOrThrow, skyMaskFile } from "../../engine/tools/index.js";
+import { renderForAnalysis, reviewEdit, runFfmpegOrThrow, skyMaskFile } from "../../engine/tools/index.js";
 import { OUT_DIR, ffmpegAvailable } from "../helpers/media.js";
 
 const hasFfmpeg = await ffmpegAvailable();
@@ -130,4 +130,16 @@ describe.skipIf(!hasFfmpeg)("sky replacement", () => {
     const moved = bandAt(await frame(withPlate({ motion: [{ time: 0, x: 0, y: 0 }, { time: 1, x: 0, y: 0.1 }] })));
     expect(Math.abs(moved - still - 18), "band moved with the camera").toBeLessThanOrEqual(1.5);
   });
+
+  it("review_edit: a new sky moving while the scenery stands still slides; a still one does not", async () => {
+    // A textured sky picture, so the sky's own motion can be measured.
+    const plate = path.join(dir, "texture.png");
+    if (!existsSync(plate)) await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `testsrc2=s=${W}x${H}`, "-frames:v", "1", plate]);
+    const withSky = (motion: unknown[]) => addAsset(project({ asset: "texture", haze: 0, relight: 0, blur: 0, cover: 1.5, motion }), { type: "image", id: "texture", src: plate, width: W, height: H });
+    const review = async (p: Project) => (await reviewEdit(p, { checks: ["vfx"], faces: false, cacheDir, workDir: path.join(dir, "review") })).issues;
+    // The camera does not move in this clip: a sky drifting down 10% of the frame a second slides.
+    const sliding = await review(withSky([{ time: 0, x: 0, y: 0 }, { time: 1, x: 0, y: 0.1 }]));
+    expect(sliding.some((i) => i.check === "vfx" && /slides against the scenery/.test(i.message)), JSON.stringify(sliding)).toBe(true);
+    expect(await review(withSky([]))).toEqual([]);
+  }, 120_000);
 });

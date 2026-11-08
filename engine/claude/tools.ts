@@ -2322,7 +2322,7 @@ export const TOOLS: ToolDefinition[] = [
         notes.push(`${(keyframes.rotation as unknown[]).length} rotation`);
       }
       const covered = seen.length / (Math.floor(layer.duration * fps + 1e-6) + 1);
-      const p = ops.updateLayer(s.project, i.layerId, { keyframes });
+      const p = ops.updateLayer(s.project, i.layerId, { keyframes, track: i.trackId });
       return commit(
         s,
         p,
@@ -2367,7 +2367,7 @@ export const TOOLS: ToolDefinition[] = [
       // About half a pixel at 1080p.
       const corners = simplifyKeysBy(keys, (c) => [c.tl.x, c.tl.y, c.tr.x, c.tr.y, c.br.x, c.br.y, c.bl.x, c.bl.y], 0.4 / Math.max(W, H));
       const { keyframes: _, ...fixed } = shape;
-      const p = ops.setMaskedEffect(s.project, i.target, i.label, { ...effect, mask: { ...effect.mask, shape: { ...fixed, corners } } });
+      const p = ops.setMaskedEffect(s.project, i.target, i.label, { ...effect, mask: { ...effect.mask, shape: { ...fixed, corners, track: i.trackId } } });
       const covered = seen.length / (Math.floor((end - start) * fps + 1e-6) + 1);
       return commit(
         s,
@@ -2446,6 +2446,7 @@ export const TOOLS: ToolDefinition[] = [
         ...(i.effects ? { effects: i.effects } : {}),
         ...(i.label ? { label: i.label } : {}),
         ...(i.occluder ? { behindObject: i.occluder } : {}),
+        track: i.trackId,
         keyframes: { corners },
       });
       if (i.occluder && !s.project.objects[i.occluder]) return { text: `No object "${i.occluder}". Select what passes in front of the screen with select_object first.`, isError: true };
@@ -2470,7 +2471,7 @@ export const TOOLS: ToolDefinition[] = [
         // A diagonal sheen, white at the top left, screened on with the same corners.
         const glareId = newId("glare");
         q2 = ops.addAsset(q2, { type: "gradient", id: `${glareId}-sheen`, colors: ["#FFFFFF", "#000000"], direction: "diagonal" });
-        q2 = ops.addLayer(q2, { type: "media", id: glareId, assetId: `${glareId}-sheen`, start, duration, size, blend: "screen", opacity: i.glare, ...(i.occluder ? { behindObject: i.occluder } : {}), keyframes: { corners } });
+        q2 = ops.addLayer(q2, { type: "media", id: glareId, assetId: `${glareId}-sheen`, start, duration, size, blend: "screen", opacity: i.glare, ...(i.occluder ? { behindObject: i.occluder } : {}), track: i.trackId, keyframes: { corners } });
         notes.push(`glare ${glareId} at ${i.glare}`);
       }
       if (i.occluder) notes.push(`"${i.occluder}" stays in front`);
@@ -4082,7 +4083,9 @@ export const TOOLS: ToolDefinition[] = [
       "Check the edit for what a viewer notices, with timeline times, without changing anything. It renders sample frames and the audio mix in one pass and reports: " +
       "text that is hard to read against the picture, runs off the frame, or collides with captions or other text (text); text and captions where TikTok, Reels and Shorts put their buttons and captions (safe-zones); " +
       "black, frozen or repeated footage (frames); words cut off at an edit, doubled caption words, captions over silence, and speech the transcript skipped (speech); " +
-      "loudness off target, peaks, and music too loud under the voice (audio); screen color a chroma key left behind (key). " +
+      "loudness off target, peaks, and music too loud under the voice (audio); screen color a chroma key left behind (key); " +
+      "highlights or shadows the grade clipped, skin pushed off the skin line, banding the grade brought out in skies and walls, each against the same frame without the grade (grade); " +
+      "model mattes that flicker, tracks that pinned layers and masks follow where they are unsure, and a replaced sky sliding against the scenery (vfx). " +
       "It also finds text and captions covering a face (local face detection). Run it before render_video and after big changes, fix what it finds, then run it again.",
     input: z.object({
       checks: z

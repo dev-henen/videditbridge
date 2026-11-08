@@ -400,6 +400,35 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     expect((audioOnly.data as { issues: { check: string }[] }).issues.every((i) => i.check === "audio")).toBe(true);
   });
 
+  it("review_edit finds highlights the grade clipped and banding it brought out", async () => {
+    // A smooth sky-like gradient (8-bit, a level every few pixels) over a bright band (a lit wall).
+    const sky = out("review-sky.mp4");
+    await runFfmpegOrThrow([
+      "-y", "-hide_banner", "-loglevel", "error",
+      "-f", "lavfi", "-i", "color=c=black:s=640x360:r=30:d=2,format=rgb24,geq=r='if(lt(Y,0.7*H),90+40*Y/H,225)':g='if(lt(Y,0.7*H),140+40*Y/H,225)':b='if(lt(Y,0.7*H),200+30*Y/H,225)'",
+      "-c:v", "libx264", "-crf", "8", "-pix_fmt", "yuv420p", sky,
+    ]);
+    const s = new EditorSession(undefined, { outputDir: out("review-grade-session") });
+    const run = async (name: string, input: unknown) => {
+      const r = await executeTool(s, name, input);
+      expect(r.isError, `${name}: ${r.text}`).toBeFalsy();
+      return r;
+    };
+    await run("new_project", { aspectRatio: "16:9" });
+    await run("import_media", { src: sky, id: "sky" });
+    await run("add_clip", { assetId: "sky", duration: 1 });
+    await run("add_clip", { assetId: "sky", in: 1, duration: 1 });
+    const [graded, plain] = s.project.clips.map((c) => c.id) as [string, string];
+    // A heavy grade on the first clip: pushed exposure and contrast.
+    await run("color_adjust", { target: graded, settings: { contrast: 60, whites: 40 } });
+    const r = await run("review_edit", { checks: ["grade"] });
+    const issues = (r.data as { issues: { check: string; target?: string; message: string }[] }).issues;
+    expect(issues.some((i) => i.target === graded && /clips highlights/.test(i.message)), r.text).toBe(true);
+    expect(issues.some((i) => i.target === graded && /Banding/.test(i.message)), r.text).toBe(true);
+    expect(issues.some((i) => i.target === plain), r.text).toBe(false);
+    expect(issues.every((i) => i.check === "grade")).toBe(true);
+  }, 120_000);
+
   it("caches clips and keeps every cut on its frame", async () => {
     // A source whose brightness is its frame number, at 23.976 fps like much stock footage.
     const ramp = out("cache-ramp.mp4");

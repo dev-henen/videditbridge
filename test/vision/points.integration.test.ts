@@ -120,6 +120,11 @@ describe.skipIf(!hasFfmpeg)("tracking points and surfaces", () => {
     console.error(`pin_layer: worst position error ${worst.toFixed(3)} px, ${keys.position!.length} position keyframes`);
     // A similarity track of a camera move with a little perspective: most of the error is the model.
     expect(worst, "pinned position error, px").toBeLessThan(2.5);
+    // The layer records its track, and review_edit finds the track sure the whole time (no drift).
+    expect(s.project.layers[0]!.track).toBe("spot");
+    const review = await executeTool(s, "review_edit", { checks: ["vfx"] });
+    expect(review.isError, review.text).toBeFalsy();
+    expect((review.data as { issues: unknown[]; notes: string[] }).issues, review.text).toEqual([]);
   });
 
   it("pins a shape mask to a tracked surface, in perspective", async () => {

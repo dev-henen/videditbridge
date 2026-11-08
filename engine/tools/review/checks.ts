@@ -8,9 +8,9 @@ import { normalizeWord } from "../transcript/analyze.js";
 import { isAnimated, layerStateAt } from "../../core/keyframes.js";
 import type { Box } from "../vision/faces.js";
 
-export type ReviewCheck = "text" | "safe-zones" | "frames" | "speech" | "audio" | "key";
+export type ReviewCheck = "text" | "safe-zones" | "frames" | "speech" | "audio" | "key" | "grade" | "vfx";
 
-export const REVIEW_CHECKS: ReviewCheck[] = ["text", "safe-zones", "frames", "speech", "audio", "key"];
+export const REVIEW_CHECKS: ReviewCheck[] = ["text", "safe-zones", "frames", "speech", "audio", "key", "grade", "vfx"];
 
 export interface ReviewIssue {
   check: ReviewCheck;
