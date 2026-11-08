@@ -1,6 +1,6 @@
 # Cross-platform: required fixes
 
-Status: audit of 2026-10-27. The app will be built for Windows, macOS and Linux (targets and distribution: [Cinematic grading and CGI effects, section 3.6](cinematic-grade-and-vfx.md#36-platforms-windows-macos-and-linux)). Today it runs on Windows only. This document lists everything found that must change, where it is, and how to fix it.
+Status: audit of 2026-10-27. The app will be built for Windows, macOS and Linux (targets and distribution: [Cinematic grading and CGI effects, section 3.6](cinematic-grade-and-vfx.md#36-platforms)). Today it runs on Windows only. This document lists everything found that must change, where it is, and how to fix it.
 
 **Severity.**
 

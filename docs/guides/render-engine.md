@@ -1,6 +1,6 @@
 # GPU render engine & performance test
 
-The GPU render engine draws the picture of an edit on the graphics card, in float, instead of in FFmpeg's filter graph. It is the default renderer (step E4 of [the cinematic design](../design/cinematic-grade-and-vfx.md), section 3.4). What it does not draw itself yet comes from the FFmpeg backend as pieces (see Pieces), so it renders every project. The FFmpeg backend stays as the fallback and the reference. The first time the desktop app starts, a short performance test checks that the engine works on this machine.
+The GPU render engine draws the picture of an edit on the graphics card, in float, instead of in FFmpeg's filter graph. It is the default renderer ([the cinematic design](../design/cinematic-grade-and-vfx.md), section 3.4). What it does not draw itself yet comes from the FFmpeg backend as pieces (see Pieces), so it renders every project. The FFmpeg backend stays as the fallback and the reference. The first time the desktop app starts, a short performance test checks that the engine works on this machine.
 
 ## Using it
 
