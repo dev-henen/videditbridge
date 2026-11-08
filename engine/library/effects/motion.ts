@@ -17,6 +17,8 @@ import {
   zoompan,
   type EffectContext,
   type EffectDefinition,
+  gbrFormat,
+  yuvFormat,
 } from "./helpers.js";
 
 /** Deterministic pseudo-random 0..1 per index, so renders are repeatable. */
@@ -212,12 +214,12 @@ export function motionEffects(): EffectDefinition[] {
       toFilter: (p, ctx) => {
         const label = labeler(ctx);
         const [o, c, g] = [label("fgo"), label("fgc"), label("fgg")];
-        const fmt = ctx.alpha ? "gbrap" : "gbrp";
+        const fmt = gbrFormat(ctx);
         const s = glowEffect(p, ctx);
         return [
           `format=${fmt},split=2[${o}][${c}]`,
           `[${c}]${s.curve},gblur=sigma=${s.sigma}[${g}]`,
-          `[${o}][${g}]blend=all_mode=screen:all_opacity=${s.opacity},format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+          `[${o}][${g}]blend=all_mode=screen:all_opacity=${s.opacity},format=${yuvFormat(ctx)}`,
         ].join(";");
       },
     }),
@@ -243,7 +245,7 @@ export function motionEffects(): EffectDefinition[] {
         // 6 passes give 64 samples spaced evenly in log distance from the source, close enough that
         // rays from small highlights stay continuous.
         const label = labeler(ctx);
-        const fmt = ctx.alpha ? "gbrap" : "gbrp";
+        const fmt = gbrFormat(ctx);
         const spec = lightRays(p, ctx);
         const [w, h] = spec.size;
         const [o, c] = [label("fro"), label("frc")];
@@ -259,7 +261,7 @@ export function motionEffects(): EffectDefinition[] {
         }
         const rays = label("frr");
         lines.push(`[${cur}]${spec.levels},scale=${ctx.width}:${ctx.height}[${rays}]`);
-        lines.push(`[${o}][${rays}]blend=all_mode=screen,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`);
+        lines.push(`[${o}][${rays}]blend=all_mode=screen,format=${yuvFormat(ctx)}`);
         return lines.join(";");
       },
     }),
@@ -526,14 +528,14 @@ export function motionEffects(): EffectDefinition[] {
             // overlay pairs frames by time: the backdrop starts with the clip, whatever its own timestamps.
             `[${backdrop}]setpts=PTS-STARTPTS,scale=${ctx.width}:${ctx.height}:force_original_aspect_ratio=increase,crop=${ctx.width}:${ctx.height},setsar=1,format=gbrp[${bd}]`,
             `[${bd}][${shade}]blend=all_mode=multiply:shortest=1[${lit}]`,
-            `[${lit}][${fg}]overlay=shortest=1,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+            `[${lit}][${fg}]overlay=shortest=1,format=${yuvFormat(ctx)}`,
           ].join(";");
         }
         const [fg, bg] = [label("fkf"), label("fkb")];
         return [
           `${key}[${fg}]`,
           `color=c=0x${p.replace.replace(/^#/, "").slice(0, 6)}:s=${ctx.width}x${ctx.height}:r=${ctx.fps}:d=${round3(ctx.duration + 1)}[${bg}]`,
-          `[${bg}][${fg}]overlay=shortest=1,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+          `[${bg}][${fg}]overlay=shortest=1,format=${yuvFormat(ctx)}`,
         ].join(";");
       },
     }),

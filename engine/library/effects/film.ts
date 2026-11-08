@@ -7,7 +7,7 @@
 
 import { z } from "zod";
 import { round3 } from "../../core/util.js";
-import { bakeColor, define, labeler, num, type EffectContext, type EffectDefinition } from "./helpers.js";
+import { bakeColor, define, labeler, num, yuvFormat, type EffectContext, type EffectDefinition } from "./helpers.js";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
@@ -54,7 +54,7 @@ export const GLOWS: Record<"halation" | "bloom" | "anamorphicFlare", (p: Record<
 function glow(ctx: EffectContext, g: Glow): string {
   const label = labeler(ctx);
   const [orig, copy, light] = [label("glo"), label("glc"), label("gll")];
-  const [rgb, out] = ctx.alpha ? ["gbrap16le", "yuva420p"] : ["gbrp16le", "yuv420p"];
+  const [rgb, out] = [ctx.alpha ? "gbrap16le" : "gbrp16le", yuvFormat(ctx)];
   const keep = glowKeep(g.threshold).join(",");
   const [r, gr, b] = g.tint.map(round3);
   // The light's own alpha is 0, so a layer keeps its transparency.
@@ -193,7 +193,7 @@ export function filmEffects(): EffectDefinition[] {
       toFilter: (p, ctx) => {
         const label = labeler(ctx);
         const [orig, noise, grain] = [label("fgo"), label("fgn"), label("fgg")];
-        const fmt = ctx.alpha ? "yuva420p" : "yuv420p";
+        const fmt = yuvFormat(ctx);
         const { size: [gw, gh], strength } = grainSpec(p, ctx);
         // Gray noise around mid-gray at the grain's own size, scaled up smoothly, then soft-light on
         // luma only: soft light moves midtones most and leaves black and white nearly alone.

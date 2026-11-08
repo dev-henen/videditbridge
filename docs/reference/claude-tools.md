@@ -904,12 +904,13 @@ _No parameters._
 
 ### render_video
 
-**read-only**. Render the final full-quality video file. bitDepth 10 writes 10-bit video (H.264 High 10 or HEVC Main 10): smooth skies and gradients after heavy grades of camera log, for delivery where 10-bit plays; 8 (the project's default) plays everywhere.
+**read-only**. Render the final full-quality video file. bitDepth 10 writes 10-bit video (H.264 High 10 or HEVC Main 10): smooth skies and gradients after heavy grades of camera log, for delivery where 10-bit plays; 8 (the project's default) plays everywhere. format prores writes ProRes 422 HQ (10-bit 4:2:2, a .mov), the master to grade or edit further in Resolve, Premiere or Final Cut; large files, not for sharing.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `output` | string | yes |  | Output path, e.g. out/final.mp4 |
+| `output` | string | yes |  | Output path, e.g. out/final.mp4 (out/master.mov for prores) |
 | `bitDepth` | 8 \| 10 |  |  | Bits per sample of this render (default: the project's export setting, 8) |
+| `format` | "default" \| "prores" |  | `"default"` | prores: ProRes 422 HQ master; default: the project's codec |
 
 ## Other
 

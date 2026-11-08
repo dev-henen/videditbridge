@@ -123,7 +123,14 @@ export const FILTER_SCRIPT = "graph.txt";
 export const ASS_FILE = "overlay.ass";
 
 /** Cached clips: fast to write and read back, and visually lossless (SSIM 0.99 on real footage). */
-export const SEGMENT_CODEC = ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "12", "-pix_fmt", "yuv420p"];
+/** How clips are cached: x264 at high quality, 8-bit, or High 10 for deep renders (10-bit and ProRes exports). */
+export const segmentCodec = (deep = false) => ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "12", "-pix_fmt", deep ? "yuv420p10le" : "yuv420p"];
+export const SEGMENT_CODEC = segmentCodec();
+
+/** Exports that keep more than 8 bits: the FFmpeg backend then runs its picture path deep (10-bit YUV, 16-bit mattes and RGB). */
+export const isDeepExport = (exp: { bitDepth?: 8 | 10; videoCodec: string }) => exp.bitDepth === 10 || isProRes(exp.videoCodec);
+/** ProRes 422 HQ (prores_ks profile 3, 10-bit 4:2:2), for editing and grading elsewhere. */
+export const isProRes = (codec: string) => /^prores/.test(codec);
 
 const AUDIO_FMT = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo";
 /** Seconds of crossfade where a J or L cut hands the sound from one clip to the other (no click). */
@@ -136,14 +143,14 @@ export const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
  * modes that depend on order (overlay, colordodge) follow the usual definitions with it as the backdrop.
  */
 /**
- * Blends in linear light: both 8-bit values (x the picture, y the layer) through display gamma 2.4
+ * Blends in linear light: both values (x the picture, y the layer; M the largest, 255 or 1023 in deep renders) through display gamma 2.4
  * to linear, added or screened there, and back, as one lut2 table per channel (rounded: lut2
  * truncates). A black layer gives x back exactly. Light adds as light does, so glows and flares
  * brighten midtones less than plain add and screen. The engine computes the same (layer.wgsl).
  */
 const LIGHT_BLENDS = {
-  addlight: "255*pow(min(1,pow(x/255,2.4)+pow(y/255,2.4)),1/2.4)+0.5",
-  screenlight: "255*pow(1-(1-pow(x/255,2.4))*(1-pow(y/255,2.4)),1/2.4)+0.5",
+  addlight: "M*pow(min(1,pow(x/M,2.4)+pow(y/M,2.4)),1/2.4)+0.5",
+  screenlight: "M*pow(1-(1-pow(x/M,2.4))*(1-pow(y/M,2.4)),1/2.4)+0.5",
 } as const;
 
 const BLEND_MODES: Record<Exclude<BlendMode, "normal" | keyof typeof LIGHT_BLENDS>, string> = {
@@ -369,12 +376,16 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     return out;
   };
 
+  // Deep renders (10-bit and ProRes exports): 10-bit YUV between stages, 10-bit RGB for layer blends.
+  const deep = !opts.piece && opts.frameAt === undefined && !opts.analysis && !opts.contactSheet && isDeepExport(project.export);
+  const [Y, YA, GBR, GBRA] = deep ? ["yuv420p10le", "yuva420p10le", "gbrp10le", "gbrap10le"] : ["yuv420p", "yuva420p", "gbrp", "gbrap"];
   const effectCtx = (duration: number, w = W, h = H, alpha = false): EffectContext => ({
     width: w,
     height: h,
     fps: F,
     duration,
     alpha,
+    deep,
     label: (p) => g.label(p),
   });
   const chain = (filters: (string | false | 0 | undefined)[]) => filters.filter(Boolean).join(",");
@@ -396,7 +407,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     const frames = opts.piece?.kind === "clip" ? opts.piece.frames : Math.max(1, Math.ceil(tc.end * F - 1e-6) - Math.ceil(tc.start * F - 1e-6));
     const exact = opts.segment ? [] : ["tpad=stop_mode=clone:stop=-1", `trim=end_frame=${frames}`];
     // concat outputs AV_TIME_BASE; keep every segment on it so xfade inputs always match.
-    const finish = [`fps=${F}`, "format=yuv420p", "setsar=1", ...exact, "settb=AVTB"];
+    const finish = [`fps=${F}`, `format=${Y}`, "setsar=1", ...exact, "settb=AVTB"];
     if (opts.audioOnly) {
       g.add(`color=c=black:s=${W}x${H}:r=${F}:d=${round3(tc.duration)},${chain(finish)}[${v}]`);
     } else if (cached) {
@@ -441,7 +452,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         const media = project.assets.find((a) => a.id === id);
         if (!media || media.type === "audio") throw new Error(`Clip "${clip.id}" has an effect that shows "${id}", which is not a picture asset`);
         const l = g.label("media");
-        g.add(`[${sourceInput(media, 0, tc.duration, media.type === "video")}:v]setpts=PTS-STARTPTS,fps=${F},format=yuv420p[${l}]`);
+        g.add(`[${sourceInput(media, 0, tc.duration, media.type === "video")}:v]setpts=PTS-STARTPTS,fps=${F},format=${Y}[${l}]`);
         mediaLabels.set(id, [...(mediaLabels.get(id) ?? []), l]);
       }
       // Tracked objects: one stream per effect that uses each.
@@ -454,7 +465,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const removalLabels = new Map<string, string[]>();
       const removalUses = clip.effects.flatMap(effectRemovals).map(removalKey);
       for (const key of new Set(removalUses)) {
-        const labels = modelMasks(removalUses.filter((k) => k === key).length, opts.removals?.[clip.id]?.[key], "yuva420p");
+        const labels = modelMasks(removalUses.filter((k) => k === key).length, opts.removals?.[clip.id]?.[key], YA);
         if (labels.length) removalLabels.set(key, labels);
       }
       const clipEffects = effectsToFilter(graded.effects, {
@@ -545,7 +556,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   } else {
     vCur = g.label("base");
     aCur = g.label("abase");
-    g.add(`color=c=${bg}:s=${W}x${H}:r=${F}:d=${total},format=yuv420p,setsar=1[${vCur}]`);
+    g.add(`color=c=${bg}:s=${W}x${H}:r=${F}:d=${total},format=${Y},setsar=1[${vCur}]`);
     g.add(`anullsrc=r=48000:cl=stereo,atrim=duration=${total},${AUDIO_FMT}[${aCur}]`);
   }
 
@@ -695,17 +706,19 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const [base, under, canvas, placed, color, alpha, top, mixed, cut] = ["lbb", "lbu", "lbc", "lbp", "lbr", "lba", "lbt", "lbm", "lbx"].map((p) => g.label(p));
       const copies = [base, ...(mixing ? [under] : []), ...(matte?.picture ?? [])];
       g.add(`[${vCur}]split=${copies.length}${copies.map((c) => `[${c}]`).join("")}`);
-      g.add(`color=c=black@0:s=${W}x${H}:r=${F}:d=${total},format=yuva420p[${canvas}]`);
-      g.add(`[${canvas}][${v}]overlay=x='${motion.x}':y='${motion.y}':${enable}:eof_action=pass:format=auto,format=gbrap,split=2[${placed}][${alpha}]`);
+      // Deep renders place the layer in RGB: FFmpeg 6.1's overlay darkens a translucent layer on a
+      // clear 10-bit YUV canvas (about a quarter), and is right in RGB (8-bit there; the picture under stays 10-bit).
+      g.add(`color=c=black@0:s=${W}x${H}:r=${F}:d=${total},format=${deep ? GBRA : YA}[${canvas}]`);
+      g.add(`[${canvas}][${v}]overlay=x='${motion.x}':y='${motion.y}':${enable}:eof_action=pass:format=${deep ? "gbrp" : "auto"},format=${GBRA},split=2[${placed}][${alpha}]`);
       if (layer.blend !== "normal") {
-        g.add(`[${placed}]format=gbrp[${color}]`);
+        g.add(`[${placed}]format=${GBR}[${color}]`);
         // Nearest-neighbor chroma both ways makes the round trip exact, so a black screen layer changes nothing.
-        g.add(`[${under}]scale=flags=neighbor,format=gbrp[${top}]`);
-        const light = LIGHT_BLENDS[layer.blend as keyof typeof LIGHT_BLENDS];
+        g.add(`[${under}]scale=flags=neighbor,format=${GBR}[${top}]`);
+        const light = LIGHT_BLENDS[layer.blend as keyof typeof LIGHT_BLENDS]?.replace(/M/g, deep ? "1023" : "255");
         const mix = light ? `lut2=c0='${light}':c1='${light}':c2='${light}'` : `blend=all_mode=${BLEND_MODES[layer.blend as keyof typeof BLEND_MODES]}`;
-        g.add(`[${top}][${color}]${mix}:${enable},scale=flags=neighbor,format=yuv420p[${mixed}]`);
+        g.add(`[${top}][${color}]${mix}:${enable},scale=flags=neighbor,format=${Y}[${mixed}]`);
       } else {
-        g.add(`[${placed}]format=yuv420p[${mixed}]`);
+        g.add(`[${placed}]format=${Y}[${mixed}]`);
       }
       g.add(`[${alpha}]alphaextract[${cut}]`);
       let through = cut;
@@ -716,13 +729,13 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       }
       const shown = g.label("lbs");
       g.add(`[${mixed}][${through}]alphamerge[${shown}]`);
-      g.add(`[${base}][${shown}]overlay=format=auto:shortest=1:${enable},format=yuv420p[${out}]`);
+      g.add(`[${base}][${shown}]overlay=format=auto:shortest=1:${enable},format=${Y}[${out}]`);
     }
     vCur = out;
     if (keep) {
       const [cut, front] = [g.label("lsc"), g.label("lsf")];
       g.add(`[${keep}][${subject}]alphamerge[${cut}]`);
-      g.add(`[${out}][${cut}]overlay=format=auto:shortest=1:${enable},format=yuv420p[${front}]`);
+      g.add(`[${out}][${cut}]overlay=format=auto:shortest=1:${enable},format=${Y}[${front}]`);
       vCur = front;
     }
     if (a) overlayAudio.push(a);
@@ -738,10 +751,10 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     const input = sourceInput(asset, layer.in, layer.duration);
     const raw = g.label("lraw");
     const graded = sceneGradeFor(asset, layer.effects);
-    g.add(`[${input}:v]${chain(["setpts=PTS-STARTPTS", `fps=${F}`, ...colorConversion(asset, true, graded.grade), "format=yuva420p"])}[${raw}]`);
+    g.add(`[${input}:v]${chain(["setpts=PTS-STARTPTS", `fps=${F}`, ...colorConversion(asset, true, graded.grade), `format=${YA}`])}[${raw}]`);
     const fitted = fit(raw, layer.size.height ? (layer.fit === "blur" ? "contain" : layer.fit) : "stretch", w, h, true);
     let styled = g.label("lfx");
-    g.add(`[${fitted}]${chain(["format=yuva420p", ...effectsToFilter(graded.effects, effectCtx(layer.duration, w, h, true))])}[${styled}]`);
+    g.add(`[${fitted}]${chain([`format=${YA}`, ...effectsToFilter(graded.effects, effectCtx(layer.duration, w, h, true))])}[${styled}]`);
     // Rounded corners: multiply the layer's alpha by a rounded-rectangle mask drawn once.
     const radius = Math.min(Math.round(layer.cornerRadius * k), Math.floor(Math.min(w, h) / 2));
     if (radius > 0) {
@@ -769,7 +782,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       };
       // perspective's corner order: top-left, top-right, bottom-left, bottom-right.
       const coords = [0, 1, 3, 2].flatMap((c, i) => [`x${i}='${coord(c, 0)}'`, `y${i}='${coord(c, 1)}'`]).join(":");
-      g.add(`[${styled}]scale=${W}:${H},format=yuva420p,pad=${W + 2 * P}:${H + 2 * P}:${P}:${P}:color=black@0[${padded}]`);
+      g.add(`[${styled}]scale=${W}:${H},format=${YA},pad=${W + 2 * P}:${H + 2 * P}:${P}:${P}:color=black@0[${padded}]`);
       g.add(`[${padded}]perspective=${coords}:sense=destination:interpolation=linear:eval=${pinKeys.length > 1 ? "frame" : "init"}[${out}]`);
       styled = out;
     }
@@ -814,7 +827,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     const fadeOut = layer.animationOut && layer.animationOut.type !== "none" ? layer.animationOut.duration : 0;
     g.add(
       `[${styled}]${chain([
-        "format=yuva420p",
+        `format=${YA}`,
         layer.opacity < 1 && `colorchannelmixer=aa=${layer.opacity}`,
         // Keyframes (t and T are seconds from the layer's start here). The per-frame scale comes
         // last: it changes the frame size, and the other filters size their buffers only once.
@@ -982,7 +995,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     return { args, files, filterGraph, timeline, duration: total, width: W, height: H };
   }
   if (opts.segment) {
-    g.add(`[${vCur}]format=yuv420p[${vOut}]`);
+    g.add(`[${vCur}]format=${Y}[${vOut}]`);
     g.add(`[${aOut}]anullsink`);
     const filterGraph = g.lines.join(";\n");
     files.push({ name: FILTER_SCRIPT, content: filterGraph });
@@ -991,7 +1004,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       ...g.inputArgs,
       "-filter_complex_script", FILTER_SCRIPT,
       "-map", `[${vOut}]`,
-      ...SEGMENT_CODEC,
+      ...segmentCodec(deep),
       // Keep exactly the frames the clip's chain makes, as the uncached graph does: forcing a rate
       // or length here drops or repeats a frame, and every later clip shifts by it.
       "-fps_mode", "passthrough",
@@ -1032,7 +1045,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       `[${vCur}]select='isnan(prev_selected_t)*gte(t,${round3(total / n / 2)})+gte(t-prev_selected_t,${round3(total / n)})',scale=${even(sheet.thumbWidth)}:-2,tile=${sheet.columns}x${sheet.rows}:padding=4:margin=4,format=yuv420p[${vOut}]`,
     );
   } else {
-    g.add(`[${vCur}]format=yuv420p[${vOut}]`);
+    g.add(`[${vCur}]format=${Y}[${vOut}]`);
   }
   const still = opts.frameAt !== undefined || !!sheet;
   // Image outputs have no audio stream; every filter output must still be consumed.
@@ -1050,10 +1063,8 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     outputArgs.push(
       "-map",
       `[${aOut}]`,
-      // A 10-bit export is written at 10 bits (the graph itself is 8-bit here; the engine draws in float).
-      ...(opts.hardwareEncoder && exp.bitDepth !== 10
-        ? hardwareEncoderArgs(opts.hardwareEncoder, exp.crf)
-        : ["-c:v", exp.videoCodec, "-preset", opts.preset ?? exp.preset, "-crf", String(exp.crf), "-pix_fmt", exp.bitDepth === 10 ? "yuv420p10le" : "yuv420p"]),
+      // 10-bit and ProRes exports come from the deep graph and are written at 10 bits.
+      ...exportVideoArgs(exp, opts.preset, opts.hardwareEncoder),
       "-r",
       String(F),
       "-c:a",
@@ -1093,4 +1104,15 @@ export function effectsOf(project: Project, target: string): Effect[] | undefine
   if (clip) return clip.effects;
   const layer = project.layers.find((l) => l.id === target);
   return layer && layer.type === "media" ? layer.effects : undefined;
+}
+
+/**
+ * The video encoder's arguments for an export: ProRes 422 HQ (prores_ks profile 3, 10-bit 4:2:2;
+ * crf and preset do not apply), x264 or x265 at 8 or 10 bits, or the graphics card's encoder for
+ * 8-bit exports when one was found.
+ */
+export function exportVideoArgs(exp: Project["export"], preset: string | undefined, hardware: HardwareEncoder | undefined): string[] {
+  if (isProRes(exp.videoCodec)) return ["-c:v", "prores_ks", "-profile:v", "3", "-vendor", "apl0", "-pix_fmt", "yuv422p10le"];
+  if (hardware && exp.bitDepth !== 10) return hardwareEncoderArgs(hardware, exp.crf);
+  return ["-c:v", exp.videoCodec, "-preset", preset ?? exp.preset, "-crf", String(exp.crf), "-pix_fmt", exp.bitDepth === 10 ? "yuv420p10le" : "yuv420p"];
 }

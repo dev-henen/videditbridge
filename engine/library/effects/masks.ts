@@ -1,7 +1,7 @@
 import type { Easing, Mask, MaskPart } from "../../core/schema.js";
 import { numberExpr } from "../../core/keyframes.js";
 import { clamp, round3 } from "../../core/util.js";
-import { labeler, type EffectContext } from "./helpers.js";
+import { grayFormat, labeler, yuvFormat, type EffectContext } from "./helpers.js";
 
 /**
  * Masks limit an effect to part of the frame (see MaskSchema). Model masks (person, face, tracked
@@ -175,7 +175,7 @@ export function buildMatte(ctx: EffectContext, mask: Mask): Matte {
     const what = id !== undefined ? `object "${id}"` : key;
     if (!stream) throw new Error(`${what} masks work on primary video clips${id !== undefined ? " of the object's video" : ""} only (not on media layers or whole-video effects); use a key or shape mask there, or put the effect on each clip`);
     const copies = Array.from({ length: n }, () => label("mmd"));
-    lines.push(`[${stream}]format=gray${n > 1 ? `,split=${n}` : ""}${copies.map((c) => `[${c}]`).join("")}`);
+    lines.push(`[${stream}]format=${grayFormat(ctx)}${n > 1 ? `,split=${n}` : ""}${copies.map((c) => `[${c}]`).join("")}`);
     model.set(key, copies);
   }
 
@@ -191,7 +191,7 @@ export function buildMatte(ctx: EffectContext, mask: Mask): Matte {
       source = `[${model.get(key)!.shift()}]null`;
     } else if (m.kind === "shape") {
       // Drawn once; every consumer holds the last frame.
-      source = `nullsrc=s=${W}x${H}:r=${F},trim=end_frame=1,format=gray,geq=lum='255*${shapeExpr(m, W, H)}'`;
+      source = `nullsrc=s=${W}x${H}:r=${F},trim=end_frame=1,format=${grayFormat(ctx)},geq=lum='${ctx.deep ? 65535 : 255}*${shapeExpr(m, W, H)}'`;
       const motion = shapeMotion(m);
       if (motion) {
         // Moving: the drawing repeated for every frame, and carried by perspective to where the
@@ -212,7 +212,7 @@ export function buildMatte(ctx: EffectContext, mask: Mask): Matte {
       picture.push(pic);
       const e = keyExpr(m.kind === "luma" ? { ...m, hue: undefined, saturation: undefined } : m);
       lines.push(`haldclutsrc=level=8:rate=1,trim=end_frame=1,format=gbrp,geq=r='${e}':g='${e}':b='${e}',format=rgb24[${clut}]`);
-      source = `[${pic}]format=rgb24[${pic}k];[${pic}k][${clut}]haldclut=clut=first,extractplanes=r${mask.denoise ? ",median=radius=1" : ""}`;
+      source = `[${pic}]format=${ctx.deep ? "gbrp12le" : "rgb24"}[${pic}k];[${pic}k][${clut}]haldclut=clut=first,extractplanes=r${mask.denoise ? ",median=radius=1" : ""}`;
     }
     lines.push(`${source}${m.invert ? ",negate" : ""}[${out}]`);
     return out;
@@ -238,7 +238,7 @@ export function buildMatte(ctx: EffectContext, mask: Mask): Matte {
   if (sigma >= 0.3) finish.push(`gblur=sigma=${sigma}`);
   if (mask.smooth > 1) finish.push(`tmix=frames=${mask.smooth}`);
   const out = label("mmo");
-  lines.push(`[${acc}]${["format=gray", ...finish].join(",")}[${out}]`);
+  lines.push(`[${acc}]${[`format=${grayFormat(ctx)}`, ...finish].join(",")}[${out}]`);
   return { lines, out, picture };
 }
 
@@ -251,14 +251,14 @@ export function maskedEffect(ctx: EffectContext, mask: Mask, branch: string, opt
   const label = labeler(ctx);
   const matte = buildMatte(ctx, mask);
   const [orig, copy, done, top] = [label("mko"), label("mkc"), label("mkb"), label("mkt")];
-  const lines = [`format=${ctx.alpha ? "yuva420p" : "yuv420p"},split=${2 + matte.picture.length}[${orig}][${copy}]${matte.picture.map((p) => `[${p}]`).join("")}`];
+  const lines = [`format=${yuvFormat(ctx)},split=${2 + matte.picture.length}[${orig}][${copy}]${matte.picture.map((p) => `[${p}]`).join("")}`];
   let base = orig;
   let alpha: string | undefined;
   if (ctx.alpha) {
     // Composite the color only, then give the result the layer's own alpha back.
     const [color, a, oa] = [label("mkl"), label("mka"), label("mkx")];
     lines.push(`[${orig}]split=2[${color}][${a}]`, `[${a}]alphaextract[${oa}]`);
-    lines.push(`[${color}]format=yuv420p[${color}y]`);
+    lines.push(`[${color}]format=${yuvFormat({ deep: ctx.deep })}[${color}y]`);
     base = `${color}y`;
     alpha = oa;
   }
@@ -267,8 +267,8 @@ export function maskedEffect(ctx: EffectContext, mask: Mask, branch: string, opt
     lines.push(`[${base}]${opts.base}[${b}]`);
     base = b;
   }
-  lines.push(`[${copy}]${branch},format=yuv420p[${done}]`, ...matte.lines, `[${done}][${matte.out}]alphamerge[${top}]`);
-  const comp = `[${base}][${top}]overlay=format=auto:shortest=1,format=yuv420p`;
+  lines.push(`[${copy}]${branch},format=${yuvFormat({ deep: ctx.deep })}[${done}]`, ...matte.lines, `[${done}][${matte.out}]alphamerge[${top}]`);
+  const comp = `[${base}][${top}]overlay=format=auto:shortest=1,format=${yuvFormat({ deep: ctx.deep })}`;
   if (!alpha) return [...lines, comp].join(";");
   const c = label("mkr");
   return [...lines, `${comp}[${c}]`, `[${c}][${alpha}]alphamerge`].join(";");

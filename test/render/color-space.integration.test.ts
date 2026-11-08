@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { addAsset, addClip, createProject, setEffectParams, type Project } from "../../engine/core/index.js";
 import { acesToRec709, acescctToRec709, codeToAces, colorSpace, gradeAcescct, toAcescct, type SceneGrade } from "../../engine/library/color/index.js";
 import { deltaE2000, rgbToLab } from "../../engine/library/effects/color-match.js";
-import { enginePath, exportLut, render, runFfmpegOrThrow } from "../../engine/tools/index.js";
+import { enginePath, exportLut, probe, render, runFfmpeg, runFfmpegOrThrow } from "../../engine/tools/index.js";
 import { OUT_DIR, ffmpegAvailable } from "../helpers/media.js";
 import { escapeFilterPath } from "../../engine/library/effects/index.js";
 
@@ -133,7 +133,8 @@ describe.skipIf(!hasFfmpeg)("footage in a color space", () => {
   // Section 1's precision check: a 10-bit ramp through a heavy grade, at 1080p, with no run of equal
   // output values longer than 4 px. 8 bits cannot pass it (256 levels over 1920 px are 7.5 px each,
   // dithered or not), so it is measured on a 10-bit export; the 8-bit one is dithered and reported.
-  it.skipIf(!enginePath())("precision: a 10-bit ramp through a heavy grade has no run of equal values over 4 px (10-bit export)", async () => {
+  for (const backend of ["engine", "ffmpeg"] as const)
+  it.skipIf(backend === "engine" && !enginePath())(`precision on ${backend}: a 10-bit ramp through a heavy grade has no run of equal values over 4 px (10-bit export)`, async () => {
     const [RW, RH] = [1920, 1080];
     const ramp = path.join(dir, "slog3-ramp-1080.mkv");
     // A 10-bit ramp linear in code values across the camera's range (95 to 940: 2.3 px per code).
@@ -147,8 +148,8 @@ describe.skipIf(!hasFfmpeg)("footage in a color space", () => {
     p = addClip(p, { id: "a", assetId: "log", duration: 0.2 });
     p = setEffectParams(p, "a", "color", { exposure: 0.5, contrast: 60, saturation: 30 });
     const runs = async (bitDepth: 8 | 10) => {
-      const out = path.join(dir, `precision-${bitDepth}.mp4`);
-      await render({ ...p, export: { ...p.export, crf: 0, preset: "ultrafast", bitDepth } }, { output: out, backend: "engine", hardware: false });
+      const out = path.join(dir, `precision-${backend}-${bitDepth}.mp4`);
+      await render({ ...p, export: { ...p.export, crf: 0, preset: "ultrafast", bitDepth } }, { output: out, backend, hardware: false });
       const { stdoutBuffer } = await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", out, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", bitDepth === 10 ? "gray10le" : "gray", "pipe:1"], { binaryStdout: true });
       const row = Array.from({ length: RW }, (_, x) => (bitDepth === 10 ? stdoutBuffer!.readUInt16LE((540 * RW + x) * 2) : stdoutBuffer![540 * RW + x]!));
       // Longest run of equal values where the picture is a gradient: where it changes by 4 levels or
@@ -166,10 +167,32 @@ describe.skipIf(!hasFfmpeg)("footage in a color space", () => {
     };
     const ten = await runs(10);
     const eight = await runs(8);
-    if (process.env.PARITY_LOG) console.log(`precision at 1080p: 10-bit longest run ${ten.longest} px over ${ten.levels} levels; 8-bit dithered longest run ${eight.longest} px over ${eight.levels} levels`);
+    if (process.env.PARITY_LOG) console.log(`precision on ${backend} at 1080p: 10-bit longest run ${ten.longest} px over ${ten.levels} levels; 8-bit dithered longest run ${eight.longest} px over ${eight.levels} levels`);
     expect(ten.levels).toBeGreaterThan(300);
     expect(ten.longest).toBeLessThanOrEqual(4);
   }, 120_000);
+
+  // ProRes 422 HQ masters, from both renderers: the codec, its HQ profile and 10-bit 4:2:2, and the
+  // same picture as the 10-bit H.264 export.
+  for (const backend of ["engine", "ffmpeg"] as const)
+    it.skipIf(backend === "engine" && !enginePath())(`ProRes 422 HQ export on ${backend}`, async () => {
+      const p = setEffectParams(project("slog3-sgamut3cine"), "a", "color", { exposure: 0.3, contrast: 20 });
+      const mov = path.join(dir, `master-${backend}.mov`);
+      await render({ ...p, export: { ...p.export, videoCodec: "prores_ks" } }, { output: mov, backend, hardware: false });
+      const { stderr } = await runFfmpeg(["-hide_banner", "-i", mov]);
+      expect(stderr).toMatch(/Video: prores \(HQ\)/);
+      expect((await probe(mov)).pixelFormat).toBe("yuv422p10le");
+      const ten = path.join(dir, `ten-${backend}.mp4`);
+      await render({ ...p, export: { ...p.export, crf: 0, preset: "ultrafast", bitDepth: 10 } }, { output: ten, backend, hardware: false });
+      const [a, b] = [await frame(mov), await frame(ten)];
+      let [sum, n] = [0, 0];
+      for (let y = 10; y < 180; y += 20)
+        for (let x = 10; x < 320; x += 20) {
+          sum += Math.abs(luma(a, x, y) - luma(b, x, y));
+          n++;
+        }
+      expect(sum / n, "mean luma difference against the 10-bit H.264 export").toBeLessThan(0.01);
+    }, 60_000);
 
   // Section 4.5: the exported LUT, applied with lut3d to the camera's signal, gives the rendered grade.
   it("export_lut: the table reproduces the rendered grade within ΔE 1", async () => {

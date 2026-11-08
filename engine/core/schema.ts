@@ -501,7 +501,7 @@ export const ExportSettingsSchema = z.object({
   bitDepth: z
     .union([z.literal(8), z.literal(10)])
     .optional()
-    .describe("Bits per sample of the exported video: 8 (default, plays everywhere) or 10 (H.264 High 10 or HEVC Main 10: no banding after heavy grades of camera log)"),
+    .describe("Bits per sample of the exported video: 8 (default, plays everywhere) or 10 (H.264 High 10 or HEVC Main 10: no banding after heavy grades of camera log). With 10, or the prores_ks codec (ProRes 422 HQ, 10-bit 4:2:2 in a .mov), the FFmpeg backend draws the whole picture deep: 10-bit between stages, 16-bit mattes and RGB"),
   crf: z.number().int().min(0).max(51).default(20),
   preset: z.string().default("medium"),
   audioCodec: z.string().default("aac"),

@@ -47,7 +47,8 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 - The engine is the default (`auto`, FFmpeg on failure). A feature the engine cannot draw yet goes in `engineGaps`, which makes that part of the picture a piece the FFmpeg backend draws for it (`compileProject`'s `piece`); porting a feature means drawing it natively and taking it out of `engineGaps`. `native/ave-render/src/plan.rs` mirrors the plan types.
 
 ## Renderer gotchas (compile.ts)
-- Every primary segment ends with `fps`, `format=yuv420p`, `setsar=1` and `settb=AVTB`. `concat` outputs AV_TIME_BASE, and `xfade` fails if the timebases differ.
+- Every primary segment ends with `fps`, `format=yuv420p` (`yuv420p10le` in deep renders: 10-bit and ProRes exports), `setsar=1` and `settb=AVTB`. `concat` outputs AV_TIME_BASE, and `xfade` fails if the timebases differ.
+- Effects pin formats with `yuvFormat`, `rgbFormat`, `gbrFormat` and `grayFormat` (helpers.ts), never a literal 8-bit format on the picture path, so deep renders stay deep. Deep RGB is 12-bit: FFmpeg 6.1's blend screen is wrong on 16-bit planes.
 - Text, shapes and captions all go into one ASS file (`overlay.ass`, with PlayRes equal to the project size, even for scaled previews), applied with the `ass` filter. ffmpeg runs with `cwd` set to the work dir so the filename needs no escaping.
 - Image outputs (frame, contact sheet) must consume the audio graph with `anullsink`.
 - The filter graph goes through `-filter_complex_script` to avoid Windows command-line limits.

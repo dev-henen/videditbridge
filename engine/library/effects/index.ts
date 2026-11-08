@@ -2,7 +2,7 @@ import { z } from "zod";
 import { MaskSchema, type Easing, type Effect } from "../../core/schema.js";
 import { easeValue } from "../../core/keyframes.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
-import { bakeColor, define, labeler, maskBranch, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
+import { bakeColor, define, gbrFormat, labeler, maskBranch, yuvFormat, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
 import { motionEffects } from "./motion.js";
 import { customEffect } from "./custom.js";
 import { maskIsTemporal, maskNeeds, maskObjects, maskViewFilter, maskedEffect } from "./masks.js";
@@ -384,14 +384,14 @@ export const EFFECTS: EffectDefinition[] = [
       const k = chromaticAberrationRadial(p.amount);
       const label = labeler(ctx);
       const [r, g, b, r2, g2] = ["fcr", "fcg", "fcb", "fcR", "fcG"].map((x) => label(x));
-      const fmt = ctx.alpha ? "gbrap" : "gbrp";
+      const fmt = gbrFormat(ctx);
       // Each channel through its own lenscorrection (negative k1 magnifies, so nothing goes black);
       // planes joined back as G, B, R (and alpha from the untouched blue copy).
       return [
         `format=${fmt},split=3[${r}][${g}][${b}]`,
         `[${r}]lenscorrection=k1=${k[0]}:i=bilinear[${r2}]`,
         `[${g}]lenscorrection=k1=${k[1]}:i=bilinear[${g2}]`,
-        `[${r2}][${g2}][${b}]mergeplanes=${ctx.alpha ? "0x10210223" : "0x102102"}:${fmt},format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+        `[${r2}][${g2}][${b}]mergeplanes=${ctx.alpha ? "0x10210223" : "0x102102"}:${fmt},format=${yuvFormat(ctx)}`,
       ].join(";");
     },
   }),

@@ -28,7 +28,7 @@ Movie-level color grading and the visual effects editors ask for most: log foota
 - [x] 2. **Effect gaps:** radial `chromaticAberration` (4.4) and linear-light `add` and `screen` blending (5.1).
 - [x] 3. **Mask shapes:** polygons, keyframes, and shapes pinned to a track (3.2).
 - [x] 4. **`replace_screen`:** the insert's matched blur, glare and color, and occlusion by an object mask (5.4).
-- [ ] 5. **FFmpeg backend precision** (3.3): the 10-bit pipeline, 16-bit masks, `gbrp16le` RGB stages, ProRes 422 HQ export and a 10-bit segment cache.
+- [x] 5. **FFmpeg backend precision** (3.3): the 10-bit pipeline, 16-bit masks, `gbrp16le` RGB stages, ProRes 422 HQ export and a 10-bit segment cache.
 - [ ] 6. **Hardware encoding** with VideoToolbox (macOS) and VAAPI (Linux) (3.6).
 - [ ] 7. **Claude's checks** (section 8): `review_edit` findings for clipping, skin hue off the skin line, banding, matte flicker, track drift and sky slide.
 - [ ] 8. **Desktop app** (section 9): the selected object's blue outline, the matte toggle in the viewer, and scopes next to the findings.
@@ -59,7 +59,7 @@ Any effect takes an optional `mask`. Kinds: `person`, `face`, `object` (a tracke
 
 ### 3.3 Precision
 
-The engine works in float, decodes footage in a color space at 10 bits, exports 10-bit (`bitDepth` 10: H.264 High 10 or HEVC Main 10) and dithers 8-bit exports of such footage. The FFmpeg backend's graph is still 8-bit (segments, masks, `eq`, `vignette`, Hald tables). Left (checklist 5): segments in `yuv420p10le` with RGB stages in `gbrp16le`, `eq` and `vignette` replaced by 16-bit equivalents, 16-bit masks, a 10-bit segment cache (x264 High 10, measured against the 8-bit cache first), and ProRes 422 HQ as an export choice.
+The engine works in float, decodes footage in a color space at 10 bits, exports 10-bit (`bitDepth` 10: H.264 High 10 or HEVC Main 10) and dithers 8-bit exports of such footage. The FFmpeg backend runs deep for 10-bit and ProRes exports (`isDeepExport`): 10-bit YUV between stages, segment ends and clip cache (x264 High 10), 12-bit planar RGB for RGB stages (16-bit planes hit a bug in FFmpeg 6.1's blend screen) and 16-bit mattes; effects pin formats through `yuvFormat`, `rgbFormat`, `gbrFormat` and `grayFormat`. Blended layers are placed on their canvas in RGB (6.1's overlay darkens a translucent layer on a clear 10-bit YUV canvas). 8-bit renders are unchanged. Both renderers pass section 1's precision check on 10-bit exports (longest run 3 px over 530 levels on FFmpeg). ProRes 422 HQ (`prores_ks` profile 3, 10-bit 4:2:2, a .mov) is an export on both (`render_video` format prores). Still 8-bit inside a deep render: keyers, color tables (8-bit Hald images, interpolated), depth and sky mattes.
 
 ### 3.4 Render engine
 

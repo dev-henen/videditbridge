@@ -4255,15 +4255,19 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "render_video",
     description:
-      "Render the final full-quality video file. bitDepth 10 writes 10-bit video (H.264 High 10 or HEVC Main 10): smooth skies and gradients after heavy grades of camera log, for delivery where 10-bit plays; 8 (the project's default) plays everywhere.",
+      "Render the final full-quality video file. bitDepth 10 writes 10-bit video (H.264 High 10 or HEVC Main 10): smooth skies and gradients after heavy grades of camera log, for delivery where 10-bit plays; 8 (the project's default) plays everywhere. " +
+      "format prores writes ProRes 422 HQ (10-bit 4:2:2, a .mov), the master to grade or edit further in Resolve, Premiere or Final Cut; large files, not for sharing.",
     input: z.object({
-      output: z.string().describe("Output path, e.g. out/final.mp4"),
+      output: z.string().describe("Output path, e.g. out/final.mp4 (out/master.mov for prores)"),
       bitDepth: z.union([z.literal(8), z.literal(10)]).optional().describe("Bits per sample of this render (default: the project's export setting, 8)"),
+      format: z.enum(["default", "prores"]).default("default").describe("prores: ProRes 422 HQ master; default: the project's codec"),
     }),
     mutates: false,
     run: async (s, i, activity) => {
+      if (i.format === "prores" && !/\.mov$/i.test(i.output)) return { text: "A ProRes master goes in a .mov file; give an output path ending in .mov.", isError: true };
       const out = s.resolve(i.output);
-      const project = i.bitDepth ? { ...s.project, export: { ...s.project.export, bitDepth: i.bitDepth } } : s.project;
+      const exp = { ...s.project.export, ...(i.bitDepth ? { bitDepth: i.bitDepth } : {}), ...(i.format === "prores" ? { videoCodec: "prores_ks" } : {}) };
+      const project = { ...s.project, export: exp };
       const r = await render(project, { output: out, ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
       s.recordRender({ kind: "video", path: out });
       return ok(`Rendered ${r.duration}s video to ${out}`);

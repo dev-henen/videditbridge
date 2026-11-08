@@ -13,6 +13,12 @@ export interface EffectContext {
   /** The stream has an alpha channel (media layers). */
   alpha?: boolean;
   /**
+   * A deep render (10-bit or ProRes exports on the FFmpeg backend): the picture is 10-bit YUV,
+   * RGB stages 12-bit and mattes 16-bit, so strong grades do not band. Use yuvFormat, rgbFormat and
+   * grayFormat for the formats a chain pins.
+   */
+  deep?: boolean;
+  /**
    * Leave per-pixel color chains as plain filters instead of baking them into a lookup table here
    * (bakeColor): the GPU engine bakes them itself from the same filters (haldClutChain).
    */
@@ -129,9 +135,9 @@ export function bakeColor(ctx: EffectContext, filters: string[]): string {
   const label = labeler(ctx);
   const [main, clut] = [label("cbm"), label("cbc")];
   return [
-    `format=${ctx.alpha ? "rgba" : "rgb24"}[${main}]`,
+    `format=${rgbFormat(ctx)}[${main}]`,
     `${haldClutChain(filters)}[${clut}]`,
-    `[${main}][${clut}]haldclut=clut=first,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+    `[${main}][${clut}]haldclut=clut=first,format=${yuvFormat(ctx)}`,
   ].join(";");
 }
 
@@ -142,6 +148,15 @@ export const SubjectRegionSchema = z.object({
   height: z.number().positive().max(2).describe("Ellipse height as a fraction of frame height"),
 });
 export type SubjectRegion = z.infer<typeof SubjectRegionSchema>;
+
+/** The picture's YUV format: 4:2:0 at 8 bits, or 10 in deep renders; with alpha on layers (`alpha` undefined or false: without). */
+export const yuvFormat = (ctx: { alpha?: boolean; deep?: boolean }): string => `${ctx.alpha ? "yuva420p" : "yuv420p"}${ctx.deep ? "10le" : ""}`;
+/** An RGB format for RGB-only filters: packed 8-bit, or planar 12-bit in deep renders (12, not 16: FFmpeg 6.1's blend screen is wrong on 16-bit planes). */
+export const rgbFormat = (ctx: { alpha?: boolean; deep?: boolean }) => (ctx.deep ? (ctx.alpha ? "gbrap12le" : "gbrp12le") : ctx.alpha ? "rgba" : "rgb24");
+/** Planar RGB: 8-bit, or 12-bit in deep renders (see rgbFormat). */
+export const gbrFormat = (ctx: { alpha?: boolean; deep?: boolean }) => `${ctx.alpha ? "gbrap" : "gbrp"}${ctx.deep ? "12le" : ""}`;
+/** A matte's format: 8-bit gray, or 16-bit in deep renders. */
+export const grayFormat = (ctx: { deep?: boolean }) => (ctx.deep ? "gray16le" : "gray");
 
 let fallbackLabel = 0;
 
@@ -163,7 +178,7 @@ export function maskedBlend(
 ): string {
   const label = labeler(ctx);
   const [orig, copy, done, mask] = [label("fxo"), label("fxc"), label("fxb"), label("fxm")];
-  const fmt = ctx.alpha ? "yuva420p" : "yuv420p";
+  const fmt = yuvFormat(ctx);
   const s = round3(clamp(opts.strength, 0, 1) * 255);
   let e = String(s);
   if (opts.region) {
@@ -193,11 +208,11 @@ export function personBlend(ctx: EffectContext, mask: string, background: string
   const [orig, copy, bg, soft, person] = [label("fpo"), label("fpc"), label("fpb"), label("fpm"), label("fpp")];
   const sigma = round3(Math.max(0.5, clamp(feather, 0, 1) * Math.min(ctx.width, ctx.height) * 0.02));
   return [
-    `format=yuv420p,split=2[${orig}][${copy}]`,
+    `format=${yuvFormat({ deep: ctx.deep })},split=2[${orig}][${copy}]`,
     `[${copy}]${background}[${bg}]`,
-    `[${mask}]format=gray,${shrink ? `${Array(Math.max(1, Math.round(Math.min(ctx.width, ctx.height) / 360))).fill("erosion").join(",")},` : ""}gblur=sigma=${sigma}[${soft}]`,
+    `[${mask}]format=${grayFormat(ctx)},${shrink ? `${Array(Math.max(1, Math.round(Math.min(ctx.width, ctx.height) / 360))).fill("erosion").join(",")},` : ""}gblur=sigma=${sigma}[${soft}]`,
     `[${orig}][${soft}]alphamerge[${person}]`,
-    `[${bg}][${person}]overlay=format=auto:shortest=1,format=yuv420p`,
+    `[${bg}][${person}]overlay=format=auto:shortest=1,format=${yuvFormat({ deep: ctx.deep })}`,
   ].join(";");
 }
 
@@ -207,11 +222,11 @@ export function maskBranch(ctx: EffectContext, mask: string, branch: string, fea
   const [orig, copy, done, soft, top] = [label("fmo"), label("fmc"), label("fmb"), label("fmm"), label("fmt")];
   const sigma = round3(Math.max(0.5, clamp(feather, 0, 1) * Math.min(ctx.width, ctx.height) * 0.02));
   return [
-    `format=yuv420p,split=2[${orig}][${copy}]`,
+    `format=${yuvFormat({ deep: ctx.deep })},split=2[${orig}][${copy}]`,
     `[${copy}]${branch}[${done}]`,
-    `[${mask}]format=gray,gblur=sigma=${sigma}${strength < 1 ? `,lut=y='val*${round3(clamp(strength, 0, 1))}'` : ""}[${soft}]`,
+    `[${mask}]format=${grayFormat(ctx)},gblur=sigma=${sigma}${strength < 1 ? `,lut=y='val*${round3(clamp(strength, 0, 1))}'` : ""}[${soft}]`,
     `[${done}][${soft}]alphamerge[${top}]`,
-    `[${orig}][${top}]overlay=format=auto:shortest=1,format=yuv420p`,
+    `[${orig}][${top}]overlay=format=auto:shortest=1,format=${yuvFormat({ deep: ctx.deep })}`,
   ].join(";");
 }
 
@@ -223,7 +238,7 @@ export function maskBranch(ctx: EffectContext, mask: string, branch: string, fea
 export function timedBlend(ctx: EffectContext, branch: string, amountAt: string): string {
   const label = labeler(ctx);
   const [orig, copy, done, mask] = [label("fto"), label("ftc"), label("ftb"), label("ftm")];
-  const fmt = ctx.alpha ? "yuva420p" : "yuv420p";
+  const fmt = yuvFormat(ctx);
   const e = `255*clip(${amountAt},0,1)`;
   const planes = `lum='${e}':cb='${e}':cr='${e}'${ctx.alpha ? `:a='${e}'` : ""}`;
   return [
@@ -242,7 +257,7 @@ export function timedBlend(ctx: EffectContext, branch: string, amountAt: string)
  */
 export function rampFilter(ctx: EffectContext, chains: string[], times: number[], easings: Easing[]): string {
   const label = labeler(ctx);
-  const fmt = ctx.alpha ? "yuva420p" : "yuv420p";
+  const fmt = yuvFormat(ctx);
   const ins = chains.map(() => label("frs"));
   const outs = chains.map(() => label("frr"));
   const parts = [`format=${fmt},split=${chains.length}${ins.map((l) => `[${l}]`).join("")}`];
@@ -281,7 +296,7 @@ export interface LightSource {
 export function geqLight(ctx: EffectContext, lumaExpr: string): LightSource {
   const out = labeler(ctx)("flg");
   const { w, h } = lightCanvas(ctx);
-  return { lines: [`nullsrc=s=${w}x${h}:r=${ctx.fps}:d=${round3(ctx.duration + 1)},format=gray,geq=lum='${lumaExpr}'[${out}]`], out };
+  return { lines: [`nullsrc=s=${w}x${h}:r=${ctx.fps}:d=${round3(ctx.duration + 1)},format=${grayFormat(ctx)},geq=lum='${lumaExpr}'[${out}]`], out };
 }
 
 /**
@@ -295,10 +310,10 @@ export function lightLayer(ctx: EffectContext, source: LightSource, color: strin
   const [base, alpha, solid, light] = [label("flb"), label("fla"), label("fls"), label("fll")];
   const d = round3(ctx.duration + 1);
   return [
-    `format=${ctx.alpha ? "yuva420p" : "yuv420p"}[${base}]`,
+    `format=${yuvFormat(ctx)}[${base}]`,
     ...source.lines,
     `[${source.out}]scale=${ctx.width}:${ctx.height}:flags=bicubic,lut=c0='val*${round3(clamp(opacity, 0, 1))}'[${alpha}]`,
-    `color=c=0x${color.replace(/^#/, "").slice(0, 6)}:s=${ctx.width}x${ctx.height}:r=${ctx.fps}:d=${d},format=yuva420p[${solid}]`,
+    `color=c=0x${color.replace(/^#/, "").slice(0, 6)}:s=${ctx.width}x${ctx.height}:r=${ctx.fps}:d=${d},format=${yuvFormat({ alpha: true, deep: ctx.deep })}[${solid}]`,
     `[${solid}][${alpha}]alphamerge[${light}]`,
     `[${base}][${light}]overlay=shortest=1`,
   ].join(";");

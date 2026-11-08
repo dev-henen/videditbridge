@@ -5,7 +5,7 @@ import { easeValue, numberAt, positionAt } from "../../core/keyframes.js";
 import { parseColor, round3 } from "../../core/util.js";
 import { effectsToFilter, escapeFilterPath } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
-import { ASS_FILE, compileProject, gradientSource, rampPts, renderSize, type CompileOptions } from "./compile.js";
+import { ASS_FILE, compileProject, exportVideoArgs, gradientSource, isDeepExport, rampPts, renderSize, type CompileOptions } from "./compile.js";
 import { cropPosition, effectsOps, joinedTime, lutArgs, type PlanOp } from "./plan-effects.js";
 import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
 import { colorTableFile, convertsColor, inputTableFile, outputTableFile, sceneGradeFor } from "./color-space.js";
@@ -580,7 +580,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
   // Text goes on in YUV, as in the FFmpeg backend, on frames timed in AV_TIME_BASE as the backend's are:
   // libass takes whole milliseconds, so a frame exactly at an event's start can land on either side of it.
   // 10-bit exports: the engine gives 10-bit frames (no dither), and the encoder keeps them.
-  const tenBit = exp.bitDepth === 10;
+  const tenBit = isDeepExport(exp);
   const pixFmt = tenBit ? "yuv420p10le" : "yuv420p";
   const picture = ["settb=AVTB", `format=${pixFmt}`, opts.overlay && `ass=filename=${ASS_FILE}${fonts}`].filter(Boolean).join(",");
   const args = [
@@ -590,9 +590,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
     "-filter_complex", `[0:v]${picture}[v]`,
     "-map", "[v]",
     ...(opts.audio ? ["-map", "1:a"] : []),
-    ...(opts.hardwareEncoder && !tenBit
-      ? hardwareEncoderArgs(opts.hardwareEncoder, exp.crf)
-      : ["-c:v", exp.videoCodec, "-preset", opts.preset ?? exp.preset, "-crf", String(exp.crf), "-pix_fmt", pixFmt]),
+    ...exportVideoArgs(exp, opts.preset, opts.hardwareEncoder),
     "-r", String(F),
     ...(opts.audio ? ["-c:a", exp.audioCodec, "-b:a", exp.audioBitrate, "-ar", "48000"] : []),
     "-movflags", "+faststart",

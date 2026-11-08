@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { round3 } from "../../core/util.js";
-import { define, labeler, num, type EffectContext, type EffectDefinition } from "./helpers.js";
+import { define, gbrFormat, labeler, num, yuvFormat, type EffectContext, type EffectDefinition } from "./helpers.js";
 
 /**
  * Object removal (section 7.2 of docs/design/cinematic-grade-and-vfx.md). The renderer prepares
@@ -72,7 +72,7 @@ function removeObjectFilter(p: RemoveObject, ctx: EffectContext): string {
   if (!fill) throw new Error("Object removal works on primary video and photo clips only (its fill is prepared per clip); set it up with remove_object");
   const label = labeler(ctx);
   const [base, top] = [label("rmb"), label("rmf")];
-  const fmt = ctx.alpha ? "yuva420p" : "yuv420p";
+  const fmt = yuvFormat(ctx);
   // Past the fill's last frame, the last one holds (overlay's default), never the object.
-  return [`format=${fmt}[${base}]`, `[${fill}]format=yuva420p[${top}]`, `[${base}][${top}]overlay=format=auto,format=${fmt}`].join(";");
+  return [`format=${fmt}[${base}]`, `[${fill}]format=${yuvFormat({ alpha: true, deep: ctx.deep })}[${top}]`, `[${base}][${top}]overlay=format=auto,format=${fmt}`].join(";");
 }

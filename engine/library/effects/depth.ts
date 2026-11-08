@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { round3, toFfmpegColor } from "../../core/util.js";
-import { define, labeler, num, type EffectContext, type EffectDefinition } from "./helpers.js";
+import { define, gbrFormat, labeler, num, yuvFormat, type EffectContext, type EffectDefinition } from "./helpers.js";
 
 /**
  * Effects that read the clip's depth (EffectContext.depthMask: 0 = the nearest things in the clip,
@@ -77,7 +77,7 @@ function depthOfFieldFilter(p: z.output<typeof DepthOfFieldParams>, ctx: EffectC
   const keys = p.focusPath?.length ? [...p.focusPath].sort((a, b) => a.time - b.time) : undefined;
   const focus0 = keys ? focusAt(keys, 0) : p.focus;
   const pics = Array.from({ length: BANDS }, () => label("dpc"));
-  const lines = [`format=gbrp,split=${BANDS}${pics.map((x) => `[${x}]`).join("")}`];
+  const lines = [`format=${gbrFormat({ deep: ctx.deep })},split=${BANDS}${pics.map((x) => `[${x}]`).join("")}`];
   const owns = Array.from({ length: BANDS }, () => label("dpm"));
   const covers = Array.from({ length: BANDS }, () => label("dpa"));
   const centers = Array.from({ length: BANDS }, (_, k) => (k + 0.5) / BANDS);
@@ -110,7 +110,7 @@ function depthOfFieldFilter(p: z.output<typeof DepthOfFieldParams>, ctx: EffectC
     lines.push(`[${m}s]lut=c0='${own}',format=gray16le,split=2[${m}][${m}x]`);
     lines.push(`[${pics[b]}]format=gbrp16le[${pics[b]}w];[${pics[b]}w][${m}]premultiply=inplace=0,${blurName("c", b)}=sigma=${sigma}[${pm}]`);
     lines.push(`[${m}x]${blurName("m", b)}=sigma=${sigma},split=2[${mb}][${mbu}w];[${mbu}w]format=gray[${mbu}]`);
-    lines.push(`[${pm}][${mb}]unpremultiply=inplace=0,format=gbrp[${n}]`);
+    lines.push(`[${pm}][${mb}]unpremultiply=inplace=0,format=${gbrFormat({ deep: ctx.deep })}[${n}]`);
     lines.push(`[${a}s]lut=c0='${cover}'[${a}]`);
     lines.push(`[${mbu}][${a}]blend=all_mode=lighten[${alpha}]`);
     lines.push(`[${n}][${alpha}]alphamerge[${layer}]`);
@@ -119,10 +119,10 @@ function depthOfFieldFilter(p: z.output<typeof DepthOfFieldParams>, ctx: EffectC
       continue;
     }
     const next = label("dpo");
-    lines.push(`[${acc}][${layer}]overlay=format=gbrp[${next}]`);
+    lines.push(`[${acc}][${layer}]overlay=format=${gbrFormat({ deep: ctx.deep })}[${next}]`);
     acc = next;
   }
-  lines.push(`[${acc}]format=${ctx.alpha ? "yuva420p" : "yuv420p"}`);
+  lines.push(`[${acc}]format=${yuvFormat(ctx)}`);
   return lines.join(";");
 }
 
@@ -141,7 +141,7 @@ function depthFogFilter(p: z.output<typeof DepthFogParams>, ctx: EffectContext):
   const u = `max(0,(val/255-${round3(p.start)})/${round3(1 - p.start)})`;
   const k = round3(p.falloff);
   const amount = `255*${round3(p.density)}*(1-exp(-${k}*${u}))/${round3(1 - Math.exp(-p.falloff))}`;
-  const fmt = ctx.alpha ? "yuva420p" : "yuv420p";
+  const fmt = yuvFormat(ctx);
   return [
     `format=${fmt}[${base}]`,
     `[${depth}]format=gray,lut=c0='clip(${amount},0,255)'[${alpha}]`,
@@ -176,7 +176,7 @@ function parallaxFilter(p: z.output<typeof ParallaxParams>, ctx: EffectContext):
   const margin = 1 + 2 * Math.max(Math.abs(p.x), Math.abs(p.y)) + Math.max(0, -p.zoom) * 1.2;
   const pics = Array.from({ length: 2 * L }, () => label("plc"));
   const ds = Array.from({ length: 2 * L }, () => label("pld"));
-  const lines = [`format=gbrp,split=${2 * L}${pics.map((x) => `[${x}]`).join("")}`, `[${depth}]format=gray,split=${2 * L}${ds.map((x) => `[${x}]`).join("")}`];
+  const lines = [`format=${gbrFormat({ deep: ctx.deep })},split=${2 * L}${pics.map((x) => `[${x}]`).join("")}`, `[${depth}]format=gray,split=${2 * L}${ds.map((x) => `[${x}]`).join("")}`];
   const fillSigma = round3(40 * scaleOf(ctx));
   // Neighboring layers move a few pixels apart; crossing over half a layer turns that into a slight
   // softening on smooth depth (a receding floor) instead of a double line.
@@ -197,12 +197,12 @@ function parallaxFilter(p: z.output<typeof ParallaxParams>, ctx: EffectContext):
     lines.push(`[${pics[2 * b]}]format=gbrp16le[${pics[2 * b]}w];[${pics[2 * b]}w][${behind}]premultiply=inplace=0,gblur=sigma=${fillSigma}[${pm}]`);
     lines.push(`[${backW}]gblur=sigma=${fillSigma}[${wb}]`);
     const fill = label("plx");
-    lines.push(`[${pm}][${wb}]unpremultiply=inplace=0,format=gbrp[${fill}]`);
+    lines.push(`[${pm}][${wb}]unpremultiply=inplace=0,format=${gbrFormat({ deep: ctx.deep })}[${fill}]`);
     lines.push(`[${fill}][${pics[2 * b + 1]}][${fillW}]maskedmerge[${sharp}]`);
     // The layer shows itself (the farthest shows everything, so nothing is ever uncovered).
     const alpha = b === L - 1 ? "255" : `255*clip(${farther(lo, soft)}-${farther(hi, soft)},0,1)`;
     lines.push(`[${ds[2 * b + 1]}]lut=c0='${alpha}'[${own}]`);
-    lines.push(`[${sharp}][${own}]alphamerge,format=gbrap[${layer}]`);
+    lines.push(`[${sharp}][${own}]alphamerge,format=${gbrFormat({ alpha: true, deep: ctx.deep })}[${layer}]`);
     // Move: scale about the center by s, shift by (dx, dy), as corners for perspective (it samples between pixels).
     const s = `(${round3(margin)}*(1+${round3(p.zoom * near)}*${ease}))`;
     const dx = `(${round3(-p.x * near * W)}*${ease})`;
@@ -223,10 +223,10 @@ function parallaxFilter(p: z.output<typeof ParallaxParams>, ctx: EffectContext):
       continue;
     }
     const next = label("plo");
-    lines.push(`[${acc}][${moved}]overlay=format=gbrp[${next}]`);
+    lines.push(`[${acc}][${moved}]overlay=format=${gbrFormat({ deep: ctx.deep })}[${next}]`);
     acc = next;
   }
-  lines.push(`[${acc}]format=${ctx.alpha ? "yuva420p" : "yuv420p"}`);
+  lines.push(`[${acc}]format=${yuvFormat(ctx)}`);
   return lines.join(";");
 }
 
@@ -240,7 +240,7 @@ export function depthEffects(): EffectDefinition[] {
       description: "Shows the clip's depth in place of the picture, near white and far black, to check it. estimate_depth uses it; it does not belong in a finished edit.",
       params: z.object({}),
       usesDepthMask: () => true,
-      toFilter: (_, ctx) => `nullsink;[${depthStream(ctx, "Depth view")}]format=gray,negate,format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+      toFilter: (_, ctx) => `nullsink;[${depthStream(ctx, "Depth view")}]format=gray,negate,format=${yuvFormat(ctx)}`,
     }),
     define({
       id: "depthOfField",

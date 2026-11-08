@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { define, type EffectDefinition } from "./helpers.js";
+import { define, yuvFormat, type EffectDefinition } from "./helpers.js";
 
 /**
  * FFmpeg filters a custom effect may use: ones that only change the picture of the stream they get.
@@ -93,6 +93,6 @@ export const customEffect: EffectDefinition = define({
     const names = checkCustomFilter(p.filter);
     // Geometry filters may change the size; later steps expect the stream's own size.
     const resize = names.some((n) => RESIZING.has(n)) ? `,scale=${ctx.width}:${ctx.height},setsar=1` : "";
-    return `${p.filter}${resize},format=${ctx.alpha ? "yuva420p" : "yuv420p"}`;
+    return `${p.filter}${resize},format=${yuvFormat(ctx)}`;
   },
 });

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { numberExpr } from "../../core/keyframes.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
-import { labeler, num, type EffectContext } from "./helpers.js";
+import { gbrFormat, labeler, num, yuvFormat, type EffectContext } from "./helpers.js";
 
 const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
@@ -63,7 +63,7 @@ export function skyReplaceFilter(p: SkyReplace, ctx: EffectContext): string {
   const dur = round3(ctx.duration + 1);
   const [orig, ma, mh, alpha, weight, plate, canvas, sky, hc, hz, sky2, lit, top] = ["sro", "srm", "srh", "sra", "srw", "srp", "src", "srs", "srk", "srz", "srt", "srl", "srx"].map(label);
   const [PW, PH] = [Math.ceil((W * p.cover) / 2) * 2, Math.ceil((H * p.cover) / 2) * 2];
-  const lines = [`format=yuv420p[${orig}]`, `[${mask}]format=gray,split=2[${ma}][${mh}]`];
+  const lines = [`format=${yuvFormat({ deep: ctx.deep })}[${orig}]`, `[${mask}]format=gray,split=2[${ma}][${mh}]`];
 
   // The sky's matte, grown over the outline and softened.
   const passes = p.edge === 0 ? 0 : Math.min(12, Math.max(1, Math.round(Math.abs(p.edge) * H)));
@@ -84,9 +84,9 @@ export function skyReplaceFilter(p: SkyReplace, ctx: EffectContext): string {
   lines.push(
     `${source},${[
       "setsar=1",
-      p.gain !== 1 && `format=gbrp,colorchannelmixer=rr=${round3(p.gain)}:gg=${round3(p.gain)}:bb=${round3(p.gain)}`,
+      p.gain !== 1 && `format=${gbrFormat({ deep: ctx.deep })},colorchannelmixer=rr=${round3(p.gain)}:gg=${round3(p.gain)}:bb=${round3(p.gain)}`,
       p.blur > 0 && `gblur=sigma=${round3((p.blur * H) / 1080)}`,
-      "format=yuv420p",
+      `format=${yuvFormat({ deep: ctx.deep })}`,
       turns && `rotate=a='(${numberExpr(keys((k) => k.angle), "t")})*PI/180':c=black`,
       zooms && `scale=w='2*trunc(iw*(${numberExpr(keys((k) => k.scale), "t")})/2)':h='2*trunc(ih*(${numberExpr(keys((k) => k.scale), "t")})/2)':eval=frame`,
     ]
@@ -96,17 +96,17 @@ export function skyReplaceFilter(p: SkyReplace, ctx: EffectContext): string {
   const dx = moving ? `+main_w*(${numberExpr(keys((k) => k.x), "t")})` : "";
   const dy = moving ? `+main_h*(${numberExpr(keys((k) => k.y), "t")})` : "";
   lines.push(`color=c=black:s=${W}x${H}:r=${F}:d=${dur}[${canvas}]`);
-  lines.push(`[${canvas}][${plate}]overlay=x='(main_w-overlay_w)/2${dx}':y='(main_h-overlay_h)/2${dy}':eval=frame:shortest=1,format=yuv420p[${sky}]`);
+  lines.push(`[${canvas}][${plate}]overlay=x='(main_w-overlay_w)/2${dx}':y='(main_h-overlay_h)/2${dy}':eval=frame:shortest=1,format=${yuvFormat({ deep: ctx.deep })}[${sky}]`);
   // Horizon haze over the new sky.
   if (p.haze > 0) {
-    lines.push(`color=c=${toFfmpegColor(p.hazeColor)}:s=${W}x${H}:r=${F}:d=${dur},format=yuv420p[${hc}]`);
+    lines.push(`color=c=${toFfmpegColor(p.hazeColor)}:s=${W}x${H}:r=${F}:d=${dur},format=${yuvFormat({ deep: ctx.deep })}[${hc}]`);
     lines.push(`[${hc}][${weight}]alphamerge[${hz}]`);
-    lines.push(`[${sky}][${hz}]overlay=format=auto:shortest=1,format=yuv420p[${sky2}]`);
+    lines.push(`[${sky}][${hz}]overlay=format=auto:shortest=1,format=${yuvFormat({ deep: ctx.deep })}[${sky2}]`);
   } else lines.push(`[${weight}]nullsink`, `[${sky}]null[${sky2}]`);
   // The scenery, tinted toward the new sky.
   const [gr, gg, gb] = relightGains(p.lightColor, p.relight);
-  lines.push(p.relight > 0 ? `[${orig}]format=gbrp,colorchannelmixer=rr=${gr}:gg=${gg}:bb=${gb},format=yuv420p[${lit}]` : `[${orig}]null[${lit}]`);
+  lines.push(p.relight > 0 ? `[${orig}]format=${gbrFormat({ deep: ctx.deep })},colorchannelmixer=rr=${gr}:gg=${gg}:bb=${gb},format=${yuvFormat({ deep: ctx.deep })}[${lit}]` : `[${orig}]null[${lit}]`);
   lines.push(`[${sky2}][${alpha}]alphamerge[${top}]`);
-  lines.push(`[${lit}][${top}]overlay=format=auto:shortest=1,format=yuv420p`);
+  lines.push(`[${lit}][${top}]overlay=format=auto:shortest=1,format=${yuvFormat({ deep: ctx.deep })}`);
   return lines.join(";");
 }
