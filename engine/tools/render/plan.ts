@@ -170,7 +170,7 @@ export interface PlanOptions {
   pieceInputs?: PieceInputs;
 }
 
-export type PieceInputs = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "depthMasks" | "removals" | "interpolated" | "subjectMask" | "skyMatte">;
+export type PieceInputs = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "depthMasks" | "removals" | "interpolated" | "subjectMask" | "skyMatte" | "objectMattes">;
 
 /** Filters that take RGB frames only: after a transition, FFmpeg's format negotiation then runs xfade on RGB too. */
 const RGB_FILTERS = new Set(["colorbalance", "colortemperature", "curves", "colorchannelmixer", "lut3d", "haldclut", "exposure", "vibrance", "huesaturation", "rgbashift"]);
@@ -261,9 +261,9 @@ export function engineGaps(project: Project): EngineGaps {
       const [w, h] = layerSize(layer, asset, width, height);
       for (const r of effectsOps(layer.effects, { width: w, height: h, fps, duration: layer.duration, alpha: true }, 1).unsupported) out.push(r);
     }
-    if (layer.mask || layer.behindSubject) {
+    if (layer.mask || layer.behindSubject || layer.behindObject) {
       // Both need the picture under the layer, which only the base piece has.
-      base.push(`${where}: ${layer.mask ? "mask" : "behind the subject"}`);
+      base.push(`${where}: ${layer.mask ? "mask" : layer.behindObject ? "behind an object" : "behind the subject"}`);
       baseLayers = index;
     }
     if (layer.shadow > 0) out.push("shadow");

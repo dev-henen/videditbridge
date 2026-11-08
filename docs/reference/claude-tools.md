@@ -1326,7 +1326,7 @@ _No parameters._
 
 ### replace_screen
 
-**edits**. Put an image or video on a tracked flat surface (track_points with corners): a phone or monitor screen, a TV, a billboard, a sign, a picture frame. The insert is corner-pinned to the four tracked corners on every frame, so it stays on the surface as the camera or the surface moves. By default it covers the clip the surface was marked in, cropped to the surface's shape (fit cover). Check the corners at the start, middle, end and fastest motion with render_frame; a slightly soft insert (a blur effect of about 0.5) and a grade toward the scene's color make it sit in the shot. Things passing in front of the surface (a finger) are covered by the insert.
+**edits**. Put an image or video on a tracked flat surface (track_points with corners): a phone or monitor screen, a TV, a billboard, a sign, a picture frame. The insert is corner-pinned to the four tracked corners on every frame, so it stays on the surface as the camera or the surface moves. By default it covers the clip the surface was marked in, cropped to the surface's shape (fit cover). It sits the insert in the shot by itself (match): blurred to the sharpness of the scene around the screen, tinted to the shot's white balance, its blacks lifted by the ambient light, and a faint glare over it (glare). Things passing in front of the screen (a finger, a hand) are covered by the insert unless you name them as occluder: select them first with select_object, and they stay in front. Check the corners at the start, middle, end and fastest motion with render_frame.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -1337,7 +1337,10 @@ _No parameters._
 | `in` | number |  |  | Seconds into a video insert to start from (≥ 0) |
 | `fit` | "cover" \| "contain" \| "stretch" \| "blur" |  |  | How the insert fills the surface (default cover: fill and crop) |
 | `opacity` | number |  |  | (≥ 0, ≤ 1) |
-| `effects` | { type, params, mask, label, keyframes }[] |  |  | Effects on the insert, e.g. a light blur or a color grade to match the scene |
+| `effects` | { type, params, mask, label, keyframes }[] |  |  | More effects on the insert (before the match's own) |
+| `match` | boolean |  | `true` | Match the insert to the shot: blur, white balance and ambient light on its blacks, measured on a frame of the edit |
+| `glare` | number |  | `0.08` | A soft diagonal sheen over the screen, screened on at this opacity (0 = none) (≥ 0, ≤ 0.5) |
+| `occluder` | string |  |  | An object (select_object) that passes in front of the screen and stays in front of the insert |
 | `label` | string |  |  |  |
 
 ### replace_sky

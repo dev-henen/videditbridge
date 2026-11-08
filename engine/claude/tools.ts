@@ -41,13 +41,13 @@ import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
 import { replaceWords, vocabularySuggestions } from "../tools/transcript/fix.js";
 import { REVIEW_CHECKS, reviewEdit, textLayerBox } from "../tools/review/index.js";
-import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, frameToSource, personRegion, selectObject, trackFaces, writeMaskOverlay, writeTrackPreview, framePointToSource, pinnedFrameCorners, quadCenter, quadOf, trackPointsInClips, trackSampler, writeCornersPreview, type ClipFaces } from "../tools/vision/index.js";
+import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, frameToSource, personRegion, selectObject, trackFaces, writeMaskOverlay, writeTrackPreview, framePointToSource, levelsFilter, matchScreen, pinnedFrameCorners, quadCenter, quadOf, trackPointsInClips, trackSampler, writeCornersPreview, type ClipFaces } from "../tools/vision/index.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
-import { depthInClips, interpolateInClips, removalInClips, render, renderContactSheet, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
+import { depthInClips, interpolateInClips, removalInClips, render, renderContactSheet, renderForAnalysis, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
 import { exportLut } from "../tools/render/export-lut.js";
 import { clipFrameTimes, framePlan } from "../tools/video/interpolate.js";
 import { depthInBox, readDepthFrames } from "../tools/vision/depth.js";
@@ -2382,8 +2382,10 @@ export const TOOLS: ToolDefinition[] = [
     name: "replace_screen",
     description:
       "Put an image or video on a tracked flat surface (track_points with corners): a phone or monitor screen, a TV, a billboard, a sign, a picture frame. The insert is corner-pinned to the four tracked corners on every frame, so it stays on the surface as the camera or the surface moves. " +
-      "By default it covers the clip the surface was marked in, cropped to the surface's shape (fit cover). Check the corners at the start, middle, end and fastest motion with render_frame; a slightly soft insert (a blur effect of about 0.5) and a grade toward the scene's color make it sit in the shot. " +
-      "Things passing in front of the surface (a finger) are covered by the insert.",
+      "By default it covers the clip the surface was marked in, cropped to the surface's shape (fit cover). " +
+      "It sits the insert in the shot by itself (match): blurred to the sharpness of the scene around the screen, tinted to the shot's white balance, its blacks lifted by the ambient light, and a faint glare over it (glare). " +
+      "Things passing in front of the screen (a finger, a hand) are covered by the insert unless you name them as occluder: select them first with select_object, and they stay in front. " +
+      "Check the corners at the start, middle, end and fastest motion with render_frame.",
     input: z.object({
       trackId: z.string().describe("A track made with track_points from corners"),
       assetId: z.string().describe("The image or video to show on the surface"),
@@ -2392,7 +2394,10 @@ export const TOOLS: ToolDefinition[] = [
       in: z.number().min(0).optional().describe("Seconds into a video insert to start from"),
       fit: FitSchema.optional().describe("How the insert fills the surface (default cover: fill and crop)"),
       opacity: z.number().min(0).max(1).optional(),
-      effects: z.array(EffectSchema).optional().describe("Effects on the insert, e.g. a light blur or a color grade to match the scene"),
+      effects: z.array(EffectSchema).optional().describe("More effects on the insert (before the match's own)"),
+      match: z.boolean().default(true).describe("Match the insert to the shot: blur, white balance and ambient light on its blacks, measured on a frame of the edit"),
+      glare: z.number().min(0).max(0.5).default(0.08).describe("A soft diagonal sheen over the screen, screened on at this opacity (0 = none)"),
+      occluder: z.string().optional().describe("An object (select_object) that passes in front of the screen and stays in front of the insert"),
       label: z.string().optional(),
     }),
     mutates: true,
@@ -2440,16 +2445,43 @@ export const TOOLS: ToolDefinition[] = [
         ...(i.opacity !== undefined ? { opacity: i.opacity } : {}),
         ...(i.effects ? { effects: i.effects } : {}),
         ...(i.label ? { label: i.label } : {}),
+        ...(i.occluder ? { behindObject: i.occluder } : {}),
         keyframes: { corners },
       });
+      if (i.occluder && !s.project.objects[i.occluder]) return { text: `No object "${i.occluder}". Select what passes in front of the screen with select_object first.`, isError: true };
+      const notes: string[] = [];
+      let q2 = p;
+      if (i.match) {
+        // One frame in the middle, without and with the insert, at most 960 px wide for speed.
+        const mid = seen[Math.floor(seen.length / 2)]!;
+        const scale = Math.min(1, 960 / Math.max(W, H));
+        const frameOf = async (project: typeof p) => {
+          const r = await renderForAnalysis(project, { ...s.renderOptions, framesAt: [start + mid.time], scale, probe: false });
+          return { rgb: r.frames[0]!.rgb, w: r.width, h: r.height };
+        };
+        const [plain, shown] = [await frameOf(s.project), await frameOf(p)];
+        const m = matchScreen(plain.rgb, shown.rgb, plain.w, plain.h, quadOf(mid.value, plain.w, plain.h));
+        const blur = round3(m.blur / scale);
+        const added = [{ type: "custom", params: { filter: levelsFilter(m.levels), name: "screen match" } }, ...(blur > 0 ? [{ type: "blur", params: { amount: blur } }] : [])];
+        q2 = ops.updateLayer(p, id, { effects: [...(i.effects ?? []), ...added] as never });
+        notes.push(`matched to the shot: ${blur > 0 ? `blur ${blur} px` : "no blur (the scene is as sharp)"}, whites ${m.levels.max.join("/")}, blacks lifted to ${m.levels.min.join("/")}`);
+      }
+      if (i.glare > 0) {
+        // A diagonal sheen, white at the top left, screened on with the same corners.
+        const glareId = newId("glare");
+        q2 = ops.addAsset(q2, { type: "gradient", id: `${glareId}-sheen`, colors: ["#FFFFFF", "#000000"], direction: "diagonal" });
+        q2 = ops.addLayer(q2, { type: "media", id: glareId, assetId: `${glareId}-sheen`, start, duration, size, blend: "screen", opacity: i.glare, ...(i.occluder ? { behindObject: i.occluder } : {}), keyframes: { corners } });
+        notes.push(`glare ${glareId} at ${i.glare}`);
+      }
+      if (i.occluder) notes.push(`"${i.occluder}" stays in front`);
       const covered = seen.length / (Math.floor(duration * fps + 1e-6) + 1);
       const worst = seen.reduce((a, b) => (b.conf < a.conf ? b : a));
       return commit(
         s,
-        p,
+        q2,
         "replace_screen",
         i,
-        `Added ${id}: ${i.assetId} pinned to "${i.trackId}" from ${formatTime(start)} to ${formatTime(start + duration)}, ${corners.length} corner keyframes from ${seen.length} tracked frames; tracking least sure at ${formatTime(start + worst.time)} (${worst.conf.toFixed(2)})${covered < 0.98 ? `; the track covers only ${Math.round(covered * 100)}% of that time and the insert holds still elsewhere` : ""}. Check it with render_frame at the start, ${formatTime(start + worst.time)} and the end.`,
+        `Added ${id}: ${i.assetId} pinned to "${i.trackId}" from ${formatTime(start)} to ${formatTime(start + duration)}, ${corners.length} corner keyframes from ${seen.length} tracked frames; tracking least sure at ${formatTime(start + worst.time)} (${worst.conf.toFixed(2)})${covered < 0.98 ? `; the track covers only ${Math.round(covered * 100)}% of that time and the insert holds still elsewhere` : ""}${notes.length ? `. ${notes.join("; ")}` : ""}. Check it with render_frame at the start, ${formatTime(start + worst.time)} and the end.`,
       );
     },
   }),

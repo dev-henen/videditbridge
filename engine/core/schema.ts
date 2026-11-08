@@ -364,6 +364,10 @@ export const MediaLayerSchema = z.object({
     .boolean()
     .default(false)
     .describe("Draw the layer behind the people in the main video (smoke, props or light beams behind a dancer); they are found frame by frame in the finished picture"),
+  behindObject: z
+    .string()
+    .optional()
+    .describe("Draw the layer behind a tracked object (an object id from select_object): where the object passes in front of the layer, it stays in front (a finger over a replaced screen, a car passing a sign). Works where the object's video is on the primary track"),
   mask: MaskSchema.optional().describe(
     "Show the layer only where this mask selects in the picture under it: snow only in the sky (kind sky), embers kept off a person (kind person, invert true), light only on highlights (luma). person and sky are found frame by frame in the finished picture; key, luma and shape are cut from the picture under the layer; face and object masks do not work on layers",
   ),

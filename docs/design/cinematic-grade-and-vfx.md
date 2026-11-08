@@ -27,7 +27,7 @@ Movie-level color grading and the visual effects editors ask for most: log foota
 - [x] 1. **Rust kernels:** cancelling and progress inside them (`TaskControl` and `controlled`, section 3.5).
 - [x] 2. **Effect gaps:** radial `chromaticAberration` (4.4) and linear-light `add` and `screen` blending (5.1).
 - [x] 3. **Mask shapes:** polygons, keyframes, and shapes pinned to a track (3.2).
-- [ ] 4. **`replace_screen`:** the insert's matched blur, glare and color, and occlusion by an object mask (5.4).
+- [x] 4. **`replace_screen`:** the insert's matched blur, glare and color, and occlusion by an object mask (5.4).
 - [ ] 5. **FFmpeg backend precision** (3.3): the 10-bit pipeline, 16-bit masks, `gbrp16le` RGB stages, ProRes 422 HQ export and a 10-bit segment cache.
 - [ ] 6. **Hardware encoding** with VideoToolbox (macOS) and VAAPI (Linux) (3.6).
 - [ ] 7. **Claude's checks** (section 8): `review_edit` findings for clipping, skin hue off the skin line, banding, matte flicker, track drift and sky slide.
@@ -115,7 +115,7 @@ skyseg finds the sky on keyframes, Rust tracking carries the matte and measures 
 
 ### 5.4 Points and surfaces (`track_points`, `pin_layer`, `pin_mask`, `replace_screen`)
 
-Rust Lucas-Kanade with RANSAC (translation, similarity or perspective), stored in `project.tracks`; `pin_layer` turns a track into keyframes, `pin_mask` pins a shape mask to it in perspective (0.3 px on the synthetic camera move), `replace_screen` adds a corner-pinned insert. Worst synthetic corner error 0.28 px. Left (checklist 4): the insert's matched blur, glare and color, and occlusion by an object mask. See [the tracking guide](../guides/tracking.md).
+Rust Lucas-Kanade with RANSAC (translation, similarity or perspective), stored in `project.tracks`; `pin_layer` turns a track into keyframes, `pin_mask` pins a shape mask to it in perspective (0.3 px on the synthetic camera move), `replace_screen` adds a corner-pinned insert. Worst synthetic corner error 0.28 px. `replace_screen` matches the insert to the shot on a frame of the edit: blurred to the sharpness of the scene around the screen, the shot's white balance on its whites and the ambient light on its blacks (`colorlevels`), and a faint diagonal glare screened over it with the same corners. An `occluder` (an object from `select_object`) stays in front: any media layer can be `behindObject`, drawn behind the object's matte rendered in timeline time. See [the tracking guide](../guides/tracking.md).
 
 ## 6. Atmosphere and light (`add_particles`, `add_light`)
 

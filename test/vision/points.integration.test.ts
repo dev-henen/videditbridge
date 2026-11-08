@@ -63,6 +63,11 @@ describe.skipIf(!hasFfmpeg)("tracking points and surfaces", () => {
     expect(put.isError, put.text).toBeFalsy();
     const layer = s.project.layers.find((l) => l.type === "media" && l.keyframes?.corners?.length)!;
     expect(layer.start).toBe(0);
+    // Matched to the shot (levels; a flat red insert needs no blur), and a glare pinned with it.
+    expect(put.text).toMatch(/matched to the shot/);
+    expect(layer.type === "media" && layer.effects.some((e) => e.type === "custom" && /colorlevels/.test(String((e.params as { filter?: string }).filter)))).toBe(true);
+    const glare = s.project.layers.find((l) => l.type === "media" && l.blend === "screen");
+    expect(glare?.keyframes?.corners).toEqual(layer.keyframes!.corners);
     const keys = layer.keyframes!.corners!;
     // The stored keyframes, read at every frame, against the exact corners.
     let worst = 0;

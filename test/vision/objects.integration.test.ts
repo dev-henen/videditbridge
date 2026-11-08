@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { trackObject } from "../../engine/tools/vision/objects.js";
-import { runFfmpegOrThrow } from "../../engine/tools/index.js";
+import { enginePath, renderForAnalysis, renderFrame, runFfmpegOrThrow } from "../../engine/tools/index.js";
+import { addAsset, addLayer } from "../../engine/core/index.js";
 import { EditorSession, executeTool } from "../../engine/claude/index.js";
 import { OUT_DIR, ffmpegAvailable } from "../helpers/media.js";
 
@@ -89,5 +90,33 @@ describe.skipIf(!hasFfmpeg || !hasModels)("selecting and tracking objects", () =
     expect(frame.isError, frame.text).toBeFalsy();
     const wrong = await executeTool(session, "grade_region", { target: clipId, label: "nope", mask: { kind: "object", object: "missing" }, color: { saturation: 10 } });
     expect(wrong.isError).toBe(true);
-  });
+
+    // A red layer over the whole frame, behind the card: the card stays in front, the rest turns red.
+    let p = addAsset(session.project, { type: "color", id: "red", color: "#E02020" });
+    p = addLayer(p, { type: "media", assetId: "red", start: 0, duration: 2, size: { width: 1, height: 1 }, behindObject: "card" });
+    for (const t of [0.4, 1.4]) {
+      const r = await renderForAnalysis(p, { ...session.renderOptions, framesAt: [t], probe: false });
+      const [f, fw, fh] = [r.frames[0]!, r.width, r.height];
+      const at = (x: number, y: number) => [0, 1, 2].map((c) => f.rgb[(Math.round((y / H) * fh) * fw + Math.round((x / W) * fw)) * 3 + c]!);
+      const { x, y } = pathAt(t);
+      const card = at(x + OW / 2, y + OH / 2);
+      const away = at(x > W / 2 ? 40 : W - 40, 30);
+      // The card's own picture (testsrc2 is not a flat red), and red away from it.
+      expect(card[0]! - card[1]! < 150 || card[2]! > 60, `card at ${t}s: ${card}`).toBe(true);
+      expect(away[0], `away at ${t}s`).toBeGreaterThan(180);
+      expect(away[1], `away at ${t}s`).toBeLessThan(80);
+    }
+    // On the GPU engine (when built) the layer is drawn by the FFmpeg backend as a piece, with the same matte.
+    if (enginePath()) {
+      const png = path.join(OUT_DIR, "objects-session", "behind-object-engine.png");
+      await renderFrame(p, 1.4, { ...session.renderOptions, output: png, backend: "engine" });
+      const { stdoutBuffer } = await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", png, "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"], { binaryStdout: true });
+      const [fw, fh] = [p.settings.width, p.settings.height];
+      const at = (x: number, y: number) => [0, 1, 2].map((c) => stdoutBuffer![(Math.round((y / H) * fh) * fw + Math.round((x / W) * fw)) * 3 + c]!);
+      const { x, y } = pathAt(1.4);
+      const card = at(x + OW / 2, y + OH / 2);
+      expect(card[0]! - card[1]! < 150 || card[2]! > 60, `engine card: ${card}`).toBe(true);
+      expect(at(40, 30)[0]).toBeGreaterThan(180);
+    }
+  }, 240_000);
 });

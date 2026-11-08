@@ -79,6 +79,8 @@ export interface CompileOptions {
   subjectMask?: string;
   /** Sky matte of the finished main picture (255 = sky), in the same form as `subjectMask`, for media layers masked to the sky. */
   skyMatte?: string;
+  /** Mattes of tracked objects in timeline time (object id to file, 255 = the object), in the same form as `subjectMask`, for media layers behind an object. */
+  objectMattes?: Record<string, string>;
   /** The FFmpeg build has the rubberband filter, used for speed ramps' sound (see rampTempo). */
   rubberband?: boolean;
   /** Encode the video on the graphics card instead of with x264, at matching quality. */
@@ -610,6 +612,17 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   };
   const personCopies = finished(opts.subjectMask, "person", behind.map((id) => subjectLabels.get(id)!));
   const skyCopies = finished(opts.skyMatte, "sky");
+  // Layers behind a tracked object: the same, with the object's matte in place of the person's.
+  if (!opts.segment && !opts.audioOnly)
+    for (const layer of project.layers) {
+      if (layer.type !== "media" || !layer.behindObject) continue;
+      const file = opts.objectMattes?.[layer.behindObject];
+      if (!file) throw new Error(`Layer "${layer.id}" is behind object "${layer.behindObject}", whose matte the renderer makes; render with render() or renderFrame()`);
+      const label = g.label("objm");
+      g.add(`[${g.addInput(["-i", file])}:v]setpts=PTS-STARTPTS,fps=${F},format=gray,scale=${W}:${H},tpad=stop_mode=clone:stop=-1,trim=duration=${round3(total)},gblur=sigma=${round3(Math.max(0.5, k))}[${label}]`);
+      if (subjectLabels.has(layer.id)) g.add(`[${subjectLabels.get(layer.id)}]nullsink`);
+      subjectLabels.set(layer.id, label);
+    }
   // A layer piece for the engine: the layer placed on a clear canvas, as the blend path places it.
   let layerPiece: string | undefined;
   const pieceLayer = opts.piece?.kind === "layer" ? opts.piece : undefined;

@@ -11,11 +11,11 @@ To follow the shape of an object (a person, a car) for masks and grades, use [ob
 | `track_points` | Mark the four corners of a surface (top-left, top-right, bottom-right, bottom-left), or a point with the square around it, on a frame where it is clearly visible. Positions are fractions of the edit's frame at a timeline time, as in `render_frame`. Reports per clip how sure the tracking is and the unsure ranges, and shows the corners in blue on four frames. `id` marks a track again; `remove: true` forgets one |
 | `pin_layer` | Attach any layer (text, shape, graphic, media overlay) to a track. The layer keeps its offset from the tracked thing as it is at its first tracked moment; it gets position, scale and rotation keyframes |
 | `pin_mask` | Pin a shape mask (an ellipse, rectangle or polygon of `grade_region` or any masked effect, found by its label) to a track, so the area moves, grows and turns in perspective with the surface: a grade on a sign, a blur over a plate. The shape keeps its place on the tracked thing as it is at the first tracked moment |
-| `replace_screen` | Put an image, video, color or gradient on a surface track, corner-pinned on every frame. By default it covers the clip the surface was marked in, cropped to the surface's shape |
+| `replace_screen` | Put an image, video, color or gradient on a surface track, corner-pinned on every frame. By default it covers the clip the surface was marked in, cropped to the surface's shape. It matches the insert to the shot (`match`: blur to the scene's sharpness around the screen, the shot's white balance, ambient light on its blacks), adds a faint glare (`glare`), and keeps an `occluder` (an object from `select_object`, a finger or a hand) in front of it |
 
 ```json
 { "tool": "track_points", "time": 1.2, "corners": { "tl": { "x": 0.41, "y": 0.28 }, "tr": { "x": 0.6, "y": 0.3 }, "br": { "x": 0.59, "y": 0.66 }, "bl": { "x": 0.4, "y": 0.64 } }, "margin": 0.15, "label": "phone" }
-{ "tool": "replace_screen", "trackId": "phone", "assetId": "app_demo", "effects": [{ "type": "blur", "params": { "amount": 0.5 } }] }
+{ "tool": "replace_screen", "trackId": "phone", "assetId": "app_demo", "occluder": "thumb" }
 
 { "tool": "track_points", "time": 3, "point": { "x": 0.52, "y": 0.47 }, "radius": 0.06, "label": "car" }
 { "tool": "pin_layer", "layerId": "text_3", "trackId": "car" }
@@ -66,6 +66,5 @@ The tracker was 83 ms a frame before two changes in the Rust kernel that do not 
 ## Limits
 
 - Drift on real phone and monitor clips, and re-detection after motion blur on a fast pan, wait for the test clips of the design's section 11.
-- The insert does not yet get a matched blur, glare or color match by itself; add a light `blur` and a grade with `effects`, and check with `render_frame`.
-- Things passing in front of the surface (a finger on a screen) are covered by the insert. Holding them out with an object mask is not built yet.
 - Layers do not follow the shape of a non-rigid object; tracking points fits one transform to the whole area.
+- The match is measured on one frame in the middle of the insert; light that changes over the shot (a lamp switched on) is not followed. The occluder's matte is as good as its object track (`track_object`): check fingers at fast motion with `render_frame`.

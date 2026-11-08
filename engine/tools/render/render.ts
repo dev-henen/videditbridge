@@ -362,7 +362,7 @@ async function makeMasks(jobs: MaskJob[], only: Iterable<string>, opts: Omit<Ren
   }
 }
 
-type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "depthMasks" | "removals" | "interpolated" | "subjectMask" | "skyMatte">;
+type MaskFiles = Pick<CompileOptions, "masks" | "faceMasks" | "objectMasks" | "skyMasks" | "depthMasks" | "removals" | "interpolated" | "subjectMask" | "skyMatte" | "objectMattes">;
 
 const maskFiles = (jobs: MaskJob[]): MaskFiles => {
   const of = (kind: MaskJob["kind"]) => Object.fromEntries(jobs.filter((j) => j.kind === kind).map((j) => [j.clipId, j.file]));
@@ -385,7 +385,7 @@ async function prepare(original: Project, opts: Omit<RenderOptions, "output">, c
   // Always give libass the fonts folder with the bundled fonts, and replace system fonts this machine lacks.
   const fonts = await prepareFonts(opts.fontsDir, p);
   // From the originals, like the other masks, so previews (on proxies) and exports share them.
-  const finished = await finishedMattes(original, opts);
+  const finished = { ...(await finishedMattes(original, opts)), ...(await objectMattes(original, opts)) };
   return { project: p, segments, share, masks: { ...maskFiles(jobs), ...finished }, rubberband, fonts };
 }
 
@@ -435,6 +435,63 @@ async function finishedMattes(p: Project, opts: Omit<RenderOptions, "output">): 
     await making;
   }
   return { subjectMask: person ? files.subjectMask : undefined, skyMatte: sky ? files.skyMatte : undefined };
+}
+
+/** A mask that selects nothing (a full-frame rectangle minus itself). */
+const NOTHING = { kind: "shape", shape: { type: "rect", x: 0.5, y: 0.5, width: 2, height: 2 }, combine: [{ kind: "shape", shape: { type: "rect", x: 0.5, y: 0.5, width: 2, height: 2 }, op: "subtract" }] };
+
+/**
+ * Mattes of tracked objects in timeline time, for media layers drawn behind an object (behindObject):
+ * the edit's primary track rendered with each clip of the object's video showing the object's matte
+ * (white on black, through the clip's own timing, speed and fit) and every other clip black, with the
+ * transitions, without layers, whole-video effects or sound. Half size, kept in the cache until that
+ * picture or the object changes.
+ */
+async function objectMattes(p: Project, opts: Omit<RenderOptions, "output">): Promise<Pick<CompileOptions, "objectMattes">> {
+  const ids = [...new Set(p.layers.flatMap((l) => (l.type === "media" && l.behindObject ? [l.behindObject] : [])))];
+  if (!ids.length) return {};
+  const out: Record<string, string> = {};
+  for (const id of ids) {
+    const object = p.objects[id];
+    if (!object) throw new Error(`A layer is behind object "${id}", which does not exist; select it with select_object`);
+    const plate: Project = {
+      ...p,
+      layers: [],
+      audio: [],
+      effects: [],
+      export: { ...p.export, crf: 12 },
+      clips: p.clips.map((c) => ({ ...c, keyframes: c.keyframes?.speed ? { speed: c.keyframes.speed } : undefined, effects: [{ type: "maskView", params: { mask: c.assetId === object.assetId ? { kind: "object", object: id } : NOTHING } }] }) as Project["clips"][number]),
+    };
+    const dir = path.join(opts.cacheDir ?? path.join(tmpdir(), "ave-cache"), "masks");
+    const key = createHash("sha256").update(JSON.stringify({ v: 1, settings: p.settings, assets: p.assets, clips: plate.clips, object })).digest("hex").slice(0, 32);
+    const file = path.join(dir, `object-${key}.mkv`);
+    if (!(await stat(file).then((s) => s.size > 0, () => false))) {
+      let making = makingMattes.get(file);
+      if (!making) {
+        making = (async () => {
+          await mkdir(dir, { recursive: true });
+          const picture = path.join(dir, `object-${key}-plate.mp4`);
+          await render(plate, { ...opts, output: picture, scale: 0.5, proxies: false, preset: "ultrafast", range: undefined, onProgress: undefined, hardware: false, backend: "ffmpeg" });
+          try {
+            // Gray, full range: white is 255 and black 0, as the other mattes.
+            const temp = `${file}.tmp.mkv`;
+            await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-i", picture, "-an", "-vf", "scale=out_range=full,format=gray", "-c:v", "ffv1", temp], opts);
+            await rename(temp, file);
+          } finally {
+            await rm(picture, { force: true });
+          }
+        })();
+        makingMattes.set(file, making);
+        making.then(
+          () => makingMattes.delete(file),
+          () => makingMattes.delete(file),
+        );
+      }
+      await making;
+    }
+    out[id] = file;
+  }
+  return { objectMattes: out };
 }
 
 /**
@@ -553,7 +610,7 @@ async function enginePieceInputs(p: Project, opts: Omit<RenderOptions, "output">
   if (!engineBridged(p).length) return {};
   const jobs = await planMasks(p, opts);
   await makeMasks(jobs, p.clips.map((c) => c.id), opts);
-  return { ...maskFiles(jobs), ...(await finishedMattes(p, opts)) };
+  return { ...maskFiles(jobs), ...(await finishedMattes(p, opts)), ...(await objectMattes(p, opts)) };
 }
 
 /** Write the files a plan's pieces read into its work folder. */
@@ -623,7 +680,8 @@ export async function closeFrameSessions(): Promise<void> {
 async function engineFrameSession(p: Project, time: number, opts: Omit<RenderOptions, "range" | "onProgress" | "output">): Promise<{ session: FrameSession; n: number; fps: number; frames: number }> {
   const fonts = await prepareFontsRecent(opts.fontsDir, p);
   // compileProject is pure: it gives the ASS file without running anything.
-  const ass = compileProject(p, { ...opts, ...fonts, frameAt: time, output: "frame.png" }).files.find((f) => f.name === ASS_FILE);
+  // Sound only: the text does not need the picture, and the picture's masks (objects, sky) are not made here.
+  const ass = compileProject(p, { ...opts, ...fonts, audioOnly: true, output: "" }).files.find((f) => f.name === ASS_FILE);
   // Previews are 8-bit (picture files, the app's shared frames), whatever the export's bit depth.
   const planned = planProject({ ...p, export: { ...p.export, bitDepth: undefined } }, { ...opts, output: "unused.mp4", ffmpeg: resolveFfmpegPath(opts), textLayer: !!ass, fontsDir: fonts.fontsDir, pieceInputs: await enginePieceInputs(p, opts) });
   if (!planned.plan) throw new Error(`The render engine cannot draw: ${planned.unsupported.join("; ")}`);
