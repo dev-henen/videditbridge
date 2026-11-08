@@ -1,11 +1,25 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:tabs="using:VideoEditor.Tabs"
+        xmlns:shared="using:VideoEditor.Shared"
         x:Class="VideoEditor.Shell.MainWindow"
         Title="{Binding Title}" Width="960" Height="460" MinWidth="760" MinHeight="400"
         Background="{StaticResource Bg}" WindowStartupLocation="CenterScreen"
         Icon="/Assets/AppIcon.png"
         ExtendClientAreaToDecorationsHint="True" ExtendClientAreaChromeHints="PreferSystemChrome" ExtendClientAreaTitleBarHeightHint="38">
+  <Window.Styles>
+    <!-- A row of the side panel: flat, full width, lit on hover; the current tab in the accent color -->
+    <Style Selector="Button.side">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="Padding" Value="8,6"/>
+      <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+    <Style Selector="Button.side.current">
+      <Setter Property="Background" Value="{StaticResource AccentSoft}"/>
+    </Style>
+  </Window.Styles>
   <!-- The layout only: the tabs in the title bar, like a browser, over the open tab's page.
        Each tab's page holds everything of its project; nothing is shared between tabs. -->
   <Grid RowDefinitions="38,*">
@@ -13,5 +27,66 @@
     <Border Grid.Row="0" Background="{StaticResource TabBar}" IsHitTestVisible="False"/>
     <tabs:TabStrip x:Name="Tabs" Grid.Row="0"/>
     <Panel Grid.Row="1" x:Name="Pages"/>
+
+    <!-- The side panel (the menu button in the title bar): open tabs, recently closed projects, new tab and settings.
+         It lies over the page; a click beside it or Escape closes it. -->
+    <Panel Grid.Row="1" x:Name="SidePanel" IsVisible="False">
+      <Border Background="#66000000" PointerPressed="OnSideBackdrop"/>
+      <Border Width="270" HorizontalAlignment="Left" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
+        <DockPanel Margin="8,10,8,10">
+          <StackPanel DockPanel.Dock="Bottom" Spacing="2" Margin="0,8,0,0">
+            <Rectangle Height="1" Fill="{StaticResource Line}" Margin="0,0,0,6"/>
+            <Button Classes="side" Click="OnSideNewTab" AutomationProperties.Name="New tab">
+              <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="Ctrl+T" FontSize="10" Foreground="{StaticResource Faint}" VerticalAlignment="Center"/>
+                <TextBlock Classes="icon" Text="{x:Static shared:Icons.Add}" FontSize="14" Margin="0,0,10,0"/>
+                <TextBlock Text="New tab" FontSize="12" VerticalAlignment="Center"/>
+              </DockPanel>
+            </Button>
+            <Button Classes="side" Click="OnSideSettings" AutomationProperties.Name="Settings">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Classes="icon" Text="{x:Static shared:Icons.Settings}" FontSize="14" Margin="0,0,10,0"/>
+                <TextBlock Text="Settings" FontSize="12" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
+          </StackPanel>
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="2">
+              <TextBlock Text="Open tabs" FontSize="11" Foreground="{StaticResource Muted}" Margin="8,0,0,4"/>
+              <ItemsControl x:Name="SideTabs">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Button Classes="side" Classes.current="{Binding IsSelected}" Click="OnSideTab" Tag="{Binding}" AutomationProperties.Name="{Binding Label}">
+                      <StackPanel Orientation="Horizontal">
+                        <Grid Width="14" Margin="0,0,10,0">
+                          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Video}" FontSize="14" IsVisible="{Binding IsProject}"/>
+                          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Home}" FontSize="14" IsVisible="{Binding IsStart}"/>
+                          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Settings}" FontSize="14" IsVisible="{Binding IsSettings}"/>
+                        </Grid>
+                        <TextBlock Text="{Binding Label}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="200"/>
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Text="Recently closed" FontSize="11" Foreground="{StaticResource Muted}" Margin="8,12,0,4"/>
+              <TextBlock x:Name="SideNoneClosed" Text="Projects you close show here, to reopen." FontSize="11" Foreground="{StaticResource Faint}" Margin="8,0,0,0" TextWrapping="Wrap"/>
+              <ItemsControl x:Name="SideClosed">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Button Classes="side" Click="OnSideReopen" Tag="{Binding}" ToolTip.Tip="{Binding Dir}" AutomationProperties.Name="{Binding Name}">
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Classes="icon" Text="{x:Static shared:Icons.Reopen}" FontSize="14" Margin="0,0,10,0"/>
+                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="200"/>
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </Panel>
   </Grid>
 </Window>

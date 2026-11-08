@@ -45,4 +45,8 @@ public static class Icons
     public static readonly string Home = G(62592);
     public static readonly string DismissSmall = G(62311);
     public static readonly string AddSmall = G(61704);
+    public static readonly string Settings = G(63145);
+    public static readonly string PanelLeft = G(59568);
+    public static readonly string Key = G(62646);
+    public static readonly string Reopen = G(61759);
 }

@@ -6,6 +6,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using VideoEditor.Engine;
 using VideoEditor.Projects;
+using VideoEditor.Settings;
 using VideoEditor.Shared;
 
 namespace VideoEditor.Shell;
@@ -32,6 +33,10 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = _vm;
         Tabs.Attach(_vm);
+        Tabs.MenuRequested += () => ShowSidePanel(!SidePanel.IsVisible);
+        SideTabs.ItemsSource = _vm.Tabs;
+        SideClosed.ItemsSource = _vm.RecentlyClosed;
+        _vm.RecentlyClosed.CollectionChanged += (_, _) => SideNoneClosed.IsVisible = _vm.RecentlyClosed.Count == 0;
         _vm.ErrorRaised += message => _ = ShowMessage(message);
         _vm.ConfirmClose = Confirm;
         _vm.TabOpened += OnTabOpened;
@@ -71,6 +76,12 @@ public partial class MainWindow : Window
     {
         Control page;
         if (tab.Project is { } project) page = new ProjectView(project);
+        else if (tab.IsSettings)
+        {
+            var settings = new SettingsScreen();
+            settings.Attach(_vm);
+            page = settings;
+        }
         else
         {
             var start = new ProjectsScreen { DataContext = _vm };
@@ -102,9 +113,54 @@ public partial class MainWindow : Window
         }
     }
 
-    // Ctrl+T new tab, Ctrl+W close it, Ctrl+Tab and Ctrl+Shift+Tab move between tabs.
+    // ------------------------------------------------------------- side panel
+
+    private void ShowSidePanel(bool show)
+    {
+        SideNoneClosed.IsVisible = _vm.RecentlyClosed.Count == 0;
+        SidePanel.IsVisible = show;
+    }
+
+    private void OnSideBackdrop(object? sender, PointerPressedEventArgs e) => ShowSidePanel(false);
+
+    private void OnSideTab(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as Control)?.Tag is AppTab tab) _vm.SelectedTab = tab;
+        ShowSidePanel(false);
+    }
+
+    private async void OnSideReopen(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        ShowSidePanel(false);
+        if ((sender as Control)?.Tag is ClosedProject c) await _vm.ReopenAsync(c);
+    }
+
+    private void OnSideNewTab(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        ShowSidePanel(false);
+        _vm.NewTab();
+    }
+
+    private void OnSideSettings(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        ShowSidePanel(false);
+        _vm.OpenSettings();
+    }
+
+    // Ctrl+T new tab, Ctrl+W close it, Ctrl+Tab and Ctrl+Shift+Tab move between tabs, Ctrl+, settings; Escape closes the side panel.
     private async void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && SidePanel.IsVisible)
+        {
+            ShowSidePanel(false);
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.OemComma && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            _vm.OpenSettings();
+            return;
+        }
         if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
         switch (e.Key)
         {

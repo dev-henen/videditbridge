@@ -11,16 +11,33 @@ using VideoEditor.Shared;
 
 namespace VideoEditor.Shell;
 
-/// <summary>A tab: an open project, or the projects page (a new tab).</summary>
-public sealed class AppTab(ProjectViewModel? project) : Observable
+/// <summary>A tab: an open project, the projects page (a new tab), or the app's settings.</summary>
+public sealed class AppTab : Observable
 {
-    public ProjectViewModel? Project { get; } = project;
-    public bool IsStart => Project is null;
+    public AppTab(ProjectViewModel? project, bool settings = false)
+    {
+        Project = project;
+        IsSettings = settings;
+        if (project is not null)
+            project.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(ProjectViewModel.ProjectName)) Raise(nameof(Label));
+            };
+    }
+
+    public ProjectViewModel? Project { get; }
+    public bool IsSettings { get; }
+    public bool IsStart => Project is null && !IsSettings;
     public bool IsProject => Project is not null;
+    /// <summary>What the tab says: the project's name, "Settings" or "New tab".</summary>
+    public string Label => Project?.ProjectName ?? (IsSettings ? "Settings" : "New tab");
 
     private bool _isSelected;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
 }
+
+/// <summary>A project closed in this or an earlier session, to reopen from the side panel.</summary>
+public sealed record ClosedProject(string Dir, string Name);
 
 /// <summary>
 /// The app: the engine host, the tabs (each project runs on its own, side by side), the projects
@@ -68,9 +85,67 @@ public sealed class AppViewModel : Observable, IDisposable
 
     private void UpdateTitle() => Title = SelectedProject is { } p ? $"{p.ProjectName} | AI Video Editor" : "AI Video Editor";
 
-    public bool ClaudeAvailable { get; private set; }
+    private bool _claudeAvailable;
+    public bool ClaudeAvailable { get => _claudeAvailable; private set => Set(ref _claudeAvailable, value); }
     public IReadOnlyList<ModelOption> Models { get; private set; } = [new("claude-opus-5-5", "Opus 5.5", "Most capable, for full edits")];
-    public ModelOption DefaultModel => Models[0];
+    private string? _defaultModelId;
+    /// <summary>The model new conversations start with (the settings' choice, else the first).</summary>
+    public ModelOption DefaultModel => Models.FirstOrDefault(m => m.Id == _defaultModelId) ?? Models[0];
+
+    /// <summary>Projects closed lately, newest first, to reopen from the side panel (kept with the open tabs).</summary>
+    public ObservableCollection<ClosedProject> RecentlyClosed { get; } = [];
+    private const int RecentlyClosedKept = 10;
+
+    private void Remember(ProjectViewModel p)
+    {
+        foreach (var same in RecentlyClosed.Where(c => SamePath(c.Dir, p.Dir)).ToList()) RecentlyClosed.Remove(same);
+        RecentlyClosed.Insert(0, new ClosedProject(p.Dir, p.ProjectName));
+        while (RecentlyClosed.Count > RecentlyClosedKept) RecentlyClosed.RemoveAt(RecentlyClosed.Count - 1);
+    }
+
+    /// <summary>Reopen a closed project (in place of the projects page when that is the open tab).</summary>
+    public async Task ReopenAsync(ClosedProject c)
+    {
+        await OpenProjectAsync(c.Dir, SelectedTab is { IsStart: true } ? SelectedTab : null);
+        if (TabOf(c.Dir) is not null) RecentlyClosed.Remove(c);
+        SaveTabs();
+    }
+
+    /// <summary>Go to the settings tab, opening it if needed.</summary>
+    public void OpenSettings()
+    {
+        var tab = Tabs.FirstOrDefault(t => t.IsSettings);
+        if (tab is null)
+        {
+            tab = new AppTab(null, settings: true);
+            Tabs.Add(tab);
+            TabOpened?.Invoke(tab);
+        }
+        SelectedTab = tab;
+    }
+
+    /// <summary>The app's settings from the host (the API key hidden), with its folders.</summary>
+    public Task<JsonNode?> GetSettingsAsync() => Engine.CallAsync("settings.get");
+
+    /// <summary>Change settings; they apply at once (Claude's availability and the default model follow).</summary>
+    public async Task<JsonNode?> SetSettingsAsync(object changes)
+    {
+        var r = await Engine.CallAsync("settings.set", changes);
+        if (r?["claudeAvailable"]?.GetValue<bool>() is { } available && available != ClaudeAvailable)
+        {
+            ClaudeAvailable = available;
+            foreach (var t in Tabs) t.Project?.RefreshClaude();
+        }
+        if (r?["defaultModel"]?.GetValue<string>() is { } model)
+        {
+            _defaultModelId = model;
+            Raise(nameof(DefaultModel));
+        }
+        return r;
+    }
+
+    /// <summary>Run the performance test again (the renderer on "Automatic" follows it).</summary>
+    public Task<JsonNode?> RunPerformanceTestAsync() => Engine.CallAsync("performance.run");
 
     private string? _engineError;
     public string? EngineError { get => _engineError; private set => Set(ref _engineError, value, nameof(EngineError), nameof(HasEngineError)); }
@@ -109,6 +184,7 @@ public sealed class AppViewModel : Observable, IDisposable
                 .Select(m => new ModelOption(m!["id"]!.GetValue<string>(), m["label"]!.GetValue<string>(), m["description"]?.GetValue<string>() ?? ""))
                 .ToList();
             if (models is { Count: > 0 }) Models = models;
+            _defaultModelId = info?["defaultModel"]?.GetValue<string>();
             Raise(nameof(ClaudeAvailable));
             Raise(nameof(Models));
             await RefreshProjectsAsync();
@@ -190,10 +266,10 @@ public sealed class AppViewModel : Observable, IDisposable
         _ = project.LoadConversationAsync();
     }
 
-    /// <summary>Close a tab; a project is saved and left with a cover. The last tab becomes the projects page.</summary>
     /// <summary>Ask whether to close a project anyway (the message says what would stop); the window shows the question.</summary>
     public Func<string, Task<bool>>? ConfirmClose { get; set; }
 
+    /// <summary>Close a tab; a project is saved, left with a cover and remembered under recently closed. The last tab becomes the projects page.</summary>
     public async Task CloseTabAsync(AppTab tab)
     {
         // Edits are saved as they happen; what closing would stop is work under way, so ask first.
@@ -201,7 +277,11 @@ public sealed class AppViewModel : Observable, IDisposable
             && !await confirm($"{busy} in \"{busyProject.ProjectName}\". Close it anyway? Edits so far are saved; the work under way stops."))
             return;
         if (!Tabs.Contains(tab)) return; // closed meanwhile
-        if (tab.Project is { } p) await p.CloseAsync();
+        if (tab.Project is { } p)
+        {
+            await p.CloseAsync();
+            Remember(p);
+        }
         Remove(tab);
         if (Tabs.Count == 0) NewTab();
         _ = Guard(RefreshProjectsAsync);
@@ -226,7 +306,8 @@ public sealed class AppViewModel : Observable, IDisposable
         try
         {
             var open = Tabs.Where(t => t.Project is not null).Select(t => t.Project!.Dir).ToArray();
-            File.WriteAllText(file, JsonSerializer.Serialize(new { open, selected = SelectedProject?.Dir }));
+            var closed = RecentlyClosed.Select(c => new { dir = c.Dir, name = c.Name }).ToArray();
+            File.WriteAllText(file, JsonSerializer.Serialize(new { open, selected = SelectedProject?.Dir, closed }));
         }
         catch { /* only a convenience */ }
     }
@@ -242,6 +323,10 @@ public sealed class AppViewModel : Observable, IDisposable
                 var saved = JsonNode.Parse(await File.ReadAllTextAsync(file));
                 dirs.AddRange(saved?["open"]?.AsArray().Select(d => d!.GetValue<string>()).Where(d => File.Exists(Path.Combine(d, "project.json"))) ?? []);
                 selected = saved?["selected"]?.GetValue<string>();
+                RecentlyClosed.Clear();
+                foreach (var c in saved?["closed"]?.AsArray() ?? [])
+                    if (c?["dir"]?.GetValue<string>() is { } d && File.Exists(Path.Combine(d, "project.json")))
+                        RecentlyClosed.Add(new ClosedProject(d, c["name"]?.GetValue<string>() ?? Path.GetFileName(d)));
             }
         }
         catch { /* a damaged file just means no tabs to restore */ }

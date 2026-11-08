@@ -60,6 +60,13 @@ export function hardwareTestArgs(encoder: HardwareEncoder): string[] {
 
 const detected = new Map<string, Promise<HardwareEncoder | undefined>>();
 
+let hardwareAllowed = true;
+
+/** Turn encoding on the graphics card on or off for every render (the app's settings); on by default. */
+export function setHardwareEncoding(on: boolean): void {
+  hardwareAllowed = on;
+}
+
 /**
  * The first hardware H.264 encoder that works on this machine, or undefined. Each candidate for this
  * system is tried with a tiny test encode, since a build can list an encoder whose driver or device
@@ -67,6 +74,7 @@ const detected = new Map<string, Promise<HardwareEncoder | undefined>>();
  * rest of the process.
  */
 export function detectHardwareEncoder(opts: FfmpegOptions = {}): Promise<HardwareEncoder | undefined> {
+  if (!hardwareAllowed) return Promise.resolve(undefined);
   const key = opts.ffmpegPath ?? "";
   let found = detected.get(key);
   if (!found) {

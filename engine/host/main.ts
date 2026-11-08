@@ -10,7 +10,7 @@
  *
  * Requests: host.info, project.list, project.create, project.open, project.close, project.focus,
  *           project.importMedia, state.get, tools.list, tools.execute, session.undo, session.redo,
- *           render.scrub, render.play, render.stop, render.matte, render.scopes, choices.dismiss, chat.list, chat.current, chat.open, chat.new, chat.rename, chat.delete,
+ *           render.scrub, render.play, render.stop, render.matte, render.scopes, settings.get, settings.set, choices.dismiss, chat.list, chat.current, chat.open, chat.new, chat.rename, chat.delete,
  *           agent.run, agent.cancel, performance.get, performance.run
  * Notifications (each with `project`): state, activity, agent.text, agent.end, log, project.cover, and
  * project.opened / project.closed when remote control opens or closes a project, so the app shows it.
@@ -39,6 +39,8 @@ import { deleteConversation, listConversations, loadConversation, newConversatio
 import { COVER_FILE, ProjectStore } from "./projects.js";
 import { RpcError, StdioRpc, serveLocal, type Handler } from "./rpc.js";
 import { HOST_INFO_FILE } from "./remote.js";
+import { applySettings, loadSettings, publicSettings, saveSettings } from "./settings.js";
+import { appDir, defaultFontsDir, defaultModelsDir } from "../tools/appdirs.js";
 
 // stdout is the protocol channel: route stray console output to stderr.
 console.log = console.error;
@@ -86,7 +88,7 @@ const handlers: Record<string, Handler> = {
     projectsDir: store.root,
     claudeAvailable: !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_PROFILE),
     models: AGENT_MODELS,
-    defaultModel: DEFAULT_MODEL,
+    defaultModel: settings.defaultModel && MODELS.includes(settings.defaultModel) ? settings.defaultModel : DEFAULT_MODEL,
     // Transcription and narration run on this machine; no service or key is involved.
     transcriptionAvailable: true,
     voiceAvailable: true,
@@ -255,6 +257,23 @@ const handlers: Record<string, Handler> = {
 
   // The performance test the app runs on first start: which renderer (processor or graphics card)
   // becomes the default for this machine. null until it has run.
+  /** The Settings tab: what is set (the API key hidden), and the folders the app uses. */
+  "settings.get": async () => ({ ...publicSettings(settings), projectsDir: store.root, cacheDir: appDir("cache"), dataDir: appDir("data"), modelsDir: defaultModelsDir(), fontsDir: defaultFontsDir(), performance: (await loadPerformance()) ?? null }),
+  /** Change settings (apiKey "" removes the stored key); they apply at once and are saved for next time. */
+  "settings.set": async (p) => {
+    const next = { ...settings };
+    if (typeof p.apiKey === "string") next.apiKey = p.apiKey.trim() || undefined;
+    if (typeof p.defaultModel === "string" && MODELS.includes(p.defaultModel)) next.defaultModel = p.defaultModel;
+    if (p.renderer === "auto" || p.renderer === "engine" || p.renderer === "ffmpeg") next.renderer = p.renderer;
+    if (typeof p.hardwareEncoding === "boolean") next.hardwareEncoding = p.hardwareEncoding;
+    const keyChanged = next.apiKey !== settings.apiKey;
+    settings = next;
+    await saveSettings(settings);
+    await applySettings(settings);
+    // A new key: Claude's clients are made again on the next request (conversations carry on).
+    if (keyChanged) for (const o of open.values()) if (!o.agent?.running) o.agent = undefined;
+    return { ...publicSettings(settings), claudeAvailable: !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_PROFILE) };
+  },
   "performance.get": async () => (await loadPerformance()) ?? null,
   "performance.run": () => (testing ??= runPerformanceTest().finally(() => (testing = undefined))),
 };
@@ -273,7 +292,8 @@ async function runPerformanceTest(): Promise<PerformanceReport> {
     },
   });
   await savePerformance(report);
-  applyPerformance(report);
+  // A renderer picked in the settings stays; "auto" follows the test.
+  if (settings.renderer === "auto") applyPerformance(report);
   return report;
 }
 const rpc = new StdioRpc(handlers);
@@ -600,8 +620,9 @@ const stop = () =>
   })());
 for (const signal of ["SIGTERM", "SIGHUP", "SIGINT"] as const) process.on(signal, () => void stop());
 
-// Renders use the renderer the performance test chose for this machine.
-applyPerformance(await loadPerformance());
+// The app's settings: the API key, the renderer (by default what the performance test chose), hardware encoding.
+let settings = await loadSettings();
+await applySettings(settings);
 
 // FFmpeg builds differ per platform; say early (on stderr, the host log) when this one lacks something.
 void checkFfmpeg()

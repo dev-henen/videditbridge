@@ -31,7 +31,6 @@ public partial class TabStrip : UserControl
     {
         _vm = vm;
         TabList.ItemsSource = vm.Tabs;
-        TabMenu.ItemsSource = vm.Tabs;
         vm.Tabs.CollectionChanged += (_, _) => FitTabs();
         FitTabs();
     }
@@ -47,12 +46,10 @@ public partial class TabStrip : UserControl
         TabWidth = Math.Round(Math.Clamp(room / count - Gap, MinTab, MaxTab));
     }
 
-    private void OnMenuTab(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Control { Tag: AppTab tab }) return;
-        _vm.SelectedTab = tab;
-        TabMenuButton.Flyout?.Hide();
-    }
+    /// <summary>The menu button: the window opens or closes the side panel.</summary>
+    public event Action? MenuRequested;
+
+    private void OnMenu(object? sender, RoutedEventArgs e) => MenuRequested?.Invoke();
 
     private void OnTabPressed(object? sender, PointerPressedEventArgs e)
     {

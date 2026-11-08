@@ -46,7 +46,7 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     dir = await mkdtemp(path.join(tmpdir(), "ave-host-"));
     const tsx = path.resolve("node_modules/tsx/dist/cli.mjs");
     // No key: Claude is unavailable, so requests fail the same way on every machine.
-    const env = { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_PROFILE: "" };
+    const env = { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_PROFILE: "", AVE_SETTINGS_FILE: path.join(dir, "settings.json") };
     const proc = spawn(process.execPath, [tsx, "engine/host/main.ts", "--projects-dir", dir], { stdio: "pipe", env });
     host = new HostClient(proc);
   });
@@ -130,6 +130,26 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     await host.call("session.undo");
     await host.call("session.undo");
     expect((await host.call<{ clips: unknown[] }>("state.get")).clips).toHaveLength(0);
+  });
+
+  it("keeps the app's settings: the API key hidden, the renderer and hardware encoding, saved for next time", async () => {
+    type Settings = { renderer: string; hardwareEncoding: boolean; defaultModel: string | null; apiKey: { set: boolean; hint?: string; source?: string }; projectsDir: string; modelsDir: string };
+    const before = await host.call<Settings>("settings.get");
+    expect(before.apiKey.set).toBe(false);
+    expect(before.renderer).toBe("auto");
+    expect(before.projectsDir).toBe(dir);
+    const models = (await host.call<{ models: { id: string }[] }>("host.info")).models;
+    const set = await host.call<Settings & { claudeAvailable: boolean }>("settings.set", { apiKey: "sk-ant-test-0000-1234", renderer: "ffmpeg", hardwareEncoding: false, defaultModel: models.at(-1)!.id });
+    // The key is never sent back, only its last four characters.
+    expect(set.apiKey).toEqual({ set: true, hint: "…1234", source: "settings" });
+    expect(set.claudeAvailable).toBe(true);
+    expect((await host.call<{ claudeAvailable: boolean; defaultModel: string }>("host.info")).defaultModel).toBe(models.at(-1)!.id);
+    const saved = JSON.parse(await readFile(path.join(dir, "settings.json"), "utf8")) as { renderer: string; hardwareEncoding: boolean };
+    expect(saved).toMatchObject({ renderer: "ffmpeg", hardwareEncoding: false });
+    // Removing the key: Claude is unavailable again.
+    const removed = await host.call<Settings & { claudeAvailable: boolean }>("settings.set", { apiKey: "", renderer: "auto", hardwareEncoding: true });
+    expect(removed.apiKey.set).toBe(false);
+    expect(removed.claudeAvailable).toBe(false);
   });
 
   it("renders the viewer's matte and the Review tab's scopes", async () => {

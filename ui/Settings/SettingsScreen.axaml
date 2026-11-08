@@ -1,0 +1,132 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:shared="using:VideoEditor.Shared"
+             x:Class="VideoEditor.Settings.SettingsScreen">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{StaticResource Text}"/>
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Width" Value="130"/>
+    </Style>
+    <Style Selector="TextBlock.note">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="{StaticResource Faint}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{StaticResource Panel}"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="14,12"/>
+    </Style>
+  </UserControl.Styles>
+
+  <!-- The app's settings, in a tab of their own. Changes apply at once; the host keeps them for next time. -->
+  <DockPanel Background="{StaticResource Bg}">
+    <Border DockPanel.Dock="Top" Background="{StaticResource Toolbar}" Padding="12,4,8,4" MinHeight="34">
+      <TextBlock Text="Settings" FontWeight="SemiBold" VerticalAlignment="Center"/>
+    </Border>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="24,20,24,24" MaxWidth="640" HorizontalAlignment="Left" Spacing="14">
+
+        <!-- Claude: the key it edits with, and the model new conversations start with -->
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="section" Text="Claude"/>
+            <TextBlock x:Name="KeyStatus" FontSize="12" Foreground="{StaticResource Text}" TextWrapping="Wrap"/>
+            <DockPanel>
+              <TextBlock Classes="label" DockPanel.Dock="Left" Text="API key"/>
+              <Button x:Name="RemoveKeyButton" DockPanel.Dock="Right" Click="OnRemoveKey" Margin="6,0,0,0" ToolTip.Tip="Remove the stored key" AutomationProperties.Name="Remove the stored key">
+                <TextBlock Text="Remove" FontSize="12"/>
+              </Button>
+              <Button DockPanel.Dock="Right" Classes="primary" Click="OnSaveKey" Margin="6,0,0,0" AutomationProperties.Name="Save the API key">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Classes="icon" Text="{x:Static shared:Icons.Key}" FontSize="13" Foreground="{StaticResource OnAccent}" Margin="0,0,6,0"/>
+                  <TextBlock Text="Save" FontSize="12" Foreground="{StaticResource OnAccent}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </StackPanel>
+              </Button>
+              <TextBox x:Name="KeyBox" PasswordChar="•" Watermark="Anthropic API key (sk-ant-...)" AutomationProperties.Name="Anthropic API key"/>
+            </DockPanel>
+            <TextBlock x:Name="KeyNote" Classes="note"/>
+            <DockPanel>
+              <TextBlock Classes="label" DockPanel.Dock="Left" Text="Default model"/>
+              <ComboBox x:Name="ModelBox" MinWidth="260" SelectionChanged="OnModelChanged" AutomationProperties.Name="Default model">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <StackPanel>
+                      <TextBlock Text="{Binding Label}" FontSize="12"/>
+                      <TextBlock Text="{Binding Description}" FontSize="10" Foreground="{StaticResource Faint}"/>
+                    </StackPanel>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </DockPanel>
+            <TextBlock Classes="note" Text="New conversations start with this model; each conversation keeps the one it was given."/>
+          </StackPanel>
+        </Border>
+
+        <!-- Rendering: which renderer draws the picture, and encoding on the graphics card -->
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="section" Text="Rendering"/>
+            <DockPanel>
+              <TextBlock Classes="label" DockPanel.Dock="Left" Text="Renderer"/>
+              <ComboBox x:Name="RendererBox" MinWidth="260" SelectionChanged="OnRendererChanged" AutomationProperties.Name="Renderer">
+                <ComboBoxItem Tag="auto" Content="Automatic (from the performance test)"/>
+                <ComboBoxItem Tag="engine" Content="GPU engine (FFmpeg if it fails)"/>
+                <ComboBoxItem Tag="ffmpeg" Content="FFmpeg only"/>
+              </ComboBox>
+            </DockPanel>
+            <DockPanel>
+              <Button x:Name="TestButton" DockPanel.Dock="Right" Click="OnRunTest" Margin="8,0,0,0" VerticalAlignment="Top" AutomationProperties.Name="Run the performance test">
+                <StackPanel Orientation="Horizontal">
+                  <TextBlock Classes="icon" Text="{x:Static shared:Icons.Sync}" FontSize="13" Margin="0,0,6,0"/>
+                  <TextBlock Text="Test again" FontSize="12" VerticalAlignment="Center"/>
+                </StackPanel>
+              </Button>
+              <TextBlock x:Name="PerformanceText" Classes="note" VerticalAlignment="Center"/>
+            </DockPanel>
+            <CheckBox x:Name="HardwareBox" IsCheckedChanged="OnHardwareChanged" AutomationProperties.Name="Encode exports on the graphics card">
+              <TextBlock Text="Encode exports on the graphics card when one works (faster; 10-bit and ProRes exports always encode in software)" FontSize="12" TextWrapping="Wrap"/>
+            </CheckBox>
+          </StackPanel>
+        </Border>
+
+        <!-- Folders the app uses -->
+        <Border Classes="card">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="section" Text="Folders"/>
+            <ItemsControl x:Name="FolderList">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <DockPanel Margin="0,3">
+                    <TextBlock Classes="label" DockPanel.Dock="Left" Text="{Binding Name}"/>
+                    <Button DockPanel.Dock="Right" Click="OnOpenFolder" Tag="{Binding Path}" Margin="8,0,0,0" ToolTip.Tip="Open this folder" AutomationProperties.Name="{Binding Name}">
+                      <StackPanel Orientation="Horizontal">
+                        <TextBlock Classes="icon" Text="{x:Static shared:Icons.FolderOpen}" FontSize="13" Margin="0,0,6,0"/>
+                        <TextBlock Text="Open" FontSize="12" VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Button>
+                    <SelectableTextBlock Text="{Binding Path}" FontSize="11" Foreground="{StaticResource Muted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  </DockPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="6">
+            <TextBlock Classes="section" Text="About"/>
+            <TextBlock x:Name="AboutText" Classes="note"/>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</UserControl>

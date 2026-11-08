@@ -115,7 +115,7 @@ public sealed class ProjectViewModel : Observable
     public bool CanAsk => ClaudeAvailable && !AgentRunning;
     public string AskHint => ClaudeAvailable
         ? "Ask Claude to edit, for example “cut this into a 30 second trailer”"
-        : "Set ANTHROPIC_API_KEY and restart to let Claude edit";
+        : "Add an Anthropic API key in Settings (the menu at the top left) to let Claude edit";
 
     // ---------------------------------------------------------------- conversations
 

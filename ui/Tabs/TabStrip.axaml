@@ -38,28 +38,9 @@
 
   <!-- Empty space lets clicks through to the title bar, so it still moves the window -->
   <DockPanel Margin="6,0,0,0">
-    <!-- Every open tab, to jump to one -->
-    <Button x:Name="TabMenuButton" DockPanel.Dock="Left" Classes="chrome" ToolTip.Tip="All tabs" AutomationProperties.Name="All tabs" Margin="0,2,6,0">
-      <TextBlock Classes="icon" Text="{x:Static shared:Icons.ChevronDown}" FontSize="13"/>
-      <Button.Flyout>
-        <Flyout Placement="BottomEdgeAlignedLeft">
-          <ItemsControl x:Name="TabMenu" Width="260" Margin="-6">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate>
-                <Button Click="OnMenuTab" Tag="{Binding}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="8,6">
-                  <DockPanel>
-                    <TextBlock DockPanel.Dock="Left" Classes="icon" Text="{x:Static shared:Icons.Video}" FontSize="13" Foreground="{StaticResource Muted}" Margin="0,0,8,0"
-                               IsVisible="{Binding IsProject}"/>
-                    <TextBlock DockPanel.Dock="Left" Classes="icon" Text="{x:Static shared:Icons.Home}" FontSize="13" Foreground="{StaticResource Muted}" Margin="0,0,8,0"
-                               IsVisible="{Binding IsStart}"/>
-                    <TextBlock Text="{Binding Project.ProjectName, FallbackValue='New tab'}" TextTrimming="CharacterEllipsis"/>
-                  </DockPanel>
-                </Button>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </Flyout>
-      </Button.Flyout>
+    <!-- The side panel: open tabs, recently closed projects, settings -->
+    <Button x:Name="MenuButton" DockPanel.Dock="Left" Classes="chrome" Click="OnMenu" ToolTip.Tip="Menu: tabs, recently closed, settings" AutomationProperties.Name="Menu" Margin="0,2,6,0">
+      <TextBlock Classes="icon" Text="{x:Static shared:Icons.PanelLeft}" FontSize="14"/>
     </Button>
 
     <!-- Tabs share the row: each as wide as fits, from 232 px down to a minimum, then the row scrolls -->
@@ -80,12 +61,13 @@
                   </Button>
                   <Grid DockPanel.Dock="Left" Width="16" Margin="0,0,9,0" VerticalAlignment="Center">
                     <TextBlock Classes="icon" Text="{x:Static shared:Icons.Home}" FontSize="14" Foreground="{StaticResource Muted}" IsVisible="{Binding IsStart}"/>
+                    <TextBlock Classes="icon" Text="{x:Static shared:Icons.Settings}" FontSize="14" Foreground="{StaticResource Muted}" IsVisible="{Binding IsSettings}"/>
                     <TextBlock Classes="icon" Text="{x:Static shared:Icons.Video}" FontSize="14" Foreground="{StaticResource Muted}"
                                IsVisible="{Binding Project.IsBusy, Converter={x:Static BoolConverters.Not}, FallbackValue=False}"/>
                     <TextBlock Classes="icon spin" Text="{x:Static shared:Icons.Sync}" FontSize="14" Foreground="{StaticResource Accent}"
                                IsVisible="{Binding Project.IsBusy, FallbackValue=False}" ToolTip.Tip="{Binding Project.StatusText}"/>
                   </Grid>
-                  <TextBlock Classes="title" Text="{Binding Project.ProjectName, FallbackValue='New tab'}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Classes="title" Text="{Binding Label}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </DockPanel>
               </Border>
             </DataTemplate>
