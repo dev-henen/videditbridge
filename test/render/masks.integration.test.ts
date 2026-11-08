@@ -31,7 +31,7 @@ describe.skipIf(!hasFfmpeg)("blend modes and masks", () => {
   it("screen and add of a black layer leave the picture as it was", async () => {
     const plain = base({ type: "image", src: halves });
     const before = await frameOf(plain);
-    for (const blend of ["screen", "add"] as const) {
+    for (const blend of ["screen", "add", "addlight", "screenlight"] as const) {
       let p = addAsset(plain, { type: "color", id: "black", color: "#000000" });
       p = addLayer(p, { type: "media", assetId: "black", start: 0, duration: 1, size: { width: 0.5, height: 0.5 }, blend });
       const after = await frameOf(p);
@@ -50,6 +50,21 @@ describe.skipIf(!hasFfmpeg)("blend modes and masks", () => {
     const inside = px(f, 80, 90);
     [128, 64, 32].forEach((v, c) => expect(Math.abs(inside[c]! - v)).toBeLessThanOrEqual(3));
     px(f, 240, 90).forEach((v) => expect(Math.abs(v - 128)).toBeLessThanOrEqual(1));
+  });
+
+  it("adds and screens in linear light, keeping midtones", async () => {
+    for (const [blend, plain] of [["addlight", "add"], ["screenlight", "screen"]] as const) {
+      let p = base({ type: "color", color: "#808080" });
+      p = addAsset(p, { type: "color", id: "glow", color: "#404040" });
+      const at = (b: string) => addLayer(p, { type: "media", assetId: "glow", start: 0, duration: 1, size: { width: 1, height: 1 }, blend: b as never });
+      const [light, flat] = [px(await frameOf(at(blend)), 160, 90)[0]!, px(await frameOf(at(plain)), 160, 90)[0]!];
+      // Linear light: (128/255)^2.4 and (64/255)^2.4 added (or screened) and back through 1/2.4.
+      const [a, b] = [(128 / 255) ** 2.4, (64 / 255) ** 2.4];
+      const expected = 255 * (blend === "addlight" ? Math.min(1, a + b) : 1 - (1 - a) * (1 - b)) ** (1 / 2.4);
+      expect(Math.abs(light - expected), blend).toBeLessThanOrEqual(3);
+      // Plain add and screen lift the midtone far more.
+      expect(flat - light, blend).toBeGreaterThan(20);
+    }
   });
 
   it("a hue key selects the blue half and nothing else", async () => {

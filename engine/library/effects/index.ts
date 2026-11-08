@@ -2,7 +2,7 @@ import { z } from "zod";
 import { MaskSchema, type Easing, type Effect } from "../../core/schema.js";
 import { easeValue } from "../../core/keyframes.js";
 import { clamp, round3, toFfmpegColor } from "../../core/util.js";
-import { bakeColor, define, maskBranch, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
+import { bakeColor, define, labeler, maskBranch, maskedBlend, num, personBlend, rampFilter, SubjectRegionSchema, zoompan, type EffectCategory, type EffectContext, type EffectDefinition } from "./helpers.js";
 import { motionEffects } from "./motion.js";
 import { customEffect } from "./custom.js";
 import { maskIsTemporal, maskNeeds, maskObjects, maskViewFilter, maskedEffect } from "./masks.js";
@@ -373,9 +373,27 @@ export const EFFECTS: EffectDefinition[] = [
     name: "Chromatic Aberration / RGB Split",
     category: "stylize",
     perFrame: true,
-    description: "Offset red and blue channels for a glitchy or lens-distortion look.",
-    params: z.object({ amount: num(6, 0, 50, "Channel offset in pixels") }),
-    toFilter: (p) => `rgbashift=rh=-${Math.round(p.amount)}:bh=${Math.round(p.amount)}`,
+    description:
+      "Color fringes where red, green and blue do not line up. Default: red and blue shifted evenly across the frame, a glitchy RGB split. radial: true is a real lens's fringing instead, none in the center and growing toward the corners (red magnified most, green half as much), for a subtle cinematic or vintage-lens look; keep amount low there (2 to 8).",
+    params: z.object({
+      amount: num(6, 0, 50, "Even shift: channel offset in pixels. Radial: red's offset at the corners of a 1080p frame, in pixels"),
+      radial: z.boolean().default(false).describe("Fringes that grow from the center to the corners, as a lens makes them"),
+    }),
+    toFilter: (p, ctx) => {
+      if (!p.radial) return `rgbashift=rh=-${Math.round(p.amount)}:bh=${Math.round(p.amount)}`;
+      const k = chromaticAberrationRadial(p.amount);
+      const label = labeler(ctx);
+      const [r, g, b, r2, g2] = ["fcr", "fcg", "fcb", "fcR", "fcG"].map((x) => label(x));
+      const fmt = ctx.alpha ? "gbrap" : "gbrp";
+      // Each channel through its own lenscorrection (negative k1 magnifies, so nothing goes black);
+      // planes joined back as G, B, R (and alpha from the untouched blue copy).
+      return [
+        `format=${fmt},split=3[${r}][${g}][${b}]`,
+        `[${r}]lenscorrection=k1=${k[0]}:i=bilinear[${r2}]`,
+        `[${g}]lenscorrection=k1=${k[1]}:i=bilinear[${g2}]`,
+        `[${r2}][${g2}][${b}]mergeplanes=${ctx.alpha ? "0x10210223" : "0x102102"}:${fmt},format=${ctx.alpha ? "yuva420p" : "yuv420p"}`,
+      ].join(";");
+    },
   }),
   define({
     id: "glitch",
@@ -813,4 +831,14 @@ function colorEffects(): EffectDefinition[] {
       toFilter: () => colorFilter({ autoCorrect: true }),
     }),
   ];
+}
+
+/**
+ * Radial chromaticAberration's lenscorrection k1 for red, green and blue: red's offset at the
+ * corners is `amount` pixels of a 1080p frame's half diagonal (lenscorrection's r^2 is 1 there),
+ * green's half that, blue's none. The same for every frame size.
+ */
+export function chromaticAberrationRadial(amount: number): [number, number, number] {
+  const k = -amount / (Math.hypot(1920, 1080) / 2);
+  return [Math.round(k * 1e5) / 1e5, Math.round((k / 2) * 1e5) / 1e5, 0];
 }

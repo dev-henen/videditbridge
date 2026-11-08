@@ -597,11 +597,12 @@ _No parameters._
 
 ### chromaticAberration
 
-**Chromatic Aberration / RGB Split**. Offset red and blue channels for a glitchy or lens-distortion look.
+**Chromatic Aberration / RGB Split**. Color fringes where red, green and blue do not line up. Default: red and blue shifted evenly across the frame, a glitchy RGB split. radial: true is a real lens's fringing instead, none in the center and growing toward the corners (red magnified most, green half as much), for a subtle cinematic or vintage-lens look; keep amount low there (2 to 8).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `amount` | number |  | `6` | Channel offset in pixels (≥ 0, ≤ 50) |
+| `amount` | number |  | `6` | Even shift: channel offset in pixels. Radial: red's offset at the corners of a 1080p frame, in pixels (≥ 0, ≤ 50) |
+| `radial` | boolean |  | `false` | Fringes that grow from the center to the corners, as a lens makes them |
 
 ### glitch
 

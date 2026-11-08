@@ -25,7 +25,7 @@ Movie-level color grading and the visual effects editors ask for most: log foota
 ### Left
 
 - [x] 1. **Rust kernels:** cancelling and progress inside them (`TaskControl` and `controlled`, section 3.5).
-- [ ] 2. **Effect gaps:** radial `chromaticAberration` (4.4) and linear-light `add` and `screen` blending (5.1).
+- [x] 2. **Effect gaps:** radial `chromaticAberration` (4.4) and linear-light `add` and `screen` blending (5.1).
 - [ ] 3. **Mask shapes:** polygons, keyframes, and shapes pinned to a track (3.2).
 - [ ] 4. **`replace_screen`:** the insert's matched blur, glare and color, and occlusion by an object mask (5.4).
 - [ ] 5. **FFmpeg backend precision** (3.3): the 10-bit pipeline, 16-bit masks, `gbrp16le` RGB stages, ProRes 422 HQ export and a 10-bit segment cache.
@@ -93,7 +93,7 @@ Matches each scene's shots to a hero clip or a still: an Oklab transfer, Reinhar
 
 ### 4.4 Film looks (`apply_look`)
 
-Effects `halation`, `bloom`, `anamorphicFlare`, `filmGrain` (seeded, by stock), `gateWeave`, `printFilm`, `lensDistortion`, plus `letterbox`; sizes relative to the frame. Six look presets in `engine/library/looks` (data). Names describe a character, never a film stock. Left (checklist 2): radial `chromaticAberration` (the existing one shifts channels evenly).
+Effects `halation`, `bloom`, `anamorphicFlare`, `filmGrain` (seeded, by stock), `gateWeave`, `printFilm`, `lensDistortion`, plus `letterbox`; sizes relative to the frame. Six look presets in `engine/library/looks` (data). Names describe a character, never a film stock. `chromaticAberration` with `radial: true` is a lens's fringing: `lenscorrection` on each RGB plane (red magnified most, green half, blue not), none in the center and growing toward the corners; without it the channels shift evenly.
 
 ### 4.5 Export a grade (`export_lut`)
 
@@ -103,7 +103,7 @@ A clip's grade as a 33- or 65-point `.cube` for Resolve, Premiere or a monitor; 
 
 ### 5.1 Blend modes
 
-`layers[].blend`: `normal`, `screen`, `add`, `multiply`, `overlay`, `softlight`, `lighten`, `darken`, `colordodge`, `difference`, on both renderers; screen and add of black change nothing. Left (checklist 2): linear-light `add` and `screen`.
+`layers[].blend`: `normal`, `screen`, `add`, `multiply`, `overlay`, `softlight`, `lighten`, `darken`, `colordodge`, `difference`, and the linear-light `addlight` and `screenlight` (both values through display gamma 2.4, added or screened, and back: one `lut2` table per channel on FFmpeg, the same math on the engine), on both renderers; a black layer changes nothing in any of the four.
 
 ### 5.2 Any object (`select_object`, `track_object`)
 

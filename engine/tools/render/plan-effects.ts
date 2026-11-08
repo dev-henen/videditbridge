@@ -1,6 +1,6 @@
 import type { Effect } from "../../core/schema.js";
 import { round3 } from "../../core/util.js";
-import { getEffect, haldClutChain, type EffectContext } from "../../library/effects/index.js";
+import { chromaticAberrationRadial, getEffect, haldClutChain, type EffectContext } from "../../library/effects/index.js";
 import { GLOWS, gateWeave, glowKeep, glowOpacity, glowSigmas, grainSpec, lensDistortion } from "../../library/effects/film.js";
 import { bokehOrbs, glowEffect, lightLeakSpeeds, lightRays } from "../../library/effects/motion.js";
 import { lightCanvas } from "../../library/effects/helpers.js";
@@ -59,8 +59,8 @@ export type PlanOp =
    * frame of the piece (the last holds).
    */
   | { op: "warp"; maps: [number, number, number, number, number, number, number, number][]; cubic: boolean }
-  /** FFmpeg's lenscorrection (bilinear) about the center: radius scaled by 1 + k1 r^2 + k2 r^4, black outside. */
-  | { op: "lens"; k1: number; k2: number }
+  /** FFmpeg's lenscorrection (bilinear) about the center: radius scaled by 1 + k1 r^2 + k2 r^4, black outside; with `rgb`, each RGB plane on its own with its k1 (k2 0). */
+  | { op: "lens"; k1: number; k2: number; rgb?: [number, number, number] }
   /**
    * lightRays: at `size`, the highlight curve (a table), six passes each averaging the picture with
    * a copy scaled to [width, height] and cropped at [x, y], per-channel levels (a table), scaled up,
@@ -207,6 +207,8 @@ function effectSteps(e: Effect, ctx: EffectContext, frames: number, time: FrameT
       return [{ op: "bars", height: Math.max(0, Math.floor((H - visible) / 2)) }];
     }
     case "chromaticAberration": {
+      // Radial: lenscorrection on each RGB plane (8-bit), k1 per channel.
+      if (p.radial) return [{ op: "lens", k1: 0, k2: 0, rgb: chromaticAberrationRadial(p.amount as number) }];
       const a = Math.round(p.amount as number);
       return [{ op: "shift", red: [-a, 0], green: [0, 0], blue: [a, 0] }];
     }

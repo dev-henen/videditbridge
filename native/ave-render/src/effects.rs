@@ -277,7 +277,10 @@ impl<'a> Effects<'a> {
                     let m = maps.get((j.max(0) as usize).min(maps.len().saturating_sub(1))).copied().unwrap_or([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]);
                     pixel(enc, PixelParams { mode: 10, rect: [m[0], m[1], m[2], m[3]], color: [m[4], m[5], m[6], m[7]], uniform: *cubic as u32, ..Default::default() })
                 }
-                Op::Lens { k1, k2 } => pixel(enc, PixelParams { mode: 9, rect: [*k1, *k2, 0.0, 0.0], ..Default::default() }),
+                Op::Lens { k1, k2, rgb } => match rgb {
+                    Some(k) => pixel(enc, PixelParams { mode: 9, color: [k[0], k[1], k[2], 0.0], uniform: 1, ..Default::default() }),
+                    None => pixel(enc, PixelParams { mode: 9, rect: [*k1, *k2, 0.0, 0.0], ..Default::default() }),
+                },
                 Op::Rays { size: [rw, rh], curve, zooms, levels } => {
                     let (rw, rh) = (*rw, *rh);
                     let rows_down = self.named("rays-rows-down", rw, h);

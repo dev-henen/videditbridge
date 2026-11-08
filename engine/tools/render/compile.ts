@@ -133,7 +133,18 @@ export const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
  * FFmpeg blend modes for each layer blend. The picture under the layer is blend's first input, so
  * modes that depend on order (overlay, colordodge) follow the usual definitions with it as the backdrop.
  */
-const BLEND_MODES: Record<Exclude<BlendMode, "normal">, string> = {
+/**
+ * Blends in linear light: both 8-bit values (x the picture, y the layer) through display gamma 2.4
+ * to linear, added or screened there, and back, as one lut2 table per channel (rounded: lut2
+ * truncates). A black layer gives x back exactly. Light adds as light does, so glows and flares
+ * brighten midtones less than plain add and screen. The engine computes the same (layer.wgsl).
+ */
+const LIGHT_BLENDS = {
+  addlight: "255*pow(min(1,pow(x/255,2.4)+pow(y/255,2.4)),1/2.4)+0.5",
+  screenlight: "255*pow(1-(1-pow(x/255,2.4))*(1-pow(y/255,2.4)),1/2.4)+0.5",
+} as const;
+
+const BLEND_MODES: Record<Exclude<BlendMode, "normal" | keyof typeof LIGHT_BLENDS>, string> = {
   screen: "screen",
   add: "addition",
   multiply: "multiply",
@@ -677,7 +688,9 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         g.add(`[${placed}]format=gbrp[${color}]`);
         // Nearest-neighbor chroma both ways makes the round trip exact, so a black screen layer changes nothing.
         g.add(`[${under}]scale=flags=neighbor,format=gbrp[${top}]`);
-        g.add(`[${top}][${color}]blend=all_mode=${BLEND_MODES[layer.blend]}:${enable},scale=flags=neighbor,format=yuv420p[${mixed}]`);
+        const light = LIGHT_BLENDS[layer.blend as keyof typeof LIGHT_BLENDS];
+        const mix = light ? `lut2=c0='${light}':c1='${light}':c2='${light}'` : `blend=all_mode=${BLEND_MODES[layer.blend as keyof typeof BLEND_MODES]}`;
+        g.add(`[${top}][${color}]${mix}:${enable},scale=flags=neighbor,format=yuv420p[${mixed}]`);
       } else {
         g.add(`[${placed}]format=yuv420p[${mixed}]`);
       }

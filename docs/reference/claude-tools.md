@@ -334,7 +334,7 @@ _No parameters._
 | `size.height` | number |  |  | (> 0) |
 | `fit` | "cover" \| "contain" \| "stretch" \| "blur" |  |  | cover = fill & crop, contain = letterbox, stretch = distort, blur = contain over blurred copy |
 | `opacity` | number |  |  | (≥ 0, ≤ 1) |
-| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" |  |  | How the layer mixes with the picture under it. screen and add brighten (fire, sparks, light leaks and flares shot on black: the black disappears), multiply darkens (shadows, paper textures shot on white), overlay and softlight add contrast and texture, lighten and darken keep the brighter or darker pixel, colordodge burns in bright light, difference inverts where the layer is bright |
+| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" \| "addlight" \| "screenlight" |  |  | How the layer mixes with the picture under it. screen and add brighten (fire, sparks, light leaks and flares shot on black: the black disappears); addlight and screenlight do the same in linear light, as light really adds: glows and flares keep the picture's midtones and contrast instead of washing them out, the better choice for realistic light, fire and lens elements; multiply darkens (shadows, paper textures shot on white), overlay and softlight add contrast and texture, lighten and darken keep the brighter or darker pixel, colordodge burns in bright light, difference inverts where the layer is bright |
 | `cornerRadius` | number |  |  | Rounded corners in pixels (phone screens, screenshots) (≥ 0) |
 | `shadow` | number |  |  | Drop shadow in pixels (≥ 0) |
 | `rotateX` | number |  |  | 3D tilt in degrees (+ tips the top away) (≥ -89, ≤ 89) |
@@ -1076,7 +1076,7 @@ _No parameters._
 | `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
 | `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
 | `opacity` | number |  |  | (≥ 0, ≤ 1) |
-| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" |  |  | screen or add for glows and light drawn on black; see update_layer |
+| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" \| "addlight" \| "screenlight" |  |  | screen or add for glows and light drawn on black; see update_layer |
 | `shadow` | number |  |  | Extra soft drop shadow under the whole graphic, in pixels (≥ 0) |
 | `rotateX` | number |  |  | 3D tilt in degrees (≥ -89, ≤ 89) |
 | `rotateY` | number |  |  | 3D turn in degrees (≥ -89, ≤ 89) |
@@ -1124,7 +1124,7 @@ _No parameters._
 | `ground` | number |  |  | Height of the ground line (frame fraction) where falling particles stop; heavyRain splashes there (≥ 0, ≤ 1.5) |
 | `seed` | integer |  | `1` | Another seed gives another, equally random, arrangement; the same seed always draws the same frames (≥ 0, ≤ 1000000) |
 | `opacity` | number |  |  | (≥ 0, ≤ 1) |
-| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" |  |  | Override the preset's blend (screen for light on dark, normal for snow and smoke) |
+| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" \| "addlight" \| "screenlight" |  |  | Override the preset's blend (screen for light on dark, normal for snow and smoke) |
 | `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | Show the particles only where this selects in the picture under them (sky, person, key, luma or shape) |
 | `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |

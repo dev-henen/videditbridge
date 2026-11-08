@@ -107,7 +107,8 @@ pub enum Op {
     /// from output (x, y) to source ((a x + b y + c) / (g x + h y + 1), ...), cubic or linear.
     Warp { maps: Vec<[f32; 8]>, cubic: bool },
     /// FFmpeg's lenscorrection (bilinear) about the center.
-    Lens { k1: f32, k2: f32 },
+    /// With `rgb`: each RGB plane on its own with its own k1 (k2 0), as radial chromaticAberration runs it.
+    Lens { k1: f32, k2: f32, #[serde(default)] rgb: Option<[f32; 3]> },
     /// lightRays (motion.ts): at `size` (a quarter), the highlight curve (a color table), six passes
     /// each averaging the picture with a copy scaled to [width, height] and cropped at [x, y] about
     /// the source, per-channel levels (a table), scaled back up, then blend screen over the picture.
@@ -433,6 +434,8 @@ pub fn blend_mode(name: &str) -> Result<u32, String> {
         "darken" => 7,
         "colordodge" => 8,
         "difference" => 9,
+        "addlight" => 10,
+        "screenlight" => 11,
         _ => return Err(format!("unknown blend mode {name}")),
     })
 }

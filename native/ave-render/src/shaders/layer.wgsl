@@ -26,6 +26,9 @@ fn blend(a: vec3<f32>, b: vec3<f32>, mode: u32) -> vec3<f32> {
         case 7u: { return min(a, b); }
         case 8u: { return select(min(vec3<f32>(1.0), b * (256.0 / 255.0) / max(1.0 - a, vec3<f32>(1e-6))), a, a >= vec3<f32>(1.0)); }
         case 9u: { return abs(a - b); }
+        // addlight and screenlight: through display gamma 2.4 to linear light and back (compile.ts LIGHT_BLENDS).
+        case 10u: { return pow(min(vec3<f32>(1.0), pow(a, vec3<f32>(2.4)) + pow(b, vec3<f32>(2.4))), vec3<f32>(1.0 / 2.4)); }
+        case 11u: { return pow(1.0 - (1.0 - pow(a, vec3<f32>(2.4))) * (1.0 - pow(b, vec3<f32>(2.4))), vec3<f32>(1.0 / 2.4)); }
         default: { return b; }
     }
 }

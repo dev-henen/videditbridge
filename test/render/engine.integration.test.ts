@@ -115,6 +115,17 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
     expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
   }, 120_000);
 
+  it("layers: linear light blends", async () => {
+    let p = base();
+    p = addClip(p, { id: "a", assetId: "talk", duration: 1.4 });
+    p = addLayer(p, { type: "media", assetId: "pic", start: 0.1, duration: 1.2, position: { x: 0.3, y: 0.5 }, size: { width: 0.45 }, blend: "addlight" });
+    p = addLayer(p, { type: "media", assetId: "tall", start: 0.2, duration: 1.1, position: { x: 0.7, y: 0.5 }, size: { width: 0.3, height: 0.8 }, opacity: 0.8, blend: "screenlight" });
+    expect(engineBridged(p)).toEqual([]);
+    const r = await compare("layers-light", p);
+    expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
+    expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
+  }, 60_000);
+
   // One render per effect on the same footage, so a mismatch names its effect.
   const EFFECTS: [string, Record<string, unknown>?][] = [
     ["vibrant"], ["cinematic"], ["tealOrange"], ["warm"], ["moody"], ["faded"], ["bright"],
@@ -129,7 +140,7 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
     ["handheld"], ["vibrate"], ["earthquake"], ["impactShake"], ["shake"], ["tilt"],
     ["smoothZoom"], ["zoomPunch"], ["heartbeat"],
     ["pixelate", { blockSize: 16 }], ["mirror"], ["mirror", { direction: "vertical" }], ["bokeh", { amount: 60 }],
-    ["sharpen", { amount: 1.5 }], ["color", { sharpen: 60, contrast: 10 }], ["zoomBlur", { amount: 60, x: 0.4, y: 0.6 }],
+    ["sharpen", { amount: 1.5 }], ["color", { sharpen: 60, contrast: 10 }], ["chromaticAberration", { amount: 12, radial: true }], ["zoomBlur", { amount: 60, x: 0.4, y: 0.6 }],
   ];
   for (const [type, params] of EFFECTS) {
     it(`effect ${type}`, async () => {

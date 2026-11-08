@@ -108,6 +108,21 @@ fn load(x: i32, y: i32) -> vec4<f32> {
     return textureLoad(src, vec2<i32>(clamp(x, 0, size.x - 1), clamp(y, 0, size.y - 1)), 0);
 }
 
+// lenscorrection's bilinear read at the radius scaled by `mult` (see the lens mode), with black
+// (0 on every RGB plane) outside: for the per-channel lens, each channel takes its own component.
+fn lens_rgb(center: vec2<i32>, off: vec2<f32>, mult: f32, w: i32, h: i32) -> vec4<f32> {
+    let pos = vec2<f32>(center) + off * mult + 0.5;
+    let i = vec2<i32>(floor(pos));
+    if (i.x < 0 || i.x > w - 1 || i.y < 0 || i.y > h - 1) {
+        return vec4<f32>(0.0);
+    }
+    let f = pos - floor(pos);
+    let n = min(i + 1, vec2<i32>(w - 1, h - 1));
+    let top = mix(load(i.x, i.y), load(n.x, i.y), f.x);
+    let bottom = mix(load(i.x, n.y), load(n.x, n.y), f.x);
+    return mix(top, bottom, f.y);
+}
+
 @compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let size = textureDimensions(dst);
@@ -166,17 +181,26 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             let center = vec2<i32>(w / 2, h / 2);
             let off = vec2<f32>(vec2<i32>(x, y) - center);
             let r2 = 4.0 * dot(off, off) / f32(w * w + h * h);
-            let mult = 1.0 + p.rect.x * r2 + p.rect.y * r2 * r2;
-            let pos = vec2<f32>(center) + off * mult + 0.5;
-            let i = vec2<i32>(floor(pos));
-            if (i.x < 0 || i.x > w - 1 || i.y < 0 || i.y > h - 1) {
-                c = vuya_to_rgb(vec4<f32>(128.0 / 255.0, 128.0 / 255.0, 16.0 / 255.0, c.a));
+            if (p.uniform == 1u) {
+                // Each RGB plane on its own (8-bit gbrp planes), k1 per channel in `color`, black
+                // (0) outside per plane.
+                let red = lens_rgb(center, off, 1.0 + p.color.x * r2, w, h).r;
+                let green = lens_rgb(center, off, 1.0 + p.color.y * r2, w, h).g;
+                let blue = lens_rgb(center, off, 1.0 + p.color.z * r2, w, h).b;
+                c = vec4<f32>(red, green, blue, c.a);
             } else {
-                let f = pos - floor(pos);
-                let n = min(i + 1, vec2<i32>(w - 1, h - 1));
-                let top = mix(load(i.x, i.y), load(n.x, i.y), f.x);
-                let bottom = mix(load(i.x, n.y), load(n.x, n.y), f.x);
-                c = vec4<f32>(mix(top, bottom, f.y).rgb, c.a);
+                let mult = 1.0 + p.rect.x * r2 + p.rect.y * r2 * r2;
+                let pos = vec2<f32>(center) + off * mult + 0.5;
+                let i = vec2<i32>(floor(pos));
+                if (i.x < 0 || i.x > w - 1 || i.y < 0 || i.y > h - 1) {
+                    c = vuya_to_rgb(vec4<f32>(128.0 / 255.0, 128.0 / 255.0, 16.0 / 255.0, c.a));
+                } else {
+                    let f = pos - floor(pos);
+                    let n = min(i + 1, vec2<i32>(w - 1, h - 1));
+                    let top = mix(load(i.x, i.y), load(n.x, i.y), f.x);
+                    let bottom = mix(load(i.x, n.y), load(n.x, n.y), f.x);
+                    c = vec4<f32>(mix(top, bottom, f.y).rgb, c.a);
+                }
             }
         }
         case 10u: {

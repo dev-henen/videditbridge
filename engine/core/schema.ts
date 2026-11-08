@@ -244,9 +244,9 @@ export const ClipKeyframesSchema = z
   .describe("Clip properties that change over time (times from the clip's start on the timeline)");
 
 export const BlendModeSchema = z
-  .enum(["normal", "screen", "add", "multiply", "overlay", "softlight", "lighten", "darken", "colordodge", "difference"])
+  .enum(["normal", "screen", "add", "multiply", "overlay", "softlight", "lighten", "darken", "colordodge", "difference", "addlight", "screenlight"])
   .describe(
-    "How the layer mixes with the picture under it. screen and add brighten (fire, sparks, light leaks and flares shot on black: the black disappears), multiply darkens (shadows, paper textures shot on white), overlay and softlight add contrast and texture, lighten and darken keep the brighter or darker pixel, colordodge burns in bright light, difference inverts where the layer is bright",
+    "How the layer mixes with the picture under it. screen and add brighten (fire, sparks, light leaks and flares shot on black: the black disappears); addlight and screenlight do the same in linear light, as light really adds: glows and flares keep the picture's midtones and contrast instead of washing them out, the better choice for realistic light, fire and lens elements; multiply darkens (shadows, paper textures shot on white), overlay and softlight add contrast and texture, lighten and darken keep the brighter or darker pixel, colordodge burns in bright light, difference inverts where the layer is bright",
   );
 
 export const FitSchema = z
