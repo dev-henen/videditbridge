@@ -328,8 +328,38 @@ impl<'a> Effects<'a> {
                 Op::Conv { kernel, rdiv, bias, rgb } => {
                     let n = (kernel.len() as f64).sqrt().round() as u32;
                     let buffer = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("kernel"), contents: bytemuck::cast_slice(kernel), usage: wgpu::BufferUsages::STORAGE });
-                    let u = gpu.uniform(&ConvParams { size: n, rgb: *rgb as u32, rdiv: *rdiv, bias: *bias });
+                    let u = gpu.uniform(&ConvParams { size: n, rgb: *rgb as u32, rdiv: *rdiv, bias: *bias, mode: 0, amount: 0, height: n, scalebits: 0 });
                     gpu.dispatch(enc, &gpu.conv, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding(), buffer.as_entire_binding()], w, h);
+                }
+                Op::Unsharp { size: [mx, my], amount } => {
+                    // unsharp's cascade of two-tap sums (2 x steps of them each way) is a binomial kernel.
+                    let (wx, wy) = (binomial(mx / 2 * 2), binomial(my / 2 * 2));
+                    let kernel: Vec<f32> = wy.iter().flat_map(|a| wx.iter().map(move |b| (a * b) as f32)).collect();
+                    let buffer = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("unsharp"), contents: bytemuck::cast_slice(&kernel), usage: wgpu::BufferUsages::STORAGE });
+                    let scalebits = (mx / 2 + my / 2) * 2;
+                    let u = gpu.uniform(&ConvParams { size: wx.len() as u32, rgb: 0, rdiv: 1.0, bias: 0.0, mode: 1, amount: *amount, height: wy.len() as u32, scalebits });
+                    gpu.dispatch(enc, &gpu.conv, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding(), buffer.as_entire_binding()], w, h);
+                }
+                Op::Mix { branches } => {
+                    // Each branch from the same picture; its 8-bit planes summed, then times 1 / n
+                    // (mix's float wfactor), rounded to nearest.
+                    let t = self.temps(w, h, level);
+                    for (k, b) in branches.iter().enumerate() {
+                        let result = match self.run_level(enc, b, input, [&t[0], &t[1]], 0, size, j, level + 1)? {
+                            Some(s) => t[s].clone(),
+                            None => input.clone(),
+                        };
+                        // Sums alternate between t[2] and t[3]; the first ignores its top (x 0).
+                        let (from, to) = if k % 2 == 0 { (&t[3], &t[2]) } else { (&t[2], &t[3]) };
+                        let from = if k == 0 { &result } else { from };
+                        self.combine(enc, from, &result, to, (10, false, if k == 0 { 0.0 } else { 1.0 }), (w, h));
+                    }
+                    if branches.is_empty() {
+                        self.combine(enc, input, input, output, (0, false, 1.0), (w, h));
+                    } else {
+                        let sums = if branches.len() % 2 == 1 { &t[2] } else { &t[3] };
+                        self.combine(enc, sums, sums, output, (11, false, 1.0f32 / branches.len() as f32), (w, h));
+                    }
                 }
                 Op::At { size: [sw, sh], down, up, ops, rgb } => {
                     // The picture through `ops` at `small`, scaled to `to` into `dst`.
@@ -394,6 +424,19 @@ impl<'a> Effects<'a> {
         }
         Ok(last)
     }
+}
+
+/// The binomial coefficients of (1 + z)^n: n two-tap sums in a row, as unsharp cascades them.
+pub fn binomial(n: u32) -> Vec<u64> {
+    let mut row = vec![1u64];
+    for _ in 0..n {
+        let mut next = vec![1u64; row.len() + 1];
+        for i in 1..row.len() {
+            next[i] = row[i - 1] + row[i];
+        }
+        row = next;
+    }
+    row
 }
 
 /// A .cube 3D table: points (red fastest, as half-float RGBA bits), points per axis, input range.
@@ -470,6 +513,14 @@ mod tests {
         assert_eq!(half(1e6), 0x7c00);
         // 1/3 rounds to 0x3555.
         assert_eq!(half(1.0 / 3.0), 0x3555);
+    }
+
+    #[test]
+    fn unsharp_kernel_is_binomial() {
+        assert_eq!(binomial(0), vec![1]);
+        assert_eq!(binomial(4), vec![1, 4, 6, 4, 1]);
+        // 5 x 5: weights sum to 2^scalebits, scalebits (2 + 2) x 2.
+        assert_eq!(binomial(4).iter().sum::<u64>().pow(2), 1 << 8);
     }
 
     #[test]

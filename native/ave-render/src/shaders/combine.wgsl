@@ -7,7 +7,9 @@
 struct Params {
     // 0 copy, 1 addition, 2 average, 3 screen, 4 softlight, 5 multiply, 6 `color` laid over top
     // with bottom's red x opacity as its alpha (alphamerge and overlay of a solid color), 9 luma
-    // from top and chroma from bottom, a half-size picture (4:2:0 planes joined).
+    // from top and chroma from bottom, a half-size picture (4:2:0 planes joined), 10 a mix sum: top x
+    // opacity plus bottom as 8-bit V, U, Y and A values (top holds sums, not colors), 11 a mix
+    // result: top (sums) x opacity rounded to nearest (lrintf) and clipped, as 8-bit VUYA.
     mode: u32,
     // 1: blend luma only (Y on the 8-bit scale), chroma from top.
     luma: u32,
@@ -54,6 +56,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let b = textureLoad(bottom, id.xy, 0);
     if (p.mode == 0u) {
         textureStore(dst, id.xy, b);
+        return;
+    }
+    if (p.mode == 10u) {
+        textureStore(dst, id.xy, a * p.opacity + round(clamp(rgb_to_vuya(b), vec4<f32>(0.0), vec4<f32>(1.0)) * 255.0));
+        return;
+    }
+    if (p.mode == 11u) {
+        let v = clamp(round(a * p.opacity), vec4<f32>(0.0), vec4<f32>(255.0)) / 255.0;
+        textureStore(dst, id.xy, vuya_to_rgb(v));
         return;
     }
     if (p.mode == 9u) {

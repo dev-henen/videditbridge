@@ -41,6 +41,11 @@ pub struct ConvParams {
     pub rgb: u32,
     pub rdiv: f32,
     pub bias: f32,
+    /// 0 convolution, 1 unsharp on luma (`height` rows of weights summing to 2^scalebits).
+    pub mode: u32,
+    pub amount: i32,
+    pub height: u32,
+    pub scalebits: u32,
 }
 
 #[repr(C)]

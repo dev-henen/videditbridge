@@ -129,6 +129,7 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
     ["handheld"], ["vibrate"], ["earthquake"], ["impactShake"], ["shake"], ["tilt"],
     ["smoothZoom"], ["zoomPunch"], ["heartbeat"],
     ["pixelate", { blockSize: 16 }], ["mirror"], ["mirror", { direction: "vertical" }], ["bokeh", { amount: 60 }],
+    ["sharpen", { amount: 1.5 }], ["color", { sharpen: 60, contrast: 10 }], ["zoomBlur", { amount: 60, x: 0.4, y: 0.6 }],
   ];
   for (const [type, params] of EFFECTS) {
     it(`effect ${type}`, async () => {
@@ -192,7 +193,7 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
 
   // Noise is random in both renderers, so these compare pictures blurred over the noise, and
   // how strong the noise is, rather than pixels.
-  for (const [type, params] of [["grain", { amount: 20 }], ["glitch", { amount: 12 }], ["filmGrain", { amount: 70, stock: "coarse" }], ["filmGrain", { amount: 50, stock: "fine", seed: 7 }]] as const) {
+  for (const [type, params] of [["grain", { amount: 20 }], ["glitch", { amount: 12 }], ["filmGrain", { amount: 70, stock: "coarse" }], ["filmGrain", { amount: 50, stock: "fine", seed: 7 }], ["vhs", { amount: 70 }]] as const) {
     it(`effect ${type} ${JSON.stringify(params)}: same picture under the noise, same noise strength`, async () => {
       let p = base();
       p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 1, effects: [{ type, params }] });
@@ -318,8 +319,8 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
   it("pieces: clip effects the engine does not draw come from the backend", async () => {
     let p = base();
     p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 0.5, effects: [{ type: "denoise" }, { type: "warm" }] });
-    p = addClip(p, { id: "b", assetId: "talk", in: 1, duration: 0.5, effects: [{ type: "glow" }, { type: "sharpen" }], fadeIn: 0.2 });
-    p = addClip(p, { id: "c", assetId: "pic", duration: 0.5, effects: [{ type: "halation" }, { type: "lensDistortion" }] });
+    p = addClip(p, { id: "b", assetId: "talk", in: 1, duration: 0.5, effects: [{ type: "glow" }, { type: "motionBlur" }], fadeIn: 0.2 });
+    p = addClip(p, { id: "c", assetId: "pic", duration: 0.5, effects: [{ type: "halation" }, { type: "rackFocus", params: { start: 0.1, duration: 0.3 } }] });
     p = addClip(p, { id: "d", assetId: "talk", in: 2, duration: 0.5, effects: [{ type: "blur", params: { amount: 8 }, mask: { kind: "shape", shape: { type: "ellipse", x: 0.5, y: 0.5, width: 0.5, height: 0.6 } } as never }] });
     p = setTransition(p, "b", { type: "fade", duration: 0.2 });
     p = setTransition(p, "c", { type: "wiperight", duration: 0.2 });
@@ -334,9 +335,9 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
     p = addClip(p, { id: "a", assetId: "talk", duration: 1 });
     p = addClip(p, { id: "b", assetId: "pic", duration: 1 });
     p = setTransition(p, "b", { type: "fade", duration: 0.4 });
-    p.effects = [{ type: "glow" }];
+    p.effects = [{ type: "rackFocus", params: { start: 0.3, duration: 0.6 } }];
     p = addLayer(p, { type: "media", assetId: "tall", start: 0.2, duration: 1.4, position: { x: 0.7, y: 0.5 }, size: { width: 0.25, height: 0.5 }, blend: "screen" });
-    expect(engineBridged(p)).toEqual(["base picture: whole-video effects: effect glow"]);
+    expect(engineBridged(p)).toEqual(["base picture: whole-video effects: effect rackFocus"]);
     const r = await compare("pieces-base", p);
     expect(r.mean, JSON.stringify(r)).toBeLessThan(1);
     expect(r.worst, JSON.stringify(r)).toBeLessThan(2);
@@ -372,7 +373,7 @@ describe.skipIf(!hasFfmpeg || !enginePath())("GPU render engine parity with the 
 
   it("pieces: single frames anywhere in the edit match the engine's export", async () => {
     let p = base();
-    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 0.8, effects: [{ type: "sharpen" }] });
+    p = addClip(p, { id: "a", assetId: "talk", in: 0.5, duration: 0.8, effects: [{ type: "rackFocus" }] });
     p = addClip(p, { id: "b", assetId: "talk", in: 1.5, duration: 0.8 });
     p = setTransition(p, "b", { type: "fade", duration: 0.2 });
     p = addLayer(p, { type: "media", assetId: "pic", start: 0.3, duration: 1.2, position: { x: 0.7, y: 0.4 }, size: { width: 0.3 }, shadow: 10 });

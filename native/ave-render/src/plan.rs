@@ -128,6 +128,11 @@ pub enum Op {
     Dilate { #[serde(default)] rgb: bool },
     /// convolution: a square kernel (row by row) times rdiv plus bias, on each plane.
     Conv { kernel: Vec<f32>, rdiv: f32, bias: f32, #[serde(default)] rgb: bool },
+    /// FFmpeg's unsharp on the 8-bit luma plane: a binomial blur `size` [across, down] (odd), and
+    /// `amount` in 1/65536 steps.
+    Unsharp { size: [u32; 2], amount: i32 },
+    /// Each branch run from the same picture, then FFmpeg's mix with equal weights on 8-bit YUV planes.
+    Mix { branches: Vec<Vec<Op>> },
     /// `ops` on the picture scaled to `size` (`down`: bicubic, area or neighbor), then scaled back (`up`: bicubic or neighbor).
     /// On YUV frames (not `rgb`) chroma takes the same path at half the size, as FFmpeg scales 4:2:0 chroma planes.
     At { size: [u32; 2], down: String, up: String, ops: Vec<Op>, #[serde(default)] rgb: bool },

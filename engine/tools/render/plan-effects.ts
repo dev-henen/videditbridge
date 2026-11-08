@@ -82,12 +82,20 @@ export type PlanOp =
   | { op: "move"; size: [number, number]; frames: [number, number, number][]; rotate: boolean }
   /** hflip or vflip. */
   | { op: "flip"; horizontal: boolean }
-  /** drawgrid: lines `thickness` thick every `cell` [across, down] pixels, blended toward black at `alpha`. */
+  /** drawgrid: lines `thickness` thick every `cell` [across, down] pixels, blended toward black at `alpha` (the color's alpha byte / 255: av_parse_color truncates). */
   | { op: "grid"; cell: [number, number]; thickness: number; alpha: number }
   /** dilation: the 3 x 3 maximum on each plane. */
   | { op: "dilate"; rgb?: boolean }
   /** convolution: a square kernel times rdiv plus bias, on each plane (8-bit). */
   | { op: "conv"; kernel: number[]; rdiv: number; bias: number; rgb?: boolean }
+  /**
+   * FFmpeg's unsharp on the 8-bit luma plane (chroma and alpha kept): `size` [across, down], odd;
+   * its blur is a cascade of two-tap sums (a binomial kernel, edges repeated); `amount` in 1/65536
+   * steps, as the filter holds it.
+   */
+  | { op: "unsharp"; size: [number, number]; amount: number }
+  /** Each branch from the same picture, then FFmpeg's mix of them with equal weights (8-bit planes, rounded to nearest). */
+  | { op: "mix"; branches: PlanOp[][] }
   /**
    * `ops` on the picture scaled to `size` (`down` with bicubic, area or neighbor), then scaled
    * back (`up`). On YUV frames (not `rgb`) FFmpeg scales 4:2:0 chroma planes on their own: chroma
@@ -267,6 +275,21 @@ function effectSteps(e: Effect, ctx: EffectContext, frames: number, time: FrameT
       });
       return [{ ...base, orbs: perFrame }];
     }
+    case "zoomBlur": {
+      // zoomBlur's graph (motion.ts): copies scaled up a little more each, cropped back about the
+      // point (crop rounds to nearest, ties to even, then keeps the 4:2:0 grid), and mixed.
+      const n = 5;
+      const place = (v: number, room: number) => Math.min(room, Math.max(0, roundEven(v))) & ~1;
+      const branches = Array.from({ length: n }, (_, i): PlanOp[] => {
+        const s = 1 + ((p.amount as number) / 100) * 0.18 * (i / (n - 1));
+        const [w, h] = [Math.round((W * s) / 2) * 2, Math.round((H * s) / 2) * 2];
+        // scale to the frame's own size passes the frame through.
+        if (w === W && h === H) return [];
+        const [x, y] = [place(round3((w - W) * (p.x as number)), w - W), place(round3((h - H) * (p.y as number)), h - H)];
+        return [{ op: "move", size: [w, h], frames: [[x, y, 0]], rotate: false }];
+      });
+      return [{ op: "mix", branches }];
+    }
     case "glow": {
       const g = glowEffect(p as { strength: number; threshold: number; radius: number }, ctx);
       return [{ op: "branch", ops: [{ op: "lut", args: lutArgs([g.curve]) }, { op: "blur", sigma: g.sigma, rgb: true }], blend: { mode: "screen", opacity: g.opacity } }];
@@ -445,7 +468,7 @@ export const RGB_PIXEL_FILTERS = new Set(["colorbalance", "colortemperature", "c
 /** Filters that only take RGB frames: from them on FFmpeg keeps the frames in RGB until a filter needs YUV. */
 const RGB_ONLY = new Set(["rgbashift", ...RGB_PIXEL_FILTERS]);
 /** Filters that only take YUV frames. */
-const YUV_ONLY = new Set(["eq", "drawgrid"]);
+const YUV_ONLY = new Set(["eq", "drawgrid", "unsharp"]);
 
 /**
  * A plain chain of filters the engine draws, as operations, filter by filter, following the frame
@@ -462,8 +485,9 @@ function chainOps(filters: string[], ctx: EffectContext, frames: number, time: F
     const name = filterName(f);
     const o = filterOptions(f);
     if (RGB_ONLY.has(name)) rgb = true;
-    // A YUV-only filter after RGB ones: FFmpeg converts back there, which is not copied yet (vhs).
-    if (YUV_ONLY.has(name) && rgb) return undefined;
+    // A YUV-only filter after RGB ones: FFmpeg converts back there. The engine's pictures stay RGB,
+    // and its YUV operations convert each pixel as they read it, so the frames are YUV from here.
+    if (YUV_ONLY.has(name)) rgb = false;
     if (name === "format") {
       rgb = /rgb|gbr/.test(o.positional[0] ?? o.named.pix_fmts ?? "");
       i++;
@@ -510,7 +534,7 @@ function chainOps(filters: string[], ctx: EffectContext, frames: number, time: F
         const color = o.named.c ?? o.named.color ?? "black";
         const m = /^black@([\d.]+)$/.exec(color);
         if (!m || (o.named.x ?? "0") !== "0" || (o.named.y ?? "0") !== "0") return undefined;
-        steps.push({ op: "grid", cell: [cell("w", ctx.width), cell("h", ctx.height)], thickness: Math.round(num(o.named.t ?? o.named.thickness, 1)), alpha: Number(m[1]) });
+        steps.push({ op: "grid", cell: [cell("w", ctx.width), cell("h", ctx.height)], thickness: Math.round(num(o.named.t ?? o.named.thickness, 1)), alpha: Math.trunc(255 * Number(m[1])) / 255 });
         break;
       }
       case "hflip":
@@ -527,6 +551,20 @@ function chainOps(filters: string[], ctx: EffectContext, frames: number, time: F
         const same = ["1m", "2m", "3m"].every((c) => (o.named[c] ?? o.named["0m"]) === o.named["0m"]) && ["1rdiv", "2rdiv", "3rdiv"].every((c) => (o.named[c] ?? o.named["0rdiv"]) === o.named["0rdiv"]);
         if (n * n !== k.length || !(n % 2) || n > 7 || !same || (o.named["0bias"] ?? "0") !== "0") return undefined;
         steps.push({ op: "conv", kernel: k, rdiv: num(o.named["0rdiv"], 1 / k.reduce((a, b) => a + b, 0)), bias: 0, ...(rgb ? { rgb: true } : {}) });
+        break;
+      }
+      case "unsharp": {
+        // Positional: luma x, y, amount, chroma x, y, amount, alpha x, y, amount.
+        const keys = [["lx", "luma_msize_x"], ["ly", "luma_msize_y"], ["la", "luma_amount"], ["cx", "chroma_msize_x"], ["cy", "chroma_msize_y"], ["ca", "chroma_amount"], ["ax", "alpha_msize_x"], ["ay", "alpha_msize_y"], ["aa", "alpha_amount"]] as const;
+        const defaults = [5, 5, 1, 5, 5, 0, 5, 5, 0];
+        const [lx, ly, la, , , ca, , , aa] = keys.map(([short, long], k) => num(o.named[short] ?? o.named[long] ?? o.positional[k], defaults[k]!)) as number[];
+        // Chroma and alpha sharpening work on planes the engine does not keep apart.
+        const odd = (v: number) => Number.isInteger(v) && v % 2 === 1 && v >= 3 && v <= 23;
+        // FFmpeg refuses more than 25 scale bits; past 24 its 32-bit sums can wrap.
+        if (ca !== 0 || aa !== 0 || !odd(lx!) || !odd(ly!) || (Math.floor(lx! / 2) + Math.floor(ly! / 2)) * 2 > 24) return undefined;
+        // The filter keeps its float amount times 65536 in an int (truncated).
+        const amount = Math.trunc(Math.fround(la!) * 65536);
+        if (amount) steps.push({ op: "unsharp", size: [lx!, ly!], amount });
         break;
       }
       case "scale": {

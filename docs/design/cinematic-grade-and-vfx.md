@@ -26,7 +26,7 @@ Features still to build. Tests are not listed here (section 11), and packaging i
 
 **GPU engine.** It renders every project, taking what it does not draw itself from the FFmpeg backend as pieces (E4 notes). Native ports, so those parts run at the engine's speed:
 
-- Effects that work across frames or regions: `sharpen`, `denoise`, `stabilize`, `autoCorrect`, `motionBlur`, `trails`, `zoomBlur`, `rackFocus`, `vhs`, `chromaKey`, `beauty`, background blur and replacement, sky, depth and removal effects. (Done: the film looks, the glows and light effects, the camera moves, `pixelate`, `mirror`, `bokeh`; see the engine ports note in section 13.)
+- Effects that work across frames or regions: `denoise`, `stabilize`, `autoCorrect`, `motionBlur`, `trails`, `rackFocus`, `chromaKey`, `beauty`, background blur and replacement, sky, depth and removal effects. (Done: the film looks, the glows and light effects, the camera moves, `pixelate`, `mirror`, `bokeh`, `sharpen`, `zoomBlur`, `vhs`; see the engine ports notes in section 13.)
 - Effects with a `mask`, and effects with keyframes.
 - Media layers: scale, rotation, 3D and corner pin keyframes, shadows, layer masks, layers behind the subject.
 - The color panel's vignette and clarity.
@@ -479,6 +479,14 @@ New general parts:
 - A smaller-size operation that scales 4:2:0 chroma on its own, as FFmpeg does. It took pixelate from 7.5 to 0.46.
 
 Also fixed: a failed engine run no longer hides its error behind the work folder's cleanup.
+
+**Engine ports, second part (2026-11-08).** Native on the engine, out of the FFmpeg pieces: `sharpen` (mean ΔE 2000 0.04), `zoomBlur` (0.19) and `vhs` (the noise test). From FFmpeg 6.1's source:
+- `unsharp`: its cascade of two-tap sums is a binomial kernel, summed in 32 bits, with its fixed-point amount, on 8-bit luma (an `unsharp` operation, in conv.wgsl).
+- `mix`: 8-bit planes summed, times its float 1 / n, rounded with lrintf (a `mix` operation: zoomBlur's five scaled copies are `move`s).
+- `drawgrid`: the color's alpha is a truncated byte, and each 4:2:0 chroma sample is blended once for every grid pixel of its block. With a line every other row that desaturates every chroma row, which was most of vhs's gap (mean ΔE 2000 6.6 before).
+- Chains go back to YUV at a YUV-only filter after RGB ones (vhs's `eq` after `rgbashift`), which the engine needs nothing for: its YUV steps convert each pixel.
+
+The piece tests now use effects still bridged (`motionBlur`, `rackFocus`); `halation` and `lensDistortion` there had been native since the first part.
 
 Open in this group:
 - `vhs`: a chain that goes from RGB back to YUV, whose conversion is not copied yet. It is left to FFmpeg until then.

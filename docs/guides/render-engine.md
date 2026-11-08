@@ -23,19 +23,19 @@ Videos with a `range` or `proxies`, and analysis renders, use FFmpeg. Single fra
 | Area | Drawn by the engine |
 |---|---|
 | Clips | Video, images, colors and gradients; every fit (cover with focus, contain, stretch, blur); speed, speed ramps and reverse; fade in and out |
-| Effects | On clips, media layers and the whole video: every per-pixel color effect (grades, `adjust`, `color` without its spatial controls, temperature, tint, curves, LUT files and more), `blur`, `vignette`, `letterbox`, `chromaticAberration`, `grain`, `glitch`, `flash`, `fadeIn`, `fadeOut`, `zoom`, `kenBurns`, `punchIn`, `pulse`; the film looks (`halation`, `bloom`, `anamorphicFlare`, `filmGrain`, `gateWeave`, `printFilm`, `lensDistortion`); the light effects (`glow`, `lightRays`, `lightLeak`, `bokehLights`); the camera moves (`handheld`, `vibrate`, `earthquake`, `impactShake`, `shake`, `tilt`, `smoothZoom`, `zoomPunch`, `heartbeat`); `pixelate`, `mirror`, `bokeh` |
+| Effects | On clips, media layers and the whole video: every per-pixel color effect (grades, `adjust`, `color` without its spatial controls, temperature, tint, curves, LUT files and more), `blur`, `vignette`, `letterbox`, `chromaticAberration`, `grain`, `glitch`, `flash`, `fadeIn`, `fadeOut`, `zoom`, `kenBurns`, `punchIn`, `pulse`; the film looks (`halation`, `bloom`, `anamorphicFlare`, `filmGrain`, `gateWeave`, `printFilm`, `lensDistortion`); the light effects (`glow`, `lightRays`, `lightLeak`, `bokehLights`); the camera moves (`handheld`, `vibrate`, `earthquake`, `impactShake`, `shake`, `tilt`, `smoothZoom`, `zoomPunch`, `heartbeat`); `pixelate`, `mirror`, `bokeh`, `sharpen`, `zoomBlur`, `vhs` |
 | Transitions | Every transition in the catalog, xfade's and the custom `circlereveal` |
 | Media layers | Position, size, fit, opacity, every blend mode, fades and slide animations, position and opacity keyframes, rounded corners, effects |
 | Text, shapes, captions | Burned in by the encoder from the same ASS file as the FFmpeg backend |
 | Sound | Mixed by the FFmpeg backend's graph on its own (`audioOnly`: no video is decoded for it), muxed by the engine's encoder |
 
-Every template renders on the engine. Drawn as FFmpeg pieces for now (`engineBridged(project)` lists them in a project): effects with masks or keyframes, effects that work across frames or regions (`denoise`, `stabilize`, `sharpen`, `autoCorrect`, `motionBlur`, `trails`, `zoomBlur`, `rackFocus`, `vhs`, `chromaKey`, `beauty`, background blur and replacement, sky, depth, removal), the color panel's vignette and clarity, scale, rotation, 3D and corner pin keyframes on layers, shadows, layer masks, layers behind the subject, smooth motion and moving crop focus.
+Every template renders on the engine. Drawn as FFmpeg pieces for now (`engineBridged(project)` lists them in a project): effects with masks or keyframes, effects that work across frames or regions (`denoise`, `stabilize`, `autoCorrect`, `motionBlur`, `trails`, `rackFocus`, `chromaKey`, `beauty`, background blur and replacement, sky, depth, removal), the color panel's vignette and clarity, scale, rotation, 3D and corner pin keyframes on layers, shadows, layer masks, layers behind the subject, smooth motion and moving crop focus.
 
 **How effects become operations** (`plan-effects.ts`). Each one copies its FFmpeg filters:
 
 - **Shared numbers.** An effect's numbers come from one function both renderers call (`GLOWS`, `grainSpec`, `gateWeave` and `lensDistortion` in `film.ts`; `glowEffect`, `lightRays`, `lightLeakSpeeds` and `bokehOrbs` in `motion.ts`), so the FFmpeg graph and the engine plan cannot drift apart.
 - **FFmpeg's expressions** are evaluated per frame by `engine/core/expr.ts`, which follows libavutil's eval.c in doubles. Camera moves are read from the effect's own `scale`, `rotate` and `crop` chain, and `perspective` moves from its corner expressions (`on` counts from 1). A clip's frames are at j times 1/fps; whole-video effects run on the joined picture, on AV_TIME_BASE.
-- **Plain chains** of filters the engine copies (color filters, `rgbashift`, `gblur`, `noise`, `eq`, `drawgrid`, flips, `dilation`, `convolution`, a scale down and back up) are turned into operations filter by filter. The interpreter follows the frame format FFmpeg negotiates: RGB after RGB-only filters, and a `scale` that feeds RGB-only filters converts to RGB itself. A chain that goes back from RGB to YUV is left to FFmpeg for now (`vhs`).
+- **Plain chains** of filters the engine copies (color filters, `rgbashift`, `gblur`, `noise`, `eq`, `drawgrid`, `unsharp`, flips, `dilation`, `convolution`, a scale down and back up) are turned into operations filter by filter. The interpreter follows the frame format FFmpeg negotiates: RGB after RGB-only filters, back to YUV at a YUV-only filter, and a `scale` that feeds RGB-only filters converts to RGB itself.
 - **Branches**: `branch` runs steps on a copy and blends it back with blend's formulas (blend_modes.c; float in RGB, 8-bit integers on luma). `average` averages several pairwise, as a chain of `blend=average` does. The glows are built this way.
 - **A smaller size** (`at`): steps run on a scaled-down copy, then it is scaled back up (bicubic, area or nearest). On YUV frames FFmpeg scales 4:2:0 chroma planes on their own, so chroma takes the same path at half the size and is joined as planes. Pixelate's chroma blocks are twice its luma blocks this way (mean ΔE 2000 7.5 before, 0.46 after). `dilation` works on chroma blocks too, as on its planes (bokeh: 1.10 before, 0.23 after).
 - **Copied filter internals**, from FFmpeg 6.1's source:
@@ -44,6 +44,10 @@ Every template renders on the engine. Drawn as FFmpeg pieces for now (`engineBri
   - `lenscorrection`: its radius, and its bilinear, which reads half a pixel past the point.
   - `rotate`: about the picture's center, bilinear, black outside.
   - `crop`: rounded to nearest, kept inside, then on the chroma grid.
+  - `unsharp` (`sharpen`): its cascade of two-tap sums is a binomial kernel (1 4 6 4 1 each way at 5 x 5), summed in 32 bits and rounded down by its scale bits; the amount in 1/65536 steps, on 8-bit luma.
+  - `mix` (`zoomBlur`): the 8-bit planes summed, times its float 1 / n, rounded to nearest (lrintf).
+  - `drawgrid` (`vhs`): the color's alpha byte (`black@0.199` is 50 / 255, as av_parse_color truncates), and 4:2:0 chroma blended once for every grid pixel of its 2 x 2 block, truncated each time, so a line every other row desaturates every chroma row (mean ΔE 2000 6.6 before, under the noise test's 1.5 after).
+  - Back to YUV after RGB filters (`vhs`: `rgbashift` then `eq`): the engine's YUV steps convert each pixel as they read it.
 - **Random noise.** `filmGrain`, like `grain` and `glitch`, is random in both renderers, so it matches FFmpeg in strength, not pixels; the same seed gives the same grain.
 
 Parity per effect (`test/render/engine.integration.test.ts`, each asserted not to be bridged), mean ΔE 2000:
@@ -59,9 +63,11 @@ Parity per effect (`test/render/engine.integration.test.ts`, each asserted not t
 | `pixelate` | 0.46 |
 | `mirror` | 0.02 |
 | `bokeh` | 0.23 |
+| `sharpen` | 0.04 |
+| `zoomBlur` | 0.19 |
 | Glows on media layers, with transparency | 0.40 |
 
-`filmGrain` passes the noise test (the picture under a blur, and the noise strength within 20%).
+`filmGrain` and `vhs` pass the noise test (the picture under a blur, and the noise strength within 20%).
 
 ## Pieces
 

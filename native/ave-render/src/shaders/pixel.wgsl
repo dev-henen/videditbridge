@@ -243,14 +243,36 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             c = select(load(s.x - 1 - x, y), load(x, s.y - 1 - y), p.backward == 1u);
         }
         case 13u: {
-            // drawgrid: lines `bar` thick every rect.x pixels across and rect.y down (from 0, 0),
-            // blended toward black at the color's alpha on 8-bit YUV, as drawutils blends.
+            // drawgrid (draw_region in vf_drawbox.c): lines `bar` thick every rect.x pixels across
+            // and rect.y down (from 0, 0), each grid pixel blended toward black (Y 16, U and V 128)
+            // at the color's alpha byte / 255 (`factor`), truncated to 8 bits. Chroma is written
+            // through every grid pixel of its 4:2:0 block, so a sample is blended once for each.
             let cell = vec2<i32>(i32(p.rect.x), i32(p.rect.y));
             let t = i32(p.bar);
-            if (x % cell.x < t || y % cell.y < t) {
-                let yuv = rgb_to_vuya(c);
-                let black = vec4<f32>(128.0 / 255.0, 128.0 / 255.0, 16.0 / 255.0, yuv.w);
-                c = vuya_to_rgb(mix(yuv, black, p.factor));
+            let size = vec2<i32>(textureDimensions(src));
+            var n = 0;
+            for (var dy = 0; dy < 2; dy++) {
+                for (var dx = 0; dx < 2; dx++) {
+                    let bx = (x / 2) * 2 + dx;
+                    let by = (y / 2) * 2 + dy;
+                    if (bx < size.x && by < size.y && (bx % cell.x < t || by % cell.y < t)) {
+                        n++;
+                    }
+                }
+            }
+            if (n > 0) {
+                let alpha = round(p.factor * 255.0);
+                let yuv = round(clamp(rgb_to_vuya(c), vec4<f32>(0.0), vec4<f32>(1.0)) * 255.0);
+                var out = yuv;
+                // (1 - alpha) v + alpha target, as whole numbers over 255.
+                if (x % cell.x < t || y % cell.y < t) {
+                    out.z = floor((yuv.z * (255.0 - alpha) + 16.0 * alpha) / 255.0);
+                }
+                for (var k = 0; k < n; k++) {
+                    out.x = floor((out.x * (255.0 - alpha) + 128.0 * alpha) / 255.0);
+                    out.y = floor((out.y * (255.0 - alpha) + 128.0 * alpha) / 255.0);
+                }
+                c = vuya_to_rgb(vec4<f32>(out.xyz / 255.0, c.a));
             }
         }
         case 14u: {
