@@ -489,7 +489,7 @@ async function scopes(o: OpenProject, time: number): Promise<{ path: string; tim
   const frame = path.join(dir, `scopes-frame-r${s.revision}-${t.toFixed(2)}.png`);
   await renderFrame(s.project, t, { output: frame, scale: 0.5, ...s.renderOptions });
   const out = path.join(dir, `scopes-r${s.revision}-${t.toFixed(2)}.png`);
-  await renderScopes(frame, out, undefined, { ffmpegPath: s.options.ffmpegPath });
+  await renderScopes(frame, out, undefined, { ffmpegPath: s.options.ffmpegPath, grid: true });
   return { path: out, time: t };
 }
 

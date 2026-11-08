@@ -133,9 +133,10 @@ export type Scope = "histogram" | "waveform" | "vectorscope" | "parade";
 
 /**
  * Render video scopes for an image: histogram, luma waveform, RGB parade and vectorscope,
- * side by side, for judging exposure and color at a glance.
+ * side by side (or, with `grid`, two by two in equal tiles, for a narrow panel), for judging
+ * exposure and color at a glance.
  */
-export async function renderScopes(imagePath: string, output: string, scopes: Scope[] = ["histogram", "waveform", "parade", "vectorscope"], opts: FfmpegOptions = {}): Promise<string> {
+export async function renderScopes(imagePath: string, output: string, scopes: Scope[] = ["histogram", "waveform", "parade", "vectorscope"], opts: FfmpegOptions & { grid?: boolean } = {}): Promise<string> {
   const H = 256;
   const graphs: Record<Scope, string> = {
     histogram: `format=yuv444p,histogram=display_mode=overlay:level_height=${H}:components=7:fgopacity=0.8:bgopacity=0.1,scale=320:${H}`,
@@ -145,8 +146,12 @@ export async function renderScopes(imagePath: string, output: string, scopes: Sc
   };
   const chosen = scopes.length ? scopes : (["histogram", "waveform", "parade", "vectorscope"] as Scope[]);
   const split = chosen.map((_, i) => `[s${i}]`).join("");
-  const parts = chosen.map((sc, i) => `[s${i}]${graphs[sc]},pad=iw+8:ih:4:0:color=black[o${i}]`);
-  const stack = chosen.length > 1 ? `${chosen.map((_, i) => `[o${i}]`).join("")}hstack=inputs=${chosen.length}[out]` : `[o0]null[out]`;
+  const grid = opts.grid && chosen.length === 4;
+  // In the grid every scope fills an equal tile (the vectorscope keeps its square, centered).
+  const tile = (sc: Scope) => (grid ? (sc === "vectorscope" ? `,pad=320:${H}:32:0:color=black` : `,scale=320:${H}`) : "");
+  const parts = chosen.map((sc, i) => `[s${i}]${graphs[sc]}${tile(sc)},pad=iw+8:ih+${grid ? 8 : 0}:4:${grid ? 4 : 0}:color=black[o${i}]`);
+  const inputs = chosen.map((_, i) => `[o${i}]`).join("");
+  const stack = grid ? `${inputs}xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[out]` : chosen.length > 1 ? `${inputs}hstack=inputs=${chosen.length}[out]` : `[o0]null[out]`;
   const graph = `[0:v]split=${chosen.length}${split};${parts.join(";")};${stack}`;
   await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-i", imagePath, "-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-update", "1", output], opts);
   return output;

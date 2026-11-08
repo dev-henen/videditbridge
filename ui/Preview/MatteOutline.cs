@@ -27,28 +27,27 @@ public static class MatteOutline
         for (var i = 0; i < w * h; i++) on[i] = src[i * 4 + 1] >= 128;
         bool At(int x, int y) => x >= 0 && y >= 0 && x < w && y < h && on[y * w + x];
 
-        // The edge: selected pixels with an unselected neighbor, then grown by a pixel.
+        // The edge: selected pixels with an unselected neighbor.
         var edge = new bool[w * h];
         for (var y = 0; y < h; y++)
             for (var x = 0; x < w; x++)
                 if (on[y * w + x] && (!At(x - 1, y) || !At(x + 1, y) || !At(x, y - 1) || !At(x, y + 1))) edge[y * w + x] = true;
 
+        // A line about a 320th of the picture wide each side of the edge, so it reads at any viewer size.
+        var r = Math.Max(1, (int)Math.Round(w / 320.0));
         var bmp = new WriteableBitmap(size, new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Premul);
         using var fb = bmp.Lock();
         var dst = new byte[fb.RowBytes * h];
         for (var y = 0; y < h; y++)
             for (var x = 0; x < w; x++)
             {
-                var near = false;
-                for (var dy = -1; dy <= 1 && !near; dy++)
-                    for (var dx = -1; dx <= 1 && !near; dx++)
+                if (!edge[y * w + x]) continue;
+                for (var ny = Math.Max(0, y - r); ny <= Math.Min(h - 1, y + r); ny++)
+                    for (var nx = Math.Max(0, x - r); nx <= Math.Min(w - 1, x + r); nx++)
                     {
-                        var (nx, ny) = (x + dx, y + dy);
-                        near = nx >= 0 && ny >= 0 && nx < w && ny < h && edge[ny * w + nx];
+                        var k = ny * fb.RowBytes + nx * 4;
+                        (dst[k], dst[k + 1], dst[k + 2], dst[k + 3]) = (color.B, color.G, color.R, 255);
                     }
-                if (!near) continue;
-                var k = y * fb.RowBytes + x * 4;
-                (dst[k], dst[k + 1], dst[k + 2], dst[k + 3]) = (color.B, color.G, color.R, 255);
             }
         Marshal.Copy(dst, 0, fb.Address, dst.Length);
         return bmp;

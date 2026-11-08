@@ -11,7 +11,6 @@
       <Setter Property="CornerRadius" Value="8,8,0,0"/>
       <Setter Property="Padding" Value="10,0,5,0"/>
       <Setter Property="Height" Value="32"/>
-      <Setter Property="Width" Value="232"/>
       <Setter Property="Margin" Value="0,0,2,0"/>
       <Setter Property="VerticalAlignment" Value="Bottom"/>
     </Style>
@@ -63,7 +62,8 @@
       </Button.Flyout>
     </Button>
 
-    <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled">
+    <!-- Tabs share the row: each as wide as fits, from 232 px down to a minimum, then the row scrolls -->
+    <ScrollViewer x:Name="TabScroller" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" SizeChanged="OnRowResized">
       <StackPanel Orientation="Horizontal">
         <ItemsControl x:Name="TabList" VerticalAlignment="Bottom">
           <ItemsControl.ItemsPanel>
@@ -71,7 +71,7 @@
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <Border Classes="tab" Classes.selected="{Binding IsSelected}" Tag="{Binding}" PointerPressed="OnTabPressed" PointerReleased="OnTabReleased"
+              <Border Classes="tab" Classes.selected="{Binding IsSelected}" Tag="{Binding}" Width="{Binding $parent[UserControl].TabWidth}" PointerPressed="OnTabPressed" PointerReleased="OnTabReleased"
                       ToolTip.Tip="{Binding Project.Dir, FallbackValue='Projects'}">
                 <DockPanel>
                   <Button DockPanel.Dock="Right" Click="OnCloseTab" Tag="{Binding}" ToolTip.Tip="Close tab (Ctrl+W)" AutomationProperties.Name="Close tab"

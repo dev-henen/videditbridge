@@ -476,6 +476,8 @@ public partial class PreviewScreen : UserControl
         var outline = !matte && OutlineButton.IsChecked == true && _vm.HasObjects;
         if (!(matte || outline) || _videoShown || _livePlaying || !_pointable)
         {
+            // Turned off: the caption says what the picture is again.
+            if (OverlayImage.IsVisible && !_videoShown && !_livePlaying) ViewerCaption.Text = $"Frame at {time:0.0}s";
             OverlayImage.IsVisible = false;
             return;
         }
