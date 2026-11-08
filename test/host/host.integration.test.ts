@@ -46,7 +46,7 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     dir = await mkdtemp(path.join(tmpdir(), "ave-host-"));
     const tsx = path.resolve("node_modules/tsx/dist/cli.mjs");
     // No key: Claude is unavailable, so requests fail the same way on every machine.
-    const env = { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_PROFILE: "", AVE_SETTINGS_FILE: path.join(dir, "settings.json") };
+    const env = { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_PROFILE: "", AVE_SETTINGS_FILE: path.join(dir, "settings.json"), AVE_KEYCHAIN_SERVICE: `ai-video-editor-test-${process.pid}` };
     const proc = spawn(process.execPath, [tsx, "engine/host/main.ts", "--projects-dir", dir], { stdio: "pipe", env });
     host = new HostClient(proc);
   });
@@ -140,8 +140,12 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     expect(before.projectsDir).toBe(dir);
     const models = (await host.call<{ models: { id: string }[] }>("host.info")).models;
     const set = await host.call<Settings & { claudeAvailable: boolean }>("settings.set", { apiKey: "sk-ant-test-0000-1234", renderer: "ffmpeg", hardwareEncoding: false, defaultModel: models.at(-1)!.id });
-    // The key is never sent back, only its last four characters.
-    expect(set.apiKey).toEqual({ set: true, hint: "…1234", source: "settings" });
+    // The key is never sent back, only its last four characters; it is kept in the system keychain
+    // (the settings file only where there is none).
+    expect(set.apiKey).toMatchObject({ set: true, hint: "…1234" });
+    expect(["keychain", "settings"]).toContain(set.apiKey.source);
+    const file = await readFile(path.join(dir, "settings.json"), "utf8");
+    if (set.apiKey.source === "keychain") expect(file).not.toContain("sk-ant-test");
     expect(set.claudeAvailable).toBe(true);
     expect((await host.call<{ claudeAvailable: boolean; defaultModel: string }>("host.info")).defaultModel).toBe(models.at(-1)!.id);
     const saved = JSON.parse(await readFile(path.join(dir, "settings.json"), "utf8")) as { renderer: string; hardwareEncoding: boolean };

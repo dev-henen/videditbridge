@@ -74,10 +74,14 @@ public partial class SettingsScreen : UserControl
         KeyStatus.Text = set
             ? $"Claude can edit: a key ending in {key!["hint"]?.GetValue<string>()?.TrimStart('…')} is set{(source == "environment" ? " by the ANTHROPIC_API_KEY environment variable" : "")}."
             : "Claude cannot edit yet: add an Anthropic API key (console.anthropic.com).";
-        RemoveKeyButton.IsVisible = set && source == "settings";
+        RemoveKeyButton.IsVisible = set && source != "environment";
+        var keychain = s["keychain"]?.GetValue<bool>() == true;
+        var store = OperatingSystem.IsWindows() ? "Windows Credential Manager" : OperatingSystem.IsMacOS() ? "the macOS Keychain" : "the system keyring";
         KeyNote.Text = source == "environment"
             ? "The environment variable wins over a key saved here. Unset it to use the saved one."
-            : "Kept on this computer only, and sent to nobody but Anthropic. It takes effect right away.";
+            : keychain
+                ? $"Kept in {store}, on this computer only, and sent to nobody but Anthropic. It takes effect right away."
+                : "No system keychain was found, so the key is kept in the settings file on this computer. It takes effect right away.";
     }
 
     private void ShowPerformance(JsonNode? report)

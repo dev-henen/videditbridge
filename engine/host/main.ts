@@ -39,7 +39,7 @@ import { deleteConversation, listConversations, loadConversation, newConversatio
 import { COVER_FILE, ProjectStore } from "./projects.js";
 import { RpcError, StdioRpc, serveLocal, type Handler } from "./rpc.js";
 import { HOST_INFO_FILE } from "./remote.js";
-import { applySettings, loadSettings, publicSettings, saveSettings } from "./settings.js";
+import { applySettings, loadSettings, publicSettings, saveSettings, storeKey } from "./settings.js";
 import { appDir, defaultFontsDir, defaultModelsDir } from "../tools/appdirs.js";
 
 // stdout is the protocol channel: route stray console output to stderr.
@@ -262,11 +262,11 @@ const handlers: Record<string, Handler> = {
   /** Change settings (apiKey "" removes the stored key); they apply at once and are saved for next time. */
   "settings.set": async (p) => {
     const next = { ...settings };
-    if (typeof p.apiKey === "string") next.apiKey = p.apiKey.trim() || undefined;
+    // The key goes to the system keychain (the settings file only where there is none).
+    const keyChanged = typeof p.apiKey === "string" && (await storeKey(next, p.apiKey.trim() || undefined));
     if (typeof p.defaultModel === "string" && MODELS.includes(p.defaultModel)) next.defaultModel = p.defaultModel;
     if (p.renderer === "auto" || p.renderer === "engine" || p.renderer === "ffmpeg") next.renderer = p.renderer;
     if (typeof p.hardwareEncoding === "boolean") next.hardwareEncoding = p.hardwareEncoding;
-    const keyChanged = next.apiKey !== settings.apiKey;
     settings = next;
     await saveSettings(settings);
     await applySettings(settings);
