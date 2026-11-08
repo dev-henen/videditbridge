@@ -191,8 +191,16 @@ public sealed class AppViewModel : Observable, IDisposable
     }
 
     /// <summary>Close a tab; a project is saved and left with a cover. The last tab becomes the projects page.</summary>
+    /// <summary>Ask whether to close a project anyway (the message says what would stop); the window shows the question.</summary>
+    public Func<string, Task<bool>>? ConfirmClose { get; set; }
+
     public async Task CloseTabAsync(AppTab tab)
     {
+        // Edits are saved as they happen; what closing would stop is work under way, so ask first.
+        if (tab.Project is { BusyReason: { } busy } busyProject && ConfirmClose is { } confirm
+            && !await confirm($"{busy} in \"{busyProject.ProjectName}\". Close it anyway? Edits so far are saved; the work under way stops."))
+            return;
+        if (!Tabs.Contains(tab)) return; // closed meanwhile
         if (tab.Project is { } p) await p.CloseAsync();
         Remove(tab);
         if (Tabs.Count == 0) NewTab();

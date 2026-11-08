@@ -34,7 +34,8 @@
     </DockPanel>
   </Border>
   <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel MaxWidth="740" Margin="20,16,20,16">
+    <!-- Left-aligned with room around it; the cards fill the width -->
+    <StackPanel Margin="24,20,24,20">
       <TextBlock Text="{Binding EngineError}" Foreground="{StaticResource Text}" TextWrapping="Wrap" Margin="0,0,0,10" IsVisible="{Binding HasEngineError}"/>
 
       <TextBlock Text="New project" FontSize="11" Foreground="{StaticResource Muted}" Margin="0,0,0,6"/>
@@ -53,7 +54,8 @@
       <TextBlock Text="Recent" FontSize="11" Foreground="{StaticResource Muted}" Margin="0,0,0,8"/>
 
       <TextBlock Text="Starting the editing engine…" Foreground="{StaticResource Faint}" FontSize="11" IsVisible="{Binding IsStarting}"/>
-      <ItemsControl ItemsSource="{Binding Projects}">
+      <!-- The cards' own padding pulled back, so their covers line up with the labels above -->
+      <ItemsControl ItemsSource="{Binding Projects}" Margin="-6,0,0,0">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>

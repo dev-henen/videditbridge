@@ -179,9 +179,10 @@ public sealed class ProjectViewModel : Observable
 
     // ---------------------------------------------------------------- engine calls
 
-    /// <summary>Call the host about this project.</summary>
+    /// <summary>Call the host about this project. Once the project is closing, calls stop quietly (it is gone from the host).</summary>
     private Task<JsonNode?> Call(string method, object? parameters = null)
     {
+        if (_closed && method is not ("project.close" or "agent.cancel")) return Task.FromException<JsonNode?>(new ProjectClosedException());
         var p = parameters is null ? new JsonObject() : (JsonSerializerHelper.ToNode(parameters) as JsonObject ?? new JsonObject());
         p["project"] = Dir;
         return _engine.CallAsync(method, p);
@@ -382,7 +383,16 @@ public sealed class ProjectViewModel : Observable
         catch (Exception e) { ShowError(e.Message); }
     }
 
-    public void ShowError(string message) => _app.ShowError(message);
+    /// <summary>Show an error, unless the project is closing: work it had under way may still end with one, and nobody is looking.</summary>
+    public void ShowError(string message)
+    {
+        if (!_closed) _app.ShowError(message);
+    }
+
+    private bool _closed;
+
+    /// <summary>What closing the project now would interrupt (Claude answering, or running activities), or null when nothing would.</summary>
+    public string? BusyReason => AgentRunning ? "Claude is still working on a request" : IsBusy ? StatusText.TrimEnd('.', '…', ' ') : null;
 
     /// <summary>The app's Claude availability changed (it is read once at start).</summary>
     public void RefreshClaude()
@@ -509,8 +519,24 @@ public sealed class ProjectViewModel : Observable
         StateUpdated?.Invoke(s);
     }
 
-    /// <summary>Close the project in the host (it saves and leaves a cover).</summary>
-    public Task CloseAsync() => Guard(() => Call("project.close"));
+    /// <summary>
+    /// Close the project in the host (it saves and leaves a cover). Claude's request, if one runs, is
+    /// cancelled first. From here on the project is quiet: late answers and errors are dropped.
+    /// </summary>
+    public async Task CloseAsync()
+    {
+        var stopClaude = AgentRunning;
+        _closed = true;
+        try
+        {
+            if (stopClaude) await Call("agent.cancel");
+            await Call("project.close");
+        }
+        catch
+        {
+            // Already gone from the host (closed elsewhere, or the host restarted): nothing to report.
+        }
+    }
 
     /// <summary>This tab came to the front: requests without a project (scripts, remote control) go here.</summary>
     public async Task FocusAsync()
@@ -519,3 +545,6 @@ public sealed class ProjectViewModel : Observable
         catch { /* the host may be restarting */ }
     }
 }
+
+/// <summary>A call for a project that is closing: dropped without a message.</summary>
+public sealed class ProjectClosedException() : Exception("The project is closed");

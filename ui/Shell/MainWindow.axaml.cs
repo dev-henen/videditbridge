@@ -33,6 +33,7 @@ public partial class MainWindow : Window
         DataContext = _vm;
         Tabs.Attach(_vm);
         _vm.ErrorRaised += message => _ = ShowMessage(message);
+        _vm.ConfirmClose = Confirm;
         _vm.TabOpened += OnTabOpened;
         _vm.TabClosed += OnTabClosed;
         _vm.PropertyChanged += OnViewModelChanged;
@@ -124,6 +125,41 @@ public partial class MainWindow : Window
     }
 
     /// <summary>A small message window in the app's style (Avalonia has no system message box).</summary>
+    /// <summary>A yes or no question; "Keep open" is the default, so Enter or closing the dialog keeps the project.</summary>
+    private async Task<bool> Confirm(string message)
+    {
+        var close = new Button { Content = "Close anyway", Classes = { "primary" } };
+        var keep = new Button { Content = "Keep open", IsDefault = true, IsCancel = true };
+        var answer = false;
+        var dialog = new Window
+        {
+            Title = "Close project?",
+            Width = 400,
+            SizeToContent = SizeToContent.Height,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = this.Brush("Panel"),
+            Content = new StackPanel
+            {
+                Margin = new Thickness(16),
+                Spacing = 14,
+                Children =
+                {
+                    new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Foreground = this.Brush("Text") },
+                    new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8, Children = { keep, close } },
+                },
+            },
+        };
+        close.Click += (_, _) =>
+        {
+            answer = true;
+            dialog.Close();
+        };
+        keep.Click += (_, _) => dialog.Close();
+        await dialog.ShowDialog(this);
+        return answer;
+    }
+
     private async Task ShowMessage(string message)
     {
         var ok = new Button { Content = "OK", Classes = { "primary" }, HorizontalAlignment = HorizontalAlignment.Right, IsDefault = true };
