@@ -13,7 +13,7 @@ import { overlayMotion } from "../../library/animations/index.js";
 import { AssDocument, addCaptionEvents } from "../captions/ass.js";
 import { buildCaptions } from "../captions/build.js";
 import { addShapeLayer, addTextLayer } from "./text.js";
-import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
+import { hardwareEncoderArgs, hardwareGlobalArgs, hardwareUpload, type HardwareEncoder } from "./hardware.js";
 import type { FontFallback } from "../fonts/scripts.js";
 
 export interface CompileOptions {
@@ -1045,7 +1045,9 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       `[${vCur}]select='isnan(prev_selected_t)*gte(t,${round3(total / n / 2)})+gte(t-prev_selected_t,${round3(total / n)})',scale=${even(sheet.thumbWidth)}:-2,tile=${sheet.columns}x${sheet.rows}:padding=4:margin=4,format=yuv420p[${vOut}]`,
     );
   } else {
-    g.add(`[${vCur}]format=${Y}[${vOut}]`);
+    // A hardware encoder that takes frames on its device (VAAPI) gets them uploaded here.
+    const upload = opts.frameAt === undefined && !opts.analysis ? hardwareUpload(exportHardware(project.export, opts.hardwareEncoder)) : undefined;
+    g.add(`[${vCur}]format=${Y}${upload ? `,${upload}` : ""}[${vOut}]`);
   }
   const still = opts.frameAt !== undefined || !!sheet;
   // Image outputs have no audio stream; every filter output must still be consumed.
@@ -1085,6 +1087,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     "-loglevel",
     "error",
     "-stats",
+    ...(still || opts.analysis ? [] : hardwareGlobalArgs(exportHardware(project.export, opts.hardwareEncoder))),
     ...g.inputArgs,
     "-filter_complex_script",
     FILTER_SCRIPT,
@@ -1113,6 +1116,12 @@ export function effectsOf(project: Project, target: string): Effect[] | undefine
  */
 export function exportVideoArgs(exp: Project["export"], preset: string | undefined, hardware: HardwareEncoder | undefined): string[] {
   if (isProRes(exp.videoCodec)) return ["-c:v", "prores_ks", "-profile:v", "3", "-vendor", "apl0", "-pix_fmt", "yuv422p10le"];
-  if (hardware && exp.bitDepth !== 10) return hardwareEncoderArgs(hardware, exp.crf);
+  const hw = exportHardware(exp, hardware);
+  if (hw) return hardwareEncoderArgs(hw, exp.crf);
   return ["-c:v", exp.videoCodec, "-preset", preset ?? exp.preset, "-crf", String(exp.crf), "-pix_fmt", exp.bitDepth === 10 ? "yuv420p10le" : "yuv420p"];
+}
+
+/** The hardware encoder an export uses: none for 10-bit or ProRes exports (they encode in software). */
+export function exportHardware(exp: Project["export"], hardware: HardwareEncoder | undefined): HardwareEncoder | undefined {
+  return hardware && exp.bitDepth !== 10 && !isProRes(exp.videoCodec) ? hardware : undefined;
 }

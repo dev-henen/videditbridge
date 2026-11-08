@@ -29,7 +29,7 @@ Movie-level color grading and the visual effects editors ask for most: log foota
 - [x] 3. **Mask shapes:** polygons, keyframes, and shapes pinned to a track (3.2).
 - [x] 4. **`replace_screen`:** the insert's matched blur, glare and color, and occlusion by an object mask (5.4).
 - [x] 5. **FFmpeg backend precision** (3.3): the 10-bit pipeline, 16-bit masks, `gbrp16le` RGB stages, ProRes 422 HQ export and a 10-bit segment cache.
-- [ ] 6. **Hardware encoding** with VideoToolbox (macOS) and VAAPI (Linux) (3.6).
+- [x] 6. **Hardware encoding** with VideoToolbox (macOS) and VAAPI (Linux) (3.6).
 - [ ] 7. **Claude's checks** (section 8): `review_edit` findings for clipping, skin hue off the skin line, banding, matte flicker, track drift and sky slide.
 - [ ] 8. **Desktop app** (section 9): the selected object's blue outline, the matte toggle in the viewer, and scopes next to the findings.
 
@@ -75,7 +75,7 @@ The engine works in float, decodes footage in a color space at 10 bits, exports 
 
 ### 3.6 Platforms
 
-Windows x64, macOS arm64 and x64, Linux x64 (glibc 2.31 or newer). Nothing Windows-only: the app is Avalonia, icons are the bundled Fluent UI System Icons, FFmpeg comes from `ffmpeg-static`, models from `onnxruntime-node` (DirectML, CoreML or CUDA, CPU fallback), the engine on each system's own GPU API, media paths stored relative with forward slashes. CI builds and tests on Windows x64, Ubuntu 22.04 and macOS arm64. Hardware encoding: NVENC, Quick Sync and AMF are built; left (checklist 6): VideoToolbox on macOS and VAAPI on Linux, each verified with a test encode. Fixes found per system are in [Cross-platform: required fixes](cross-platform.md).
+Windows x64, macOS arm64 and x64, Linux x64 (glibc 2.31 or newer). Nothing Windows-only: the app is Avalonia, icons are the bundled Fluent UI System Icons, FFmpeg comes from `ffmpeg-static`, models from `onnxruntime-node` (DirectML, CoreML or CUDA, CPU fallback), the engine on each system's own GPU API, media paths stored relative with forward slashes. CI builds and tests on Windows x64, Ubuntu 22.04 and macOS arm64. Hardware encoding: each system tries its own encoders with a test encode (NVENC, Quick Sync, AMF on Windows; VideoToolbox on macOS; NVENC, Quick Sync, VAAPI on Linux, VAAPI on its device with the frames uploaded at the end of the graph). Fixes found per system are in [Cross-platform: required fixes](cross-platform.md).
 
 ## 4. Grading
 

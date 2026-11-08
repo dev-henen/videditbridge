@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { parseProject } from "../../engine/core/index.js";
 import { isPerFrame, perClipGlobalEffects } from "../../engine/library/index.js";
-import { SEGMENT_CODEC, compileProject, hardwareEncoderArgs, planSegments, pruneCache, wantsHardware } from "../../engine/tools/index.js";
+import { SEGMENT_CODEC, compileProject, hardwareCandidates, hardwareEncoderArgs, hardwareTestArgs, planSegments, pruneCache, wantsHardware } from "../../engine/tools/index.js";
 
 const project = (over: Record<string, unknown> = {}) =>
   parseProject({
@@ -72,6 +72,30 @@ describe("compiling with the render cache", () => {
     expect(wantsHardware("libx264", "medium")).toBe(true);
     expect(wantsHardware("libx264", "ultrafast")).toBe(false);
     expect(wantsHardware("libx265", "medium")).toBe(false);
+  });
+
+  it("tries each system's own encoders, and runs VAAPI on its device", () => {
+    expect(hardwareCandidates("darwin")).toEqual(["videotoolbox"]);
+    expect(hardwareCandidates("linux")).toEqual(["nvenc", "qsv", "vaapi"]);
+    expect(hardwareCandidates("win32")).toEqual(["nvenc", "qsv", "amf"]);
+    // VideoToolbox: constant quality runs the other way (crf 20 is about 66).
+    const vt = hardwareEncoderArgs("videotoolbox", 20);
+    expect(vt).toEqual(expect.arrayContaining(["-c:v", "h264_videotoolbox", "-q:v", "66"]));
+    // VAAPI: the device opened before the inputs, the frames uploaded at the end of the graph.
+    const c = compileProject(project(), { output: "o.mp4", hardwareEncoder: "vaapi" });
+    const device = c.args.indexOf("-init_hw_device");
+    expect(device).toBeGreaterThan(-1);
+    expect(device).toBeLessThan(c.args.indexOf("-filter_complex_script"));
+    expect(c.args).toEqual(expect.arrayContaining(["-c:v", "h264_vaapi", "-rc_mode", "CQP"]));
+    expect(c.filterGraph).toMatch(/format=nv12,hwupload\[[^\]]+\]$/);
+    expect(hardwareTestArgs("vaapi")).toEqual(expect.arrayContaining(["-vf", "format=nv12,hwupload"]));
+    // 10-bit and ProRes exports encode in software, without the device.
+    const ten = compileProject({ ...project(), export: { ...project().export, bitDepth: 10 } }, { output: "o.mp4", hardwareEncoder: "vaapi" });
+    expect(ten.args).not.toContain("-init_hw_device");
+    expect(ten.filterGraph).not.toMatch(/hwupload/);
+    expect(ten.args).toContain("libx264");
+    // Single frames never upload.
+    expect(compileProject(project(), { output: "f.png", frameAt: 0.5, hardwareEncoder: "vaapi" }).filterGraph).not.toMatch(/hwupload/);
   });
 });
 

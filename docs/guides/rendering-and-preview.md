@@ -84,7 +84,7 @@ With `proxies: true`, videos larger than 1920 px are read from a 1280 px copy in
 
 ## Hardware encoding
 
-`render` encodes on the graphics card when one works: NVENC, then Quick Sync, then AMF, each checked once per process with a tiny test encode. Quality follows `export.crf` (Quick Sync at quality 22 matched x264 CRF 20 in SSIM and size). It is only used when the x264 preset is slower than `veryfast`, because x264 `ultrafast` previews are already quicker, and a failed hardware encode falls back to x264. Pass `hardware: false` (CLI `--software`) to always use x264. On the same laptop Quick Sync encoded 1080p about 3.6 times faster than x264 `medium`.
+`render` encodes on the graphics card when one works, trying each system's own encoders once per process with a tiny test encode: NVENC, Quick Sync, then AMF on Windows; VideoToolbox on macOS (its constant quality needs Apple silicon); NVENC, Quick Sync, then VAAPI on Linux (the device is `$AVE_VAAPI_DEVICE`, by default `/dev/dri/renderD128`, and the frames are uploaded to it at the end of the graph). 10-bit and ProRes exports always encode in software. Quality follows `export.crf` (Quick Sync at quality 22 matched x264 CRF 20 in SSIM and size). It is only used when the x264 preset is slower than `veryfast`, because x264 `ultrafast` previews are already quicker, and a failed hardware encode falls back to x264. Pass `hardware: false` (CLI `--software`) to always use x264. On the same laptop Quick Sync encoded 1080p about 3.6 times faster than x264 `medium`.
 
 **Preview scaling.** With `scale`, the whole graph runs at reduced resolution, which is about 4× faster at 0.5. The ASS file keeps the full-size coordinate space, so text and captions land exactly where they will in the final render.
 

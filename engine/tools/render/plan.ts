@@ -5,9 +5,9 @@ import { easeValue, numberAt, positionAt } from "../../core/keyframes.js";
 import { parseColor, round3 } from "../../core/util.js";
 import { effectsToFilter, escapeFilterPath } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
-import { ASS_FILE, compileProject, exportVideoArgs, gradientSource, isDeepExport, rampPts, renderSize, type CompileOptions } from "./compile.js";
+import { ASS_FILE, compileProject, exportHardware, exportVideoArgs, gradientSource, isDeepExport, rampPts, renderSize, type CompileOptions } from "./compile.js";
 import { cropPosition, effectsOps, joinedTime, lutArgs, type PlanOp } from "./plan-effects.js";
-import { hardwareEncoderArgs, type HardwareEncoder } from "./hardware.js";
+import { hardwareGlobalArgs, hardwareUpload, type HardwareEncoder } from "./hardware.js";
 import { colorTableFile, convertsColor, inputTableFile, outputTableFile, sceneGradeFor } from "./color-space.js";
 import { gradeConstants, type SceneGrade } from "../../library/color/index.js";
 
@@ -582,9 +582,11 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
   // 10-bit exports: the engine gives 10-bit frames (no dither), and the encoder keeps them.
   const tenBit = isDeepExport(exp);
   const pixFmt = tenBit ? "yuv420p10le" : "yuv420p";
-  const picture = ["settb=AVTB", `format=${pixFmt}`, opts.overlay && `ass=filename=${ASS_FILE}${fonts}`].filter(Boolean).join(",");
+  const hw = exportHardware(exp, opts.hardwareEncoder);
+  const picture = ["settb=AVTB", `format=${pixFmt}`, opts.overlay && `ass=filename=${ASS_FILE}${fonts}`, hardwareUpload(hw)].filter(Boolean).join(",");
   const args = [
     "-y", "-hide_banner", "-loglevel", "error", "-nostdin",
+    ...hardwareGlobalArgs(hw),
     "-f", "rawvideo", "-pix_fmt", pixFmt, "-s", `${W}x${H}`, "-r", String(F), "-i", "pipe:0",
     ...(opts.audio ? ["-i", path.resolve(opts.audio)] : []),
     "-filter_complex", `[0:v]${picture}[v]`,

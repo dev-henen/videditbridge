@@ -71,7 +71,7 @@ Items marked **Done** in the tables below are implemented. What was built, by it
 | ID | Severity | Where | Problem | Fix |
 |---|---|---|---|---|
 | D1 (**Done**) | Verify | `ffmpeg-static` 5.3.0 (FFmpeg 6.1.1 on every platform, but from different builders: gyan.dev "essentials" on Windows, other static builds on macOS and Linux) | Builds can differ in libraries: libass, zimg (`zscale`), x265, libvpx, rubberband | A startup self-test (like the hardware encoder check) that confirms every filter and encoder the renderer uses (`ass`, `zscale`, `perspective`, `haldclut`, `lut3d`, `gblur`, `ffv1`, `libx264`, `libx265`, WebM decoding) and reports what is missing. Run it in CI on every target. Optional ones (`rubberband`) keep their fallbacks |
-| D2 | Polish (speed) | `engine/tools/render/hardware.ts:4-6` | Only NVENC, Quick Sync and AMF | Add `h264_videotoolbox` on macOS, and `h264_vaapi` (with a device and `hwupload`), Quick Sync and NVENC on Linux, each verified with a test encode as today |
+| D2 (**Done**) | Polish (speed) | `engine/tools/render/hardware.ts` | Only NVENC, Quick Sync and AMF | Add `h264_videotoolbox` on macOS, and `h264_vaapi` (with a device and `hwupload`), Quick Sync and NVENC on Linux, each verified with a test encode as today  Done: `hardwareCandidates` per system, VAAPI with `-init_hw_device` and `hwupload` |
 | D3 | Verify | `engine/tools/render/compile.ts:661, 690, 746` (`-filter_complex_script`) | Deprecated since FFmpeg 7.1 in favor of `-/filter_complex`; a newer binary on one platform would warn or fail | Pin the same FFmpeg release on every platform, or pick the option by FFmpeg version at startup |
 
 ## E. Native packages and models
