@@ -1,6 +1,6 @@
 # Design: cinematic grading and common CGI effects
 
-Status: every step of the order of work is done (2026-11-07). Section 2 lists the features still to build, section 11 the testing, section 12 the packaging (on hold). Proposed 2026-10-27; F1 to F3 and N0 done 2026-10-28, F4, F5 and F7 done 2026-10-30, F8 and F9 done 2026-11-01, F10 done 2026-11-02, F11, F12 and N1 done 2026-11-03, E1 done 2026-11-04, E2, E3, F6 and E4 done 2026-11-07. This is the build plan for movie-level color grading and the visual effects editors ask for most: sky replacement, glows and light effects on one object, screen replacement, depth of field, atmospherics, object removal and smooth slow motion.
+Status: every step of the order of work is done (2026-11-07). Section 2 is the checklist of what is left (8 items), section 11 the testing, section 12 the packaging (on hold). Proposed 2026-10-27; F1 to F3 and N0 done 2026-10-28, F4, F5 and F7 done 2026-10-30, F8 and F9 done 2026-11-01, F10 done 2026-11-02, F11, F12 and N1 done 2026-11-03, E1 done 2026-11-04, E2, E3, F6 and E4 done 2026-11-07. This is the build plan for movie-level color grading and the visual effects editors ask for most: sky replacement, glows and light effects on one object, screen replacement, depth of field, atmospherics, object removal and smooth slow motion.
 
 The bar is professional results, not "a filter that looks similar". Every feature below has a measurable "done when" check, and every result must be something Claude can verify itself (scopes, mattes, frames) before it shows the user. Where a model is involved, candidates are compared on the same clips before one is chosen, as was done for faces (YuNet), person cutout (PP-HumanSeg) and sound (CED-tiny).
 
@@ -22,34 +22,16 @@ Changing the core of the project, and adding other languages, is allowed. Code o
 
 Every step of the order of work (section 13) is done: native kernels (N0, N1), the GPU render engine as the default renderer (E1 to E4), and the features of sections 4 to 7 (F1 to F12). Each feature section ends with what was built and how it differs from the plan.
 
-Features still to build. Tests are not listed here (section 11), and packaging is on hold (section 12).
+What is left to wrap up, as a checklist (tick an item when it is done; tests are in section 11, packaging is on hold in section 12):
 
-**GPU engine.** It renders every project, taking what it does not draw itself from the FFmpeg backend as pieces (E4 notes). Native ports, so those parts run at the engine's speed:
-
-- Effects that work across frames or regions: `denoise`, `stabilize`, `autoCorrect`, `motionBlur`, `trails`, `rackFocus`, `chromaKey`, `beauty`, background blur and replacement, sky, depth and removal effects. (Done: the film looks, the glows and light effects, the camera moves, `pixelate`, `mirror`, `bokeh`, `sharpen`, `zoomBlur`, `vhs`; see the engine ports notes in section 13.)
-- Effects with a `mask`, and effects with keyframes.
-- Media layers: scale, rotation, 3D and corner pin keyframes, shadows, layer masks, layers behind the subject.
-- The color panel's vignette and clarity.
-- Clips: moving crop focus, smooth motion frames, fit contain on footage with a color space.
-- GPU particles (the Rust generator draws them on the processor).
-- 4:2:0-aware fitting (chroma on sharp color edges), faster GPU passes, a faster first frame of a preview session (about 5 s).
-
-**FFmpeg backend precision** (section 3.3): the 10-bit pipeline, 16-bit masks, `gbrp16le` RGB stages, ProRes 422 HQ export, a 10-bit segment cache.
-
-**Grading and effects.**
-
-- DJI D-Log M, once DJI publishes its formula (section 4.1).
-- Radial `chromaticAberration` (section 4.4).
-- Linear-light `add` and `screen` blending (section 5.1).
-- Mask shapes: polygons, keyframes, pinned to a track (section 3.2).
-- `replace_screen`: the insert's matched blur, glare and color match, occlusion by an object mask (section 5.4).
-- Weather that interacts with the scene: wet surfaces, settling snow, splashes on real surfaces (section 6).
-- Hardware encoding with VideoToolbox (macOS) and VAAPI (Linux) (section 3.6).
-- Cancelling and progress inside the Rust kernels (`AbortSignal`, section 3.5).
-
-**Claude's checks** (section 9): `review_edit` findings for clipping, skin hue off the skin line, banding, matte flicker, track drift and sky slide.
-
-**Desktop app** (section 10): the selected object's blue outline, the matte toggle in the viewer, scopes next to the findings.
+- [ ] 1. **Rust kernels:** cancelling and progress inside them (`AbortSignal`, section 3.5).
+- [ ] 2. **Effect gaps:** radial `chromaticAberration` (section 4.4) and linear-light `add` and `screen` blending (section 5.1).
+- [ ] 3. **Mask shapes:** polygons, keyframes, and shapes pinned to a track (section 3.2).
+- [ ] 4. **`replace_screen`:** the insert's matched blur, glare and color, and occlusion by an object mask (section 5.4).
+- [ ] 5. **FFmpeg backend precision** (section 3.3): the 10-bit pipeline, 16-bit masks, `gbrp16le` RGB stages, ProRes 422 HQ export and a 10-bit segment cache.
+- [ ] 6. **Hardware encoding** with VideoToolbox (macOS) and VAAPI (Linux) (section 3.6).
+- [ ] 7. **Claude's checks** (section 9): `review_edit` findings for clipping, skin hue off the skin line, banding, matte flicker, track drift and sky slide.
+- [ ] 8. **Desktop app** (section 10): the selected object's blue outline, the matte toggle in the viewer, and scopes next to the findings.
 
 ## 3. Architecture
 
