@@ -3,7 +3,7 @@ import { appendFile, mkdir, rename, rm, stat, writeFile } from "node:fs/promises
 import path from "node:path";
 import { round3 } from "../../core/util.js";
 import { probe, runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
-import { native } from "../native/index.js";
+import { controlled, native } from "../native/index.js";
 import { createOrtSession, ensureModelFile, loadOrt, modelsDir, ortProviders, type Ort, type OrtSession } from "./faces.js";
 import { decodeFrames } from "./objects.js";
 import { resizeMask } from "./segment.js";
@@ -195,13 +195,13 @@ export async function trackDepth(
     // The camera's motion over the chunk, from the whole picture; where it is lost, it holds.
     const packed = new Uint8Array(n * area);
     gray.forEach((g, i) => packed.set(g, i * area));
-    const cam = n > 1 ? await k.trackRegion(packed, ms.w, ms.h, n, new Uint8Array(area).fill(1), { model: "affine" }) : undefined;
+    const cam = n > 1 ? await controlled({ signal: opts.signal }, (c) => k.trackRegion(packed, ms.w, ms.h, n, new Uint8Array(area).fill(1), { model: "affine" }, c)) : undefined;
     const motion = new Float64Array(n * 9);
     for (let i = 0; i < n; i++) {
       const ok = cam && Number.isFinite(cam.errors[i]!) && cam.inliers[i]! > 0;
       motion.set(ok ? cam.matrices.subarray(i * 9, i * 9 + 9) : i > 0 ? motion.subarray((i - 1) * 9, i * 9) : [1, 0, 0, 0, 1, 0, 0, 0, 1], i * 9);
     }
-    const depth = await k.depthSequence(packed, ms.w, ms.h, n, Uint32Array.from(keys), disparity, motion, { radius, ...(first ? { previous: first.depth } : {}) });
+    const depth = await controlled({ signal: opts.signal }, (c) => k.depthSequence(packed, ms.w, ms.h, n, Uint32Array.from(keys), disparity, motion, { radius, ...(first ? { previous: first.depth } : {}) }, c));
     const startAt = first ? 1 : 0;
     const out = Buffer.alloc((n - startAt) * area * 2);
     const sample = new Float32Array(Math.ceil(area / 16));

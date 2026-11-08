@@ -21,6 +21,7 @@ export interface NativeKernels {
     count: number,
     region: Uint8Array,
     options?: { model?: "translation" | "similarity" | "affine" | "homography"; maxPoints?: number; inset?: number },
+    control?: TaskControl,
   ): Promise<{ matrices: Float64Array; inliers: Uint32Array; errors: Float32Array; redetected: Uint8Array }>;
   /** Snap mask edges (0..255) to a gray guide of the same size; several frames may be packed back to back. */
   guidedFilter(guide: Uint8Array, mask: Uint8Array, width: number, height: number, radius: number, eps: number): Promise<Uint8Array>;
@@ -41,7 +42,10 @@ export interface NativeKernels {
     disparity: Float32Array,
     motion: Float64Array,
     options?: { radius?: number; eps?: number; keep?: number; previous?: Float32Array },
+    control?: TaskControl,
   ): Promise<Float32Array>;
+  /** Cancelling and progress for `trackRegion` and `depthSequence` (see `controlled`). */
+  TaskControl: new () => TaskControl;
   /** Draws particles, smoke, fog and lens flares into RGBA frames (see ParticleSpec). */
   ParticleRenderer: new (spec: ParticleSpec) => { frames(count: number): Promise<Uint8Array> };
   /**
@@ -50,6 +54,42 @@ export interface NativeKernels {
    */
   Remover: new (width: number, height: number, motion: Float64Array, options?: RemoverOptions) => NativeRemover;
   version(): string;
+}
+
+/** Cancels a kernel at its next frame, and counts its steps while it runs. */
+export interface TaskControl {
+  cancel(): void;
+  readonly done: number;
+  readonly total: number;
+}
+
+/**
+ * Run a kernel call with a `TaskControl` tied to `signal` (aborting cancels the kernel at its next
+ * frame and rejects with the signal's reason) and to `onProgress` (the kernel's fraction done, a few
+ * times a second). Without either, the call gets no control.
+ */
+export async function controlled<T>(opts: { signal?: AbortSignal; onProgress?: (fraction: number) => void }, run: (control?: TaskControl) => Promise<T>): Promise<T> {
+  const { signal, onProgress } = opts;
+  signal?.throwIfAborted();
+  if (!signal && !onProgress) return run();
+  const control = new (native().TaskControl)();
+  const abort = () => control.cancel();
+  signal?.addEventListener("abort", abort, { once: true });
+  const report = () => {
+    if (control.total > 0) onProgress?.(control.done / control.total);
+  };
+  const timer = onProgress ? setInterval(report, 250) : undefined;
+  try {
+    const out = await run(control);
+    report();
+    return out;
+  } catch (e) {
+    if (signal?.aborted) throw signal.reason;
+    throw e;
+  } finally {
+    if (timer) clearInterval(timer);
+    signal?.removeEventListener("abort", abort);
+  }
 }
 
 export interface RemoverOptions {

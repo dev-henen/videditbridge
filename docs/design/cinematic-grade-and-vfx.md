@@ -24,7 +24,7 @@ Movie-level color grading and the visual effects editors ask for most: log foota
 
 ### Left
 
-- [ ] 1. **Rust kernels:** cancelling and progress inside them (`AbortSignal`, section 3.5).
+- [x] 1. **Rust kernels:** cancelling and progress inside them (`TaskControl` and `controlled`, section 3.5).
 - [ ] 2. **Effect gaps:** radial `chromaticAberration` (4.4) and linear-light `add` and `screen` blending (5.1).
 - [ ] 3. **Mask shapes:** polygons, keyframes, and shapes pinned to a track (3.2).
 - [ ] 4. **`replace_screen`:** the insert's matched blur, glare and color, and occlusion by an object mask (5.4).
@@ -69,7 +69,7 @@ The engine works in float, decodes footage in a color space at 10 bits, exports 
 
 **Rule.** Code moves to Rust when it is on a hot path (its cost grows with pixels, samples or frames, and it is a measured share of a tool call or render, about 10% or more) and it ports easily behind the same function signature. Everything about the edit itself (schema, operations, catalogs, tools, planning, session, host) stays in TypeScript, as does pixel code that runs rarely or cheaply. Model inference stays in `onnxruntime-node`.
 
-**Interface.** Coarse calls (a whole buffer or source range), typed arrays or file paths, work on a Rust thread pool returning a promise, errors as normal JavaScript errors (a panic never takes down the host). Left (checklist 1): progress callbacks and an `AbortSignal` that sets a cancel flag the kernels check.
+**Interface.** Coarse calls (a whole buffer or source range), typed arrays or file paths, work on a Rust thread pool returning a promise, errors as normal JavaScript errors (a panic never takes down the host). Kernels that work through many frames (`trackRegion`, `depthSequence`) take a `TaskControl`: `controlled({ signal, onProgress }, run)` ties an `AbortSignal` to it, so the kernel stops at its next frame and the call rejects with the signal's reason, and reads its progress four times a second. The particle generator and the remover work in short calls, checked between them.
 
 **A port** keeps the old TypeScript as the test oracle in `test/helpers/` with a parity test, records a benchmark in the guide that uses it, and deletes the TypeScript implementation. No silent TypeScript fallback at runtime.
 

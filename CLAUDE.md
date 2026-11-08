@@ -17,7 +17,7 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 
 ## Rust (native/)
 - Move code to Rust only when it is on a hot path (per pixel, sample or frame, and a measured share of the time) and ports easily behind the same function; see section 3.5 of `docs/design/cinematic-grade-and-vfx.md`.
-- Calls are coarse (a whole buffer), run off the JavaScript thread and return promises; a panic becomes an error.
+- Calls are coarse (a whole buffer), run off the JavaScript thread and return promises; a panic becomes an error. A kernel that works through many frames takes a `TaskControl` (call it through `controlled` with the caller's `signal`), counts a step per frame and stops when cancelled.
 - A port keeps the old TypeScript in `test/helpers/` as the oracle for a parity test, and records a benchmark in the guide that uses it. No silent TypeScript fallback at runtime.
 
 ## Architecture rules

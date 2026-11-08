@@ -8,6 +8,7 @@
 //! Values are distance on the first keyframe's scale: its nearest things (2nd percentile) at 0.1 and
 //! its farthest (98th) at 0.9, leaving room for nearer and farther things later in the clip.
 
+use crate::control::{Cancelled, Control};
 use crate::refine::guided_filter_f32;
 use crate::track::{apply, invert, Mat3};
 use rayon::prelude::*;
@@ -127,9 +128,12 @@ fn percentile(v: &[f32], q: f32) -> f32 {
 /// `gray`: `n` frames of `w` x `h`. `keys`: ascending frame indexes with a model result, the first 0
 /// and the last n - 1. `disparity`: the model's output for each key (larger is nearer), resized to
 /// `w` x `h`. `motion`: per frame, the 3x3 transform from frame 0's pixels to that frame's.
-/// `previous`: frame 0's depth from the chunk before, so chunks join on the same scale.
-pub fn depth_sequence(gray: &[u8], w: usize, h: usize, n: usize, keys: &[usize], disparity: &[f32], motion: &[f64], previous: Option<&[f32]>, opts: &DepthOptions) -> Vec<f32> {
+/// `previous`: frame 0's depth from the chunk before, so chunks join on the same scale. `ctl` counts
+/// a step per keyframe and per frame of each pass, and stops the work when cancelled.
+pub fn depth_sequence(gray: &[u8], w: usize, h: usize, n: usize, keys: &[usize], disparity: &[f32], motion: &[f64], previous: Option<&[f32]>, opts: &DepthOptions, ctl: &Control) -> Result<Vec<f32>, Cancelled> {
     let area = w * h;
+    ctl.start((keys.len() + 3 * n) as u32);
+    ctl.check()?;
     let all = vec![true; area];
     // Distance grows as disparity falls; its scale and shift are fitted below.
     let raw = |j: usize| -> Vec<f32> { disparity[j * area..(j + 1) * area].iter().map(|v| -v).collect() };
@@ -156,6 +160,7 @@ pub fn depth_sequence(gray: &[u8], w: usize, h: usize, n: usize, keys: &[usize],
             if s > 0.0 { (s, t) } else { fit_scale_shift(&d, &aligned[j - 1], &all) }
         };
         aligned.push(d.iter().map(|v| s * v + t).collect());
+        ctl.step()?;
     }
     if let (Some(p), Some(first)) = (previous, aligned.first_mut()) {
         first.copy_from_slice(p);
@@ -165,10 +170,11 @@ pub fn depth_sequence(gray: &[u8], w: usize, h: usize, n: usize, keys: &[usize],
     // pixel (it came into view), the nearer keyframe's value stays.
     let carried: Vec<Vec<f32>> = (0..n)
         .into_par_iter()
-        .map(|i| {
+        .map(|i| -> Result<Vec<f32>, Cancelled> {
+            ctl.step()?;
             let j = keys.iter().rposition(|&k| k <= i).unwrap_or(0);
             if keys[j] == i {
-                return aligned[j].clone();
+                return Ok(aligned[j].clone());
             }
             let (a, b) = (keys[j], keys[(j + 1).min(keys.len() - 1)]);
             let u = (i - a) as f32 / (b - a).max(1) as f32;
@@ -177,30 +183,32 @@ pub fn depth_sequence(gray: &[u8], w: usize, h: usize, n: usize, keys: &[usize],
             let (fa, va) = warp(&aligned[j], w, h, &move_from(a));
             let (fb, vb) = warp(&aligned[(j + 1).min(keys.len() - 1)], w, h, &move_from(b));
             let near = if u < 0.5 { &aligned[j] } else { &aligned[(j + 1).min(keys.len() - 1)] };
-            (0..area)
+            Ok((0..area)
                 .map(|q| match (va[q], vb[q]) {
                     (true, true) => fa[q] * (1.0 - u) + fb[q] * u,
                     (true, false) => fa[q],
                     (false, true) => fb[q],
                     _ => near[q],
                 })
-                .collect()
+                .collect())
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // Edges snapped to each frame.
     let refined: Vec<Vec<f32>> = carried
         .par_iter()
         .enumerate()
-        .map(|(i, d)| {
+        .map(|(i, d)| -> Result<Vec<f32>, Cancelled> {
+            ctl.step()?;
             let g: Vec<f32> = gray[i * area..(i + 1) * area].iter().map(|&v| v as f32 / 255.0).collect();
-            guided_filter_f32(&g, d, w, h, opts.radius, opts.eps)
+            Ok(guided_filter_f32(&g, d, w, h, opts.radius, opts.eps))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // A light blend with the previous frame, moved with the camera.
     let mut out = vec![0.0f32; n * area];
     for i in 0..n {
+        ctl.step()?;
         let cur = &refined[i];
         if i == 0 || opts.keep <= 0.0 {
             out[i * area..(i + 1) * area].copy_from_slice(cur);
@@ -212,7 +220,7 @@ pub fn depth_sequence(gray: &[u8], w: usize, h: usize, n: usize, keys: &[usize],
             out[i * area + q] = if valid[q] { cur[q] * (1.0 - opts.keep) + prev[q] * opts.keep } else { cur[q] };
         }
     }
-    out
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -257,7 +265,7 @@ mod tests {
         let disp: Vec<f32> = [(3.0, 1.0), (0.5, -2.0), (7.0, 4.0)].iter().flat_map(|&(s, t)| truth.iter().map(move |v| -(v * s) + t)).collect();
         let gray: Vec<u8> = (0..n).flat_map(|_| truth.iter().map(|v| (v * 255.0) as u8)).collect();
         let motion: Vec<f64> = (0..n).flat_map(|_| ID).collect();
-        let out = depth_sequence(&gray, w, h, n, &[0, 4, 8], &disp, &motion, None, &DepthOptions { keep: 0.0, ..Default::default() });
+        let out = depth_sequence(&gray, w, h, n, &[0, 4, 8], &disp, &motion, None, &DepthOptions { keep: 0.0, ..Default::default() }, &Control::default()).unwrap();
         // Every frame on the first keyframe's scale: frame 8 matches frame 0 everywhere.
         let worst = (0..w * h).map(|q| (out[8 * w * h + q] - out[q]).abs()).fold(0.0, f32::max);
         assert!(worst < 0.02, "frames differ by {worst}");
@@ -273,7 +281,7 @@ mod tests {
         let gray: Vec<u8> = frames.iter().flat_map(|f| f.iter().map(|v| (v * 255.0) as u8)).collect();
         let disp: Vec<f32> = [0, n - 1].iter().flat_map(|&i| frames[i].iter().map(|v| -v)).collect();
         let motion: Vec<f64> = (0..n).flat_map(|i| [1.0, 0.0, 2.0 * i as f64, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]).collect();
-        let out = depth_sequence(&gray, w, h, n, &[0, n - 1], &disp, &motion, None, &DepthOptions { keep: 0.0, radius: 2, ..Default::default() });
+        let out = depth_sequence(&gray, w, h, n, &[0, n - 1], &disp, &motion, None, &DepthOptions { keep: 0.0, radius: 2, ..Default::default() }, &Control::default()).unwrap();
         // In the middle frame the box sits at x 26..46: near inside it, far beside it.
         let mid = 3 * w * h;
         let (inside, beside) = (out[mid + 20 * w + 36], out[mid + 20 * w + 52]);
@@ -288,11 +296,26 @@ mod tests {
         let disp: Vec<f32> = (0..2).flat_map(|_| truth.iter().map(|v| -v * 9.0)).collect();
         let gray = vec![128u8; n * w * h];
         let motion: Vec<f64> = (0..n).flat_map(|_| ID).collect();
-        let out = depth_sequence(&gray, w, h, n, &[0, 2], &disp, &motion, Some(&previous), &DepthOptions { keep: 0.0, ..Default::default() });
+        let out = depth_sequence(&gray, w, h, n, &[0, 2], &disp, &motion, Some(&previous), &DepthOptions { keep: 0.0, ..Default::default() }, &Control::default()).unwrap();
         // The last frame lands on the previous chunk's scale (both went through the same edge filter).
         let worst = (0..w * h).map(|q| (out[2 * w * h + q] - out[q]).abs()).fold(0.0, f32::max);
         assert!(worst < 0.02, "{worst}");
         let mean = |v: &[f32]| v.iter().sum::<f32>() / v.len() as f32;
         assert!((mean(&out[..w * h]) - mean(&previous)).abs() < 0.01);
+    }
+
+    #[test]
+    fn counts_progress_and_stops_when_cancelled() {
+        let (w, h, n) = (32, 24, 5);
+        let truth = scene(w, h, 0.0);
+        let disp: Vec<f32> = (0..2).flat_map(|_| truth.iter().map(|v| -v)).collect();
+        let gray = vec![128u8; n * w * h];
+        let motion: Vec<f64> = (0..n).flat_map(|_| ID).collect();
+        let ctl = Control::default();
+        depth_sequence(&gray, w, h, n, &[0, n - 1], &disp, &motion, None, &DepthOptions::default(), &ctl).unwrap();
+        // Two keyframes, then three passes over five frames.
+        assert_eq!(ctl.progress(), (17, 17));
+        ctl.cancel();
+        assert_eq!(depth_sequence(&gray, w, h, n, &[0, n - 1], &disp, &motion, None, &DepthOptions::default(), &ctl), Err(Cancelled));
     }
 }

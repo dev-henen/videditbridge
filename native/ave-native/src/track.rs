@@ -4,6 +4,7 @@
 //! few points survive, new corners are found inside the region where it is now. Used to carry object
 //! masks between keyframes and to pin layers to surfaces (docs/design/cinematic-grade-and-vfx.md 5.2, 5.4).
 
+use crate::control::{Cancelled, Control};
 use rayon::prelude::*;
 
 /// A one-channel float image.
@@ -453,13 +454,16 @@ impl Default for TrackOptions {
 }
 
 /// Follow `region` (non-zero pixels of the first frame) through `n` gray frames of `w` x `h`.
-/// Returns one step per frame; the first is the identity.
-pub fn track_region(frames: &[u8], w: usize, h: usize, n: usize, region: &[u8], opts: &TrackOptions) -> Vec<Step> {
+/// Returns one step per frame; the first is the identity. `ctl` counts a step per frame and stops
+/// the track when cancelled.
+pub fn track_region(frames: &[u8], w: usize, h: usize, n: usize, region: &[u8], opts: &TrackOptions, ctl: &Control) -> Result<Vec<Step>, Cancelled> {
     let frame = |i: usize| Pyramid::new(Image::from_gray(&frames[i * w * h..(i + 1) * w * h], w, h), 4);
     let mut steps = vec![Step { m: IDENTITY, inliers: 0, error: 0.0, redetected: false }];
     if n == 0 {
-        return vec![];
+        return Ok(vec![]);
     }
+    ctl.start(n.saturating_sub(1) as u32);
+    ctl.check()?;
     let mut prev = frame(0);
     // Each point: where it is now, and where it was on the first frame.
     let mut cur: Vec<(f32, f32)> = good_features(&prev, Some(region), opts.max_points, opts.min_dist, opts.inset);
@@ -468,6 +472,7 @@ pub fn track_region(frames: &[u8], w: usize, h: usize, n: usize, region: &[u8], 
     let start = cur.len().max(1);
     let mut last = IDENTITY;
     for i in 1..n {
+        ctl.check()?;
         let next = frame(i);
         let fwd = lucas_kanade(&prev, &next, &cur);
         let moved: Vec<(f32, f32)> = fwd.iter().map(|p| p.unwrap_or((-1.0, -1.0))).collect();
@@ -520,8 +525,9 @@ pub fn track_region(frames: &[u8], w: usize, h: usize, n: usize, region: &[u8], 
         }
         steps.push(step);
         prev = next;
+        ctl.step()?;
     }
-    steps
+    Ok(steps)
 }
 
 #[cfg(test)]
@@ -589,7 +595,9 @@ mod tests {
                 region[y * w + x] = 1;
             }
         }
-        let steps = track_region(&frames, w, h, n, &region, &TrackOptions { model: Model::Homography, ..Default::default() });
+        let ctl = Control::default();
+        let steps = track_region(&frames, w, h, n, &region, &TrackOptions { model: Model::Homography, ..Default::default() }, &ctl).unwrap();
+        assert_eq!(ctl.progress(), (n as u32 - 1, n as u32 - 1));
         assert_eq!(steps.len(), n);
         for (i, s) in steps.iter().enumerate() {
             // The region's corners, as the design's check for screen and sign inserts.
@@ -599,5 +607,14 @@ mod tests {
             }).fold(0.0, f64::max);
             assert!(err < 0.5, "frame {i}: corner error {err:.3} px");
         }
+    }
+
+    #[test]
+    fn stops_when_cancelled() {
+        let (w, h, n) = (64, 48, 4);
+        let frames = vec![100u8; w * h * n];
+        let ctl = Control::default();
+        ctl.cancel();
+        assert_eq!(track_region(&frames, w, h, n, &vec![1u8; w * h], &TrackOptions::default(), &ctl).err(), Some(Cancelled));
     }
 }

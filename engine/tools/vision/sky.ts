@@ -3,7 +3,7 @@ import { mkdir, rename, rm, stat, writeFile, appendFile } from "node:fs/promises
 import path from "node:path";
 import { round3 } from "../../core/util.js";
 import { probe, runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
-import { native } from "../native/index.js";
+import { controlled, native } from "../native/index.js";
 import { createOrtSession, ensureModelFile, loadOrt, modelsDir, ortProviders, type Ort, type OrtSession } from "./faces.js";
 import { decodeFrames } from "./objects.js";
 import { resizeMask } from "./segment.js";
@@ -302,7 +302,7 @@ export async function trackSky(
       return out;
     };
     const carry = async (idx: number[], matte: Uint8Array) => {
-      const r = await k.trackRegion(packSmall(idx), hw, hh, idx.length, scenery(halve(matte, ms.w, ms.h)), { model: "affine" });
+      const r = await controlled({ signal: opts.signal }, (c) => k.trackRegion(packSmall(idx), hw, hh, idx.length, scenery(halve(matte, ms.w, ms.h)), { model: "affine" }, c));
       return doubleTransforms(r.matrices);
     };
     const chunkMotion: number[][] = new Array(n);
@@ -337,7 +337,7 @@ export async function trackSky(
       if (band.reduce((t, v) => t + v, 0) < area * 0.01) band = scenery(mattes[a]!);
       if (band.reduce((t, v) => t + v, 0) < area * 0.01) band = new Uint8Array(area).fill(1);
       // The camera at full size: the new sky's drift depends on it.
-      const cam = await k.trackRegion(pack(idx), ms.w, ms.h, idx.length, band, { model: "similarity" });
+      const cam = await controlled({ signal: opts.signal }, (c) => k.trackRegion(pack(idx), ms.w, ms.h, idx.length, band, { model: "similarity" }, c));
       for (let i = 1; i <= last; i++) chunkMotion[idx[i]!] = compose(Array.from(cam.matrices.subarray(i * 9, i * 9 + 9)), chunkMotion[a]!);
     }
     // Edges snapped to the frame, then smoothed over time. The first frame of a later chunk was written already.

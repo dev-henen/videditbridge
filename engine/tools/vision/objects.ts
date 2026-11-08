@@ -5,7 +5,7 @@ import path from "node:path";
 import { round3 } from "../../core/util.js";
 import { probe, resolveFfmpegPath, runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
 import { defaultModelsDir } from "../appdirs.js";
-import { native } from "../native/index.js";
+import { controlled, native } from "../native/index.js";
 import { resizeMask } from "./segment.js";
 
 /**
@@ -510,14 +510,14 @@ export async function trackObject(
     const dir = b > a ? 1 : -1;
     const frames = Array.from({ length: Math.abs(b - a) + 1 }, (_, i) => a + dir * i);
     const last = frames.length - 1;
-    const fwd = await k.trackRegion(pack(frames), ms.w, ms.h, frames.length, region(masks[a]!));
+    const fwd = await controlled({ signal: opts.signal }, (c) => k.trackRegion(pack(frames), ms.w, ms.h, frames.length, region(masks[a]!), undefined, c));
     const fwdMasks = await k.warpMasks(masks[a]!, ms.w, ms.h, fwd.matrices);
     if (!masks[b]) {
       await segmentAt(b, at(fwdMasks, last));
       tick();
     }
     const back = frames.slice().reverse();
-    const bwd = await k.trackRegion(pack(back), ms.w, ms.h, back.length, region(masks[b]!));
+    const bwd = await controlled({ signal: opts.signal }, (c) => k.trackRegion(pack(back), ms.w, ms.h, back.length, region(masks[b]!), undefined, c));
     const bwdMasks = await k.warpMasks(masks[b]!, ms.w, ms.h, bwd.matrices);
     // The decoded frame nearest the middle, strictly inside the span.
     const mid = frames

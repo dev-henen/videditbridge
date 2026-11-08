@@ -7,7 +7,7 @@ import { computeTimeline, timelineToSource, type TimedClip } from "../../core/ti
 import { positionAt } from "../../core/keyframes.js";
 import { round3 } from "../../core/util.js";
 import { probe, runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
-import { native } from "../native/index.js";
+import { controlled, native } from "../native/index.js";
 import { fitTransform } from "./faces.js";
 import { decodeFrames } from "./objects.js";
 
@@ -98,7 +98,7 @@ export interface QuadTrack {
  * Follow a quad (pixels, on frame `key`) through gray frames of `w` x `h`: forward to the last frame
  * and backward to the first. The tracked area is the quad grown by `margin`.
  */
-export async function trackQuad(gray: Uint8Array[], w: number, h: number, key: number, quad: Quad, opts: { motion: Motion; margin?: number }): Promise<QuadTrack> {
+export async function trackQuad(gray: Uint8Array[], w: number, h: number, key: number, quad: Quad, opts: { motion: Motion; margin?: number; signal?: AbortSignal }): Promise<QuadTrack> {
   const n = gray.length;
   const area = w * h;
   const region = fillQuad(growQuad(quad, opts.margin ?? 0), w, h);
@@ -115,7 +115,7 @@ export async function trackQuad(gray: Uint8Array[], w: number, h: number, key: n
     if (idx.length < 2) continue;
     const frames = new Uint8Array(idx.length * area);
     idx.forEach((f, i) => frames.set(gray[f]!, i * area));
-    const r = await k.trackRegion(frames, w, h, idx.length, region, { model: MODELS[opts.motion] });
+    const r = await controlled({ signal: opts.signal }, (c) => k.trackRegion(frames, w, h, idx.length, region, { model: MODELS[opts.motion] }, c));
     for (let i = 1; i < idx.length; i++) {
       const f = idx[i]!;
       quads[f] = quad.map(([x, y]) => apply(r.matrices, i * 9, x, y));
@@ -180,7 +180,7 @@ export async function trackPoints(src: string, opts: FfmpegOptions & { start: nu
   const key = Math.min(n - 1, Math.max(0, Math.round((time - from) * opts.fps)));
   const motion = motionOf(opts.spec);
   const quad = specQuad(opts.spec, source).map(([x, y]): [number, number] => [x * size.w, y * size.h]);
-  const r = await trackQuad(gray, size.w, size.h, key, quad, { motion, margin: opts.spec.corners ? opts.spec.margin : 0 });
+  const r = await trackQuad(gray, size.w, size.h, key, quad, { motion, margin: opts.spec.corners ? opts.spec.margin : 0, signal: opts.signal });
   const s0 = Math.max(0, Math.round((opts.start - from) * opts.fps));
   const s1 = Math.min(n, s0 + Math.max(1, Math.ceil((opts.end - opts.start) * opts.fps - 1e-6)));
   return {

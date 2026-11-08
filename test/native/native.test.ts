@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { analyzeSamples, decodeAudio, detectBeats, frameFeatures } from "../../engine/tools/audio/analyze.js";
-import { native, nativeTarget, type ParticleSpec } from "../../engine/tools/native/index.js";
+import { controlled, native, nativeTarget, type ParticleSpec } from "../../engine/tools/native/index.js";
 import { PARTICLE_PRESETS, ParticleSettingsSchema, getParticlePreset, resolveParticles, type EmitterSpec } from "../../engine/library/particles/index.js";
 import { frameFeatures as reference, type FrameFeatures } from "../helpers/audio-reference.js";
 import { ffmpegAvailable, makeFixtures } from "../helpers/media.js";
@@ -91,6 +91,32 @@ describe("native kernels (ave-native)", () => {
     expect(snapped.length).toBe(w * h);
     await expect(native().trackRegion(frames, w, h, n + 1, region)).rejects.toThrow(/count frames/);
   });
+
+  it("cancels a long kernel mid-run and reports its progress", async () => {
+    // 300 frames of 640 x 360 noise: long enough to abort while it runs.
+    const [w, h, n] = [640, 360, 300];
+    const frames = new Uint8Array(w * h * n);
+    let s = 7;
+    for (let i = 0; i < frames.length; i++) frames[i] = (s = (s * 1103515245 + 12345) >>> 0) >>> 24;
+    const region = new Uint8Array(w * h).fill(1);
+    const seen: number[] = [];
+    const ac = new AbortController();
+    const started = Date.now();
+    const run = controlled({ signal: ac.signal, onProgress: (p) => seen.push(p) }, (c) => native().trackRegion(frames, w, h, n, region, undefined, c));
+    setTimeout(() => ac.abort(new Error("stopped by the test")), 400);
+    await expect(run).rejects.toThrow("stopped by the test");
+    expect(Date.now() - started).toBeLessThan(5000);
+    // Progress came while it ran, rising and below 1.
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((p, i) => p >= 0 && p < 1 && (i === 0 || p >= seen[i - 1]!))).toBe(true);
+
+    // Without a signal it finishes, with its last progress at 1.
+    const done: number[] = [];
+    await controlled({ onProgress: (p) => done.push(p) }, (c) => native().trackRegion(frames.subarray(0, w * h * 4), w, h, 4, region, undefined, c));
+    expect(done.at(-1)).toBe(1);
+    // An aborted signal stops it before it starts.
+    await expect(controlled({ signal: AbortSignal.abort() }, (c) => native().trackRegion(frames, w, h, n, region, undefined, c))).rejects.toThrow();
+  }, 30_000);
 
   it("does not block the JavaScript thread", async () => {
     const x = make(120, (t) => 0.3 * Math.sin(2 * Math.PI * 220 * t));

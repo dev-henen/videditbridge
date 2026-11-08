@@ -5,7 +5,7 @@ import { round3 } from "../../core/util.js";
 import type { RemovalRegion, RemovalSpec } from "../../library/effects/removal.js";
 import { probe, type FfmpegOptions } from "../render/ffmpeg.js";
 import { writeAlphaVideo } from "../graphics/index.js";
-import { native } from "../native/index.js";
+import { controlled, native } from "../native/index.js";
 import { createOrtSession, ensureModelFile, loadOrt, modelsDir, ortProviders, type Ort, type OrtSession } from "./faces.js";
 import { decodeFrames, streamFrames } from "./objects.js";
 import { TRACK_SIZE } from "./points.js";
@@ -294,7 +294,7 @@ async function cameraMotion(src: string, range: { from: number; total: number; f
     const region = Uint8Array.from(mask!, (v) => (v >= 128 ? 0 : 1));
     const packed = new Uint8Array(frames.length * area);
     frames.forEach((g, i) => packed.set(g, i * area));
-    const cam = frames.length > 1 ? await native().trackRegion(packed, ts.w, ts.h, frames.length, region, { model: "homography" }) : undefined;
+    const cam = frames.length > 1 ? await controlled({ signal: opts.signal }, (c) => native().trackRegion(packed, ts.w, ts.h, frames.length, region, { model: "homography" }, c)) : undefined;
     let last = IDENTITY;
     for (let i = prev ? 1 : 0; i < frames.length; i++) {
       const ok = cam && Number.isFinite(cam.errors[i]!) && cam.inliers[i]! > 0;

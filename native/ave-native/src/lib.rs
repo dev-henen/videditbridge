@@ -3,6 +3,7 @@
 //! promises, so the host stays responsive.
 
 pub mod audio;
+pub mod control;
 pub mod depth;
 pub mod particles;
 pub mod refine;
@@ -12,6 +13,47 @@ pub mod track;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use std::sync::{Arc, Mutex};
+
+/// Cancelling and progress for a kernel that works through many frames (`trackRegion`,
+/// `depthSequence`): `cancel()` stops it at its next frame, with an "ave-native: cancelled" error;
+/// `done` and `total` count its steps while it runs.
+#[napi]
+pub struct TaskControl {
+    inner: Arc<control::Control>,
+}
+
+#[napi]
+impl TaskControl {
+    #[napi(constructor)]
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        TaskControl { inner: Arc::new(control::Control::default()) }
+    }
+
+    #[napi]
+    pub fn cancel(&self) {
+        self.inner.cancel();
+    }
+
+    #[napi(getter)]
+    pub fn done(&self) -> u32 {
+        self.inner.progress().0
+    }
+
+    #[napi(getter)]
+    pub fn total(&self) -> u32 {
+        self.inner.progress().1
+    }
+}
+
+/// The control a call was given, or one nobody cancels.
+fn control_of(c: Option<&TaskControl>) -> Arc<control::Control> {
+    c.map(|c| c.inner.clone()).unwrap_or_default()
+}
+
+fn cancelled(_: control::Cancelled) -> Error {
+    Error::from_reason("ave-native: cancelled")
+}
 
 #[napi(object)]
 pub struct FrameFeatures {
@@ -69,6 +111,7 @@ pub struct TrackTask {
     count: usize,
     region: Vec<u8>,
     opts: track::TrackOptions,
+    control: Arc<control::Control>,
 }
 
 impl Task for TrackTask {
@@ -79,8 +122,9 @@ impl Task for TrackTask {
         if self.frames.len() < self.width * self.height * self.count || self.region.len() != self.width * self.height {
             return Err(Error::from_reason("ave-native: trackRegion needs count frames of width x height bytes and a region of width x height bytes"));
         }
-        std::panic::catch_unwind(|| track::track_region(&self.frames, self.width, self.height, self.count, &self.region, &self.opts))
-            .map_err(|_| Error::from_reason("ave-native: track_region panicked"))
+        std::panic::catch_unwind(|| track::track_region(&self.frames, self.width, self.height, self.count, &self.region, &self.opts, &self.control))
+            .map_err(|_| Error::from_reason("ave-native: track_region panicked"))?
+            .map_err(cancelled)
     }
 
     fn resolve(&mut self, _env: Env, steps: Self::Output) -> Result<Self::JsValue> {
@@ -103,9 +147,10 @@ pub struct TrackRegionOptions {
 }
 
 /// Follow a region (non-zero bytes of `region` on the first frame) through `count` gray frames of
-/// `width` x `height` packed in `frames`, as a transform per frame.
+/// `width` x `height` packed in `frames`, as a transform per frame. `control` cancels it and counts
+/// a step per frame.
 #[napi(js_name = "trackRegion")]
-pub fn track_region(frames: Uint8Array, width: u32, height: u32, count: u32, region: Uint8Array, options: Option<TrackRegionOptions>) -> Result<AsyncTask<TrackTask>> {
+pub fn track_region(frames: Uint8Array, width: u32, height: u32, count: u32, region: Uint8Array, options: Option<TrackRegionOptions>, control: Option<&TaskControl>) -> Result<AsyncTask<TrackTask>> {
     let mut opts = track::TrackOptions::default();
     if let Some(o) = options {
         if let Some(m) = o.model {
@@ -118,7 +163,7 @@ pub fn track_region(frames: Uint8Array, width: u32, height: u32, count: u32, reg
             opts.inset = n as usize;
         }
     }
-    Ok(AsyncTask::new(TrackTask { frames: frames.to_vec(), width: width as usize, height: height as usize, count: count as usize, region: region.to_vec(), opts }))
+    Ok(AsyncTask::new(TrackTask { frames: frames.to_vec(), width: width as usize, height: height as usize, count: count as usize, region: region.to_vec(), opts, control: control_of(control) }))
 }
 
 pub struct GuidedTask {
@@ -202,6 +247,7 @@ pub struct DepthTask {
     motion: Vec<f64>,
     previous: Option<Vec<f32>>,
     opts: depth::DepthOptions,
+    control: Arc<control::Control>,
 }
 
 impl Task for DepthTask {
@@ -222,8 +268,9 @@ impl Task for DepthTask {
         if !ok {
             return Err(Error::from_reason("ave-native: depthSequence needs count gray frames, ascending keys from 0 to count - 1, a disparity map per key, 9 numbers of motion per frame, and a previous map of one frame"));
         }
-        std::panic::catch_unwind(|| depth::depth_sequence(&self.gray, self.width, self.height, self.count, &self.keys, &self.disparity, &self.motion, self.previous.as_deref(), &self.opts))
-            .map_err(|_| Error::from_reason("ave-native: depth_sequence panicked"))
+        std::panic::catch_unwind(|| depth::depth_sequence(&self.gray, self.width, self.height, self.count, &self.keys, &self.disparity, &self.motion, self.previous.as_deref(), &self.opts, &self.control))
+            .map_err(|_| Error::from_reason("ave-native: depth_sequence panicked"))?
+            .map_err(cancelled)
     }
 
     fn resolve(&mut self, _env: Env, out: Self::Output) -> Result<Self::JsValue> {
@@ -244,9 +291,11 @@ pub struct DepthSequenceOptions {
 
 /// Depth for every frame of a chunk from model results on keyframes: each keyframe fitted to the one
 /// before, carried between keyframes along the camera's motion, edges snapped to the frames, and
-/// blended lightly over time. Distance on 0 (near) .. 1 (far), one frame after another.
+/// blended lightly over time. Distance on 0 (near) .. 1 (far), one frame after another. `control`
+/// cancels it and counts a step per keyframe and per frame of each pass.
 #[napi(js_name = "depthSequence")]
-pub fn depth_sequence(gray: Uint8Array, width: u32, height: u32, count: u32, keys: Uint32Array, disparity: Float32Array, motion: Float64Array, options: Option<DepthSequenceOptions>) -> AsyncTask<DepthTask> {
+#[allow(clippy::too_many_arguments)]
+pub fn depth_sequence(gray: Uint8Array, width: u32, height: u32, count: u32, keys: Uint32Array, disparity: Float32Array, motion: Float64Array, options: Option<DepthSequenceOptions>, control: Option<&TaskControl>) -> AsyncTask<DepthTask> {
     let mut opts = depth::DepthOptions::default();
     let mut previous = None;
     if let Some(o) = options {
@@ -271,6 +320,7 @@ pub fn depth_sequence(gray: Uint8Array, width: u32, height: u32, count: u32, key
         motion: motion.to_vec(),
         previous,
         opts,
+        control: control_of(control),
     })
 }
 
