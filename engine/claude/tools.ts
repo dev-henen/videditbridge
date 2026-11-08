@@ -41,7 +41,7 @@ import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
 import { replaceWords, vocabularySuggestions } from "../tools/transcript/fix.js";
 import { REVIEW_CHECKS, reviewEdit, textLayerBox } from "../tools/review/index.js";
-import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, frameToSource, personRegion, selectObject, trackFaces, writeMaskOverlay, writeTrackPreview, framePointToSource, quadCenter, quadOf, trackPointsInClips, trackSampler, writeCornersPreview, type ClipFaces } from "../tools/vision/index.js";
+import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, frameToSource, personRegion, selectObject, trackFaces, writeMaskOverlay, writeTrackPreview, framePointToSource, pinnedFrameCorners, quadCenter, quadOf, trackPointsInClips, trackSampler, writeCornersPreview, type ClipFaces } from "../tools/vision/index.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
@@ -2333,6 +2333,52 @@ export const TOOLS: ToolDefinition[] = [
     },
   }),
   tool({
+    name: "pin_mask",
+    description:
+      "Pin a shape mask to a tracked point or surface (track_points), so the shape moves, grows and turns in perspective with it: a grade on a sign or a building's face, a blur over a license plate, a glow on a moving object's area. " +
+      "The effect is found by its label (grade_region's label, or the label of any effect with a shape mask). Draw the shape where it belongs at the first moment the track covers the clip; it keeps that place on the tracked thing. Sets the shape's corners (replacing its keyframes); before and after the track it holds still. " +
+      "Check with render_mask at the start, middle and end, and at the fastest motion.",
+    input: z.object({
+      target: z.string().describe('The clip id, media layer id or "global" the effect is on'),
+      label: z.string().describe("The masked effect's label"),
+      trackId: z.string(),
+    }),
+    mutates: true,
+    run: async (s, i, activity) => {
+      const effect = ops.maskedEffects(s.project, i.target).find((e) => e.label === i.label);
+      if (!effect?.mask) return { text: `No masked effect "${i.label}" on ${i.target}. Masked effects there: ${ops.maskedEffects(s.project, i.target).map((e) => e.label ?? e.type).join(", ") || "(none)"}`, isError: true };
+      const shape = effect.mask.kind === "shape" ? effect.mask.shape : undefined;
+      if (!shape) return { text: `"${i.label}" has a ${effect.mask.kind} mask; only shape masks can be pinned (key, luma and model masks follow the picture by themselves).`, isError: true };
+      const spec = s.project.tracks[i.trackId];
+      if (!spec) return { text: `No track "${i.trackId}". Tracks: ${Object.keys(s.project.tracks).join(", ") || "(none; make one with track_points)"}`, isError: true };
+      const timeline = computeTimeline(s.project);
+      const clip = timeline.clips.find((c) => c.clip.id === i.target);
+      const layer = s.project.layers.find((l) => l.id === i.target);
+      const [start, end] = clip ? [clip.start, clip.end] : layer ? [layer.start, layer.start + layer.duration] : [0, timeline.duration];
+      const sample = trackSampler(s.project, await trackPointsInClips(s.project, i.trackId, { ...s.renderOptions, onProgress: (p) => activity?.progress(0.9 * p) }));
+      const { width: W, height: H, fps } = s.project.settings;
+      const seen: { time: number; quad: [number, number][] }[] = [];
+      for (let f = 0; start + f / fps <= end + 1e-6; f++) {
+        const at = sample(start + f / fps);
+        if (at) seen.push({ time: round3(f / fps), quad: quadOf(at.corners, W, H) });
+      }
+      if (seen.length < 2) return { text: `"${i.trackId}" is not tracked during ${i.target} (${round3(start)}-${round3(end)}s).`, isError: true };
+      const keys = seen.map(({ time, quad }) => ({ time, value: pinnedFrameCorners(seen[0]!.quad, quad, W, H), easing: "linear" as const }));
+      // About half a pixel at 1080p.
+      const corners = simplifyKeysBy(keys, (c) => [c.tl.x, c.tl.y, c.tr.x, c.tr.y, c.br.x, c.br.y, c.bl.x, c.bl.y], 0.4 / Math.max(W, H));
+      const { keyframes: _, ...fixed } = shape;
+      const p = ops.setMaskedEffect(s.project, i.target, i.label, { ...effect, mask: { ...effect.mask, shape: { ...fixed, corners } } });
+      const covered = seen.length / (Math.floor((end - start) * fps + 1e-6) + 1);
+      return commit(
+        s,
+        p,
+        "pin_mask",
+        i,
+        `Pinned the shape of "${i.label}" on ${i.target} to "${i.trackId}": ${corners.length} corner keyframes from ${seen.length} tracked frames${covered < 0.98 ? ` (the track covers ${Math.round(covered * 100)}% of it; the shape holds still elsewhere)` : ""}. Check it with render_mask at the start, middle and end.`,
+      );
+    },
+  }),
+  tool({
     name: "replace_screen",
     description:
       "Put an image or video on a tracked flat surface (track_points with corners): a phone or monitor screen, a TV, a billboard, a sign, a picture frame. The insert is corner-pinned to the four tracked corners on every frame, so it stays on the surface as the camera or the surface moves. " +
@@ -3825,7 +3871,7 @@ export const TOOLS: ToolDefinition[] = [
     name: "grade_region",
     description:
       "Secondary color correction: grade only part of the frame, as a colorist does after the primary grade. Deepen a sky, warm or lift faces, cool the shadows, tame bright highlights, make one colored object pop. " +
-      "The mask selects the part: key (an HSL qualifier: hue range in degrees, saturation and luma ranges, with softness), luma (a brightness range: highlights or shadows), shape (a fixed ellipse or rectangle), face (soft ellipses following every face), person (the person's cutout), sky, object (select_object) or depth (a range of distance, see estimate_depth: grade the background apart from the subject); these five work on primary video clips only. " +
+      "The mask selects the part: key (an HSL qualifier: hue range in degrees, saturation and luma ranges, with softness), luma (a brightness range: highlights or shadows), shape (an ellipse, rectangle or polygon; moved with keyframes, or pinned to a tracked surface with pin_mask), face (soft ellipses following every face), person (the person's cutout), sky, object (select_object) or depth (a range of distance, see estimate_depth: grade the background apart from the subject); these five work on primary video clips only. " +
       'Masks combine (a blue key intersected with a shape over the top of the frame selects sky without blue clothes), invert, grow or shrink, and feather. color takes the same settings as color_adjust. Each correction has a label; the same label updates it (color settings merge, a new mask replaces the old), and remove: true deletes it. ' +
       "Work in this order: render_mask to check the selection at the start, middle and end of the clip (and at fast motion), then grade, then render_frame and render_scopes to check for edges and clipping. Keep feather at 0.01 or more so the edge never shows.",
     input: z.object({

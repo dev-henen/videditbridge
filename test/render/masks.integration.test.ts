@@ -67,6 +67,34 @@ describe.skipIf(!hasFfmpeg)("blend modes and masks", () => {
     }
   });
 
+  it("polygon shapes, shapes moving by keyframes, and shapes pinned by corners", async () => {
+    const matteAt = async (shape: object, times: number[]) => {
+      const p = base({ type: "color", color: "#808080" });
+      p.clips[0]!.effects = [{ type: "maskView", params: { mask: { kind: "shape", feather: 0, shape } } }];
+      return (await renderForAnalysis(p, { framesAt: times, probe: false })).frames;
+    };
+    const white = (f: { rgb: Buffer }, x: number, y: number) => px(f, x, y)[0]! > 200;
+    // A triangle pointing down: in at its top middle, out at the bottom corners.
+    const [tri] = await matteAt({ type: "polygon", points: [[0.1, 0.1], [0.9, 0.1], [0.5, 0.9]] }, [0.5]);
+    expect(white(tri!, 160, 30)).toBe(true);
+    expect(white(tri!, 160, 150)).toBe(true);
+    expect(white(tri!, 20, 160)).toBe(false);
+    expect(white(tri!, 300, 160)).toBe(false);
+    // A small square moving from the left quarter to the right quarter over the clip (linear).
+    const keyframes = [{ time: 0, value: { x: 0.25, y: 0.5 } }, { time: 0.8, value: { x: 0.75, y: 0.5 }, easing: "linear" }];
+    const [start, end] = await matteAt({ type: "rect", x: 0.25, y: 0.5, width: 0.1, height: 0.2, keyframes }, [0, 0.8]);
+    expect(white(start!, 80, 90)).toBe(true);
+    expect(white(start!, 240, 90)).toBe(false);
+    expect(white(end!, 240, 90)).toBe(true);
+    expect(white(end!, 80, 90)).toBe(false);
+    // Pinned: the frame's corners shifted right by half the frame at 0.8 s (the clip's last frame repeats the one before).
+    const shift = (dx: number) => ({ tl: { x: dx, y: 0 }, tr: { x: 1 + dx, y: 0 }, br: { x: 1 + dx, y: 1 }, bl: { x: dx, y: 1 } });
+    const corners = [{ time: 0, value: shift(0) }, { time: 0.8, value: shift(0.5), easing: "linear" }];
+    const [, pinned] = await matteAt({ type: "ellipse", x: 0.25, y: 0.5, width: 0.1, height: 0.2, corners }, [0, 0.8]);
+    expect(white(pinned!, 240, 90)).toBe(true);
+    expect(white(pinned!, 80, 90)).toBe(false);
+  });
+
   it("a hue key selects the blue half and nothing else", async () => {
     const p = base({ type: "image", src: halves });
     p.clips[0]!.effects = [{ type: "maskView", params: { mask: { kind: "key", hue: [190, 240], saturation: [0.2, 1], feather: 0 } } }];

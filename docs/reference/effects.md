@@ -734,19 +734,22 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  | `{"kind":"shape","softness":0.2,"shape":{"type":"ellipse","x":0.5,"y":0.5,"width":0.5,"height":0.5},"invert":false,"feather":0.01,"grow":0,"smooth":0,"denoise":false}` | Limits an effect to part of the frame. Check it with render_mask before relying on it |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = an ellipse, rectangle or polygon, fixed, moving with keyframes, or pinned to a track |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
 | `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
 | `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
-| `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
-| `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
-| `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.y` | number | yes |  | Center y as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.width` | number | yes |  | Width as a fraction of frame width (> 0, ≤ 2) |
-| `mask.shape.height` | number | yes |  | Height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape` | { type, x, y, width, height, points, keyframes, corners } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
+| `mask.shape.type` | "ellipse" \| "rect" \| "polygon" |  | `"ellipse"` |  |
+| `mask.shape.x` | number |  |  | ellipse and rect: center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number |  |  | ellipse and rect: center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number |  |  | ellipse and rect: width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number |  |  | ellipse and rect: height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape.points` | unknown[][] |  |  | polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face |
+| `mask.shape.keyframes` | { time, value, easing }[] |  |  | Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box |
+| `mask.shape.corners` | { time, value, easing }[] |  |  | Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set |
 | `mask.invert` | boolean |  | `false` | Select everything except this |
 | `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |

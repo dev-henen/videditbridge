@@ -10,6 +10,7 @@ To follow the shape of an object (a person, a car) for masks and grades, use [ob
 |---|---|
 | `track_points` | Mark the four corners of a surface (top-left, top-right, bottom-right, bottom-left), or a point with the square around it, on a frame where it is clearly visible. Positions are fractions of the edit's frame at a timeline time, as in `render_frame`. Reports per clip how sure the tracking is and the unsure ranges, and shows the corners in blue on four frames. `id` marks a track again; `remove: true` forgets one |
 | `pin_layer` | Attach any layer (text, shape, graphic, media overlay) to a track. The layer keeps its offset from the tracked thing as it is at its first tracked moment; it gets position, scale and rotation keyframes |
+| `pin_mask` | Pin a shape mask (an ellipse, rectangle or polygon of `grade_region` or any masked effect, found by its label) to a track, so the area moves, grows and turns in perspective with the surface: a grade on a sign, a blur over a plate. The shape keeps its place on the tracked thing as it is at the first tracked moment |
 | `replace_screen` | Put an image, video, color or gradient on a surface track, corner-pinned on every frame. By default it covers the clip the surface was marked in, cropped to the surface's shape |
 
 ```json
@@ -28,7 +29,7 @@ To follow the shape of an object (a person, a car) for masks and grades, use [ob
 
 Tracks live in `project.tracks` by id: the asset, the source time of the frame they were marked on, the corners or the point (in source frame fractions), `radius`, `margin` and `motion`. The tracking result is cached per clip source range in the render cache folder (`tracks/`), so pinning more layers to the same track does not track again.
 
-`pin_layer` and `replace_screen` write ordinary keyframes onto the layer, so renders never run the tracker. A corner-pinned layer has `keyframes.corners`: where its four corners land over time, in frame fractions.
+`pin_layer` and `replace_screen` write ordinary keyframes onto the layer, so renders never run the tracker. A corner-pinned layer has `keyframes.corners`: where its four corners land over time, in frame fractions. `pin_mask` writes the shape's `corners` the same way: where the frame's corners go over time, so the renderer draws the shape once and carries it with `perspective`.
 
 ```json
 { "type": "media", "id": "screen_1", "assetId": "app_demo", "start": 0, "duration": 4, "size": { "width": 0.19, "height": 0.36 },
@@ -38,7 +39,7 @@ Tracks live in `project.tracks` by id: the asset, the source time of the frame t
   ] } }
 ```
 
-Since the keyframes are fixed when the tool runs, moving or trimming the clip under the layer afterwards leaves them where they were; run `pin_layer` or `replace_screen` again after such a change.
+Since the keyframes are fixed when the tool runs, moving or trimming the clip under the layer afterwards leaves them where they were; run `pin_layer`, `pin_mask` or `replace_screen` again after such a change.
 
 ## How it works
 

@@ -2,7 +2,7 @@
 
 # Claude tools
 
-114 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+115 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -19,7 +19,7 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [set_color_space](#set_color_space), [apply_look](#apply_look), [export_lut](#export_lut), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
+- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [pin_mask](#pin_mask), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [set_color_space](#set_color_space), [apply_look](#apply_look), [export_lut](#export_lut), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -1126,19 +1126,22 @@ _No parameters._
 | `opacity` | number |  |  | (≥ 0, ≤ 1) |
 | `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" \| "addlight" \| "screenlight" |  |  | Override the preset's blend (screen for light on dark, normal for snow and smoke) |
 | `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | Show the particles only where this selects in the picture under them (sky, person, key, luma or shape) |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = an ellipse, rectangle or polygon, fixed, moving with keyframes, or pinned to a track |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
 | `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
 | `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
-| `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
-| `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
-| `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.y` | number | yes |  | Center y as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.width` | number | yes |  | Width as a fraction of frame width (> 0, ≤ 2) |
-| `mask.shape.height` | number | yes |  | Height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape` | { type, x, y, width, height, points, keyframes, corners } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
+| `mask.shape.type` | "ellipse" \| "rect" \| "polygon" |  | `"ellipse"` |  |
+| `mask.shape.x` | number |  |  | ellipse and rect: center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number |  |  | ellipse and rect: center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number |  |  | ellipse and rect: width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number |  |  | ellipse and rect: height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape.points` | unknown[][] |  |  | polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face |
+| `mask.shape.keyframes` | { time, value, easing }[] |  |  | Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box |
+| `mask.shape.corners` | { time, value, easing }[] |  |  | Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set |
 | `mask.invert` | boolean |  | `false` | Select everything except this |
 | `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
@@ -1197,19 +1200,22 @@ _No parameters._
 | `intensity` | number |  |  | Brightness: rays default 0.8, flare 1 (≥ 0, ≤ 3) |
 | `color` | string |  |  | Light color (rays default warm #FFE6B8; flare by look) |
 | `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | rays: where they show; flare: where the flare layer shows |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = an ellipse, rectangle or polygon, fixed, moving with keyframes, or pinned to a track |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
 | `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
 | `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
-| `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
-| `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
-| `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.y` | number | yes |  | Center y as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.width` | number | yes |  | Width as a fraction of frame width (> 0, ≤ 2) |
-| `mask.shape.height` | number | yes |  | Height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape` | { type, x, y, width, height, points, keyframes, corners } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
+| `mask.shape.type` | "ellipse" \| "rect" \| "polygon" |  | `"ellipse"` |  |
+| `mask.shape.x` | number |  |  | ellipse and rect: center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number |  |  | ellipse and rect: center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number |  |  | ellipse and rect: width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number |  |  | ellipse and rect: height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape.points` | unknown[][] |  |  | polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face |
+| `mask.shape.keyframes` | { time, value, easing }[] |  |  | Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box |
+| `mask.shape.corners` | { time, value, easing }[] |  |  | Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set |
 | `mask.invert` | boolean |  | `false` | Select everything except this |
 | `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
@@ -1307,6 +1313,16 @@ _No parameters._
 | `layerId` | string | yes |  |  |
 | `trackId` | string | yes |  |  |
 | `follow` | "position" \| "scale" \| "rotation"[] |  |  | What to follow (default: position for translation tracks; position, scale and rotation otherwise) |
+
+### pin_mask
+
+**edits**. Pin a shape mask to a tracked point or surface (track_points), so the shape moves, grows and turns in perspective with it: a grade on a sign or a building's face, a blur over a license plate, a glow on a moving object's area. The effect is found by its label (grade_region's label, or the label of any effect with a shape mask). Draw the shape where it belongs at the first moment the track covers the clip; it keeps that place on the tracked thing. Sets the shape's corners (replacing its keyframes); before and after the track it holds still. Check with render_mask at the start, middle and end, and at the fastest motion.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | The clip id, media layer id or "global" the effect is on |
+| `label` | string | yes |  | The masked effect's label |
+| `trackId` | string | yes |  |  |
 
 ### replace_screen
 
@@ -1479,26 +1495,29 @@ _No parameters._
 
 ### grade_region
 
-**edits**. Secondary color correction: grade only part of the frame, as a colorist does after the primary grade. Deepen a sky, warm or lift faces, cool the shadows, tame bright highlights, make one colored object pop. The mask selects the part: key (an HSL qualifier: hue range in degrees, saturation and luma ranges, with softness), luma (a brightness range: highlights or shadows), shape (a fixed ellipse or rectangle), face (soft ellipses following every face), person (the person's cutout), sky, object (select_object) or depth (a range of distance, see estimate_depth: grade the background apart from the subject); these five work on primary video clips only. Masks combine (a blue key intersected with a shape over the top of the frame selects sky without blue clothes), invert, grow or shrink, and feather. color takes the same settings as color_adjust. Each correction has a label; the same label updates it (color settings merge, a new mask replaces the old), and remove: true deletes it. Work in this order: render_mask to check the selection at the start, middle and end of the clip (and at fast motion), then grade, then render_frame and render_scopes to check for edges and clipping. Keep feather at 0.01 or more so the edge never shows.
+**edits**. Secondary color correction: grade only part of the frame, as a colorist does after the primary grade. Deepen a sky, warm or lift faces, cool the shadows, tame bright highlights, make one colored object pop. The mask selects the part: key (an HSL qualifier: hue range in degrees, saturation and luma ranges, with softness), luma (a brightness range: highlights or shadows), shape (an ellipse, rectangle or polygon; moved with keyframes, or pinned to a tracked surface with pin_mask), face (soft ellipses following every face), person (the person's cutout), sky, object (select_object) or depth (a range of distance, see estimate_depth: grade the background apart from the subject); these five work on primary video clips only. Masks combine (a blue key intersected with a shape over the top of the frame selects sky without blue clothes), invert, grow or shrink, and feather. color takes the same settings as color_adjust. Each correction has a label; the same label updates it (color settings merge, a new mask replaces the old), and remove: true deletes it. Work in this order: render_mask to check the selection at the start, middle and end of the clip (and at fast motion), then grade, then render_frame and render_scopes to check for edges and clipping. Keep feather at 0.01 or more so the edge never shows.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `target` | string | yes |  | A clip id, a media layer id, "all-clips", or "global" (whole video; key, luma and shape masks only) |
 | `label` | string | yes |  | Name of this correction, e.g. 'deeper sky' or 'lift faces' |
 | `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | What to grade; needed for a new correction, omit to keep the current mask |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = an ellipse, rectangle or polygon, fixed, moving with keyframes, or pinned to a track |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
 | `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
 | `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
-| `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
-| `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
-| `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.y` | number | yes |  | Center y as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.width` | number | yes |  | Width as a fraction of frame width (> 0, ≤ 2) |
-| `mask.shape.height` | number | yes |  | Height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape` | { type, x, y, width, height, points, keyframes, corners } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
+| `mask.shape.type` | "ellipse" \| "rect" \| "polygon" |  | `"ellipse"` |  |
+| `mask.shape.x` | number |  |  | ellipse and rect: center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number |  |  | ellipse and rect: center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number |  |  | ellipse and rect: width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number |  |  | ellipse and rect: height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape.points` | unknown[][] |  |  | polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face |
+| `mask.shape.keyframes` | { time, value, easing }[] |  |  | Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box |
+| `mask.shape.corners` | { time, value, easing }[] |  |  | Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set |
 | `mask.invert` | boolean |  | `false` | Select everything except this |
 | `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
@@ -1585,19 +1604,22 @@ _No parameters._
 |---|---|---|---|---|
 | `target` | string | yes |  | The clip id, media layer id, or "global" the mask is (or will be) on |
 | `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | A mask to try |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = an ellipse, rectangle or polygon, fixed, moving with keyframes, or pinned to a track |
 | `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
 | `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
 | `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
 | `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
 | `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
 | `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
-| `mask.shape` | { type, x, y, width, height } |  |  | shape: the area, fixed for the whole clip |
-| `mask.shape.type` | "ellipse" \| "rect" |  | `"ellipse"` |  |
-| `mask.shape.x` | number | yes |  | Center x as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.y` | number | yes |  | Center y as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.width` | number | yes |  | Width as a fraction of frame width (> 0, ≤ 2) |
-| `mask.shape.height` | number | yes |  | Height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape` | { type, x, y, width, height, points, keyframes, corners } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
+| `mask.shape.type` | "ellipse" \| "rect" \| "polygon" |  | `"ellipse"` |  |
+| `mask.shape.x` | number |  |  | ellipse and rect: center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number |  |  | ellipse and rect: center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number |  |  | ellipse and rect: width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number |  |  | ellipse and rect: height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape.points` | unknown[][] |  |  | polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face |
+| `mask.shape.keyframes` | { time, value, easing }[] |  |  | Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box |
+| `mask.shape.corners` | { time, value, easing }[] |  |  | Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set |
 | `mask.invert` | boolean |  | `false` | Select everything except this |
 | `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
 | `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |

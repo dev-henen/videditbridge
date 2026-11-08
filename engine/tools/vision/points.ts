@@ -42,6 +42,44 @@ export const motionOf = (spec: Pick<Track, "corners" | "motion">): Motion => spe
 
 export const quadOf = (c: Corners, w = 1, h = 1): Quad => [c.tl, c.tr, c.br, c.bl].map((p) => [p.x * w, p.y * h]);
 
+/** The projective map (3x3, row major) taking the four points `from` to `to`, in order. */
+export function quadToQuad(from: Quad, to: Quad): number[] {
+  // Each quad from the unit square (Heckbert's closed form); then to after from's inverse.
+  const square = (q: Quad): number[] => {
+    const [[x0, y0], [x1, y1], [x2, y2], [x3, y3]] = q as [[number, number], [number, number], [number, number], [number, number]];
+    const [sx, sy] = [x0 - x1 + x2 - x3, y0 - y1 + y2 - y3];
+    let [g, h] = [0, 0];
+    if (Math.abs(sx) > 1e-12 || Math.abs(sy) > 1e-12) {
+      const [dx1, dx2, dy1, dy2] = [x1 - x2, x3 - x2, y1 - y2, y3 - y2];
+      const den = dx1 * dy2 - dx2 * dy1;
+      g = (sx * dy2 - dx2 * sy) / den;
+      h = (dx1 * sy - sx * dy1) / den;
+    }
+    return [x1 - x0 + g * x1, x3 - x0 + h * x3, x0, y1 - y0 + g * y1, y3 - y0 + h * y3, y0, g, h, 1];
+  };
+  const [a, b] = [square(from), square(to)];
+  // Adjugate of a (its inverse up to scale, which a projective map ignores).
+  const inv = [
+    a[4]! * a[8]! - a[5]! * a[7]!, a[2]! * a[7]! - a[1]! * a[8]!, a[1]! * a[5]! - a[2]! * a[4]!,
+    a[5]! * a[6]! - a[3]! * a[8]!, a[0]! * a[8]! - a[2]! * a[6]!, a[2]! * a[3]! - a[0]! * a[5]!,
+    a[3]! * a[7]! - a[4]! * a[6]!, a[1]! * a[6]! - a[0]! * a[7]!, a[0]! * a[4]! - a[1]! * a[3]!,
+  ];
+  return Array.from({ length: 9 }, (_, k) => b[Math.floor(k / 3) * 3]! * inv[k % 3]! + b[Math.floor(k / 3) * 3 + 1]! * inv[3 + (k % 3)]! + b[Math.floor(k / 3) * 3 + 2]! * inv[6 + (k % 3)]!);
+}
+
+/**
+ * Where the frame's corners go (frame fractions) when what the track saw as `from` is seen as `to`
+ * (both quads in pixels of a `w` x `h` frame): a shape drawn at `from`'s moment, carried in perspective.
+ */
+export function pinnedFrameCorners(from: Quad, to: Quad, w: number, h: number): Corners {
+  const m = quadToQuad(from, to);
+  const at = (x: number, y: number) => {
+    const z = m[6]! * x + m[7]! * y + m[8]!;
+    return { x: r4((m[0]! * x + m[1]! * y + m[2]!) / z / w), y: r4((m[3]! * x + m[4]! * y + m[5]!) / z / h) };
+  };
+  return { tl: at(0, 0), tr: at(w, 0), br: at(w, h), bl: at(0, h) };
+}
+
 const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
 
 export const cornersOf = (q: Quad, w = 1, h = 1): Corners => {

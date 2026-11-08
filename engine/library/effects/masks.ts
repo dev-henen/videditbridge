@@ -1,4 +1,5 @@
-import type { Mask, MaskPart } from "../../core/schema.js";
+import type { Easing, Mask, MaskPart } from "../../core/schema.js";
+import { numberExpr } from "../../core/keyframes.js";
 import { clamp, round3 } from "../../core/util.js";
 import { labeler, type EffectContext } from "./helpers.js";
 
@@ -29,7 +30,33 @@ export function maskObjects(mask: Mask | undefined): string[] {
 
 /** Whether the matte changes over time by itself (temporal smoothing). */
 export function maskIsTemporal(mask: Mask | undefined): boolean {
-  return !!mask && mask.smooth > 1;
+  return !!mask && (mask.smooth > 1 || parts(mask).some((m) => !!shapeMotion(m)));
+}
+
+type Shape = NonNullable<Selection["shape"]>;
+type Corners = { tl: { x: number; y: number }; tr: { x: number; y: number }; br: { x: number; y: number }; bl: { x: number; y: number } };
+
+/** A shape's center: its own for ellipse and rect, the middle of its points' box for a polygon. */
+export function shapeCenter(s: Shape): [number, number] {
+  if (s.type !== "polygon") return [s.x ?? 0.5, s.y ?? 0.5];
+  const xs = s.points!.map((p) => p[0]);
+  const ys = s.points!.map((p) => p[1]);
+  return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+}
+
+/**
+ * How a shape moves: where the frame's corners go over time (frame fractions), from `corners`
+ * (pinned to a track) or from `keyframes` (center and scale: each frame corner moved and scaled about
+ * the shape's center). Undefined for a fixed shape.
+ */
+export function shapeMotion(m: Selection): { time: number; value: Corners; easing: Easing }[] | undefined {
+  const s = m.kind === "shape" ? m.shape : undefined;
+  if (!s) return undefined;
+  if (s.corners?.length) return s.corners;
+  if (!s.keyframes?.length) return undefined;
+  const [cx, cy] = shapeCenter(s);
+  const at = (k: { x: number; y: number; scale: number }, fx: number, fy: number) => ({ x: k.x + (fx - cx) * k.scale, y: k.y + (fy - cy) * k.scale });
+  return s.keyframes.map((k) => ({ time: k.time, easing: k.easing, value: { tl: at(k.value, 0, 0), tr: at(k.value, 1, 0), br: at(k.value, 1, 1), bl: at(k.value, 0, 1) } }));
 }
 
 /** Plain-language description of a mask, for summaries. */
@@ -37,7 +64,12 @@ export function describeMask(mask: Mask): string {
   const one = (m: Selection): string => {
     const bits: string[] = [];
     if (m.kind === "object") bits.push(`"${m.object ?? ""}"`);
-    if (m.kind === "shape" && m.shape) bits.push(`${m.shape.type} at (${m.shape.x}, ${m.shape.y}) ${m.shape.width}x${m.shape.height}`);
+    if (m.kind === "shape" && m.shape) {
+      const s = m.shape;
+      bits.push(s.type === "polygon" ? `polygon of ${s.points!.length} points` : `${s.type} at (${s.x}, ${s.y}) ${s.width}x${s.height}`);
+      if (s.corners?.length) bits.push("pinned to a track");
+      else if (s.keyframes?.length) bits.push(`moving (${s.keyframes.length} keyframes)`);
+    }
     if (m.hue) bits.push(`hue ${m.hue[0]}-${m.hue[1]}`);
     if (m.saturation) bits.push(`sat ${m.saturation[0]}-${m.saturation[1]}`);
     if (m.luma) bits.push(`luma ${m.luma[0]}-${m.luma[1]}`);
@@ -102,10 +134,20 @@ export function keyExpr(m: Selection): string {
 }
 
 /** Inside test of a shape as a geq expression of X, Y, W, H (1 inside, 0 outside). */
-function shapeExpr(m: Selection): string {
+function shapeExpr(m: Selection, W: number, H: number): string {
   const s = m.shape ?? { type: "ellipse" as const, x: 0.5, y: 0.5, width: 0.5, height: 0.5 };
-  const dx = `(X/W-${round3(s.x)})/${round3(s.width / 2)}`;
-  const dy = `(Y/H-${round3(s.y)})/${round3(s.height / 2)}`;
+  if (s.type === "polygon") {
+    // Even-odd rule at the pixel's center: count the edges a ray to the left crosses. Flat edges
+    // never cross and are left out (their slope would divide by zero).
+    const pts = s.points!.map(([x, y]) => [Math.round(x * W * 100) / 100, Math.round(y * H * 100) / 100] as const);
+    const crossings = pts
+      .map((a, i) => [a, pts[(i + 1) % pts.length]!] as const)
+      .filter(([a, b]) => a[1] !== b[1])
+      .map(([[x1, y1], [x2, y2]]) => `abs(gt(${y1},Y+0.5)-gt(${y2},Y+0.5))*lt(X+0.5,${round3((x2 - x1) / (y2 - y1))}*(Y+0.5-${y1})+${x1})`);
+    return `mod(${crossings.join("+")},2)`;
+  }
+  const dx = `(X/W-${round3(s.x!)})/${round3(s.width! / 2)}`;
+  const dy = `(Y/H-${round3(s.y!)})/${round3(s.height! / 2)}`;
   return s.type === "rect" ? `lte(max(abs(${dx}),abs(${dy})),1)` : `lte(hypot(${dx},${dy}),1)`;
 }
 
@@ -149,7 +191,21 @@ export function buildMatte(ctx: EffectContext, mask: Mask): Matte {
       source = `[${model.get(key)!.shift()}]null`;
     } else if (m.kind === "shape") {
       // Drawn once; every consumer holds the last frame.
-      source = `nullsrc=s=${W}x${H}:r=${F},trim=end_frame=1,format=gray,geq=lum='255*${shapeExpr(m)}'`;
+      source = `nullsrc=s=${W}x${H}:r=${F},trim=end_frame=1,format=gray,geq=lum='255*${shapeExpr(m, W, H)}'`;
+      const motion = shapeMotion(m);
+      if (motion) {
+        // Moving: the drawing repeated for every frame, and carried by perspective to where the
+        // frame's corners are at each frame's time (its `on` counts frames from 1).
+        const frames = Math.ceil(ctx.duration * F) + 2;
+        const coord = (c: keyof Corners, axis: "x" | "y") => {
+          const size = axis === "x" ? W : H;
+          const keys = motion.map((k) => ({ ...k, value: k.value[c][axis] * size }));
+          return keys.length > 1 ? numberExpr(keys, `((on-1)/${F})`) : String(round3(keys[0]!.value));
+        };
+        // perspective's corner order: top-left, top-right, bottom-left, bottom-right.
+        const coords = (["tl", "tr", "bl", "br"] as const).flatMap((c, i) => [`x${i}='${coord(c, "x")}'`, `y${i}='${coord(c, "y")}'`]).join(":");
+        source += `,loop=loop=-1:size=1,trim=end_frame=${frames},setpts=N/(${F}*TB),perspective=${coords}:sense=destination:interpolation=linear:eval=${motion.length > 1 ? "frame" : "init"}`;
+      }
     } else {
       // A per-pixel function of color, so it is baked into a lookup table once and applied at full size.
       const [pic, clut] = [label("mmp"), label("mmc")];

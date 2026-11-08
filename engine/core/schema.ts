@@ -109,6 +109,27 @@ export const AssetSchema = z.discriminatedUnion("type", [
 
 export const EasingSchema = z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]);
 
+export const PositionSchema = z.object({
+  x: z.number().describe("Horizontal center, 0 = left edge, 1 = right edge"),
+  y: z.number().describe("Vertical center, 0 = top edge, 1 = bottom edge"),
+});
+
+/** Four corners of a flat surface (a screen, a sign), as it appears in a frame. */
+export const CornersSchema = z.object({
+  tl: PositionSchema.describe("Top-left corner"),
+  tr: PositionSchema.describe("Top-right corner"),
+  br: PositionSchema.describe("Bottom-right corner"),
+  bl: PositionSchema.describe("Bottom-left corner"),
+});
+
+/** A value at a moment, reached from the previous keyframe with `easing`. */
+export const keyframe = <T extends z.ZodType>(value: T) =>
+  z.object({
+    time: z.number().min(0).describe("Seconds from the start of the layer or clip"),
+    value,
+    easing: EasingSchema.default("ease-in-out").describe("How the value moves into this keyframe from the previous one"),
+  });
+
 const range01 = z.tuple([z.number().min(0).max(1), z.number().min(0).max(1)]);
 
 /** What a mask selects, without modifiers. */
@@ -116,7 +137,7 @@ const maskSelection = {
   kind: z
     .enum(["person", "face", "object", "sky", "depth", "key", "luma", "shape"])
     .describe(
-      "person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = a fixed ellipse or rectangle",
+      "person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = an ellipse, rectangle or polygon, fixed, moving with keyframes, or pinned to a track",
     ),
   object: z.string().optional().describe("object: the id of a tracked object (project.objects, made with select_object)"),
   hue: z
@@ -131,14 +152,32 @@ const maskSelection = {
   softness: z.number().min(0).max(1).default(0.2).describe("key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge)"),
   shape: z
     .object({
-      type: z.enum(["ellipse", "rect"]).default("ellipse"),
-      x: z.number().min(0).max(1).describe("Center x as a frame fraction"),
-      y: z.number().min(0).max(1).describe("Center y as a frame fraction"),
-      width: z.number().positive().max(2).describe("Width as a fraction of frame width"),
-      height: z.number().positive().max(2).describe("Height as a fraction of frame height"),
+      type: z.enum(["ellipse", "rect", "polygon"]).default("ellipse"),
+      x: z.number().min(0).max(1).optional().describe("ellipse and rect: center x as a frame fraction"),
+      y: z.number().min(0).max(1).optional().describe("ellipse and rect: center y as a frame fraction"),
+      width: z.number().positive().max(2).optional().describe("ellipse and rect: width as a fraction of frame width"),
+      height: z.number().positive().max(2).optional().describe("ellipse and rect: height as a fraction of frame height"),
+      points: z
+        .array(z.tuple([z.number().min(-0.5).max(1.5), z.number().min(-0.5).max(1.5)]))
+        .min(3)
+        .max(32)
+        .optional()
+        .describe("polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face"),
+      keyframes: z
+        .array(keyframe(z.object({ x: z.number().min(-0.5).max(1.5), y: z.number().min(-0.5).max(1.5), scale: z.number().positive().max(10).default(1) })))
+        .optional()
+        .describe("Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box"),
+      corners: z
+        .array(keyframe(CornersSchema))
+        .optional()
+        .describe("Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set"),
+    })
+    .superRefine((s, ctx) => {
+      if (s.type === "polygon" ? !s.points : [s.x, s.y, s.width, s.height].some((v) => v === undefined))
+        ctx.addIssue({ code: "custom", message: s.type === "polygon" ? "A polygon shape needs points" : "An ellipse or rect shape needs x, y, width and height" });
     })
     .optional()
-    .describe("shape: the area, fixed for the whole clip"),
+    .describe("shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track"),
   invert: z.boolean().default(false).describe("Select everything except this"),
 };
 
@@ -197,26 +236,6 @@ export const AnimationSchema = z.object({
   easing: EasingSchema.default("ease-out"),
 });
 
-export const PositionSchema = z.object({
-  x: z.number().describe("Horizontal center, 0 = left edge, 1 = right edge"),
-  y: z.number().describe("Vertical center, 0 = top edge, 1 = bottom edge"),
-});
-
-/** Four corners of a flat surface (a screen, a sign), as it appears in a frame. */
-export const CornersSchema = z.object({
-  tl: PositionSchema.describe("Top-left corner"),
-  tr: PositionSchema.describe("Top-right corner"),
-  br: PositionSchema.describe("Bottom-right corner"),
-  bl: PositionSchema.describe("Bottom-left corner"),
-});
-
-/** A value at a moment, reached from the previous keyframe with `easing`. */
-export const keyframe = <T extends z.ZodType>(value: T) =>
-  z.object({
-    time: z.number().min(0).describe("Seconds from the start of the layer or clip"),
-    value,
-    easing: EasingSchema.default("ease-in-out").describe("How the value moves into this keyframe from the previous one"),
-  });
 
 export const LayerKeyframesSchema = z
   .object({

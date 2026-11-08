@@ -16,7 +16,7 @@ Movie-level color grading and the visual effects editors ask for most: log foota
 - [x] **Blend modes** (5.1) on layers, on both renderers.
 - [x] **Any-object selection and tracking** (5.2): `select_object`, `track_object`. See [the objects guide](../guides/objects.md).
 - [x] **Sky replacement** (5.3): `replace_sky`. See [the sky guide](../guides/sky.md).
-- [x] **Point and surface tracking** (5.4): `track_points`, `pin_layer`, `replace_screen`. See [the tracking guide](../guides/tracking.md).
+- [x] **Point and surface tracking** (5.4): `track_points`, `pin_layer`, `pin_mask`, `replace_screen`. See [the tracking guide](../guides/tracking.md).
 - [x] **Atmosphere and light** (6): `add_particles`, `add_light`. See [the atmosphere and light guide](../guides/atmosphere-and-light.md).
 - [x] **Depth** (7.1): `estimate_depth`, `set_focus`, depth of field, fog, parallax. See [the depth guide](../guides/depth.md).
 - [x] **Object removal** (7.2): `remove_object`. See [the removal guide](../guides/removal.md).
@@ -26,7 +26,7 @@ Movie-level color grading and the visual effects editors ask for most: log foota
 
 - [x] 1. **Rust kernels:** cancelling and progress inside them (`TaskControl` and `controlled`, section 3.5).
 - [x] 2. **Effect gaps:** radial `chromaticAberration` (4.4) and linear-light `add` and `screen` blending (5.1).
-- [ ] 3. **Mask shapes:** polygons, keyframes, and shapes pinned to a track (3.2).
+- [x] 3. **Mask shapes:** polygons, keyframes, and shapes pinned to a track (3.2).
 - [ ] 4. **`replace_screen`:** the insert's matched blur, glare and color, and occlusion by an object mask (5.4).
 - [ ] 5. **FFmpeg backend precision** (3.3): the 10-bit pipeline, 16-bit masks, `gbrp16le` RGB stages, ProRes 422 HQ export and a 10-bit segment cache.
 - [ ] 6. **Hardware encoding** with VideoToolbox (macOS) and VAAPI (Linux) (3.6).
@@ -55,7 +55,7 @@ A clip's grade lives in its `effects`, in colorist order: the asset's `colorSpac
 
 ### 3.2 Masks
 
-Any effect takes an optional `mask`. Kinds: `person`, `face`, `object` (a tracked object), `sky`, `depth` (prepared before rendering, cached), and `key` (HSL qualifier), `luma`, `shape` (ellipse or rectangle, fixed for the clip), built in the graph. Every mask takes `invert`, `feather`, `grow`, `smooth`, `denoise` and `combine` (`add`, `intersect`, `subtract`). `render_mask` shows the matte. Left: polygon shapes, keyframed shapes, shapes pinned to a track (checklist 3).
+Any effect takes an optional `mask`. Kinds: `person`, `face`, `object` (a tracked object), `sky`, `depth` (prepared before rendering, cached), and `key` (HSL qualifier), `luma`, `shape` (ellipse, rectangle or polygon), built in the graph. A shape can move: `keyframes` give its center and scale over time, and `pin_mask` pins it to a track (`corners`: where the frame's corners go over time); the shape is drawn once and carried by `perspective` per frame. Every mask takes `invert`, `feather`, `grow`, `smooth`, `denoise` and `combine` (`add`, `intersect`, `subtract`). `render_mask` shows the matte.
 
 ### 3.3 Precision
 
@@ -113,9 +113,9 @@ From a point, box or name: SAM 2.1 tiny on keyframes, carried between them by Ru
 
 skyseg finds the sky on keyframes, Rust tracking carries the matte and measures the camera's motion; the new sky moves with the camera, matched in brightness, with horizon haze and slight relighting. See [the sky guide](../guides/sky.md).
 
-### 5.4 Points and surfaces (`track_points`, `pin_layer`, `replace_screen`)
+### 5.4 Points and surfaces (`track_points`, `pin_layer`, `pin_mask`, `replace_screen`)
 
-Rust Lucas-Kanade with RANSAC (translation, similarity or perspective), stored in `project.tracks`; `pin_layer` turns a track into keyframes, `replace_screen` adds a corner-pinned insert. Worst synthetic corner error 0.28 px. Left (checklist 4): the insert's matched blur, glare and color, and occlusion by an object mask. See [the tracking guide](../guides/tracking.md).
+Rust Lucas-Kanade with RANSAC (translation, similarity or perspective), stored in `project.tracks`; `pin_layer` turns a track into keyframes, `pin_mask` pins a shape mask to it in perspective (0.3 px on the synthetic camera move), `replace_screen` adds a corner-pinned insert. Worst synthetic corner error 0.28 px. Left (checklist 4): the insert's matched blur, glare and color, and occlusion by an object mask. See [the tracking guide](../guides/tracking.md).
 
 ## 6. Atmosphere and light (`add_particles`, `add_light`)
 

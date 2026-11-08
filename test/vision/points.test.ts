@@ -1,13 +1,32 @@
 import { describe, expect, it } from "vitest";
 import { addAsset, addClip, addLayer, createProject, simplifyKeysBy } from "../../engine/core/index.js";
 import { compileProject, padCorners, rectToQuad } from "../../engine/tools/index.js";
-import { cornersOf, fillQuad, framePointToSource, quadOf, sourcePointToFrame, specQuad, trackCornersAt, trackQuad, type PointTrack, type Quad } from "../../engine/tools/vision/index.js";
+import { cornersOf, fillQuad, framePointToSource, pinnedFrameCorners, quadOf, sourcePointToFrame, specQuad, trackCornersAt, trackQuad, type PointTrack, type Quad } from "../../engine/tools/vision/index.js";
 import { computeTimeline } from "../../engine/core/timeline.js";
 import { applyMat, cameraMove, texturedFrame } from "../helpers/textured.js";
 
 const maxError = (a: Quad, b: Quad) => Math.max(...a.map((p, c) => Math.hypot(p[0] - b[c]![0], p[1] - b[c]![1])));
 
 describe("point and surface tracking", () => {
+  it("pins a shape: the frame's corners follow the map from one tracked quad to another", () => {
+    const [w, h] = [400, 200];
+    // A known perspective map; the tracked quad and the frame's corners go through the same one.
+    const m = [1.1, 0.05, 12, -0.03, 0.95, 8, 0.0002, -0.0001, 1];
+    const at = ([x, y]: [number, number]): [number, number] => {
+      const z = m[6]! * x + m[7]! * y + m[8]!;
+      return [(m[0]! * x + m[1]! * y + m[2]!) / z, (m[3]! * x + m[4]! * y + m[5]!) / z];
+    };
+    const from: Quad = [[100, 50], [300, 60], [290, 150], [110, 140]];
+    const c = pinnedFrameCorners(from, from.map(at) as Quad, w, h);
+    const want = ([[0, 0], [w, 0], [w, h], [0, h]] as [number, number][]).map(at);
+    [c.tl, c.tr, c.br, c.bl].forEach((p, k) => {
+      expect(p.x * w).toBeCloseTo(want[k]![0], 1);
+      expect(p.y * h).toBeCloseTo(want[k]![1], 1);
+    });
+    // The same quad twice leaves the frame where it is.
+    expect(pinnedFrameCorners(from, from, w, h)).toEqual({ tl: { x: 0, y: 0 }, tr: { x: 1, y: 0 }, br: { x: 1, y: 1 }, bl: { x: 0, y: 1 } });
+  });
+
   it("fills a quad by pixel centers", () => {
     const m = fillQuad(
       [

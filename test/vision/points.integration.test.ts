@@ -4,6 +4,7 @@ import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { addAsset, positionAt, type Corners } from "../../engine/core/index.js";
 import { renderForAnalysis, runFfmpegOrThrow } from "../../engine/tools/index.js";
+import { quadOf, quadToQuad } from "../../engine/tools/vision/index.js";
 import { EditorSession, executeTool } from "../../engine/claude/index.js";
 import { OUT_DIR, ffmpegAvailable } from "../helpers/media.js";
 import { applyMat, cameraMove, invertMat, texturedFrame } from "../helpers/textured.js";
@@ -114,5 +115,40 @@ describe.skipIf(!hasFfmpeg)("tracking points and surfaces", () => {
     console.error(`pin_layer: worst position error ${worst.toFixed(3)} px, ${keys.position!.length} position keyframes`);
     // A similarity track of a camera move with a little perspective: most of the error is the model.
     expect(worst, "pinned position error, px").toBeLessThan(2.5);
+  });
+
+  it("pins a shape mask to a tracked surface, in perspective", async () => {
+    const s = await session("points-pin-mask");
+    const tracked = await executeTool(s, "track_points", { time: 1, corners: frac(surfaceAt(30)), label: "wall" });
+    expect(tracked.isError, tracked.text).toBeFalsy();
+    // A polygon over the surface as it is on the clip's first frame.
+    const points = surfaceAt(0).map(([x, y]) => [x / W, y / H]);
+    const graded = await executeTool(s, "grade_region", { target: s.project.clips[0]!.id, label: "wall", mask: { kind: "shape", shape: { type: "polygon", points } }, color: { exposure: 1 } });
+    expect(graded.isError, graded.text).toBeFalsy();
+    const pinned = await executeTool(s, "pin_mask", { target: s.project.clips[0]!.id, label: "wall", trackId: "wall" });
+    expect(pinned.isError, pinned.text).toBeFalsy();
+    const shape = s.project.clips[0]!.effects.find((e) => e.label === "wall")!.mask!.shape!;
+    expect(shape.corners!.length).toBeGreaterThan(1);
+    // A point of the shape on the first frame, carried by the stored frame corners, against the truth.
+    const start = applyMat(invertMat(truth(0)), ...surfaceAt(0)[0]!);
+    let worst = 0;
+    for (let f = 0; f < FRAMES - 1; f++) {
+      const c = Object.fromEntries((["tl", "tr", "br", "bl"] as const).map((k) => [k, positionAt(shape.corners!.map((key) => ({ ...key, value: key.value[k] })), f / FPS)])) as Corners;
+      const m = quadToQuad([[0, 0], [W, 0], [W, H], [0, H]], quadOf(c, W, H));
+      const [x, y] = surfaceAt(0)[0]!;
+      const z = m[6]! * x + m[7]! * y + m[8]!;
+      const want = applyMat(truth(f), ...start);
+      worst = Math.max(worst, Math.hypot((m[0]! * x + m[1]! * y + m[2]!) / z - want[0], (m[3]! * x + m[4]! * y + m[5]!) / z - want[1]));
+    }
+    console.error(`pin_mask: worst corner error ${worst.toFixed(3)} px, ${shape.corners!.length} corner keyframes`);
+    expect(worst, "pinned shape corner error, px").toBeLessThan(1);
+    // Rendered: brighter in the middle of the surface where it has moved to than in the plain clip.
+    const f = 50;
+    const q = surfaceAt(f);
+    const [mx, my] = [Math.round(q.reduce((n, v) => n + v[0], 0) / 4), Math.round(q.reduce((n, v) => n + v[1], 0) / 4)];
+    const plain = structuredClone(s.project);
+    plain.clips[0]!.effects = [];
+    const lum = async (p: typeof plain) => (await renderForAnalysis(p, { framesAt: [f / FPS], probe: false })).frames[0]!.rgb[(my * W + mx) * 3]!;
+    expect((await lum(s.project)) - (await lum(plain))).toBeGreaterThan(20);
   });
 });
