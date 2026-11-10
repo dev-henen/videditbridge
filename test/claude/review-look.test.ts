@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bandingScore, clippedShare, skinHue, toggleShare } from "../../engine/tools/review/index.js";
+import { bandingScore, clippedByGrade, clippedShare, skinHue, toggleShare } from "../../engine/tools/review/index.js";
 import { SKIN_LINE } from "../../engine/library/effects/color-match.js";
 
 const [W, H] = [128, 64];
@@ -11,6 +11,23 @@ describe("review_edit look measurements", () => {
     const c = clippedShare(gray((x) => (x < 16 ? 255 : x < 24 ? 0 : 128)));
     expect(c.highlights).toBeCloseTo(16 / W, 3);
     expect(c.shadows).toBeCloseTo(8 / W, 3);
+  });
+
+  it("finds what a grade clipped under a look that moves it off white and black", () => {
+    // Found on real footage: a look's print curve and tint after the grade put the blown sky at
+    // 234 and the crushed shadows at a teal 12, where plain white and black counts saw nothing.
+    const footage = gray((x) => 20 + (x * 215) / W);
+    const tint = (v: number, c: number) => Math.round(12 + (v * 222) / 255) + (c === 2 ? 6 : 0);
+    const graded = (cut: boolean) => Buffer.from(Array.from({ length: W * H * 3 }, (_, k) => {
+      const v = footage[k]!;
+      return tint(cut ? (v < 70 ? 0 : v > 190 ? 255 : ((v - 70) * 255) / 120) : v, k % 3);
+    }));
+    const lost = clippedByGrade(graded(true), footage, W, H);
+    expect(lost.highlights).toBeGreaterThan(0.05);
+    expect(lost.shadows).toBeGreaterThan(0.05);
+    // The look alone clips nothing, and neither does the footage against itself.
+    expect(clippedByGrade(graded(false), footage, W, H)).toEqual({ highlights: 0, shadows: 0 });
+    expect(clippedByGrade(footage, footage, W, H)).toEqual({ highlights: 0, shadows: 0 });
   });
 
   it("sees bands in a stretched gradient, not in a fine one or in texture", () => {

@@ -11,7 +11,7 @@ import { contactSheetFrames, engineBridged, engineUnsupported, planProject, type
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
-import { colorSpaceFromTags } from "../../library/color/index.js";
+import { colorMatrixOf, colorSpaceFromTags } from "../../library/color/index.js";
 import { ensureColorTables } from "./color-space.js";
 import { effectObjects, effectRemovals, removalKey, usesDepthMask, usesFaceMask, usesPersonMask, usesSkyMask, type RemovalSpec } from "../../library/effects/index.js";
 import { maskNeeds } from "../../library/effects/masks.js";
@@ -24,7 +24,7 @@ import { DepthEstimator, depthFile, writeDepth, type DepthTrack } from "../visio
 import { Inpainter, removalFile, removalMasks, writeRemoval, type RemovalTrack } from "../vision/removal.js";
 import { Interpolator, clipFrameTimes, framePlan, interpolatedFile, needsFrames, writeInterpolated, type InterpolateTrack } from "../video/interpolate.js";
 import { withProxies } from "./proxy.js";
-import { hasFilter, probe, resolveFfmpegPath, runFfmpegOrThrow, type FfmpegOptions } from "./ffmpeg.js";
+import { hasFilter, probe, resolveFfmpegPath, runFfmpegOrThrow, type FfmpegOptions, type ProbeResult } from "./ffmpeg.js";
 import { prepareFonts, prepareFontsRecent } from "../fonts/index.js";
 
 export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segments" | "segment" | "hardwareEncoder">, FfmpegOptions {
@@ -84,7 +84,9 @@ async function readyToRender(project: Project, opts: RenderOptions | Omit<Render
   return ready;
 }
 
-/** Fill in missing asset metadata (duration, dimensions, audio presence) by probing files. */
+const probed = new Map<string, Promise<ProbeResult>>();
+
+/** Fill in missing asset metadata (duration, dimensions, audio presence, color matrix) by probing files. */
 export async function probeAssets(project: Project, opts: FfmpegOptions & { baseDir?: string } = {}): Promise<Project> {
   const out = deepClone(project);
   const baseDir = opts.baseDir ?? process.cwd();
@@ -93,13 +95,20 @@ export async function probeAssets(project: Project, opts: FfmpegOptions & { base
       if (asset.type === "color" || asset.type === "gradient") return;
       const needs =
         asset.type === "video"
-          ? asset.duration === undefined || asset.hasAudio === undefined || asset.width === undefined
+          ? asset.duration === undefined || asset.hasAudio === undefined || asset.width === undefined || asset.colorMatrix === undefined
           : asset.type === "audio"
             ? asset.duration === undefined
             : asset.width === undefined;
       if (!needs || /^[a-z]+:\/\//i.test(asset.src)) return;
-      const info = await probe(path.resolve(baseDir, asset.src), opts);
+      // A project saved before colorMatrix was kept asks on every render: once per file is enough.
+      const file = path.resolve(baseDir, asset.src);
+      if (!probed.has(file)) probed.set(file, probe(file, opts));
+      const info = await probed.get(file)!.catch((e) => {
+        probed.delete(file);
+        throw e;
+      });
       if (asset.type === "video") {
+        asset.colorMatrix ??= colorMatrixOf(info);
         asset.duration ??= info.duration;
         asset.hasAudio ??= info.hasAudio;
         asset.width ??= info.width;

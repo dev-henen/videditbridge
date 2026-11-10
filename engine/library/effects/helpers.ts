@@ -103,7 +103,7 @@ export function zoompan(ctx: EffectContext, zoomExpr: string, xExpr = "iw/2-(iw/
 }
 
 /** Rough cost of per-pixel color filters, in ms per 1080p frame on a laptop CPU (unknown filters: 3). */
-const COLOR_COST: Record<string, number> = { geq: 400, colorbalance: 30, vibrance: 12, colortemperature: 11.5, exposure: 11.5, huesaturation: 10.5, curves: 2.7, hue: 0.5, eq: 0.3, format: 0 };
+const COLOR_COST: Record<string, number> = { geq: 400, colorbalance: 30, vibrance: 12, colortemperature: 11.5, exposure: 11.5, huesaturation: 10.5, lutrgb: 3, curves: 2.7, hue: 0.5, lutyuv: 0.5, eq: 0.3, format: 0 };
 /** Cost of applying a baked lookup table, including the conversion to RGB and back. */
 const BAKED_COST = 28;
 

@@ -21,7 +21,71 @@ export const PERSON_MODEL = {
 export const PERSON_INPUT = 192;
 
 /** Bump when masks for the same source would come out differently. */
-export const MASK_VERSION = 1;
+export const MASK_VERSION = 2;
+
+/** Long side of the frames read for a cutout: the model sees them at PERSON_INPUT, and a small person again from these, closer. */
+const WORK_SIZE = 640;
+
+/** A box in frame fractions. */
+export interface FrameBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+/** A box of an RGB24 frame stretched to PERSON_INPUT square, each pixel the average of what it covers. */
+export function sampleSquare(rgb: Uint8Array, w: number, h: number, box: FrameBox = { x0: 0, y0: 0, x1: 1, y1: 1 }): Uint8Array {
+  const N = PERSON_INPUT;
+  const out = new Uint8Array(N * N * 3);
+  const [bx, by, bw, bh] = [box.x0 * w, box.y0 * h, (box.x1 - box.x0) * w, (box.y1 - box.y0) * h];
+  for (let y = 0; y < N; y++) {
+    const [ya, yb] = [Math.floor(by + (y * bh) / N), Math.max(Math.floor(by + (y * bh) / N) + 1, Math.ceil(by + ((y + 1) * bh) / N))];
+    for (let x = 0; x < N; x++) {
+      const [xa, xb] = [Math.floor(bx + (x * bw) / N), Math.max(Math.floor(bx + (x * bw) / N) + 1, Math.ceil(bx + ((x + 1) * bw) / N))];
+      let [r, g, b, n] = [0, 0, 0, 0];
+      for (let sy = ya; sy < yb; sy++) {
+        const row = Math.min(h - 1, Math.max(0, sy)) * w;
+        for (let sx = xa; sx < xb; sx++) {
+          const k = (row + Math.min(w - 1, Math.max(0, sx))) * 3;
+          r += rgb[k]!;
+          g += rgb[k + 1]!;
+          b += rgb[k + 2]!;
+          n++;
+        }
+      }
+      const o = (y * N + x) * 3;
+      out[o] = r / n;
+      out[o + 1] = g / n;
+      out[o + 2] = b / n;
+    }
+  }
+  return out;
+}
+
+/**
+ * Where to look again, closer: the box around everyone the first pass found, with room around it,
+ * when that is a small part of the frame (a wide shot: someone 20 px wide at the model's size comes
+ * out as a blob without legs or arms). Undefined when nobody is found or the people fill the frame.
+ */
+export function closerBox(p: Float32Array): FrameBox | undefined {
+  const N = PERSON_INPUT;
+  let [x0, y0, x1, y1] = [N, N, -1, -1];
+  for (let y = 0; y < N; y++)
+    for (let x = 0; x < N; x++)
+      if (p[y * N + x]! > 0.5) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+  if (x1 < 0) return undefined;
+  const [w, h] = [(x1 - x0 + 1) / N, (y1 - y0 + 1) / N];
+  if (w > 0.5 || h > 0.75 || w * h > 0.3) return undefined;
+  // Legs and arms the first pass missed lie outside its box: more room below and to the sides than above.
+  const [px, top, bottom] = [Math.max(0.06, w * 0.6), Math.max(0.04, h * 0.25), Math.max(0.08, h * 0.6)];
+  return { x0: Math.max(0, x0 / N - px), y0: Math.max(0, y0 / N - top), x1: Math.min(1, (x1 + 1) / N + px), y1: Math.min(1, (y1 + 1) / N + bottom) };
+}
 
 export interface PersonSegmenterOptions extends FfmpegOptions {
   modelsDir?: string;
@@ -105,6 +169,35 @@ export class PersonSegmenter {
   }
 
   /**
+   * Person probability per pixel, `mw` x `mh`, for an RGB24 frame of `w` x `h`: the whole frame
+   * through the model, and when the people in it are small, the area around them again from closer
+   * (closerBox), which replaces the first pass there. `previousBox` steadies that area between frames.
+   */
+  async segmentFrame(rgb: Uint8Array, w: number, h: number, mw: number, mh: number, previousBox?: FrameBox): Promise<{ mask: Float32Array; box?: FrameBox }> {
+    const whole = await this.segmentSquare(sampleSquare(rgb, w, h));
+    const mask = resizeMask(whole, PERSON_INPUT, PERSON_INPUT, mw, mh);
+    const found = closerBox(whole);
+    if (!found) return { mask };
+    // The box follows the people smoothly, and never shrinks faster than they move out of it.
+    const box: FrameBox = previousBox
+      ? { x0: Math.min(found.x0, previousBox.x0 * 0.7 + found.x0 * 0.3), y0: Math.min(found.y0, previousBox.y0 * 0.7 + found.y0 * 0.3), x1: Math.max(found.x1, previousBox.x1 * 0.7 + found.x1 * 0.3), y1: Math.max(found.y1, previousBox.y1 * 0.7 + found.y1 * 0.3) }
+      : found;
+    const [cx0, cy0, cx1, cy1] = [Math.floor(box.x0 * mw), Math.floor(box.y0 * mh), Math.ceil(box.x1 * mw), Math.ceil(box.y1 * mh)];
+    const [cw, ch] = [cx1 - cx0, cy1 - cy0];
+    if (cw < 2 || ch < 2) return { mask };
+    const close = resizeMask(await this.segmentSquare(sampleSquare(rgb, w, h, { x0: cx0 / mw, y0: cy0 / mh, x1: cx1 / mw, y1: cy1 / mh })), PERSON_INPUT, PERSON_INPUT, cw, ch);
+    // Outside the box nobody was found; inside, the closer look, eased in over its border so no seam shows.
+    mask.fill(0);
+    const edge = Math.max(1, Math.round(Math.min(cw, ch) * 0.04));
+    for (let y = 0; y < ch; y++)
+      for (let x = 0; x < cw; x++) {
+        const inset = Math.min(cx0 > 0 ? x : edge, cy0 > 0 ? y : edge, cx1 < mw ? cw - 1 - x : edge, cy1 < mh ? ch - 1 - y : edge);
+        mask[(cy0 + y) * mw + cx0 + x] = close[y * cw + x]! * Math.min(1, inset / edge);
+      }
+    return { mask, box };
+  }
+
+  /**
    * Write the person cutout of a source range as a gray video (255 = person) at `fps` frames a
    * second of source time, upright and at the source's shape (long side `size` pixels). Frames
    * stream through, so long recordings use little memory.
@@ -116,6 +209,9 @@ export class PersonSegmenter {
     const k = long / Math.max(info.width, info.height);
     const mw = Math.max(2, Math.round((info.width * k) / 2) * 2);
     const mh = Math.max(2, Math.round((info.height * k) / 2) * 2);
+    // Frames come in larger than the model reads them, so a small person can be looked at again from closer.
+    const wk = Math.min(1, WORK_SIZE / Math.max(info.width, info.height));
+    const [fw, fh] = [Math.max(PERSON_INPUT, Math.round((info.width * wk) / 2) * 2), Math.max(PERSON_INPUT, Math.round((info.height * wk) / 2) * 2)];
     const still = info.isImage || info.duration === undefined;
     const start = still ? 0 : Math.max(0, opts.start ?? 0);
     const end = still ? 0.04 : Math.min(opts.end ?? info.duration!, info.duration!);
@@ -128,7 +224,7 @@ export class PersonSegmenter {
         ...(start > 0 ? ["-ss", String(round3(start))] : []),
         ...(still ? ["-loop", "1", "-t", "0.04"] : ["-t", String(round3(Math.max(0.05, end - start)))]),
         "-i", file,
-        "-an", "-vf", `fps=${opts.fps},scale=${PERSON_INPUT}:${PERSON_INPUT}`,
+        "-an", "-vf", `fps=${opts.fps},scale=${fw}:${fh}:flags=area`,
         "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
       ],
       { windowsHide: true, signal: opts.signal },
@@ -148,7 +244,8 @@ export class PersonSegmenter {
     const encoded = done(encoder, "writing the mask");
     // A failed encoder must not leave the decoder blocked on a full pipe.
     encoded.catch(() => decoder.kill());
-    const size = PERSON_INPUT * PERSON_INPUT * 3;
+    const size = fw * fh * 3;
+    let box: FrameBox | undefined;
     const expected = Math.max(1, Math.ceil((end - start) * opts.fps));
     let pending: Buffer = Buffer.alloc(0);
     let previous: Float32Array | undefined;
@@ -157,8 +254,9 @@ export class PersonSegmenter {
       for await (const chunk of decoder.stdout as AsyncIterable<Buffer>) {
         pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
         while (pending.length >= size) {
-          const p = resizeMask(await this.segmentSquare(pending.subarray(0, size)), PERSON_INPUT, PERSON_INPUT, mw, mh);
-          previous = stabilizeMask(p, previous);
+          const r = await this.segmentFrame(pending.subarray(0, size), fw, fh, mw, mh, box);
+          box = r.box;
+          previous = stabilizeMask(r.mask, previous);
           pending = pending.subarray(size);
           if (!encoder.stdin!.write(toBytes(previous))) await new Promise((r) => encoder.stdin!.once("drain", r));
           opts.onProgress?.(Math.min(1, ++count / expected));

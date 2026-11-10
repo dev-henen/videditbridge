@@ -55,11 +55,11 @@ A clip's grade lives in its `effects`, in colorist order: the asset's `colorSpac
 
 ### 3.2 Masks
 
-Any effect takes an optional `mask`. Kinds: `person`, `face`, `object` (a tracked object), `sky`, `depth` (prepared before rendering, cached), and `key` (HSL qualifier), `luma`, `shape` (ellipse, rectangle or polygon), built in the graph. A shape can move: `keyframes` give its center and scale over time, and `pin_mask` pins it to a track (`corners`: where the frame's corners go over time); the shape is drawn once and carried by `perspective` per frame. Every mask takes `invert`, `feather`, `grow`, `smooth`, `denoise` and `combine` (`add`, `intersect`, `subtract`). `render_mask` shows the matte.
+Any effect takes an optional `mask`. Kinds: `person`, `face`, `object` (a tracked object), `sky`, `depth` (prepared before rendering, cached), and `key` (HSL qualifier), `luma`, `shape` (ellipse, rectangle or polygon), built in the graph. A shape can move: `keyframes` give its center and scale over time, and `pin_mask` pins it to a track (`corners`: where the frame's corners go over time); the shape is drawn once and carried by `perspective` per frame. Every mask takes `invert`, `feather`, `grow`, `smooth`, `denoise` and `combine` (`add`, `intersect`, `subtract`). `render_mask` shows the matte. The person cutout reads each frame twice when the people in it are small (a wide shot): the whole frame, then the area around them from closer, which keeps legs and arms.
 
 ### 3.3 Precision
 
-The engine works in float, decodes footage in a color space at 10 bits, exports 10-bit (`bitDepth` 10: H.264 High 10 or HEVC Main 10) and dithers 8-bit exports of such footage. The FFmpeg backend runs deep for 10-bit and ProRes exports (`isDeepExport`): 10-bit YUV between stages, segment ends and clip cache (x264 High 10), 12-bit planar RGB for RGB stages (16-bit planes hit a bug in FFmpeg 6.1's blend screen) and 16-bit mattes; effects pin formats through `yuvFormat`, `rgbFormat`, `gbrFormat` and `grayFormat`. Blended layers are placed on their canvas in RGB (6.1's overlay darkens a translucent layer on a clear 10-bit YUV canvas). 8-bit renders are unchanged. Both renderers pass section 1's precision check on 10-bit exports (longest run 3 px over 530 levels on FFmpeg). ProRes 422 HQ (`prores_ks` profile 3, 10-bit 4:2:2, a .mov) is an export on both (`render_video` format prores). Still 8-bit inside a deep render: keyers, color tables (8-bit Hald images, interpolated), depth and sky mattes.
+The engine works in float, decodes footage in a color space at 10 bits, exports 10-bit (`bitDepth` 10: H.264 High 10 or HEVC Main 10) and dithers 8-bit exports of such footage. The FFmpeg backend runs deep for 10-bit and ProRes exports (`isDeepExport`): 10-bit YUV between stages, segment ends and clip cache (x264 High 10), 12-bit planar RGB for RGB stages (16-bit planes hit a bug in FFmpeg 6.1's blend screen) and 16-bit mattes; effects pin formats through `yuvFormat`, `rgbFormat`, `gbrFormat` and `grayFormat`. Blended layers are placed on their canvas in RGB (6.1's overlay darkens a translucent layer on a clear 10-bit YUV canvas). 8-bit renders are unchanged. Both renderers pass section 1's precision check on 10-bit exports (longest run 3 px over 530 levels on FFmpeg). ProRes 422 HQ (`prores_ks` profile 3, 10-bit 4:2:2, a .mov) is an export on both (`render_video` format prores). Both renderers work on BT.601 YUV, the matrix FFmpeg converts with wherever a filter needs RGB: footage stored with BT.709 (its tag, or an untagged HD file) or BT.2020 is brought to it as it is read (the asset's `colorMatrix`, set by probe; FFmpeg's `colorspace` filter, since swscale's own matrix change shifts levels), and the finished picture is written as BT.709 and tagged so. Frames, the viewer and the exported file then show the same colors, the footage's own. Still 8-bit inside a deep render: keyers, color tables (8-bit Hald images, interpolated), depth and sky mattes.
 
 ### 3.4 Render engine
 
@@ -89,6 +89,8 @@ Adds, updates or removes a labeled correction limited to a mask, on a clip, a la
 
 ### 4.3 Scene grading (`grade_scene`, `match_color`)
 
+`color_adjust`'s exposure and contrast cut nothing off: more exposure is a gain up to 60% of white with a shoulder from there, more contrast scales luma around the middle with a toe and a shoulder past 15% and 85% (`lutrgb` and `lutyuv` expressions, baked into the color table like the rest).
+
 Matches each scene's shots to a hero clip or a still: an Oklab transfer, Reinhard and per-channel curves are fitted, and the one with the lowest held-out ΔE 2000 wins; hue changes are limited and skin is kept on the skin line. Graded test pairs come back under 2 ΔE 2000.
 
 ### 4.4 Film looks (`apply_look`)
@@ -107,7 +109,7 @@ A clip's grade as a 33- or 65-point `.cube` for Resolve, Premiere or a monitor; 
 
 ### 5.2 Any object (`select_object`, `track_object`)
 
-From a point, box or name: SAM 2.1 tiny on keyframes, carried between them by Rust tracking, OWLv2 for names. The `object` mask kind uses it. Synthetic IoU 0.955, flicker 0.12%; a 10 s clip in 50 s. See [the objects guide](../guides/objects.md).
+From a point, box or name: SAM 2.1 tiny on keyframes, carried between them by Rust tracking, OWLv2 for names (its boxes for parts of one thing are joined into the whole). Where tracking loses the object (few points held, or the mask grows or shrinks three times), it has no mask there and is reported as not seen. The `object` mask kind uses it. Synthetic IoU 0.955, flicker 0.12%; a 10 s clip in 50 s. See [the objects guide](../guides/objects.md).
 
 ### 5.3 Sky (`replace_sky`)
 
@@ -140,7 +142,7 @@ RIFE 4.9 makes the frames slow motion and frame rate conversion need; `set_speed
 1. Look: `render_frame` at representative times, `render_scopes` for the grade.
 2. Change one stage at a time (input, primary, secondaries, look).
 3. Check: scopes for clipping and the skin line, `render_mask` at the first, middle and last frame and at fast motion, a contact sheet for flicker and drift.
-4. `review_edit`, whose `grade` and `vfx` checks report highlight or shadow clipping the grade adds over 0.5% of pixels, skin hue more than 10 degrees off the skin line, banding the grade brings out, matte flicker, track drift and sky slide (engine/tools/review/look.ts).
+4. `review_edit`, whose `grade` and `vfx` checks report highlight or shadow clipping the grade adds over 0.5% of the frame (areas flat at the picture's own ceiling or floor that held detail in the same frame without the grade, so clipping under a look's curve or tint is seen too), skin hue more than 10 degrees off the skin line, banding the grade brings out, matte flicker, track drift and sky slide (engine/tools/review/look.ts).
 5. Offer taste decisions as choices (`offer_choices` with look variants).
 
 ## 9. Desktop app
@@ -149,7 +151,31 @@ Built: a click in the viewer marks a spot that goes to Claude for `select_object
 
 ## 10. Testing
 
-While building, run only the tests of the code that changed (the matching `test/<area>/` file, filtered with `-t`) and its engine parity cases. The whole suite (`npm test`, `FULL_RENDER=1` for every template) runs once after the checklist is done. Models are optional, downloaded on first use, and need a license that allows use in an MIT library. Checks on real footage (log clips, sky pans, screens, crossing objects) wait for a set of openly licensed test clips.
+While building, run only the tests of the code that changed (the matching `test/<area>/` file, filtered with `-t`) and its engine parity cases. The whole suite (`npm test`, `FULL_RENDER=1` for every template) runs once after the checklist is done. Models are optional, downloaded on first use, and need a license that allows use in an MIT library.
+
+### 10.1 The real-clip pass (instructions from the user, 2026-11-10)
+
+- Go through this document and the project feature by feature, and test each on real clips, not synthetic ones.
+- Clips are 2 seconds at most.
+- One feature at a time: test it, see what should be improved or fixed, improve it, test it again on real clips, and only then move to the next.
+- Never run the full test suite or the full parity test, in any form. Only the tests of what changed (a `-t` filter, or the one small file).
+- Green screen and raw or log clips can be downloaded where the project's footage cannot exercise a feature (keying, camera log, other effects).
+- When a part is done, write down here what was tested on real clips.
+
+The clips are cut from the footage in `projects/*/media` to 960x540 (`test/.output/real/clips`, gitignored, as are the scripts next to them, one per feature: `01-grade.ts` to `05-objects.ts` so far). Each script drives the tools through an `EditorSession` one call at a time, as the app's model does, and checks the pictures it gets.
+
+### 10.2 Tested on real clips so far
+
+| Part | Clips | What was run | Found and fixed |
+|---|---|---|---|
+| Primary grade, looks, shot matching, LUT export, scopes (4.3 to 4.5) | couch, selfie (the same person, two shots) | `color_adjust`, the six looks, `match_color`, `export_lut` applied back with `lut3d`, `render_scopes`, `analyze_color`, on both renderers | Nothing in the tools themselves; the three findings below came out of it |
+| Exposure and contrast (4.3) | mountain, night, hedge, couch | Exposure up to +0.8, contrast up to 100, alone and under four looks | Both cut highlights and shadows off flat (contrast 15 crushed 4% of a daylight frame to black). Now a shoulder and a toe (section 4.3) |
+| `review_edit` grade check (8) | mountain, night, hedge, couch | Modest and harsh grades under four looks | Clipping under a look went unseen (26% of the frame flat at 234). Now measured against the ungraded frame at the picture's own limits (section 8) |
+| Color matrix (3.3) | hedge, couch (tagged BT.709), street (untagged 720p) | Frame against exported video as a player shows it, against the source, plain and graded, both renderers | The engine's frames and viewer showed BT.709 footage through BT.601 (greens 4 levels up); graded FFmpeg exports came out with the wrong matrix; exports had no color tags. Now one working matrix with conversion at both ends (section 3.3). Renderer agreement went from 38 dB to 57 dB plain, 32 dB to 45 dB graded |
+| Masks and `grade_region` (3.2, 4.2) | chairs, couch, mountain, hedge, street | Every kind: person, face, key, luma, sky, depth, ellipse, polygon, keyframed shape, combine, invert; `render_mask`, the grade kept inside the matte, flicker | A mask view with a model matte failed on the engine and fell back to FFmpeg on every call (now a piece). A small person in a wide shot lost legs and arms (now looked at twice, section 3.2). A misnamed input field was dropped without a word (now named in the tool's answer) |
+| Objects (5.2) | phone, chairs, street | `select_object` by point, box and name, `track_object`, the matte in a grade, flicker | A seated man by name came back as his left half (the detector's part boxes are now joined). A car lost behind passers-by left a mask stretched across the street (a lost object now has no mask and says "not seen") |
+
+Still to test on real clips: sky replacement (5.3), points and screens (5.4), blend modes (5.1), atmosphere and light (6), depth effects (7.1), removal (7.2), slow motion (7.3), 10-bit and ProRes exports (3.3), hardware encoding (3.6), camera log (4.1, needs a downloaded clip), keying on a green screen (needs a downloaded clip), and the app's matte and scopes views (9).
 
 ## 11. Packaging (on hold)
 

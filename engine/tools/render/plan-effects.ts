@@ -122,7 +122,7 @@ export interface PlanBlend {
 
 /** Filters that change each pixel from its own value alone, so a chain of them can be baked into a table. */
 /** Filters that work pixel by pixel (a color table can stand for them). */
-export const PIXEL_FILTERS = new Set(["eq", "colorbalance", "colortemperature", "curves", "hue", "colorchannelmixer", "negate", "colorize", "vibrance", "huesaturation", "exposure", "format", "lut3d", "null"]);
+export const PIXEL_FILTERS = new Set(["eq", "lutrgb", "lutyuv", "colorbalance", "colortemperature", "curves", "hue", "colorchannelmixer", "negate", "colorize", "vibrance", "huesaturation", "exposure", "format", "lut3d", "null"]);
 
 /** Split a filter chain at its top-level commas (not inside quotes or brackets). Undefined for a graph with labels or branches. */
 export function splitChain(chain: string): string[] | undefined {
@@ -327,7 +327,15 @@ function effectSteps(e: Effect, ctx: EffectContext, frames: number, time: FrameT
       return [{ op: "crop", rects: zoomRects(ctx, frames, (on) => 1 + (p.amount as number) * Math.exp((-8 * fmod(on / F, period)) / period)), filter: "linear" }];
     }
   }
-  const filters = splitChain(def.toFilter(p, { ...ctx, noBake: true }));
+  // An effect that reads what only the backend prepares (a mask view's person, sky or depth matte)
+  // cannot build its chain here: it is the backend's to draw, as a piece.
+  let chain: string;
+  try {
+    chain = def.toFilter(p, { ...ctx, noBake: true });
+  } catch {
+    return `effect ${e.type}`;
+  }
+  const filters = splitChain(chain);
   // Camera moves: scale, rotate, crop; and moves through perspective.
   const move = filters && (cameraMove(filters, ctx, frames, time) ?? perspectiveWarp(filters, ctx, frames));
   if (move) return [move];
@@ -466,11 +474,11 @@ function perspectiveWarp(filters: string[], ctx: EffectContext, frames: number):
 }
 
 /** Color filters that take RGB frames only. */
-export const RGB_PIXEL_FILTERS = new Set(["colorbalance", "colortemperature", "curves", "colorchannelmixer", "lut3d", "haldclut", "exposure", "vibrance", "huesaturation"]);
+export const RGB_PIXEL_FILTERS = new Set(["lutrgb", "colorbalance", "colortemperature", "curves", "colorchannelmixer", "lut3d", "haldclut", "exposure", "vibrance", "huesaturation"]);
 /** Filters that only take RGB frames: from them on FFmpeg keeps the frames in RGB until a filter needs YUV. */
 const RGB_ONLY = new Set(["rgbashift", ...RGB_PIXEL_FILTERS]);
 /** Filters that only take YUV frames. */
-const YUV_ONLY = new Set(["eq", "drawgrid", "unsharp"]);
+const YUV_ONLY = new Set(["eq", "lutyuv", "drawgrid", "unsharp"]);
 
 /**
  * A plain chain of filters the engine draws, as operations, filter by filter, following the frame

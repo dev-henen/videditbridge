@@ -27,7 +27,7 @@ import { fileOnDisk, validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
 import { ASPECT_RATIOS, formatTime, isAbsolutePath, isUrl, newId, round3, type AspectRatio } from "../core/util.js";
 import { CUSTOM_FILTERS, ColorSettingsSchema, RemoveObjectParams, SubjectRegionSchema, checkCustomFilter, describeColorSettings, describeMask, effectStates, getEffect, listEffects, mergeColorSettings, removalKey, removalSpec, SKIN_LINE, type ColorSettings, type RemovalSpec, type Vec3 } from "../library/effects/index.js";
-import { COLOR_SPACES } from "../library/color/index.js";
+import { COLOR_SPACES, colorMatrixOf } from "../library/color/index.js";
 import { LOOKS, getLook, lookEffects } from "../library/looks/index.js";
 import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index.js";
 import { getTransition, listTransitions } from "../library/transitions/index.js";
@@ -863,7 +863,7 @@ export const TOOLS: ToolDefinition[] = [
       const asset: Asset = info.isImage
         ? { type: "image", id, src, width: info.width, height: info.height, label: i.label }
         : info.hasVideo
-          ? { type: "video", id, src, duration: info.duration, width: info.width, height: info.height, hasAudio: info.hasAudio, label: i.label }
+          ? { type: "video", id, src, duration: info.duration, width: info.width, height: info.height, hasAudio: info.hasAudio, colorMatrix: colorMatrixOf(info), label: i.label }
           : { type: "audio", id, src, duration: info.duration, label: i.label };
       return commit(s, ops.addAsset(s.project, asset), "import_media", i, `Imported "${id}" (${asset.type}${info.duration ? `, ${info.duration}s` : ""}${info.width ? `, ${info.width}x${info.height}` : ""}${asset.type === "video" ? `, ${info.hasAudio ? "with" : "no"} audio` : ""}).`);
     },
@@ -4294,6 +4294,24 @@ export function registerTool<S extends z.ZodType>(def: ToolDefinition<S>, opts: 
   byName.set(def.name, t);
 }
 
+/** Paths of the fields in a tool's raw input that its schema dropped (unknown names), at most 8. */
+export function droppedFields(raw: unknown, parsed: unknown, at = "", out: string[] = []): string[] {
+  if (out.length >= 8 || raw === null || typeof raw !== "object" || parsed === null || typeof parsed !== "object") return out;
+  if (Array.isArray(raw)) {
+    if (Array.isArray(parsed)) raw.forEach((v, k) => droppedFields(v, parsed[k], `${at}[${k}]`, out));
+    return out;
+  }
+  if (Array.isArray(parsed)) return out;
+  for (const [key, value] of Object.entries(raw)) {
+    const where = at ? `${at}.${key}` : key;
+    if (value === undefined) continue;
+    if (!(key in parsed)) out.push(where);
+    else droppedFields(value, (parsed as Record<string, unknown>)[key], where, out);
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
 /** Execute a tool by name with raw (unvalidated) input. Never throws: errors come back as isError results. */
 export async function executeTool(session: EditorSession, name: string, input: unknown): Promise<ToolResult> {
   const def = byName.get(name);
@@ -4305,6 +4323,11 @@ export async function executeTool(session: EditorSession, name: string, input: u
   const activity = session.startActivity(name.startsWith("render_") ? "render" : "tool", describeToolCall(name, parsed.data));
   try {
     const result = await def.run(session, parsed.data, activity);
+    // A field the tool does not have is dropped by its schema: say so, or a misnamed one (a depth
+    // mask's "depth" for "distance") quietly does nothing.
+    const dropped = droppedFields(input, parsed.data);
+    if (dropped.length) result.text += `
+Ignored ${dropped.length > 1 ? "fields this tool does not have" : "a field this tool does not have"}: ${dropped.join(", ")}. Check the names against the tool's input.`;
     const summary = result.text.split("\n")[0]!;
     if (result.isError) activity.fail(summary);
     else activity.done(summary);

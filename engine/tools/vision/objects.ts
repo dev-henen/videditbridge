@@ -219,9 +219,36 @@ export class ObjectDetector {
     const { tf, detect } = await this.load();
     const image = new tf.RawImage(new Uint8ClampedArray(rgb.buffer, rgb.byteOffset, rgb.byteLength), w, h, 3);
     const label = /^(a|an|the)\s/i.test(text.trim()) ? text.trim() : `a ${text.trim()}`;
-    const found = (await detect(image, [label], { threshold: 0.2, top_k: 5 })).sort((a, b) => b.score - a.score)[0];
-    return found ? { box: [found.box.xmin, found.box.ymin, found.box.xmax, found.box.ymax], score: round3(found.score) } : undefined;
+    const found = (await detect(image, [label], { threshold: 0.1, top_k: 8 })).sort((a, b) => b.score - a.score);
+    if (!found.length || found[0]!.score < 0.2) return undefined;
+    return { box: wholeBox(found.map((f) => ({ box: [f.box.xmin, f.box.ymin, f.box.xmax, f.box.ymax], score: f.score }))), score: round3(found[0]!.score) };
   }
+}
+
+/**
+ * The box of the best detection, grown over the others that are parts of the same thing: the
+ * detector often answers a seated or turned person with a box per half and one for the upper body,
+ * none of them the whole. A part scores at least half of the best and shares a quarter of the
+ * smaller box with what is gathered so far; another thing of the same name stands apart.
+ */
+export function wholeBox(found: { box: [number, number, number, number]; score: number }[]): [number, number, number, number] {
+  const sorted = [...found].sort((a, b) => b.score - a.score);
+  const whole = [...sorted[0]!.box] as [number, number, number, number];
+  const rest = sorted.slice(1).filter((f) => f.score >= sorted[0]!.score * 0.5);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [k, f] of rest.entries()) {
+      const [x0, y0, x1, y1] = f.box;
+      const shared = Math.max(0, Math.min(x1, whole[2]) - Math.max(x0, whole[0])) * Math.max(0, Math.min(y1, whole[3]) - Math.max(y0, whole[1]));
+      const smaller = Math.min((x1 - x0) * (y1 - y0), (whole[2] - whole[0]) * (whole[3] - whole[1]));
+      if (smaller <= 0 || shared / smaller < 0.25) continue;
+      [whole[0], whole[1], whole[2], whole[3]] = [Math.min(whole[0], x0), Math.min(whole[1], y0), Math.max(whole[2], x1), Math.max(whole[3], y1)];
+      rest.splice(k, 1);
+      grew = true;
+      break;
+    }
+  }
+  return whole;
 }
 
 /** Mask and frame sizes for a source of `width` x `height`. */
@@ -481,8 +508,32 @@ export async function trackObject(
   const at = (arr: Uint8Array, i: number) => arr.subarray(i * area, (i + 1) * area);
   const strength = new Float32Array(n).fill(1);
 
-  /** Segment keyframe `f` from a predicted mask: its padded box as the prompt, keeping the candidate that matches. */
-  const segmentAt = async (f: number, predicted: Uint8Array) => {
+  const areaOf = (m: Uint8Array) => {
+    let on = 0;
+    for (const v of m) if (v >= 128) on++;
+    return on;
+  };
+  /** Follow a mask through frames (the first is its own); nothing to follow gives empty masks. */
+  const follow = async (frames: number[], mask: Uint8Array): Promise<{ masks: Uint8Array; inliers: ArrayLike<number> }> => {
+    if (!areaOf(mask)) return { masks: new Uint8Array(frames.length * area), inliers: new Float32Array(frames.length) };
+    const t = await controlled({ signal: opts.signal }, (c) => k.trackRegion(pack(frames), ms.w, ms.h, frames.length, region(mask), undefined, c));
+    return { masks: await k.warpMasks(mask, ms.w, ms.h, t.matrices), inliers: t.inliers };
+  };
+
+  /**
+   * Segment keyframe `f` from a predicted mask: its padded box as the prompt, keeping the candidate
+   * that matches. `from` says what the prediction came from (the mask's area at the last keyframe,
+   * the points tracking still held): a prediction that held few points, or grew or shrank more than
+   * three times, lost the object (it left, or something passed in front and took the points along),
+   * and no object there is better than a mask stretched over the picture.
+   */
+  const segmentAt = async (f: number, predicted: Uint8Array, from?: { area: number; inliers: number }) => {
+    const size = areaOf(predicted);
+    if (!size || (from && (from.inliers < 8 || size > from.area * 3 || size * 3 < from.area))) {
+      masks[f] = new Uint8Array(area);
+      keyConf.set(f, 0);
+      return;
+    }
     const box = maskBox(predicted, ms.w, ms.h);
     let mask = predicted;
     let conf = 0.3;
@@ -510,15 +561,15 @@ export async function trackObject(
     const dir = b > a ? 1 : -1;
     const frames = Array.from({ length: Math.abs(b - a) + 1 }, (_, i) => a + dir * i);
     const last = frames.length - 1;
-    const fwd = await controlled({ signal: opts.signal }, (c) => k.trackRegion(pack(frames), ms.w, ms.h, frames.length, region(masks[a]!), undefined, c));
-    const fwdMasks = await k.warpMasks(masks[a]!, ms.w, ms.h, fwd.matrices);
+    const fwd = await follow(frames, masks[a]!);
+    const fwdMasks = fwd.masks;
     if (!masks[b]) {
-      await segmentAt(b, at(fwdMasks, last));
+      await segmentAt(b, at(fwdMasks, last), { area: areaOf(masks[a]!), inliers: fwd.inliers[last]! });
       tick();
     }
     const back = frames.slice().reverse();
-    const bwd = await controlled({ signal: opts.signal }, (c) => k.trackRegion(pack(back), ms.w, ms.h, back.length, region(masks[b]!), undefined, c));
-    const bwdMasks = await k.warpMasks(masks[b]!, ms.w, ms.h, bwd.matrices);
+    const bwd = await follow(back, masks[b]!);
+    const bwdMasks = bwd.masks;
     // The decoded frame nearest the middle, strictly inside the span.
     const mid = frames
       .slice(1, -1)
@@ -529,7 +580,10 @@ export async function trackObject(
       if (maskIou(at(fwdMasks, i), at(bwdMasks, last - i)) < SPLIT_IOU) {
         const u = i / last;
         const g = at(bwdMasks, last - i);
-        await segmentAt(mid, Uint8Array.from(at(fwdMasks, i), (v, q) => Math.round(v * (1 - u) + g[q]! * u)));
+        // Where one end lost the object, the middle is judged from the end that has it.
+        const [aa, ab] = [areaOf(masks[a]!), areaOf(masks[b]!)];
+        const predicted = !ab ? at(fwdMasks, i) : !aa ? g : Uint8Array.from(at(fwdMasks, i), (v, q) => Math.round(v * (1 - u) + g[q]! * u));
+        await segmentAt(mid, predicted, !ab ? { area: aa, inliers: fwd.inliers[i]! } : !aa ? { area: ab, inliers: bwd.inliers[last - i]! } : undefined);
         await solve(a, mid);
         await solve(mid, b);
         return;

@@ -264,3 +264,17 @@ export function colorSpaceFromTags(transfer?: string): ColorSpaceId | undefined 
   if (transfer === "smpte2084") return "pq-rec2020";
   return undefined;
 }
+
+/**
+ * The YUV matrix a video's colors are stored with: its tag, or for a file without one what players
+ * assume (BT.709 for HD, BT.601 below). Renders work in BT.601 (what FFmpeg converts with unless
+ * told otherwise), so "bt601" means the frames are used as they are; so are files that are not
+ * plain YUV (RGB codecs, video with transparency).
+ */
+export function colorMatrixOf(info: { colorMatrix?: string; pixelFormat?: string; width?: number; height?: number }): "bt601" | "bt709" | "bt2020" {
+  if (info.pixelFormat && !/^yuvj?4/.test(info.pixelFormat)) return "bt601";
+  if (info.colorMatrix === "bt709") return "bt709";
+  if (info.colorMatrix?.startsWith("bt2020")) return "bt2020";
+  if (info.colorMatrix) return "bt601";
+  return (info.width ?? 0) >= 1280 || (info.height ?? 0) > 576 ? "bt709" : "bt601";
+}

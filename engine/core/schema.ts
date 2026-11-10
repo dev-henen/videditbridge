@@ -53,6 +53,10 @@ export const VideoAssetSchema = z.object({
   height: z.number().int().positive().optional(),
   hasAudio: z.boolean().optional().describe("Whether the file has an audio stream (filled by probe)"),
   colorSpace: colorSpaceField,
+  colorMatrix: z
+    .enum(["bt601", "bt709", "bt2020"])
+    .optional()
+    .describe("The YUV matrix the file's colors are stored with (filled by probe): renders read it so reds and greens come out as recorded"),
   svg: z.string().optional().describe("SVG source of an animated graphic drawn with create_graphic"),
   particles: z
     .record(z.string(), z.unknown())

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { clamp, round3 } from "../../core/util.js";
-import { bakeColor, type EffectContext } from "./helpers.js";
+import { bakeColor, gbrFormat, type EffectContext } from "./helpers.js";
 
 /**
  * Lightroom-style color controls compiled to FFmpeg filters.
@@ -127,6 +127,39 @@ function toneCurve(s: ColorSettings): string | undefined {
   return pts.map(([x, y]) => `${fmt(x)}/${fmt(y)}`).join(" ");
 }
 
+/**
+ * A line through the origin of `slope` (above 1) that would run past white, as a lut expression of
+ * `x` (0..1): the line itself up to the output level `knee`, then a shoulder that leaves it at the
+ * same slope and reaches white at x = 1. Highlights are pressed together, never cut off.
+ */
+function shoulder(x: string, slope: number, knee: number): string {
+  const xk = knee / slope;
+  const a = (slope * (1 - xk)) / (1 - knee);
+  const t = `((${x})-${fmt4(xk)})/${fmt4(1 - xk)}`;
+  return `if(gt(${x},${fmt4(xk)}),${fmt4(knee)}+${fmt4((1 - knee) * a)}*${t}/(1+${fmt4(a - 1)}*${t}),${fmt4(slope)}*(${x}))`;
+}
+const fmt4 = (v: number) => (Math.round(v * 1e4) / 1e4).toString();
+
+/**
+ * More exposure without cutting highlights off: red, green and blue times 2^stops, as FFmpeg's
+ * exposure filter does, up to 60% of white, with a shoulder from there to white.
+ */
+function exposureUp(stops: number): string {
+  const v = `'clip(maxval*(${shoulder("val/maxval", 2 ** stops, 0.6)}),0,maxval)'`;
+  return `lutrgb=r=${v}:g=${v}:b=${v}`;
+}
+
+/**
+ * More contrast without cutting shadows and highlights off: luma scaled around the middle, as eq
+ * does, between 15% and 85% of the range, with a toe and a shoulder from there to black and white.
+ */
+function contrastUp(slope: number): string {
+  // Above the middle, the distance from it (0..0.5) follows the shoulder; below, its mirror.
+  const half = (d: string) => `0.5*(${shoulder(`2*(${d})`, slope, 0.7)})`;
+  const x = "(val-minval)/(maxval-minval)";
+  return `lutyuv=y='clip(minval+(maxval-minval)*if(gte(${x},0.5),0.5+${half(`${x}-0.5`)},0.5-${half(`0.5-${x}`)}),0,maxval)'`;
+}
+
 const curveArg = (pts?: [number, number][]) =>
   pts ? `'${[...pts].sort((a, b) => a[0] - b[0]).map(([x, y]) => `${fmt(x)}/${fmt(y)}`).join(" ")}'` : undefined;
 
@@ -144,8 +177,10 @@ export function colorFilter(s: ColorSettings, ctx?: EffectContext): string {
   if (s.autoCorrect) f.push("normalize=smoothing=24:independence=0.6:strength=0.8");
   // From here to clarity every filter works pixel by pixel, so with a context they can be baked (bakeColor).
   const point = f.length;
-  // exposure works in float; clip back to 8-bit range so later filters never see values above white.
-  if (s.exposure) f.push(`exposure=exposure=${fmt(s.exposure)}`, "format=gbrp");
+  // Brighter: a gain with a highlight shoulder (exposureUp). Darker: the exposure filter, which works
+  // in float; back to integer RGB after it, so later filters never see values outside the range.
+  if ((s.exposure ?? 0) > 0) f.push(exposureUp(s.exposure!));
+  else if (s.exposure) f.push(`exposure=exposure=${fmt(s.exposure)}`, `format=${ctx ? gbrFormat(ctx) : "gbrp"}`);
 
   // White balance: temperature as blue<->yellow, tint as green<->magenta, mostly in midtones.
   const t = n(s.temperature);
@@ -161,8 +196,10 @@ export function colorFilter(s: ColorSettings, ctx?: EffectContext): string {
   if (tone) f.push(`curves=master='${tone}'`);
 
   const brightness = n(s.brightness) * 0.25;
-  const contrast = 1 + n(s.contrast) * (n(s.contrast) > 0 ? 0.6 : 0.5);
+  // Less contrast is eq's own (it cuts nothing off); more goes through contrastUp, ahead of eq's brightness and saturation.
+  const contrast = n(s.contrast) < 0 ? 1 + n(s.contrast) * 0.5 : 1;
   const saturation = 1 + n(s.saturation) + n(s.brilliance) * 0.08;
+  if (n(s.contrast) > 0) f.push(contrastUp(1 + n(s.contrast) * 0.6));
   if (brightness || contrast !== 1 || saturation !== 1)
     f.push(`eq=brightness=${fmt(brightness)}:contrast=${fmt(contrast)}:saturation=${fmt(Math.max(0, saturation))}`);
 

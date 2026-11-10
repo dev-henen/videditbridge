@@ -22,17 +22,75 @@ type Pixels = Buffer | Uint8Array;
 const t = (s: number) => formatTime(s);
 const wrap180 = (d: number) => ((((d + 180) % 360) + 360) % 360) - 180;
 
+/** The picture averaged in 8 px blocks, so film grain on a flat area does not hide it. */
+function blocks(rgb: Pixels, w: number, h: number): Pixels {
+  const B = 8;
+  if (w < B * 2 || h < B * 2) return rgb;
+  const [bw, bh] = [Math.floor(w / B), Math.floor(h / B)];
+  const out = new Uint8Array(bw * bh * 3);
+  for (let by = 0; by < bh; by++)
+    for (let bx = 0; bx < bw; bx++)
+      for (let c = 0; c < 3; c++) {
+        let sum = 0;
+        for (let y = 0; y < B; y++) for (let x = 0; x < B; x++) sum += rgb[((by * B + y) * w + bx * B + x) * 3 + c]!;
+        out[(by * bw + bx) * 3 + c] = Math.round(sum / (B * B));
+      }
+  return out;
+}
+
+const luma = (px: Pixels, k: number) => 0.2126 * px[k * 3]! + 0.7152 * px[k * 3 + 1]! + 0.0722 * px[k * 3 + 2]!;
+
 /**
- * Share of pixels blown out (two or more channels at the top: one alone is a saturated color, which
- * keeps its detail in the others) and of pixels black in every channel (shadows).
+ * A picture's ceiling and floor: the highest and lowest luma that 0.1% of its pixels reach, with 3
+ * levels of room (1 at pure white and black). They are the picture's own because what a grade
+ * clips, a later stage (a look's print curve, a fade, a tint) moves off pure white and black, where
+ * it is as flat as before. Luma, since a tint gives a flat area a color but leaves it flat.
  */
-export function clippedShare(rgb: Pixels): { highlights: number; shadows: number } {
+function limits(px: Pixels): { top: number; bottom: number } {
+  const n = Math.floor(px.length / 3);
+  const hist = new Uint32Array(256);
+  for (let k = 0; k < n; k++) hist[Math.round(luma(px, k))]!++;
+  const tail = Math.max(1, Math.floor(n * 0.001));
+  let [v, seen] = [255, hist[255]!];
+  while (seen < tail && v > 0) seen += hist[--v]!;
+  const top = v >= 254 ? 254 : v - 3;
+  [v, seen] = [0, hist[0]!];
+  while (seen < tail && v < 255) seen += hist[++v]!;
+  return { top, bottom: v <= 1 ? 2 : v + 3 };
+}
+
+/**
+ * Share of pixels at the picture's ceiling (blown out) and at its floor (crushed); see limits. With
+ * `w` and `h` the picture is averaged in 8 px blocks first.
+ */
+export function clippedShare(rgb: Pixels, w?: number, h?: number): { highlights: number; shadows: number } {
+  const px = w && h ? blocks(rgb, w, h) : rgb;
+  const { top, bottom } = limits(px);
+  const n = Math.floor(px.length / 3);
   let [hi, lo] = [0, 0];
-  const n = Math.floor(rgb.length / 3);
   for (let k = 0; k < n; k++) {
-    const [r, g, b] = [rgb[k * 3]!, rgb[k * 3 + 1]!, rgb[k * 3 + 2]!];
-    if (Number(r >= 254) + Number(g >= 254) + Number(b >= 254) >= 2) hi++;
-    else if (Math.max(r, g, b) <= 2) lo++;
+    const y = luma(px, k);
+    if (y >= top) hi++;
+    else if (y <= bottom) lo++;
+  }
+  return { highlights: hi / n, shadows: lo / n };
+}
+
+/**
+ * What a grade clipped: the share of the picture that is blown out or crushed in `edit` and held
+ * detail in `footage` (the same frame without the grade), where it was more than 12 levels from the
+ * footage's own ceiling or floor. A grade that presses near-black or near-white levels closer
+ * together loses nothing a viewer sees; one that flattens what was clearly apart does.
+ */
+export function clippedByGrade(edit: Pixels, footage: Pixels, w: number, h: number): { highlights: number; shadows: number } {
+  const [e, f] = [blocks(edit, w, h), blocks(footage, w, h)];
+  const [le, lf] = [limits(e), limits(f)];
+  const n = Math.floor(Math.min(e.length, f.length) / 3);
+  let [hi, lo] = [0, 0];
+  for (let k = 0; k < n; k++) {
+    const [ye, yf] = [luma(e, k), luma(f, k)];
+    if (ye >= le.top) hi += Number(yf < lf.top - 12);
+    else if (ye <= le.bottom) lo += Number(yf > lf.bottom + 12);
   }
   return { highlights: hi / n, shadows: lo / n };
 }
@@ -158,14 +216,13 @@ export async function lookChecks(p: Project, timeline: Timeline, opts: LookOptio
         const [fa, fb] = [a.frames[k], b.frames[k]];
         if (!fa || !fb) continue;
         const id = tc.clip.id;
-        const [ce, cp] = [clippedShare(fa.rgb), clippedShare(fb.rgb)];
-        for (const [part, edit, footage, fix] of [
-          ["highlights", ce.highlights, cp.highlights, "lower exposure or highlights, or use the color panel's highlight roll-off (whites)"],
-          ["shadows", ce.shadows, cp.shadows, "raise blacks or shadows, or lower contrast"],
+        const [ce, cp, added] = [clippedShare(fa.rgb, a.width, a.height), clippedShare(fb.rgb, b.width, b.height), clippedByGrade(fa.rgb, fb.rgb, a.width, a.height)];
+        for (const [part, edit, footage, lost, fix] of [
+          ["highlights", ce.highlights, cp.highlights, added.highlights, "lower exposure, whites or highlights"],
+          ["shadows", ce.shadows, cp.shadows, added.shadows, "raise blacks or shadows, or lower contrast"],
         ] as const) {
-          const added = edit - footage;
-          if (edit > 0.005 && added > 0.005)
-            issues.push({ check: "grade", severity: added > 0.02 ? "problem" : "warning", start: tc.start, end: tc.end, target: id, message: `The grade clips ${part} in clip ${id} at ${t(fa.time)}: ${(edit * 100).toFixed(1)}% of the frame (${(footage * 100).toFixed(1)}% without the grade). Detail is lost there: ${fix}, and check with render_scopes.` });
+          if (lost > 0.005)
+            issues.push({ check: "grade", severity: lost > 0.02 ? "problem" : "warning", start: tc.start, end: tc.end, target: id, message: `The grade clips ${part} in clip ${id} at ${t(fa.time)}: ${(lost * 100).toFixed(1)}% of the frame held detail and is now flat (${(edit * 100).toFixed(1)}% of the frame is at the limit, ${(footage * 100).toFixed(1)}% without the grade). Detail is lost there: ${fix}, and check with render_scopes.` });
         }
         const [be, bp] = [bandingScore(fa.rgb, a.width, a.height), bandingScore(fb.rgb, b.width, b.height)];
         if (be.smooth > 0.03 && be.score > 0.2 && be.score - bp.score > 0.1)

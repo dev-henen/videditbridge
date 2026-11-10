@@ -5,7 +5,7 @@ import { easeValue, numberAt, positionAt } from "../../core/keyframes.js";
 import { parseColor, round3 } from "../../core/util.js";
 import { effectsToFilter, escapeFilterPath } from "../../library/effects/index.js";
 import { getTransition } from "../../library/transitions/index.js";
-import { ASS_FILE, compileProject, exportHardware, exportVideoArgs, gradientSource, isDeepExport, rampPts, renderSize, type CompileOptions } from "./compile.js";
+import { ASS_FILE, OUTPUT_COLOR_TAGS, OUTPUT_MATRIX, compileProject, exportHardware, exportVideoArgs, gradientSource, isDeepExport, rampPts, renderSize, workingMatrix, type CompileOptions } from "./compile.js";
 import { cropPosition, effectsOps, joinedTime, lutArgs, type PlanOp } from "./plan-effects.js";
 import { hardwareGlobalArgs, hardwareUpload, type HardwareEncoder } from "./hardware.js";
 import { colorTableFile, convertsColor, inputTableFile, outputTableFile, sceneGradeFor } from "./color-space.js";
@@ -321,8 +321,9 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
    * to the one the encoder uses back (swscale's BT.601 default), so YUV values come out as they went
    * in, as in the FFmpeg backend. Video that is already 4:2:0 passes through without a conversion.
    */
-  const decode = (input: string[], filters: (string | false | undefined)[], width: number, height: number, format: PlanPixelFormat, still = false, seek?: Omit<PlanSeek, "tail">): PlanSource => {
-    const tail = [`scale=${width}:${height}:out_range=tv:flags=bicubic+accurate_rnd+full_chroma_int`, `format=${format}`];
+  const decode = (input: string[], filters: (string | false | undefined)[], width: number, height: number, format: PlanPixelFormat, still = false, seek?: Omit<PlanSeek, "tail">, matrix?: string): PlanSource => {
+    // Footage stored with another matrix comes to the working BT.601 first, as in the backend (workingMatrix).
+    const tail = [...(matrix ? [matrix] : []), `scale=${width}:${height}:out_range=tv:flags=bicubic+accurate_rnd+full_chroma_int`, `format=${format}`];
     return {
       kind: "decode",
       width,
@@ -432,6 +433,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         convertsColor(asset) ? "yuv420p10le" : "yuv420p",
         false,
         clip.reverse || tc.speedMap ? undefined : { src: resolveSrc(asset.src), inPoint: clip.in, speed: clip.speed, sourceDuration: tc.sourceDuration, frames },
+        workingMatrix(asset),
       );
     } else {
       const s = stillSource(asset, false);
@@ -511,6 +513,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         convertsColor(asset) ? "yuva420p10le" : "yuva420p",
         false,
         { src: resolveSrc(asset.src), inPoint: layer.in, speed: 1, sourceDuration: layer.duration },
+        workingMatrix(asset),
       );
     } else {
       const s = stillSource(asset, true);
@@ -583,7 +586,8 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
   const tenBit = isDeepExport(exp);
   const pixFmt = tenBit ? "yuv420p10le" : "yuv420p";
   const hw = exportHardware(exp, opts.hardwareEncoder);
-  const picture = ["settb=AVTB", `format=${pixFmt}`, opts.overlay && `ass=filename=${ASS_FILE}${fonts}`, hardwareUpload(hw)].filter(Boolean).join(",");
+  // The engine's frames are the working BT.601; the file is BT.709, as its tags say (OUTPUT_MATRIX).
+  const picture = ["settb=AVTB", `format=${pixFmt}`, opts.overlay && `ass=filename=${ASS_FILE}${fonts}`, OUTPUT_MATRIX, hardwareUpload(hw)].filter(Boolean).join(",");
   const args = [
     "-y", "-hide_banner", "-loglevel", "error", "-nostdin",
     ...hardwareGlobalArgs(hw),
@@ -593,6 +597,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
     "-map", "[v]",
     ...(opts.audio ? ["-map", "1:a"] : []),
     ...exportVideoArgs(exp, opts.preset, opts.hardwareEncoder),
+    ...OUTPUT_COLOR_TAGS,
     "-r", String(F),
     ...(opts.audio ? ["-c:a", exp.audioCodec, "-b:a", exp.audioBitrate, "-ar", "48000"] : []),
     "-movflags", "+faststart",

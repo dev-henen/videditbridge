@@ -114,6 +114,8 @@ export interface ProbeResult {
   /** Color primaries and transfer the file is tagged with, e.g. "bt2020" and "arib-std-b67" (HLG) or "smpte2084" (PQ). */
   colorPrimaries?: string;
   colorTransfer?: string;
+  /** The YUV matrix the file is tagged with, e.g. "bt709", "smpte170m" (BT.601) or "bt2020nc". */
+  colorMatrix?: string;
   /** True for still images (single frame, no duration). */
   isImage: boolean;
 }
@@ -145,7 +147,9 @@ export function parseProbeOutput(stderr: string): ProbeResult {
   // pixel format, then matrix/primaries/transfer (one name when all three are the same).
   const pixel = videoLine ? /, ((?:yuva?|rgba?|bgra?|gbra?|gray|nv|argb|abgr|p0)[a-z0-9]*)(?:\(|,|$)/.exec(videoLine) : null;
   const tags = videoLine ? /\((?:tv|pc), ([a-z0-9-]+)(?:\/([a-z0-9-]+)\/([a-z0-9-]+))?[,)]/.exec(videoLine) : null;
-  const format = pixel ? [pixel[0], pixel[1], tags?.[1], tags?.[2] ?? tags?.[1], tags?.[3] ?? tags?.[1]] : null;
+  // "yuv420p(tv, progressive)": no color tags, only the scan type.
+  const color = tags && !/^(progressive|top|bottom|unknown$)/.test(tags[1]!) ? tags : null;
+  const format = pixel ? [pixel[0], pixel[1], color?.[1], color?.[2] ?? color?.[1], color?.[3] ?? color?.[1]] : null;
   return {
     duration: isImage ? undefined : duration,
     width: turned ? h : w,
@@ -155,6 +159,7 @@ export function parseProbeOutput(stderr: string): ProbeResult {
     hasAudio,
     isImage,
     ...(format?.[1] ? { pixelFormat: format[1] } : {}),
+    ...(format?.[2] && format[2] !== "unknown" ? { colorMatrix: format[2] } : {}),
     ...(format?.[3] ? { colorPrimaries: format[3] } : {}),
     ...(format?.[4] ? { colorTransfer: format[4] } : {}),
   };

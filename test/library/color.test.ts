@@ -30,15 +30,42 @@ describe("colorFilter", () => {
       grain: 10,
       autoCorrect: true,
     });
-    for (const part of ["normalize=", "exposure=exposure=0.5", "colorbalance=", "curves=master='", "eq=", "vibrance=intensity=0.3", "hue=h=15", "colors=r+y", "colors=b+m", "curves=preset=medium_contrast", "red='0/0.05 1/1'", "unsharp=lx=13", "unsharp=lx=5", "mode=backward", "noise=alls=4"])
+    for (const part of ["normalize=", "lutrgb=r='clip(maxval*(if(gt(val/maxval,", "colorbalance=", "curves=master='", "eq=", "vibrance=intensity=0.3", "hue=h=15", "colors=r+y", "colors=b+m", "curves=preset=medium_contrast", "red='0/0.05 1/1'", "unsharp=lx=13", "unsharp=lx=5", "mode=backward", "noise=alls=4"])
       expect(f).toContain(part);
   });
 
-  it("clips after exposure and never uses preserve-lightness color balance", () => {
+  it("clips after a darker exposure and never uses preserve-lightness color balance", () => {
     // Both caused broken colors when combined with other controls (found on real footage).
-    const f = colorFilter({ exposure: 0.2, temperature: 30, wheels: { highlights: { hue: 35, amount: 50 } } });
-    expect(f).toMatch(/^exposure=exposure=0.2,format=gbrp,/);
+    const f = colorFilter({ exposure: -0.2, temperature: 30, wheels: { highlights: { hue: 35, amount: 50 } } });
+    expect(f).toMatch(/^exposure=exposure=-0.2,format=gbrp,/);
     expect(f).not.toContain("pl=1");
+  });
+
+  it("raises exposure and contrast with a shoulder, cutting nothing off", () => {
+    // Found on real footage: a gain and eq's contrast cut highlights and shadows off flat.
+    const f = colorFilter({ exposure: 1, contrast: 50 });
+    expect(f.startsWith("lutrgb=r='clip(maxval*(if(gt(val/maxval,0.3),")).toBe(true);
+    expect(f).toContain("lutyuv=y='clip(minval+(maxval-minval)*if(gte(");
+    expect(f).not.toContain("eq=");
+    expect(f).not.toContain("exposure=");
+    // The curves themselves: the plain gain below the knee, white and black kept at the ends.
+    const lut = (expr: string, x: number) => {
+      const js = expr.replaceAll("if(", "cond(").replaceAll("val/maxval", "x").replaceAll("(val-minval)/(maxval-minval)", "x").replaceAll("maxval-minval", "1").replaceAll("maxval", "1").replaceAll("minval", "0");
+      return new Function("x", "cond", "gt", "gte", "clip", `return ${js}`)(x, (c: number, a: number, b: number) => (c ? a : b), (a: number, b: number) => +(a > b), (a: number, b: number) => +(a >= b), (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v)));
+    };
+    const exposure = /lutrgb=r='([^']+)'/.exec(f)![1]!;
+    expect(lut(exposure, 0.2)).toBeCloseTo(0.4, 3);
+    expect(lut(exposure, 1)).toBeCloseTo(1, 3);
+    expect(lut(exposure, 0.9)).toBeLessThan(lut(exposure, 1) - 0.005);
+    const contrast = /lutyuv=y='([^']+)'/.exec(f)![1]!;
+    expect(lut(contrast, 0.5)).toBeCloseTo(0.5, 3);
+    expect(lut(contrast, 0.6)).toBeCloseTo(0.63, 3);
+    expect(lut(contrast, 0)).toBeCloseTo(0, 3);
+    expect(lut(contrast, 1)).toBeCloseTo(1, 3);
+    expect(lut(contrast, 0.05)).toBeGreaterThan(0.005);
+    for (let x = 0.01; x <= 1; x += 0.01) expect(lut(contrast, x)).toBeGreaterThan(lut(contrast, x - 0.01));
+    // Less contrast is still eq's.
+    expect(colorFilter({ contrast: -40 })).toBe("eq=brightness=0:contrast=0.8:saturation=1");
   });
 
   it("keeps clarity within unsharp's matrix limit", () => {

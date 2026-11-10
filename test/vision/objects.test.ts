@@ -3,6 +3,7 @@ import { MaskSchema, addAsset, addClip, createProject, parseProject } from "../.
 import { buildMatte, effectObjects, effectToFilter, maskObjects } from "../../engine/library/effects/index.js";
 import { compileProject } from "../../engine/tools/index.js";
 import { frameToSource, maskBox, maskIou, sourceToFrame } from "../../engine/tools/vision/index.js";
+import { wholeBox } from "../../engine/tools/vision/objects.js";
 
 const ctx = { width: 320, height: 180, fps: 30, duration: 2 };
 
@@ -57,5 +58,19 @@ describe("objects", () => {
     expect(compiled.filterGraph).toContain("alphamerge");
     // Without the prepared mask the compile says why.
     expect(() => compileProject(p, { output: "x.mp4" })).toThrow(/object "phone"/);
+  });
+
+  it("joins the detector's part boxes into the whole thing, and leaves other things of the name apart", () => {
+    // Found on real footage: a seated man came back as a box per half and one for his upper body.
+    const man = wholeBox([
+      { box: [369, 259, 522, 524], score: 0.44 },
+      { box: [399, 167, 543, 461], score: 0.24 },
+      { box: [481, 271, 625, 524], score: 0.23 },
+      { box: [800, 300, 900, 400], score: 0.3 },
+      { box: [380, 250, 700, 560], score: 0.1 },
+    ]);
+    expect(man).toEqual([369, 167, 625, 524]);
+    // Cars along a street: the best one alone.
+    expect(wholeBox([{ box: [184, 265, 266, 294], score: 0.35 }, { box: [819, 271, 901, 288], score: 0.33 }, { box: [174, 265, 256, 288], score: 0.26 }])).toEqual([174, 265, 266, 294]);
   });
 });

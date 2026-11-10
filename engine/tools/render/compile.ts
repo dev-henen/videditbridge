@@ -225,6 +225,24 @@ export function gradientSource(asset: { colors: string[]; direction: "vertical" 
 const previewScale = (scale?: number) => (scale && scale > 0 && scale !== 1 ? scale : 1);
 
 
+/** FFmpeg's colorspace filter changing only the YUV matrix (limited range out), exact to a level where swscale's own matrix change is not. */
+const matrixFilter = (from: string, to: string) => `colorspace=ispace=${from}:space=${to}:fast=1:range=tv:iprimaries=bt709:primaries=bt709:itrc=bt709:trc=bt709`;
+
+/**
+ * Renders work on BT.601 YUV: FFmpeg converts between YUV and RGB with it wherever a filter needs
+ * RGB, and the engine does the same. Footage stored with another matrix (BT.709 for HD, BT.2020)
+ * is brought to it as it is read, with this filter, so every RGB step sees the colors as recorded;
+ * undefined for footage that needs nothing.
+ */
+export function workingMatrix(asset: Asset): string | undefined {
+  if (asset.type !== "video" || !asset.colorMatrix || asset.colorMatrix === "bt601") return undefined;
+  return matrixFilter(asset.colorMatrix === "bt2020" ? "bt2020ncl" : "bt709", "smpte170m");
+}
+
+/** The finished picture from the working BT.601 to BT.709, which the file is tagged with (OUTPUT_COLOR_TAGS) and players expect of it. */
+export const OUTPUT_MATRIX = matrixFilter("smpte170m", "bt709");
+export const OUTPUT_COLOR_TAGS = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"];
+
 /**
  * Filters that convert a source in a color space (camera log, HDR) to the edit's Rec.709: its
  * frames read as BT.601 limited range, as the engine reads them, then its .cube table on float RGB.
@@ -418,6 +436,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       // A speed ramp maps each frame's source time through the clip's time map.
       const retime = tc.speedMap ? `setpts='(${rampPts(tc.speedMap, tc.sourceDuration)})/TB'` : speed !== 1 && `setpts=PTS/${speed}`;
       const timing = (input: string) => `[${input}]${chain([clip.reverse && "reverse", "setpts=PTS-STARTPTS", retime, `fps=${F}`])}`;
+      const working = workingMatrix(asset);
       // Smooth motion: the prepared frames are the clip's retimed picture already (in source order, so a reversed clip turns them round).
       const smooth = opts.interpolated?.[clip.id];
       // Camera log and HDR become Rec.709 first (the smooth frames are still in the camera's colors).
@@ -425,7 +444,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       const convert = colorConversion(asset, false, graded.grade);
       const converted = convert.length ? `,${convert.join(",")}` : "";
       if (smooth) g.add(`[${g.addInput(["-i", smooth])}:v]${chain([clip.reverse && "reverse", "setpts=PTS-STARTPTS", `fps=${F}`, ...convert])}[${raw}]`);
-      else g.add(`${timing(`${k}:v`)}${converted}[${raw}]`);
+      else g.add(`${timing(`${k}:v`)}${working ? `,${working}` : ""}${converted}[${raw}]`);
       const fitted = fit(raw, clip.fit, W, H, false, clip.focus, clip.keyframes?.focus);
       // Person cutouts and face masks go through the same timing and fit as the picture, so they line up.
       // A ramped effect runs once per state, and each run (and the effect's mask) takes its own copy.
@@ -452,7 +471,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         const media = project.assets.find((a) => a.id === id);
         if (!media || media.type === "audio") throw new Error(`Clip "${clip.id}" has an effect that shows "${id}", which is not a picture asset`);
         const l = g.label("media");
-        g.add(`[${sourceInput(media, 0, tc.duration, media.type === "video")}:v]setpts=PTS-STARTPTS,fps=${F},format=${Y}[${l}]`);
+        g.add(`[${sourceInput(media, 0, tc.duration, media.type === "video")}:v]${chain(["setpts=PTS-STARTPTS", `fps=${F}`, workingMatrix(media), `format=${Y}`])}[${l}]`);
         mediaLabels.set(id, [...(mediaLabels.get(id) ?? []), l]);
       }
       // Tracked objects: one stream per effect that uses each.
@@ -751,7 +770,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
     const input = sourceInput(asset, layer.in, layer.duration);
     const raw = g.label("lraw");
     const graded = sceneGradeFor(asset, layer.effects);
-    g.add(`[${input}:v]${chain(["setpts=PTS-STARTPTS", `fps=${F}`, ...colorConversion(asset, true, graded.grade), `format=${YA}`])}[${raw}]`);
+    g.add(`[${input}:v]${chain(["setpts=PTS-STARTPTS", `fps=${F}`, workingMatrix(asset), ...colorConversion(asset, true, graded.grade), `format=${YA}`])}[${raw}]`);
     const fitted = fit(raw, layer.size.height ? (layer.fit === "blur" ? "contain" : layer.fit) : "stretch", w, h, true);
     let styled = g.label("lfx");
     g.add(`[${fitted}]${chain([`format=${YA}`, ...effectsToFilter(graded.effects, effectCtx(layer.duration, w, h, true))])}[${styled}]`);
@@ -1047,7 +1066,9 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
   } else {
     // A hardware encoder that takes frames on its device (VAAPI) gets them uploaded here.
     const upload = opts.frameAt === undefined && !opts.analysis ? hardwareUpload(exportHardware(project.export, opts.hardwareEncoder)) : undefined;
-    g.add(`[${vCur}]format=${Y}${upload ? `,${upload}` : ""}[${vOut}]`);
+    // The file is BT.709, as its tags say; a single frame becomes RGB from the working BT.601.
+    const matrix = opts.frameAt === undefined ? `,${OUTPUT_MATRIX}` : "";
+    g.add(`[${vCur}]format=${Y}${matrix}${upload ? `,${upload}` : ""}[${vOut}]`);
   }
   const still = opts.frameAt !== undefined || !!sheet;
   // Image outputs have no audio stream; every filter output must still be consumed.
@@ -1067,6 +1088,7 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
       `[${aOut}]`,
       // 10-bit and ProRes exports come from the deep graph and are written at 10 bits.
       ...exportVideoArgs(exp, opts.preset, opts.hardwareEncoder),
+      ...OUTPUT_COLOR_TAGS,
       "-r",
       String(F),
       "-c:a",
