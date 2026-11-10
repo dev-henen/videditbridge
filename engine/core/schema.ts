@@ -52,6 +52,7 @@ export const VideoAssetSchema = z.object({
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),
   hasAudio: z.boolean().optional().describe("Whether the file has an audio stream (filled by probe)"),
+  fps: z.number().positive().optional().describe("Frames a second of the file (filled by probe)"),
   colorSpace: colorSpaceField,
   colorMatrix: z
     .enum(["bt601", "bt709", "bt2020"])
@@ -485,7 +486,7 @@ export const TrackSchema = z
     point: PositionSchema.optional().describe("A point to follow (source frame fractions), with the area around it"),
     radius: z.number().positive().max(0.5).default(0.04).describe("point: half the size of the square around it that is tracked, as a fraction of the source's long side"),
     corners: CornersSchema.optional().describe("The four corners of a flat surface (source frame fractions): a screen, a sign, a wall"),
-    margin: z.number().min(0).max(1).default(0).describe("corners: also track this much around them (a fraction of the surface's size), e.g. a screen's bezel when the screen shows moving content"),
+    margin: z.number().min(0).max(1).optional().describe("corners: also track this much around them (a fraction of the surface's size), e.g. a screen's bezel when the screen is blank or shows moving content. Unset: found when tracking (the smallest that tracks surely)"),
     motion: z
       .enum(["translation", "similarity", "perspective"])
       .optional()

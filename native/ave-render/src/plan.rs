@@ -304,28 +304,58 @@ pub struct Seek {
     pub source_duration: f64,
     #[serde(default)]
     pub frames: Option<i64>,
+    /// The file's frames a second, when known.
+    #[serde(default)]
+    pub source_fps: Option<f64>,
     pub tail: Vec<String>,
 }
 
 impl Seek {
     /// ffmpeg arguments that decode the source from frame `k` on, writing `format`.
+    ///
+    /// The whole decode counts its frames from the first one at or after the in point, and the fps
+    /// filter gives each output frame the source frame nearest in time on that count. A restart
+    /// that began counting at its own first frame showed the next source frame about every other
+    /// time where the two rates differ (25 fps footage in a 24 fps edit). So with the file's rate
+    /// known, the restart begins a few output frames early, at a whole number of them from where
+    /// the whole decode began, keeps the count from there (no reset to its first frame), and drops
+    /// the early frames after the fps filter.
     pub fn args(&self, k: i64, fps: f64, format: PixelFormat) -> Vec<String> {
-        let skipped = k as f64 / fps * self.speed;
-        let mut filters = vec!["setpts=PTS-STARTPTS".to_string()];
+        // Enough early frames to hold a source frame of footage down to 4 a second.
+        let early = ((fps * 0.25).ceil() as i64 + 1).min(k);
+        let exact = self.source_fps.filter(|f| *f > 0.0 && k > early);
+        let (from, drop) = match exact {
+            Some(f) => {
+                let first = (self.in_point * f - 1e-6).ceil().max(0.0) / f;
+                (first + (k - early) as f64 / fps * self.speed, early)
+            }
+            // Near the start the whole count is cheap to keep: decode from the in point and skip.
+            None if self.source_fps.is_some() && k <= early => (self.in_point, k),
+            None => (self.in_point + k as f64 / fps * self.speed, 0),
+        };
+        let mut filters: Vec<String> = Vec::new();
+        if exact.is_none() {
+            filters.push("setpts=PTS-STARTPTS".into());
+        }
         if self.speed != 1.0 {
             filters.push(format!("setpts=PTS/{}", self.speed));
         }
-        filters.push(format!("fps={fps}"));
+        filters.push(if exact.is_some() { format!("fps={fps}:start_time=0") } else { format!("fps={fps}") });
+        if drop > 0 {
+            filters.push(format!("trim=start_frame={drop}"));
+            // Timed from zero again: the encoder end of ffmpeg repeats the first frame to fill up to a late start.
+            filters.push("setpts=PTS-STARTPTS".into());
+        }
         if let Some(frames) = self.frames {
             filters.push("tpad=stop_mode=clone:stop=-1".into());
             filters.push(format!("trim=end_frame={}", (frames - k).max(1)));
         }
         filters.extend(self.tail.iter().cloned());
         let mut args: Vec<String> = ["-hide_banner", "-loglevel", "error", "-nostdin"].map(String::from).into();
-        if self.in_point + skipped > 0.0 {
-            args.extend(["-ss".into(), format!("{:.6}", self.in_point + skipped)]);
+        if from > 0.0 {
+            args.extend(["-ss".into(), format!("{:.6}", from)]);
         }
-        args.extend(["-t".into(), format!("{:.6}", (self.source_duration - skipped).max(1.0 / fps)), "-i".into(), self.src.clone()]);
+        args.extend(["-t".into(), format!("{:.6}", (self.source_duration - (from - self.in_point)).max(1.0 / fps)), "-i".into(), self.src.clone()]);
         args.extend(["-an", "-sn", "-vf"].map(String::from));
         args.push(filters.join(","));
         let pix_fmt = match format {

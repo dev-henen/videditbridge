@@ -24,7 +24,14 @@ import { decodeFrames } from "./objects.js";
  */
 
 /** Bump when tracks for the same input would come out differently. */
-export const POINT_TRACK_VERSION = 1;
+export const POINT_TRACK_VERSION = 2;
+/**
+ * Margins tried in turn for a surface marked without one. A blank or changing screen has nothing to
+ * hold on to inside its corners (only the fingers passing over it), and what is around it on the
+ * same plane (its bezel, a sign's frame) does; further out lies other scenery, so the smallest
+ * margin that tracks surely is the one kept.
+ */
+const MARGINS = [0, 0.15, 0.35, 0.6];
 /** Long side of the frames tracked. The tracker is sub-pixel, so this gives corners within a pixel at 1080p. */
 export const TRACK_SIZE = 960;
 
@@ -218,7 +225,24 @@ export async function trackPoints(src: string, opts: FfmpegOptions & { start: nu
   const key = Math.min(n - 1, Math.max(0, Math.round((time - from) * opts.fps)));
   const motion = motionOf(opts.spec);
   const quad = specQuad(opts.spec, source).map(([x, y]): [number, number] => [x * size.w, y * size.h]);
-  const r = await trackQuad(gray, size.w, size.h, key, quad, { motion, margin: opts.spec.corners ? opts.spec.margin : 0, signal: opts.signal });
+  const run = (margin: number) => trackQuad(gray, size.w, size.h, key, quad, { motion, margin, signal: opts.signal });
+  let r: QuadTrack | undefined;
+  if (!opts.spec.corners || opts.spec.margin !== undefined) r = await run(opts.spec.corners ? opts.spec.margin! : 0);
+  else {
+    let best = -1;
+    for (const margin of MARGINS) {
+      const t = await run(margin);
+      const mean = t.confidence.reduce((a, b) => a + b, 0) / t.confidence.length;
+      const lowest = Math.min(...t.confidence);
+      const score = mean + lowest;
+      if (score > best) [r, best] = [t, score];
+      if (mean >= 0.85 && lowest >= 0.6) {
+        r = t;
+        break;
+      }
+    }
+  }
+  if (!r) throw new Error("Tracking found nothing to follow");
   const s0 = Math.max(0, Math.round((opts.start - from) * opts.fps));
   const s1 = Math.min(n, s0 + Math.max(1, Math.ceil((opts.end - opts.start) * opts.fps - 1e-6)));
   return {

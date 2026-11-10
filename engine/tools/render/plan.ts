@@ -56,6 +56,8 @@ export interface PlanSeek {
   speed: number;
   sourceDuration: number;
   frames?: number;
+  /** The file's frames a second, when known: a restart then lands on the frame the whole decode shows there. */
+  sourceFps?: number;
   tail: string[];
 }
 
@@ -432,7 +434,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         size[1],
         convertsColor(asset) ? "yuv420p10le" : "yuv420p",
         false,
-        clip.reverse || tc.speedMap ? undefined : { src: resolveSrc(asset.src), inPoint: clip.in, speed: clip.speed, sourceDuration: tc.sourceDuration, frames },
+        clip.reverse || tc.speedMap ? undefined : { src: resolveSrc(asset.src), inPoint: clip.in, speed: clip.speed, sourceDuration: tc.sourceDuration, frames, ...(asset.fps ? { sourceFps: asset.fps } : {}) },
         workingMatrix(asset),
       );
     } else {
@@ -512,7 +514,7 @@ export function planProject(project: Project, opts: PlanOptions): { plan: Engine
         size[1],
         convertsColor(asset) ? "yuva420p10le" : "yuva420p",
         false,
-        { src: resolveSrc(asset.src), inPoint: layer.in, speed: 1, sourceDuration: layer.duration },
+        { src: resolveSrc(asset.src), inPoint: layer.in, speed: 1, sourceDuration: layer.duration, ...(asset.fps ? { sourceFps: asset.fps } : {}) },
         workingMatrix(asset),
       );
     } else {

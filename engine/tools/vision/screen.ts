@@ -26,23 +26,27 @@ function scaled(q: Quad, s: number): Quad {
 const luma = (rgb: Buffer | Uint8Array, k: number) => 0.2126 * rgb[k * 3]! + 0.7152 * rgb[k * 3 + 1]! + 0.0722 * rgb[k * 3 + 2]!;
 
 /**
- * How sharp a region of a gray picture is, independent of its contrast: the mean gradient over the
- * spread of the values. Undefined when the region is flat.
+ * How sharp a region of a gray picture is, independent of its contrast and of how much of it is
+ * plain: its steepest edges (the gradient 1% of its pixels reach) over the range of its values
+ * (2nd to 98th percentile). A desk of smooth wood with a hand on it is as sharp as the hand's
+ * outline, not as soft as the wood. Undefined when the region is flat.
  */
 export function sharpness(gray: Float32Array, w: number, h: number, region: (x: number, y: number) => boolean): number | undefined {
-  let [grad, n, sum, sq] = [0, 0, 0, 0];
+  const grads: number[] = [];
+  const values: number[] = [];
   for (let y = 1; y < h - 1; y++)
     for (let x = 1; x < w - 1; x++) {
       if (!region(x, y) || !region(x + 1, y) || !region(x, y + 1)) continue;
       const v = gray[y * w + x]!;
-      grad += Math.abs(gray[y * w + x + 1]! - v) + Math.abs(gray[(y + 1) * w + x]! - v);
-      sum += v;
-      sq += v * v;
-      n++;
+      grads.push(Math.hypot(gray[y * w + x + 1]! - v, gray[(y + 1) * w + x]! - v));
+      values.push(v);
     }
-  if (n < 50) return undefined;
-  const spread = Math.sqrt(Math.max(0, sq / n - (sum / n) ** 2));
-  return spread < 2 ? undefined : grad / n / spread;
+  if (values.length < 50) return undefined;
+  grads.sort((p, q) => p - q);
+  values.sort((p, q) => p - q);
+  const at = (list: number[], share: number) => list[Math.min(list.length - 1, Math.floor(list.length * share))]!;
+  const range = at(values, 0.98) - at(values, 0.02);
+  return range < 6 ? undefined : at(grads, 0.99) / range;
 }
 
 /** A gray picture blurred with a Gaussian of `sigma` pixels (edges repeated). */

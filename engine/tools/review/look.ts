@@ -311,9 +311,12 @@ export async function lookChecks(p: Project, timeline: Timeline, opts: LookOptio
     // Sky slide: the new sky against the scenery below it, over up to 3 s of each replaced sky (at most 3 clips).
     const skies = spread(timeline.clips.filter((tc) => tc.clip.effects.some((e) => e.type === "skyReplace")), 3);
     for (const tc of skies) {
-      const n = Math.min(30, Math.floor(tc.duration * 10));
+      // About 12 frames a second: closer together than that a slow slide is under what tracking can
+      // tell, further apart a fast pan moves more between frames than tracking can follow.
+      const every = Math.max(1, Math.round(F / 12));
+      const n = Math.min(30, Math.floor((tc.duration * F - 1) / every));
       if (n < 6) continue;
-      const times = Array.from({ length: n }, (_, k) => round3(tc.start + 0.05 + k / 10));
+      const times = Array.from({ length: n }, (_, k) => round3(tc.start + (0.5 + k * every) / F));
       try {
         const matte: Project = { ...pictureOnly(p), effects: [], clips: p.clips.map((c) => (c.id === tc.clip.id ? { ...c, effects: [{ type: "maskView", params: { mask: { kind: "sky", feather: 0 } } }] } : c)) };
         const [pic, sky] = [await render(pictureOnly(p), times, 540), await render(matte, times, 540)];
@@ -340,9 +343,27 @@ export async function lookChecks(p: Project, timeline: Timeline, opts: LookOptio
         if (!a.inliers[last] || !b.inliers[last]) continue;
         const dx = a.matrices[last * 9 + 2]! - b.matrices[last * 9 + 2]!;
         const dy = a.matrices[last * 9 + 5]! - b.matrices[last * 9 + 5]!;
-        const per5s = (Math.hypot(dx, dy) * (1080 / Math.min(w, h)) * 5) / (last / 10);
-        if (per5s > 2)
-          issues.push({ check: "vfx", severity: per5s > 6 ? "problem" : "warning", start: tc.start, end: tc.end, target: tc.clip.id, message: `The new sky in clip ${tc.clip.id} slides against the scenery: about ${per5s.toFixed(1)} px per 5 s at 1080p (it should move with the distant scenery). Call replace_sky again on that clip with follow 1 so it re-measures the camera's motion, unless a lower follow was meant.` });
+        const seconds = (last * every) / F;
+        const to1080 = 1080 / Math.min(w, h);
+        const per5s = (Math.hypot(dx, dy) * to1080 * 5) / seconds;
+        // In a pan the tracking itself is a few percent off, so the slide is judged against how far the scenery moved.
+        const scenery5s = (Math.hypot(b.matrices[last * 9 + 2]!, b.matrices[last * 9 + 5]!) * to1080 * 5) / seconds;
+        if (per5s > Math.max(2, scenery5s * 0.04)) {
+          // A fast pan: scenery crosses the sides of the frame faster than its middle, and the new sky moves as one flat picture.
+          const pan = scenery5s > 600;
+          issues.push({
+            check: "vfx",
+            severity: per5s > Math.max(15, scenery5s * 0.2) ? "problem" : "warning",
+            start: tc.start,
+            end: tc.end,
+            target: tc.clip.id,
+            message:
+              `The new sky in clip ${tc.clip.id} slides against the scenery: about ${per5s.toFixed(1)} px per 5 s at 1080p (it should move with the distant scenery). ` +
+              (pan
+                ? `The camera pans fast here (the scenery moves about ${Math.round(scenery5s)} px per 5 s): the new sky follows the middle of the frame and lags toward its sides. Look at it in a preview; if it shows, use a steadier part of the shot or a sky with little detail (a gradient, soft cloud).`
+                : "Mist or cloud drifting over the hills reads the same way: look at a preview. If the sky does slide, call replace_sky again on that clip with follow 1 so it re-measures the camera's motion, unless a lower follow was meant."),
+          });
+        }
       } catch (err) {
         notes.push(`The sky in ${tc.clip.id} was not checked for sliding: ${(err as Error).message}`);
       }

@@ -1279,7 +1279,7 @@ _No parameters._
 
 ### track_points
 
-**edits**. Follow a point or a flat surface through a video, to attach graphics to it (pin_layer) or put a new picture on a screen or sign (replace_screen). Mark it on a frame where it is clearly visible, in fractions of the edit's frame at a timeline time as in render_frame: the four corners of a surface (a phone or monitor screen, a sign, a poster, a picture frame, a wall), or a point with the square around it (a logo on a shirt, a car door, a spot on a table). Pick something rigid with texture or edges; plain areas, reflections and things that bend track badly. A screen that shows moving content tracks badly by itself: set margin (e.g. 0.15) so the bezel around it is tracked too. Runs on this machine in seconds (no model). Follows it through every primary clip of that video, reports per clip how sure the tracking is and the unsure ranges, and shows the corners in blue on the marked clip's start, least sure frame, middle and end. Mark again under the same id to fix it; remove forgets it.
+**edits**. Follow a point or a flat surface through a video, to attach graphics to it (pin_layer) or put a new picture on a screen or sign (replace_screen). Mark it on a frame where it is clearly visible, in fractions of the edit's frame at a timeline time as in render_frame: the four corners of a surface (a phone or monitor screen, a sign, a poster, a picture frame, a wall), or a point with the square around it (a logo on a shirt, a car door, a spot on a table). Pick something rigid with texture or edges; plain areas, reflections and things that bend track badly. A blank screen, or one that shows moving content, has nothing to follow inside its corners: without a margin the area around the surface (its bezel, a sign's frame) is tried too, as far out as it takes to track surely. Runs on this machine in seconds (no model). Follows it through every primary clip of that video, reports per clip how sure the tracking is and the unsure ranges, and shows the corners in blue on the marked clip's start, least sure frame, middle and end. Mark again under the same id to fix it; remove forgets it.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -1301,7 +1301,7 @@ _No parameters._
 | `point.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
 | `point.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
 | `radius` | number |  |  | point: half the size of the tracked square around it, as a fraction of the source's long side (default 0.04); cover the thing that moves with the point, not the background (> 0, ≤ 0.5) |
-| `margin` | number |  |  | corners: also track this much around the surface (a fraction of its size, default 0): a screen's bezel, a sign's frame (≥ 0, ≤ 1) |
+| `margin` | number |  |  | corners: also track this much around the surface (a fraction of its size): a screen's bezel, a sign's frame. Leave it out to have it found; 0 tracks the surface alone (≥ 0, ≤ 1) |
 | `motion` | "translation" \| "similarity" \| "perspective" |  |  | translation (position only), similarity (also size and turn), perspective (a flat surface at any angle). Default perspective for corners, similarity for a point |
 | `label` | string |  |  | A short name, e.g. 'phone screen'; also the id when no id is given |
 | `id` | string |  |  | Mark an existing track again under this id |

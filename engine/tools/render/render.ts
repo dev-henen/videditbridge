@@ -109,6 +109,7 @@ export async function probeAssets(project: Project, opts: FfmpegOptions & { base
       });
       if (asset.type === "video") {
         asset.colorMatrix ??= colorMatrixOf(info);
+        asset.fps ??= info.fps;
         asset.duration ??= info.duration;
         asset.hasAudio ??= info.hasAudio;
         asset.width ??= info.width;
