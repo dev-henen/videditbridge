@@ -84,7 +84,9 @@ fn main() {
         }
         let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| -> Result<Value, String> {
             if gpu.is_none() {
-                gpu = Some(Box::leak(Box::new(gpu::Gpu::new()?)));
+                let g: &'static gpu::Gpu = Box::leak(Box::new(gpu::Gpu::new()?));
+                g.warm();
+                gpu = Some(g);
             }
             let g: &'static gpu::Gpu = gpu.unwrap();
             let params = &message["params"];

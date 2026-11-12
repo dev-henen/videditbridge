@@ -26,7 +26,7 @@ Distance runs from 0 to 1 within a clip: the first moment's nearest things sit a
 
 | Effect | Params |
 |---|---|
-| `depthOfField` | `focus` (distance in focus), `focusPath` (focus over time, eased between points), `range` (depth of the sharp zone, default 0.1), `blur` (pixels at 1080p for the most out-of-focus parts, default 25) |
+| `depthOfField` | `focus` (distance in focus), `focusPath` (focus over time, eased between points), `range` (depth of the sharp zone; `set_focus` sets it from the depth the person under a point, or a tracked object, spans, since a person spans 0.1 to 0.3 of this depth; else 0.1), `blur` (pixels at 1080p for the most out-of-focus parts, default 25) |
 | `depthFog` | `color`, `density` (fog over the farthest things, default 0.6), `start` (distance where it begins, default 0.25), `falloff` (how fast it thickens, default 3) |
 | `parallax` | `x`, `y` (how far the camera moves over the clip, frame fractions), `zoom` (push in or pull out), `layers` (default 8) |
 

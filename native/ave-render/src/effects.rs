@@ -119,7 +119,7 @@ impl<'a> Effects<'a> {
     fn combine(&self, enc: &mut wgpu::CommandEncoder, top: &wgpu::TextureView, bottom: &wgpu::TextureView, out: &wgpu::TextureView, (mode, luma, opacity): (u32, bool, f32), (w, h): (u32, u32)) {
         let gpu = self.gpu;
         let u = gpu.uniform(&CombineParams { mode, luma: luma as u32, opacity, _pad: 0.0, color: [0.0; 4] });
-        gpu.dispatch(enc, &gpu.combine, &[wgpu::BindingResource::TextureView(top), wgpu::BindingResource::TextureView(bottom), wgpu::BindingResource::TextureView(out), u.as_entire_binding()], w, h);
+        gpu.dispatch(enc, gpu.combine(), &[wgpu::BindingResource::TextureView(top), wgpu::BindingResource::TextureView(bottom), wgpu::BindingResource::TextureView(out), u.as_entire_binding()], w, h);
     }
 
     /// A color table (`args` bake it, see Op::Lut) from `input` into `output`, both `w` x `h`.
@@ -127,7 +127,7 @@ impl<'a> Effects<'a> {
         let gpu = self.gpu;
         let table = view(self.table(args)?);
         let du = gpu.uniform(&[0.0f32, 1.0, 0.0, 0.0]);
-        gpu.dispatch(enc, &gpu.lut, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(&table), wgpu::BindingResource::TextureView(output), du.as_entire_binding()], w, h);
+        gpu.dispatch(enc, gpu.lut(), &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(&table), wgpu::BindingResource::TextureView(output), du.as_entire_binding()], w, h);
         Ok(())
     }
 
@@ -137,16 +137,16 @@ impl<'a> Effects<'a> {
     fn scale(&self, enc: &mut wgpu::CommandEncoder, src: &wgpu::TextureView, rows: &wgpu::TextureView, dst: &wgpu::TextureView, from: (u32, u32), scaled: [u32; 2], offset: [i32; 2], to: (u32, u32)) {
         let gpu = self.gpu;
         let hp = gpu.uniform(&ResampleParams { src_len: from.0, scaled_len: scaled[0], offset: offset[0], opaque: 0, out_size: [to.0, from.1], x_range: [0, 0], fill: [0.0; 4], origin: 0, line_origin: 0, yuv_in: 0, _pad: 0 });
-        gpu.dispatch(enc, &gpu.resample_h, &[wgpu::BindingResource::TextureView(src), wgpu::BindingResource::TextureView(rows), hp.as_entire_binding()], to.0, from.1);
+        gpu.dispatch(enc, gpu.resample_h(), &[wgpu::BindingResource::TextureView(src), wgpu::BindingResource::TextureView(rows), hp.as_entire_binding()], to.0, from.1);
         let vp = gpu.uniform(&ResampleParams { src_len: from.1, scaled_len: scaled[1], offset: offset[1], opaque: 0, out_size: [to.0, to.1], x_range: [i32::MIN / 2, i32::MAX / 2], fill: [0.0; 4], origin: 0, line_origin: 0, yuv_in: 0, _pad: 0 });
-        gpu.dispatch(enc, &gpu.resample_v, &[wgpu::BindingResource::TextureView(rows), wgpu::BindingResource::TextureView(dst), vp.as_entire_binding()], to.0, to.1);
+        gpu.dispatch(enc, gpu.resample_v(), &[wgpu::BindingResource::TextureView(rows), wgpu::BindingResource::TextureView(dst), vp.as_entire_binding()], to.0, to.1);
     }
 
     /// A pixel.wgsl pass from `src` into `dst` (`size` is dst's).
     fn pixel_pass(&self, enc: &mut wgpu::CommandEncoder, src: &wgpu::TextureView, dst: &wgpu::TextureView, params: PixelParams, (w, h): (u32, u32)) {
         let gpu = self.gpu;
         let u = gpu.uniform(&params);
-        gpu.dispatch(enc, &gpu.pixel, &[wgpu::BindingResource::TextureView(src), wgpu::BindingResource::TextureView(dst), u.as_entire_binding()], w, h);
+        gpu.dispatch(enc, gpu.pixel(), &[wgpu::BindingResource::TextureView(src), wgpu::BindingResource::TextureView(dst), u.as_entire_binding()], w, h);
     }
 
     /// Scale `src` (`from`) to `dst` (`to`) with swscale's bicubic, its area filter or nearest.
@@ -177,23 +177,23 @@ impl<'a> Effects<'a> {
             let output = pair[slot];
             let pixel = |enc: &mut wgpu::CommandEncoder, params: PixelParams| {
                 let u = gpu.uniform(&params);
-                gpu.dispatch(enc, &gpu.pixel, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding()], w, h);
+                gpu.dispatch(enc, gpu.pixel(), &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding()], w, h);
             };
             match op {
                 Op::Grade { gains, contrast, saturation, shadows, midtones, highlights } => {
                     let v = |x: &[f32; 3]| [x[0], x[1], x[2], 0.0];
                     let u = gpu.uniform(&GradeParams { gains: v(gains), shadows: v(shadows), midtones: v(midtones), highlights: v(highlights), contrast: *contrast, saturation: *saturation, _pad: [0.0; 2] });
-                    gpu.dispatch(enc, &gpu.grade, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding()], w, h);
+                    gpu.dispatch(enc, gpu.grade(), &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding()], w, h);
                 }
                 Op::Cube { file } => {
                     let (table, domain) = self.cube(file)?;
                     let (table, du) = (view(table), gpu.uniform(&[domain[0], domain[1], 0.0f32, 0.0]));
-                    gpu.dispatch(enc, &gpu.lut, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(&table), wgpu::BindingResource::TextureView(output), du.as_entire_binding()], w, h);
+                    gpu.dispatch(enc, gpu.lut(), &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(&table), wgpu::BindingResource::TextureView(output), du.as_entire_binding()], w, h);
                 }
                 Op::Lut { args } => {
                     let table = view(self.table(args)?);
                     let du = gpu.uniform(&[0.0f32, 1.0, 0.0, 0.0]);
-                    gpu.dispatch(enc, &gpu.lut, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(&table), wgpu::BindingResource::TextureView(output), du.as_entire_binding()], w, h);
+                    gpu.dispatch(enc, gpu.lut(), &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(&table), wgpu::BindingResource::TextureView(output), du.as_entire_binding()], w, h);
                 }
                 Op::Crop { rects, filter } => {
                     let r = rects.get((j.max(0) as usize).min(rects.len().saturating_sub(1))).copied().unwrap_or([0.0, 0.0, w as f32, h as f32]);
@@ -203,9 +203,9 @@ impl<'a> Effects<'a> {
                         let (cw, ch) = (cw.max(1) as u32, ch.max(1) as u32);
                         let rows = view(self.scratch(w, h));
                         let hp = gpu.uniform(&ResampleParams { src_len: cw, scaled_len: w, offset: 0, opaque: 0, out_size: [w, ch], x_range: [0, 0], fill: [0.0; 4], origin: x, line_origin: y, yuv_in: 0, _pad: 0 });
-                        gpu.dispatch(enc, &gpu.resample_h, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(&rows), hp.as_entire_binding()], w, ch);
+                        gpu.dispatch(enc, gpu.resample_h(), &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(&rows), hp.as_entire_binding()], w, ch);
                         let vp = gpu.uniform(&ResampleParams { src_len: ch, scaled_len: h, offset: 0, opaque: 0, out_size: [w, h], x_range: [0, w as i32], fill: [0.0; 4], origin: 0, line_origin: 0, yuv_in: 0, _pad: 0 });
-                        gpu.dispatch(enc, &gpu.resample_v, &[wgpu::BindingResource::TextureView(&rows), wgpu::BindingResource::TextureView(output), vp.as_entire_binding()], w, h);
+                        gpu.dispatch(enc, gpu.resample_v(), &[wgpu::BindingResource::TextureView(&rows), wgpu::BindingResource::TextureView(output), vp.as_entire_binding()], w, h);
                     } else {
                         pixel(enc, PixelParams { mode: 0, rect: r, ..Default::default() });
                     }
@@ -248,10 +248,10 @@ impl<'a> Effects<'a> {
                     let params = gpu.uniform(&params);
                     let buf = self.buffer(w, h).as_entire_binding();
                     let (gx, gy) = (w.div_ceil(16), h.div_ceil(16));
-                    let (load, store) = if *rgb { (&gpu.blur_load_rgb, &gpu.blur_store_raw) } else { (&gpu.blur_load, &gpu.blur_store) };
+                    let (load, store) = if *rgb { (gpu.blur_load_rgb(), gpu.blur_store_raw()) } else { (gpu.blur_load(), gpu.blur_store()) };
                     gpu.dispatch_bound(enc, load, &[(0, wgpu::BindingResource::TextureView(input)), (1, buf.clone()), (3, params.as_entire_binding())], gx, gy);
-                    gpu.dispatch_bound(enc, &gpu.blur_rows, &[(1, buf.clone()), (3, params.as_entire_binding())], h.div_ceil(64), 1);
-                    gpu.dispatch_bound(enc, &gpu.blur_columns, &[(1, buf.clone()), (3, params.as_entire_binding())], w.div_ceil(64), 1);
+                    gpu.dispatch_bound(enc, gpu.blur_rows(), &[(1, buf.clone()), (3, params.as_entire_binding())], h.div_ceil(64), 1);
+                    gpu.dispatch_bound(enc, gpu.blur_columns(), &[(1, buf.clone()), (3, params.as_entire_binding())], w.div_ceil(64), 1);
                     gpu.dispatch_bound(enc, store, &[(1, buf), (2, wgpu::BindingResource::TextureView(output)), (3, params.as_entire_binding())], gx, gy);
                 }
                 Op::Grain { size: [gw, gh], strength, seed } => {
@@ -259,7 +259,7 @@ impl<'a> Effects<'a> {
                     let (gray, noisy, rows, up) = (self.named("grain-gray", gw, gh), self.named("grain-noise", gw, gh), self.named("grain-rows", w, gh), self.named("grain-up", w, h));
                     let pass = |enc: &mut wgpu::CommandEncoder, src: &wgpu::TextureView, dst: &wgpu::TextureView, params: PixelParams| {
                         let u = gpu.uniform(&params);
-                        gpu.dispatch(enc, &gpu.pixel, &[wgpu::BindingResource::TextureView(src), wgpu::BindingResource::TextureView(dst), u.as_entire_binding()], gw, gh);
+                        gpu.dispatch(enc, gpu.pixel(), &[wgpu::BindingResource::TextureView(src), wgpu::BindingResource::TextureView(dst), u.as_entire_binding()], gw, gh);
                     };
                     // lutyuv's mid-gray (Y, U and V 128), then noise on luma only.
                     let mid = (128.0 - 16.0) / 219.0;
@@ -268,9 +268,9 @@ impl<'a> Effects<'a> {
                     pass(enc, &gray, &noisy, PixelParams { mode: 5, strength: *strength, uniform: 0, bar: 1, frame, ..Default::default() });
                     // Scaled up as the fit scales (swscale's bicubic).
                     let hp = gpu.uniform(&ResampleParams { src_len: gw, scaled_len: w, offset: 0, opaque: 0, out_size: [w, gh], x_range: [0, 0], fill: [0.0; 4], origin: 0, line_origin: 0, yuv_in: 0, _pad: 0 });
-                    gpu.dispatch(enc, &gpu.resample_h, &[wgpu::BindingResource::TextureView(&noisy), wgpu::BindingResource::TextureView(&rows), hp.as_entire_binding()], w, gh);
+                    gpu.dispatch(enc, gpu.resample_h(), &[wgpu::BindingResource::TextureView(&noisy), wgpu::BindingResource::TextureView(&rows), hp.as_entire_binding()], w, gh);
                     let vp = gpu.uniform(&ResampleParams { src_len: gh, scaled_len: h, offset: 0, opaque: 0, out_size: [w, h], x_range: [0, w as i32], fill: [0.0; 4], origin: 0, line_origin: 0, yuv_in: 0, _pad: 0 });
-                    gpu.dispatch(enc, &gpu.resample_v, &[wgpu::BindingResource::TextureView(&rows), wgpu::BindingResource::TextureView(&up), vp.as_entire_binding()], w, h);
+                    gpu.dispatch(enc, gpu.resample_v(), &[wgpu::BindingResource::TextureView(&rows), wgpu::BindingResource::TextureView(&up), vp.as_entire_binding()], w, h);
                     self.combine(enc, input, &up, output, (4, true, 1.0), (w, h));
                 }
                 Op::Warp { maps, cubic } => {
@@ -311,11 +311,11 @@ impl<'a> Effects<'a> {
                     let buffer = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("orbs"), contents: bytemuck::cast_slice(&data), usage: wgpu::BufferUsages::STORAGE });
                     let l = leak.unwrap_or([0.0; 5]);
                     let lp = gpu.uniform(&LightParams { mode: leak.is_none() as u32, count: list.len() as u32, t: (j.max(0) as f64 / self.fps) as f32, _pad: 0.0, speeds: [l[0], l[1], l[2], l[3]], speed5: l[4], _pad2: [0.0; 3] });
-                    gpu.dispatch(enc, &gpu.light, &[wgpu::BindingResource::TextureView(&canvas), lp.as_entire_binding(), buffer.as_entire_binding()], cw, ch);
+                    gpu.dispatch(enc, gpu.light(), &[wgpu::BindingResource::TextureView(&canvas), lp.as_entire_binding(), buffer.as_entire_binding()], cw, ch);
                     let (rows, up) = (self.named("light-rows", w, ch), self.named("light-up", w, h));
                     self.scale(enc, &canvas, &rows, &up, (cw, ch), [w, h], [0, 0], (w, h));
                     let u = gpu.uniform(&CombineParams { mode: 6, luma: 0, opacity: *opacity, _pad: 0.0, color: [color[0], color[1], color[2], 1.0] });
-                    gpu.dispatch(enc, &gpu.combine, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(&up), wgpu::BindingResource::TextureView(output), u.as_entire_binding()], w, h);
+                    gpu.dispatch(enc, gpu.combine(), &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(&up), wgpu::BindingResource::TextureView(output), u.as_entire_binding()], w, h);
                 }
                 Op::Move { size: [sw, sh], frames, rotate } => {
                     let (sw, sh) = (*sw, *sh);
@@ -323,7 +323,7 @@ impl<'a> Effects<'a> {
                     let (rows, scaled) = (self.named("move-rows", sw, h), self.named("move-scaled", sw, sh));
                     self.scale(enc, input, &rows, &scaled, (w, h), [sw, sh], [0, 0], (sw, sh));
                     let u = gpu.uniform(&PixelParams { mode: 11, rect: [f[0], f[1], f[2], 0.0], uniform: *rotate as u32, ..Default::default() });
-                    gpu.dispatch(enc, &gpu.pixel, &[wgpu::BindingResource::TextureView(&scaled), wgpu::BindingResource::TextureView(output), u.as_entire_binding()], w, h);
+                    gpu.dispatch(enc, gpu.pixel(), &[wgpu::BindingResource::TextureView(&scaled), wgpu::BindingResource::TextureView(output), u.as_entire_binding()], w, h);
                 }
                 Op::Flip { horizontal } => pixel(enc, PixelParams { mode: 12, backward: !*horizontal as u32, ..Default::default() }),
                 Op::Grid { cell, thickness, alpha } => pixel(enc, PixelParams { mode: 13, rect: [cell[0].max(1) as f32, cell[1].max(1) as f32, 0.0, 0.0], bar: *thickness, factor: *alpha, ..Default::default() }),
@@ -332,7 +332,7 @@ impl<'a> Effects<'a> {
                     let n = (kernel.len() as f64).sqrt().round() as u32;
                     let buffer = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("kernel"), contents: bytemuck::cast_slice(kernel), usage: wgpu::BufferUsages::STORAGE });
                     let u = gpu.uniform(&ConvParams { size: n, rgb: *rgb as u32, rdiv: *rdiv, bias: *bias, mode: 0, amount: 0, height: n, scalebits: 0 });
-                    gpu.dispatch(enc, &gpu.conv, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding(), buffer.as_entire_binding()], w, h);
+                    gpu.dispatch(enc, gpu.conv(), &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding(), buffer.as_entire_binding()], w, h);
                 }
                 Op::Unsharp { size: [mx, my], amount } => {
                     // unsharp's cascade of two-tap sums (2 x steps of them each way) is a binomial kernel.
@@ -341,7 +341,7 @@ impl<'a> Effects<'a> {
                     let buffer = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("unsharp"), contents: bytemuck::cast_slice(&kernel), usage: wgpu::BufferUsages::STORAGE });
                     let scalebits = (mx / 2 + my / 2) * 2;
                     let u = gpu.uniform(&ConvParams { size: wx.len() as u32, rgb: 0, rdiv: 1.0, bias: 0.0, mode: 1, amount: *amount, height: wy.len() as u32, scalebits });
-                    gpu.dispatch(enc, &gpu.conv, &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding(), buffer.as_entire_binding()], w, h);
+                    gpu.dispatch(enc, gpu.conv(), &[wgpu::BindingResource::TextureView(input), wgpu::BindingResource::TextureView(output), u.as_entire_binding(), buffer.as_entire_binding()], w, h);
                 }
                 Op::Mix { branches } => {
                     // Each branch from the same picture; its 8-bit planes summed, then times 1 / n

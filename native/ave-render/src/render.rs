@@ -120,7 +120,7 @@ fn frand_table(w: u32, h: u32) -> Vec<f32> {
 #[allow(clippy::too_many_arguments)]
 fn fit(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, src: &wgpu::TextureView, rows: &wgpu::TextureView, out: &wgpu::TextureView, (sw, sh): (u32, u32), scaled: [u32; 2], offset: [i32; 2], (w, h): (u32, u32), opaque: bool, fill: [f32; 4], yuv_in: bool) {
     let hp = gpu.uniform(&ResampleParams { src_len: sw, scaled_len: scaled[0], offset: offset[0], opaque: 0, out_size: [w, sh], x_range: [0, 0], fill: [0.0; 4], origin: 0, line_origin: 0, yuv_in: 0, _pad: 0 });
-    gpu.dispatch(enc, &gpu.resample_h, &[wgpu::BindingResource::TextureView(src), wgpu::BindingResource::TextureView(rows), hp.as_entire_binding()], w, sh);
+    gpu.dispatch(enc, gpu.resample_h(), &[wgpu::BindingResource::TextureView(src), wgpu::BindingResource::TextureView(rows), hp.as_entire_binding()], w, sh);
     let vp = gpu.uniform(&ResampleParams {
         src_len: sh,
         scaled_len: scaled[1],
@@ -134,7 +134,7 @@ fn fit(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, src: &wgpu::TextureView, rows:
         yuv_in: yuv_in as u32,
         _pad: 0,
     });
-    gpu.dispatch(enc, &gpu.resample_v, &[wgpu::BindingResource::TextureView(rows), wgpu::BindingResource::TextureView(out), vp.as_entire_binding()], w, h);
+    gpu.dispatch(enc, gpu.resample_v(), &[wgpu::BindingResource::TextureView(rows), wgpu::BindingResource::TextureView(out), vp.as_entire_binding()], w, h);
 }
 
 /// A planar source's chroma and the textures its fit goes through: the decoded U and V (rg8, half
@@ -177,7 +177,7 @@ fn fit_planar(gpu: &Gpu, enc: &mut wgpu::CommandEncoder, luma: &wgpu::TextureVie
     let chroma_offset = [offset[0].div_euclid(2), offset[1].div_euclid(2)];
     fit(gpu, enc, &view(&planes.uv), &view(&planes.rows), &view(&planes.chroma), (half(sw), half(sh)), chroma_scaled, chroma_offset, (half(w), half(h)), false, [u, v, 0.0, 1.0], false);
     let pp = gpu.uniform(&PlanarParams { opaque: opaque as u32, alpha: alpha as u32, yuv_out: yuv_out as u32, _pad: 0 });
-    gpu.dispatch(enc, &gpu.planar, &[wgpu::BindingResource::TextureView(&view(&planes.luma)), wgpu::BindingResource::TextureView(&view(&planes.chroma)), wgpu::BindingResource::TextureView(out), pp.as_entire_binding()], w, h);
+    gpu.dispatch(enc, gpu.planar(), &[wgpu::BindingResource::TextureView(&view(&planes.luma)), wgpu::BindingResource::TextureView(&view(&planes.chroma)), wgpu::BindingResource::TextureView(out), pp.as_entire_binding()], w, h);
 }
 
 /// Frames past what a decoder has read that are worth reading through rather than restarting it at
@@ -407,7 +407,7 @@ impl<'a> Composer<'a> {
                     None => fitted.clone(),
                 };
                 let lu = gpu.uniform(&LayerParams { pos: [0, 0], size: [w, h], blend: 0, opacity: 1.0, _pad: [0.0; 2] });
-                gpu.dispatch(enc, &gpu.layer, &[wgpu::BindingResource::TextureView(&under), wgpu::BindingResource::TextureView(&first), wgpu::BindingResource::TextureView(&laid), lu.as_entire_binding()], w, h);
+                gpu.dispatch(enc, gpu.layer(), &[wgpu::BindingResource::TextureView(&under), wgpu::BindingResource::TextureView(&first), wgpu::BindingResource::TextureView(&laid), lu.as_entire_binding()], w, h);
             }
             first = laid;
         }
@@ -519,7 +519,7 @@ impl<'a> Composer<'a> {
             let hp = gpu.uniform(&HblurParams { fade_a: params.fade_a, fade_b: params.fade_b, width: w, height: h });
             gpu.dispatch_bound(
                 &mut enc,
-                &gpu.hblur,
+                gpu.hblur(),
                 &[(0, wgpu::BindingResource::TextureView(&views[0])), (1, wgpu::BindingResource::TextureView(&views[1])), (2, self.sums.as_entire_binding()), (3, hp.as_entire_binding())],
                 h.div_ceil(64),
                 1,
@@ -528,7 +528,7 @@ impl<'a> Composer<'a> {
         let pu = gpu.uniform(&params);
         gpu.dispatch(
             &mut enc,
-            &gpu.primary,
+            gpu.primary(),
             &[
                 wgpu::BindingResource::TextureView(views.first().unwrap_or(&blank)),
                 wgpu::BindingResource::TextureView(views.get(1).unwrap_or(&blank)),
@@ -570,7 +570,7 @@ impl<'a> Composer<'a> {
             let item_view = self.shown(item);
             gpu.dispatch(
                 &mut enc,
-                &gpu.layer,
+                gpu.layer(),
                 &[
                     wgpu::BindingResource::TextureView(&canvas_views[cur]),
                     wgpu::BindingResource::TextureView(&item_view),
@@ -598,8 +598,8 @@ impl<'a> Composer<'a> {
         let text = (text.as_ref().unwrap_or(&blank), &text_on);
         let (luma_words, chroma_words) = packed_words(w, h, out.bit_depth == Some(10));
         let bytes = self.packed.size();
-        pack_pass(gpu, &mut enc, &gpu.pack_luma, &canvas_views[cur], &self.packed, text, luma_words);
-        pack_pass(gpu, &mut enc, &gpu.pack_chroma, &canvas_views[cur], &self.packed, text, chroma_words);
+        pack_pass(gpu, &mut enc, gpu.pack_luma(), &canvas_views[cur], &self.packed, text, luma_words);
+        pack_pass(gpu, &mut enc, gpu.pack_chroma(), &canvas_views[cur], &self.packed, text, chroma_words);
         let slot = self.next_slot;
         if self.filled[slot].is_some() {
             return Err("both readback slots are waiting to be read".into());

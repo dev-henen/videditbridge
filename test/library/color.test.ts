@@ -148,3 +148,15 @@ describe("color in projects", () => {
     expect(bad.isError).toBe(true);
   });
 });
+
+describe("baked color tables in deep renders", () => {
+  it("go through haldclut as packed RGB", () => {
+    // Found on real footage: FFmpeg 6.1's haldclut reads planar RGB in the wrong channel order, which
+    // turned graded 10-bit and ProRes exports magenta.
+    const ctx = { width: 320, height: 180, fps: 24, duration: 2, deep: true, label: (p: string) => `${p}0` };
+    const f = colorFilter({ contrast: 70, exposure: -0.4, saturation: 40, wheels: { shadows: { hue: 190, amount: 40 } } }, ctx);
+    expect(f).toContain("haldclut");
+    expect(f).toContain("format=rgb48le[cbm0]");
+    expect(f).not.toMatch(/gbrp\d*le\[cbm0\]/);
+  });
+});

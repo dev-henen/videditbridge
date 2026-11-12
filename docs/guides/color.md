@@ -8,9 +8,9 @@ Most sliders run from -100 to 100, where 0 means unchanged.
 
 | Group | Control | Range | What it does |
 |---|---|---|---|
-| Light | `exposure` | -3..3 stops | Camera-style exposure |
+| Light | `exposure` | -3..3 stops | Camera-style exposure. Brighter is a gain up to 60% of white with a shoulder from there, so highlights are pressed together instead of cut off |
 | | `brightness` | ±100 | Overall brightness |
-| | `contrast` | ±100 | Contrast |
+| | `contrast` | ±100 | Contrast. More contrast scales luma around the middle with a toe and a shoulder past 15% and 85%, so nothing is cut off; less is a straight line |
 | | `highlights` | ±100 | Recover (−) or boost (+) bright areas |
 | | `shadows` | ±100 | Lift (+) or deepen (−) dark areas |
 | | `whites` | ±100 | White point |
@@ -155,6 +155,8 @@ Claude does this with `set_color_space`. HDR files tagged as HLG or PQ are set w
 | `clog3-cinemagamut` | Canon Log 3 / Cinema Gamut |
 | `bmdfilm-gen5` | Blackmagic Film, Generation 5 |
 | `hlg-rec2020`, `pq-rec2020` | HDR (HLG, PQ / HDR10) |
+
+Video is read with its own YUV matrix (the asset's `colorMatrix`, from its tag, or BT.709 for untagged HD), so colors are as recorded on both renderers, and exports are written as BT.709 and tagged so.
 
 Each space's curve and gamut come from its maker's published formulas (`engine/library/color/spaces.ts`, with the source of each). The footage goes to ACES and out through the ACES output transform for Rec.709, a filmic curve that rolls highlights off instead of clipping them; 18% gray lands at about 39% of the range. The conversion comes first: the color panel's primaries then grade on scene light inside it, and everything else works on the converted picture (below). Both renderers apply the same 65-point table, written once per space into the app's cache folder; the GPU engine decodes such footage at 10 bits.
 

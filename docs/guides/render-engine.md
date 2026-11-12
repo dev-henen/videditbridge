@@ -14,6 +14,10 @@ await render(project, { output: "out.mp4", backend: "auto" });
 | `"engine"` | The GPU engine. An error when it is not built or fails |
 | `"auto"` | The engine, and FFmpeg when the engine is not built, the options need FFmpeg, or the engine fails (reported on stderr). The default until `setDefaultBackend` is called |
 
+Both renderers work on BT.601 YUV, which FFmpeg uses wherever a filter needs RGB: footage stored with BT.709 or BT.2020 is brought to it as it is read (`workingMatrix`, the asset's `colorMatrix`), and the finished picture is written as BT.709 and tagged so (`OUTPUT_MATRIX`). A single frame restarted in the middle of a clip keeps the whole decode's frame count (with the asset's `fps`), so it shows the frame the export has there even when the footage's rate differs from the edit's.
+
+The engine opens the graphics device at start and builds each shader pipeline on first use, with all of them started on threads at once: it answers in under a second where building them in a row took 11 s on the reference laptop (Intel UHD, Direct3D 12).
+
 Videos with a `range` or `proxies`, and analysis renders, use FFmpeg. Single frames (`renderFrame`, `renderFrameShared`), live playback and contact sheets draw on the engine's long-lived preview sessions (see Previews). `setDefaultBackend(backend, frames)` sets the backend of renders that do not name one, and of frames and contact sheets; the app's host sets both from the performance test.
 
 **Building.** `npm run native` builds the engine with the Rust kernels and copies it to `native/ave-render/ave-render.<platform>-<arch>[-msvc|-gnu][.exe]`, where `enginePath()` finds it (`$AVE_RENDER_PATH` overrides). `engineInfo()` opens the graphics device and names it.

@@ -27,7 +27,7 @@ To follow the shape of an object (a person, a car) for masks and grades, use [ob
 
 ## In the project
 
-Tracks live in `project.tracks` by id: the asset, the source time of the frame they were marked on, the corners or the point (in source frame fractions), `radius`, `margin` and `motion`. The tracking result is cached per clip source range in the render cache folder (`tracks/`), so pinning more layers to the same track does not track again.
+Tracks live in `project.tracks` by id: the asset, the source time of the frame they were marked on, the corners or the point (in source frame fractions), `radius`, `margin` and `motion`. A surface marked without a `margin` gets the smallest of 0, 0.15, 0.35 and 0.6 that tracks surely: a blank green screen or one showing moving content has nothing inside its corners, and the fingers moving over it pulled the corners off by 190 px on a real clip; its bezel holds them within 4 px. `replace_screen` draws the insert 1.5 px past the corners (at 1080p), so no sliver of the old screen shows, and blurs it to the sharpness of the scene's steepest edges around it (a smooth desk does not make a sharp scene look soft). The tracking result is cached per clip source range in the render cache folder (`tracks/`), so pinning more layers to the same track does not track again.
 
 `pin_layer` and `replace_screen` write ordinary keyframes onto the layer, so renders never run the tracker. A corner-pinned layer has `keyframes.corners`: where its four corners land over time, in frame fractions. `pin_mask` writes the shape's `corners` the same way: where the frame's corners go over time, so the renderer draws the shape once and carries it with `perspective`.
 

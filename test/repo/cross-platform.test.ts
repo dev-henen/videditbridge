@@ -241,12 +241,13 @@ describe("script fallback fonts (C3)", () => {
 });
 
 describe("measuring providers on this computer (E2)", () => {
-  const fakeOrt = (ms: Record<string, number>, made: string[] = []) => ({
+  const fakeOrt = (ms: Record<string, number>, made: string[] = [], setup: Record<string, number> = {}) => ({
     Tensor: class {},
     InferenceSession: {
       create: async (_: string, opts?: { executionProviders?: string[] }) => {
         const on = opts?.executionProviders?.[0] ?? "cpu";
         made.push(on);
+        if (setup[on]) await new Promise((r) => setTimeout(r, setup[on]));
         return {
           run: async () => {
             const until = performance.now() + ms[on]!;
@@ -277,5 +278,23 @@ describe("measuring providers on this computer (E2)", () => {
     const made: string[] = [];
     await createOrtSession(fakeOrt({ cpu: 0, [gpu]: 0 }, made) as never, file, "auto");
     expect(made).toEqual([expected]);
+  });
+
+  it("keeps the CPU when the graphics card is only a little faster but slow to set up", async () => {
+    // Found on real use: DirectML set up the person cutout in 13 to 40 s to run it 5 ms faster a frame.
+    const { createOrtSession, gpuProvider, providerChoiceFile } = await import("../../engine/tools/vision/faces.js");
+    const gpu = gpuProvider()!;
+    const file = path.join(await tempDir(), "m.onnx");
+    const s = await createOrtSession(fakeOrt({ cpu: 3, [gpu]: 1 }, [], { [gpu]: 1500 }) as never, file, "auto");
+    for (let i = 0; i < 5; i++) await s.run({});
+    const { readFile, writeFile } = await import("node:fs/promises");
+    const choice = JSON.parse(await readFile(providerChoiceFile(file), "utf8"));
+    expect(choice).toMatchObject({ provider: "cpu" });
+    expect(choice.setupMs[gpu]).toBeGreaterThan(1000);
+    // A choice saved before setup time counted is measured again.
+    await writeFile(providerChoiceFile(file), JSON.stringify({ provider: gpu, ms: { cpu: 3, [gpu]: 1 }, measuredAt: "2026-10-28" }));
+    const made: string[] = [];
+    await createOrtSession(fakeOrt({ cpu: 0, [gpu]: 0 }, made) as never, file, "auto");
+    expect(made).toEqual(["cpu", gpu]);
   });
 });

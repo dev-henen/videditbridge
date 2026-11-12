@@ -51,6 +51,8 @@ import { depthInClips, interpolateInClips, removalInClips, render, renderContact
 import { exportLut } from "../tools/render/export-lut.js";
 import { clipFrameTimes, framePlan } from "../tools/video/interpolate.js";
 import { depthInBox, readDepthFrames } from "../tools/vision/depth.js";
+import { PersonSegmenter } from "../tools/vision/segment.js";
+import { decodeFrames } from "../tools/vision/objects.js";
 import { effectsOf } from "../tools/render/compile.js";
 import { analyzeColor, renderScopes } from "../tools/render/color-analysis.js";
 import { matchShot, pixelsIn, readPixels, type MatchMethod } from "../tools/render/color-transfer.js";
@@ -250,7 +252,38 @@ async function clipDepth(s: EditorSession, clipId: string, activity?: ActivityHa
       return depthInBox(maps[k]!, r.track.width, r.track.height, b);
     });
   };
-  return { tc, track: r.track, sample };
+  /**
+   * The span of distance a subject covers (its 10th and 90th percentiles), from the pixels a mask
+   * selects (`mask`: per pixel of the depth map, true on the subject) at a timeline time.
+   */
+  const spread = async (time: number, mask: (x: number, y: number) => boolean) => {
+    const [map] = await readDepthFrames(r.file, r.track, [frameOf(time)], { ffmpegPath: s.options.ffmpegPath });
+    const v: number[] = [];
+    for (let y = 0; y < r.track.height; y++) for (let x = 0; x < r.track.width; x++) if (mask(x, y)) v.push(map![y * r.track.width + x]!);
+    if (v.length < 30) return undefined;
+    v.sort((a, b) => a - b);
+    return { near: v[Math.floor(v.length * 0.1)]!, far: v[Math.floor(v.length * 0.9)]! };
+  };
+  return { tc, track: r.track, sample, spread, source, depthFile: r.file };
+}
+
+/**
+ * The person under a point of the edit's frame at a time, as a mask over the depth map of the clip
+ * (person cutout on that frame), or undefined when the point is not on a person.
+ */
+async function personAt(s: EditorSession, d: Awaited<ReturnType<typeof clipDepth>>, point: { x: number; y: number }, time: number): Promise<((x: number, y: number) => boolean) | undefined> {
+  const { tc, track, source } = d;
+  if (tc.asset.type !== "video" && tc.asset.type !== "image") return undefined;
+  const src = s.resolve(tc.asset.src);
+  const at = tc.asset.type === "image" ? 0 : timelineToSource(tc, time);
+  const size = { w: Math.max(2, Math.round(track.width / 2) * 2), h: Math.max(2, Math.round(track.height / 2) * 2) };
+  const [rgb] = await decodeFrames(src, { start: at, end: at + 0.2 }, 30, size, "rgb24", { ffmpegPath: s.options.ffmpegPath, colorMatrix: tc.asset.type === "video" ? tc.asset.colorMatrix : undefined }, [0]);
+  if (!rgb) return undefined;
+  const { mask } = await new PersonSegmenter({ ffmpegPath: s.options.ffmpegPath }).segmentFrame(rgb, size.w, size.h, track.width, track.height);
+  const q = framePointToSource(point, source, s.project.settings, tc, time);
+  const [px, py] = [Math.round(q.x * (track.width - 1)), Math.round(q.y * (track.height - 1))];
+  if (px < 0 || py < 0 || px >= track.width || py >= track.height || mask[py * track.width + px]! < 0.5) return undefined;
+  return (x, y) => mask[y * track.width + x]! >= 0.5;
 }
 
 /** A small box around a point (edit frame fractions), for reading the distance there. */
@@ -3842,7 +3875,7 @@ export const TOOLS: ToolDefinition[] = [
         .optional()
         .describe("Focus over time; the focus eases from one step to the next"),
       blur: z.number().min(0).max(100).optional().describe("Blur of the most out-of-focus parts, pixels at 1080p (default 25)"),
-      range: z.number().min(0).max(0.6).optional().describe("Depth of the sharp zone (default 0.1)"),
+      range: z.number().min(0).max(0.6).optional().describe("Depth of the sharp zone (default: the depth the person under a point, or the tracked object, spans; else 0.1)"),
       remove: z.boolean().optional(),
     }),
     mutates: true,
@@ -3865,6 +3898,8 @@ export const TOOLS: ToolDefinition[] = [
       };
       let focus: number | undefined;
       let focusPath: { time: number; focus: number }[] | undefined;
+      /** The sharp zone the subject itself needs, when range is not given. */
+      let subjectRange: number | undefined;
       let how = "";
       if (i.object) {
         const spec = s.project.objects[i.object];
@@ -3886,13 +3921,30 @@ export const TOOLS: ToolDefinition[] = [
         // A centered median of three steadies it.
         focusPath = values.map((v, k) => ({ time: round3(items[k]!.time - d.tc.start), focus: round3([values[k - 1] ?? v, v, values[k + 1] ?? v].sort((a, b) => a - b)[1]!) }));
         how = `following "${i.object}" (distance ${Math.min(...values)} to ${Math.max(...values)})`;
+        // The sharp zone covers the object's own depth (the middle of its box at the middle of the clip).
+        if (i.range === undefined && current?.params?.range === undefined) {
+          const mid = items[Math.floor(items.length / 2)]!;
+          const q0 = framePointToSource({ x: mid.box.x0, y: mid.box.y0 }, d.source, s.project.settings, d.tc, mid.time);
+          const q1 = framePointToSource({ x: mid.box.x1, y: mid.box.y1 }, d.source, s.project.settings, d.tc, mid.time);
+          const sp = await d.spread(mid.time, (x, y) => x >= q0.x * d.track.width && x <= q1.x * d.track.width && y >= q0.y * d.track.height && y <= q1.y * d.track.height);
+          if (sp) subjectRange = round3(Math.min(0.6, Math.max(0.1, sp.far - sp.near + 0.04)));
+        }
       } else if (i.rack?.length) {
         const steps = [...i.rack].sort((a, b) => a.time - b.time);
         focusPath = [];
         for (const st of steps) {
           if (st.time < d.tc.start - 1e-3 || st.time > d.tc.end + 1e-3) return { text: `Rack step at ${st.time}s is outside ${i.clipId} (${round3(d.tc.start)}-${round3(d.tc.end)}s).`, isError: true };
-          const v = await distanceOf(st, st.time);
+          let v = await distanceOf(st, st.time);
           if (v === undefined) return { text: "Each rack step needs a point, a box or a distance.", isError: true };
+          // A step on a person focuses on the whole person, and the zone is deep enough for the deepest one.
+          if (st.point && i.range === undefined && current?.params?.range === undefined) {
+            const person = await personAt(s, d, st.point, Math.min(d.tc.end - 1e-3, Math.max(d.tc.start, st.time))).catch(() => undefined);
+            const sp = person && (await d.spread(st.time, person));
+            if (sp) {
+              v = (sp.near + sp.far) / 2;
+              subjectRange = round3(Math.max(subjectRange ?? 0, Math.min(0.6, Math.max(0.1, sp.far - sp.near + 0.04))));
+            }
+          }
           focusPath.push({ time: round3(Math.max(0, st.time - d.tc.start)), focus: round3(v) });
         }
         how = `racking ${focusPath.map((k) => `${k.focus} at ${round3(k.time + d.tc.start)}s`).join(", then ")}`;
@@ -3900,12 +3952,23 @@ export const TOOLS: ToolDefinition[] = [
         focus = await distanceOf(i, mid);
         if (focus === undefined && !current) return { text: "Say what to focus on: a point, a box, a distance, an object or rack steps.", isError: true };
         if (focus !== undefined) how = `focused at distance ${round3(focus)}`;
+        // A person is deep in this depth (a head nearer than the chest by 0.1 or more), so a point on
+        // one keeps the whole person sharp: the zone spans their cutout's depth.
+        if (i.point && i.range === undefined && current?.params?.range === undefined) {
+          const person = await personAt(s, d, i.point, mid).catch(() => undefined);
+          const sp = person && (await d.spread(mid, person));
+          if (sp) {
+            focus = round3((sp.near + sp.far) / 2);
+            subjectRange = round3(Math.min(0.6, Math.max(0.1, sp.far - sp.near + 0.04)));
+            how = `focused on the person there (distance ${round3(sp.near)} to ${round3(sp.far)})`;
+          }
+        }
       }
       const params = {
         ...(current?.params ?? {}),
         ...(focus !== undefined && { focus: round3(focus) }),
         ...(i.blur !== undefined && { blur: i.blur }),
-        ...(i.range !== undefined && { range: i.range }),
+        ...(i.range !== undefined ? { range: i.range } : subjectRange !== undefined ? { range: subjectRange } : {}),
       } as Record<string, unknown>;
       if (focusPath) params.focusPath = focusPath;
       else if (focus !== undefined) delete params.focusPath;

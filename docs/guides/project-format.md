@@ -33,7 +33,7 @@ The media an edit uses. Clips, layers and audio refer to assets by `id`.
 
 | type | Fields | Notes |
 |---|---|---|
-| `video` | `src`, `duration?`, `width?`, `height?`, `hasAudio?` | Missing metadata is probed before a render |
+| `video` | `src`, `duration?`, `width?`, `height?`, `hasAudio?`, `fps?`, `colorMatrix?` | Missing metadata is probed before a render. `colorMatrix` (`bt601`, `bt709`, `bt2020`) is the YUV matrix the file stores its colors with: its tag, or BT.709 for untagged HD |
 | `audio` | `src`, `duration?` | |
 | `image` | `src`, `width?`, `height?` | Needs a `duration` wherever it is used |
 | `color` | `color` | Solid background |

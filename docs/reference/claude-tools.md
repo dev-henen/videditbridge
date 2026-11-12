@@ -1496,7 +1496,7 @@ _No parameters._
 | `object` | string |  |  | Keep this tracked object (project.objects) in focus as it moves |
 | `rack` | { point, box, distance, time }[] |  |  | Focus over time; the focus eases from one step to the next |
 | `blur` | number |  |  | Blur of the most out-of-focus parts, pixels at 1080p (default 25) (≥ 0, ≤ 100) |
-| `range` | number |  |  | Depth of the sharp zone (default 0.1) (≥ 0, ≤ 0.6) |
+| `range` | number |  |  | Depth of the sharp zone (default: the depth the person under a point, or the tracked object, spans; else 0.1) (≥ 0, ≤ 0.6) |
 | `remove` | boolean |  |  |  |
 
 ### grade_region

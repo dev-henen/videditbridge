@@ -24,9 +24,11 @@ describe("depth effects", () => {
     const racked = def.toFilter(def.params.parse({ focusPath: [{ time: 0, focus: 0.1 }, { time: 1, focus: 0.9 }] }), { ...ctx, label });
     const cmds = /sendcmd=c='([^']+)'/.exec(racked)?.[1];
     expect(cmds).toBeDefined();
-    // Ten steps a second over the clip, each setting every band's two blurs.
+    // Ten steps a second over the clip, each setting every band's two blurs, across and down: gblur
+    // copies sigma to sigmaV only when it starts (found on real footage: a rack left the subject soft).
     expect(cmds!.split(";")).toHaveLength(21);
-    expect(cmds!.split(";")[0]!.match(/sigma/g)).toHaveLength(12);
+    expect(cmds!.split(";")[0]!.match(/ sigma /g)).toHaveLength(12);
+    expect(cmds!.split(";")[0]!.match(/ sigmaV /g)).toHaveLength(12);
     // Every commanded filter exists in the graph under that name.
     for (const name of new Set([...cmds!.matchAll(/(gblur@\w+) sigma/g)].map((m) => m[1]!))) expect(racked).toContain(`${name}=sigma=`);
     expect(def.toFilter(def.params.parse({ focus: 0.3 }), { ...ctx, label })).not.toMatch(/sendcmd/);

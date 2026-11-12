@@ -84,7 +84,7 @@ function depthOfFieldFilter(p: z.output<typeof DepthOfFieldParams>, ctx: EffectC
   // Each blur filter has a name unique to this effect, so a rack focus's commands reach it.
   const id = label("dof");
   const blurName = (x: string, b: number) => `gblur@${id}${x}${b}`;
-  // The commands of a rack focus: every band's blur, ten times a second.
+  // The commands of a rack focus: every band's blur (across and down), ten times a second.
   let send = "";
   if (keys) {
     const end = Math.max(ctx.duration, keys[keys.length - 1]!.time);
@@ -92,7 +92,8 @@ function depthOfFieldFilter(p: z.output<typeof DepthOfFieldParams>, ctx: EffectC
     for (let k = 0; k * 0.1 <= end + 1e-6; k++) {
       const t = round3(k * 0.1);
       const f = focusAt(keys, t);
-      steps.push(`${t} ${centers.map((c, b) => ["c", "m"].map((x) => `${blurName(x, b)} sigma ${bandSigma(p, ctx, c, f)}`).join(",")).join(",")}`);
+      // gblur copies sigma to sigmaV once, when it starts: a command must change both, or columns keep the first blur.
+      steps.push(`${t} ${centers.map((c, b) => ["c", "m"].map((x) => ["sigma", "sigmaV"].map((o) => `${blurName(x, b)} ${o} ${bandSigma(p, ctx, c, f)}`).join(",")).join(",")).join(",")}`);
     }
     send = steps.join(";");
   }

@@ -140,7 +140,9 @@ export const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
 /**
  * FFmpeg blend modes for each layer blend. The picture under the layer is blend's first input, so
- * modes that depend on order (overlay, colordodge) follow the usual definitions with it as the backdrop.
+ * overlay follows the usual definition with it as the backdrop. FFmpeg's dodge brightens its second
+ * input by its first, so color dodge takes the layer first (DODGE_FIRST): the picture over one
+ * minus the layer, as image editors define it.
  */
 /**
  * Blends in linear light: both values (x the picture, y the layer; M the largest, 255 or 1023 in deep renders) through display gamma 2.4
@@ -735,7 +737,9 @@ export function compileProject(project: Project, opts: CompileOptions): Compiled
         g.add(`[${under}]scale=flags=neighbor,format=${GBR}[${top}]`);
         const light = LIGHT_BLENDS[layer.blend as keyof typeof LIGHT_BLENDS]?.replace(/M/g, deep ? "1023" : "255");
         const mix = light ? `lut2=c0='${light}':c1='${light}':c2='${light}'` : `blend=all_mode=${BLEND_MODES[layer.blend as keyof typeof BLEND_MODES]}`;
-        g.add(`[${top}][${color}]${mix}:${enable},scale=flags=neighbor,format=${Y}[${mixed}]`);
+        // Outside the layer's time blend passes its first input on; the alpha below hides it there either way.
+        const [first, second] = layer.blend === "colordodge" ? [color, top] : [top, color];
+        g.add(`[${first}][${second}]${mix}:${enable},scale=flags=neighbor,format=${Y}[${mixed}]`);
       } else {
         g.add(`[${placed}]format=${Y}[${mixed}]`);
       }

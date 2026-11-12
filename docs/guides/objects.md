@@ -24,7 +24,7 @@ Object masks work on primary video clips of the object's video. On media layers,
 
 ## How it works
 
-1. **Selection.** SAM 2.1 (hiera tiny) segments the frame from the box or point. For a name, OWLv2 finds the box first.
+1. **Selection.** SAM 2.1 (hiera tiny) segments the frame from the box or point. For a name, OWLv2 finds the box first; it often answers a seated or turned person with a box per half, so boxes that overlap the best one and score at least half of it are joined into one (`wholeBox`).
 2. **Keyframes.** SAM's image encoder takes about 3.7 s a frame on the reference laptop, far too slow for every frame. So it runs on keyframes, every 1.5 s, outward from the selected frame. Each keyframe is prompted with the box the tracking predicts, and of SAM's three answers the one that overlaps the prediction most is kept, so a similar object nearby is not picked up. When no answer overlaps the prediction (occlusion, or the object left the frame), the prediction is kept and the confidence drops.
 3. **Between keyframes.** The mask is carried by region tracking in Rust (`trackRegion` in `ave-native`): corners inside the mask (kept a few pixels from its edge, where they often lie on the background), pyramidal Lucas-Kanade with a forward-backward check, and a RANSAC fit of the motion. Each span is tracked forward from one keyframe and backward from the next, and the two are blended by distance, so drift cancels.
 4. **Hard motion.** Where the forward and backward masks disagree in the middle of a span (IoU under 0.85: fast or non-rigid motion, a turning person), SAM segments a frame there and each half is solved again. Easy shots stay at one SAM call every 1.5 s; hard ones get more.

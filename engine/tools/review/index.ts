@@ -6,6 +6,7 @@ import { clipAtTime, computeTimeline, sourceToTimeline, type Timeline } from "..
 import { formatTime, parseColor, round3 } from "../../core/util.js";
 import { invertRanges, mergeRanges, type TimeRange } from "../../core/ranges.js";
 import { getEffect } from "../../library/effects/index.js";
+import { excessKeyRange } from "../../library/effects/motion.js";
 import { ANALYSIS_RATE, analyzeSamples, decodeAudio } from "../audio/analyze.js";
 import { timelineWords } from "../captions/build.js";
 import { runFfmpeg, runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
@@ -458,12 +459,23 @@ function hsv(r: number, g: number, b: number): { h: number; s: number; v: number
  * Share of a frame the key removed, and share still close to the screen's hue after keying
  * (unkeyed screen that despill would turn gray or leave green).
  */
-export async function keyResidue(file: string, time: number | undefined, params: { color: string; similarity: number; blend: number }, opts: FfmpegOptions = {}): Promise<{ keyed: number; residue: number }> {
+export async function keyResidue(file: string, time: number | undefined, params: { color: string; similarity: number; blend: number; backdrop?: string }, opts: FfmpegOptions = {}): Promise<{ keyed: number; residue: number }> {
   const read = async (vf: string) =>
     (await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", ...(time !== undefined ? ["-ss", String(round3(time))] : []), "-i", file, "-frames:v", "1", "-vf", vf, "-f", "rawvideo", "-"], { ...opts, binaryStdout: true })).stdoutBuffer ?? Buffer.alloc(0);
   const hex = params.color.replace(/^#/, "").slice(0, 6);
   const rgb = await read("scale=240:-2,format=rgb24");
-  const alpha = await read(`scale=240:-2,format=rgba,colorkey=color=0x${hex}:similarity=${params.similarity}:blend=${params.blend},alphaextract,format=gray`);
+  // The key the effect uses: onto a backdrop, by how far the screen channel stands out (excessKeyRange);
+  // otherwise FFmpeg's colorkey. Judging one with the other reported screen the render had keyed.
+  let alpha: Uint8Array;
+  if (params.backdrop) {
+    const { blue, lo, hi } = excessKeyRange(params);
+    alpha = new Uint8Array(rgb.length / 3);
+    for (let i = 0; i < alpha.length; i++) {
+      const [r, g, b] = [rgb[i * 3]!, rgb[i * 3 + 1]!, rgb[i * 3 + 2]!];
+      const ex = blue ? b - Math.max(r, g) : g - Math.max(r, b);
+      alpha[i] = Math.round(255 * (1 - Math.min(1, Math.max(0, (ex - lo) / (hi - lo)))));
+    }
+  } else alpha = await read(`scale=240:-2,format=rgba,colorkey=color=0x${hex}:similarity=${params.similarity}:blend=${params.blend},alphaextract,format=gray`);
   const k = parseColor(`#${hex}`);
   const key = hsv(k.r, k.g, k.b);
   let keyed = 0;
@@ -492,7 +504,7 @@ async function keyChecks(p: Project, timeline: Timeline, opts: ReviewOptions, is
   }
   for (const x of targets) {
     if (x.asset.type !== "video" && x.asset.type !== "image") continue;
-    const params = getEffect("chromaKey")!.params.parse(x.effect.params ?? {}) as { color: string; similarity: number; blend: number };
+    const params = getEffect("chromaKey")!.params.parse(x.effect.params ?? {}) as { color: string; similarity: number; blend: number; backdrop?: string };
     const file = /^[a-z]+:\/\//i.test(x.asset.src) ? x.asset.src : path.resolve(opts.baseDir ?? process.cwd(), x.asset.src);
     const r = await keyResidue(file, x.time, params, opts);
     if (r.residue < 0.004 || r.residue < 0.03 * (r.keyed + r.residue)) continue;

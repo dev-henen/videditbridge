@@ -156,12 +156,21 @@ export function ortProviders(platform: NodeJS.Platform = process.platform, env =
 
 /** Runs timed on each provider before choosing (after one untimed warm-up run each). */
 const MEASURED_RUNS = 3;
+/**
+ * Runs a typical job makes with one session (a clip of about 20 seconds at 24 frames a second): the
+ * graphics card is chosen only when its saving over these pays back the longer time it takes to
+ * set up a session. Found on real use: DirectML took 13 to 40 s to set up the person cutout, which
+ * it then ran 5 ms faster a frame, so the app's first matte of each session waited half a minute.
+ */
+const TYPICAL_RUNS = 500;
 
 /** The provider measured for a model on this computer, kept next to the model file. */
 export interface ProviderChoice {
   provider: string;
   /** Median milliseconds per run on each provider (absent when the provider failed). */
   ms: Record<string, number>;
+  /** Milliseconds to set up a session on each provider. Choices saved without it are measured again. */
+  setupMs?: Record<string, number>;
   measuredAt: string;
 }
 
@@ -187,19 +196,24 @@ export async function createOrtSession(ort: Ort, file: string, providers = ortPr
 
   const gpu = gpuProvider()!;
   const saved = await readFile(providerChoiceFile(file), "utf8").then((t) => JSON.parse(t) as ProviderChoice, () => undefined);
-  if (saved) {
+  // A choice made before setup time counted is made again, unless it was the CPU, which sets up at once.
+  if (saved && (saved.setupMs || saved.provider === "cpu")) {
     const session = saved.provider === "cpu" ? undefined : await on([saved.provider, "cpu"]);
     return session ? withCpuFallback(session, cpu) : cpu();
   }
 
+  let t0 = performance.now();
   const cpuSession = await cpu();
+  const setupMs: Record<string, number> = { cpu: Math.round(performance.now() - t0) };
+  t0 = performance.now();
   const gpuSession = await on([gpu, "cpu"]);
+  setupMs[gpu] = Math.round(performance.now() - t0);
   const choose = async (choice: Omit<ProviderChoice, "measuredAt">) => {
     await writeFile(providerChoiceFile(file), JSON.stringify({ ...choice, measuredAt: new Date().toISOString() }, null, 2)).catch(() => undefined);
     return choice.provider;
   };
   if (!gpuSession) {
-    await choose({ provider: "cpu", ms: {} });
+    await choose({ provider: "cpu", ms: {}, setupMs });
     return cpuSession;
   }
 
@@ -222,12 +236,13 @@ export async function createOrtSession(ort: Ort, file: string, providers = ortPr
       try {
         await timed(gpu, gpuSession, feeds, warm);
       } catch {
-        chosen = await choose({ provider: "cpu", ms: times.cpu!.length ? { cpu: median(times.cpu!) } : {} });
+        chosen = await choose({ provider: "cpu", ms: times.cpu!.length ? { cpu: median(times.cpu!) } : {}, setupMs });
         return answer;
       }
       if (times.cpu!.length >= MEASURED_RUNS) {
         const ms = { cpu: median(times.cpu!), [gpu]: median(times[gpu]!) };
-        chosen = await choose({ provider: ms[gpu]! < ms.cpu ? gpu : "cpu", ms });
+        const pays = (ms.cpu - ms[gpu]!) * TYPICAL_RUNS > setupMs[gpu]! - setupMs.cpu!;
+        chosen = await choose({ provider: pays ? gpu : "cpu", ms, setupMs });
       }
       return answer;
     },

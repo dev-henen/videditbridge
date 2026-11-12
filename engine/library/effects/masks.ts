@@ -1,7 +1,7 @@
 import type { Easing, Mask, MaskPart } from "../../core/schema.js";
 import { numberExpr } from "../../core/keyframes.js";
 import { clamp, round3 } from "../../core/util.js";
-import { grayFormat, labeler, yuvFormat, type EffectContext } from "./helpers.js";
+import { grayFormat, haldFormat, labeler, yuvFormat, type EffectContext } from "./helpers.js";
 
 /**
  * Masks limit an effect to part of the frame (see MaskSchema). Model masks (person, face, tracked
@@ -212,7 +212,7 @@ export function buildMatte(ctx: EffectContext, mask: Mask): Matte {
       picture.push(pic);
       const e = keyExpr(m.kind === "luma" ? { ...m, hue: undefined, saturation: undefined } : m);
       lines.push(`haldclutsrc=level=8:rate=1,trim=end_frame=1,format=gbrp,geq=r='${e}':g='${e}':b='${e}',format=rgb24[${clut}]`);
-      source = `[${pic}]format=${ctx.deep ? "gbrp12le" : "rgb24"}[${pic}k];[${pic}k][${clut}]haldclut=clut=first,extractplanes=r${mask.denoise ? ",median=radius=1" : ""}`;
+      source = `[${pic}]format=${haldFormat({ deep: ctx.deep })}[${pic}k];[${pic}k][${clut}]haldclut=clut=first,extractplanes=r${mask.denoise ? ",median=radius=1" : ""}`;
     }
     lines.push(`${source}${m.invert ? ",negate" : ""}[${out}]`);
     return out;

@@ -63,4 +63,5 @@ On the reference laptop.
 - Motion blur in the footage stays: a slowed fast movement looks blurred rather than crisp.
 - Very fast or crossing movement (spokes, splashing water, hands passing each other) can smear or warp. Check with `render_preview`.
 - Masks and object removal follow the clip's source frames, so on made frames they come from the nearest real one.
+- Frames are read with the footage's own YUV matrix (the asset's `colorMatrix`), so untagged HD keeps its colors.
 - The last frames of a clip that runs to the end of its footage hold the final frame (there is nothing after it to move toward).

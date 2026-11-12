@@ -30,6 +30,21 @@ const rand = (i: number) => {
 const EasingParam = z.enum(["linear", "ease-in", "ease-out", "ease-in-out"]).default("ease-in-out");
 const scaleOf = (ctx: EffectContext) => Math.min(ctx.width, ctx.height) / 1080;
 
+/**
+ * chromaKey onto a backdrop keys by how far the screen channel exceeds the brighter of the other two
+ * (a shadow on the screen is darker but still green): fully screen at `hi` or more, fully subject
+ * at `lo` or less (similarity widens the screen, blend the edge). `level` is the screen channel's
+ * own level. review_edit judges the same key with it.
+ */
+export function excessKeyRange(p: { color: string; similarity: number; blend: number }): { blue: boolean; level: number; lo: number; hi: number } {
+  const hex = p.color.replace(/^#/, "").slice(0, 6);
+  const blue = /^#?0000/i.test(p.color);
+  const [r, g, b] = [0, 2, 4].map((k) => parseInt(hex.slice(k, k + 2), 16) || 0) as [number, number, number];
+  const [level, excess] = blue ? [b, b - Math.max(r, g)] : [g, g - Math.max(r, b)];
+  const lo = Math.max(2, Math.round(excess * Math.max(0.02, 0.22 - p.similarity)));
+  return { blue, level, lo, hi: lo + Math.max(8, Math.round(excess * p.blend * 8)) };
+}
+
 /** lightRays' numbers: the quarter size, the highlight curve, the six zooms (scaled size and crop offset), the per-channel levels. */
 export function lightRays(p: { x: number; y: number; threshold: number; length: number; intensity: number; color: string }, ctx: Pick<EffectContext, "width" | "height">) {
   const even = (v: number) => Math.max(2, 2 * Math.round(v / 2));
@@ -506,11 +521,7 @@ export function motionEffects(): EffectDefinition[] {
           // to one color: a shadow on the screen is darker but still green, so it counts as screen and
           // shows as a shadow on the backdrop instead of a dark blob. Planes, blend and lookup tables
           // only, so it runs at copying speed.
-          const [r, g, b] = [0, 2, 4].map((k) => parseInt(hex.slice(k, k + 2), 16) || 0) as [number, number, number];
-          const [level, excess] = blue ? [b, b - Math.max(r, g)] : [g, g - Math.max(r, b)];
-          // Fully screen above `hi`, fully subject below `lo` (similarity widens the screen, blend the edge).
-          const lo = Math.max(2, Math.round(excess * Math.max(0.02, 0.22 - p.similarity)));
-          const hi = lo + Math.max(8, Math.round(excess * p.blend * 8));
+          const { level, lo, hi } = excessKeyRange(p);
           const [src, mk, sh, k1, o1, o2, mx, ex, alpha, fg, shade, bd, lit] = ["fks", "fkm", "fkh", "fkk", "fko", "fkp", "fkx", "fke", "fka", "fkf", "fkd", "fkb", "fkl"].map((x) => label(x));
           const [keyPlane, others] = blue ? ["b", "r+g"] : ["g", "r+b"];
           // Shadows: the screen channel against the screen's level, as a gray shade multiplied into the backdrop.

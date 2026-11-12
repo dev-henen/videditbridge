@@ -12,26 +12,10 @@ pub struct Gpu {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub info: wgpu::AdapterInfo,
-    pub resample_h: wgpu::ComputePipeline,
-    pub resample_v: wgpu::ComputePipeline,
-    pub primary: wgpu::ComputePipeline,
-    pub layer: wgpu::ComputePipeline,
-    pub pack_luma: wgpu::ComputePipeline,
-    pub pack_chroma: wgpu::ComputePipeline,
-    pub planar: wgpu::ComputePipeline,
-    pub grade: wgpu::ComputePipeline,
-    pub lut: wgpu::ComputePipeline,
-    pub hblur: wgpu::ComputePipeline,
-    pub pixel: wgpu::ComputePipeline,
-    pub blur_load: wgpu::ComputePipeline,
-    pub blur_rows: wgpu::ComputePipeline,
-    pub blur_columns: wgpu::ComputePipeline,
-    pub blur_store: wgpu::ComputePipeline,
-    pub blur_load_rgb: wgpu::ComputePipeline,
-    pub blur_store_raw: wgpu::ComputePipeline,
-    pub combine: wgpu::ComputePipeline,
-    pub light: wgpu::ComputePipeline,
-    pub conv: wgpu::ComputePipeline,
+    /** The shader modules, by name; their pipelines are built from them on first use (`pipeline`). */
+    modules: std::collections::HashMap<&'static str, wgpu::ShaderModule>,
+    /** Each pipeline: its module and entry point, and the pipeline once built. */
+    pipelines: Vec<(&'static str, &'static str, std::sync::OnceLock<wgpu::ComputePipeline>)>,
 }
 
 #[repr(C)]
@@ -210,41 +194,142 @@ impl Gpu {
         let combine = module("combine", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/combine.wgsl")));
         let light = module("light", include_str!("shaders/light.wgsl"));
         let conv = module("conv", concat!(include_str!("shaders/yuv.wgsl"), include_str!("shaders/conv.wgsl")));
-        let pipeline = |m: &wgpu::ShaderModule, entry: &str| {
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some(entry),
-                layout: None,
-                module: m,
-                entry_point: Some(entry),
-                compilation_options: Default::default(),
-                cache: None,
-            })
-        };
         Ok(Gpu {
-            resample_h: pipeline(&resample, "horizontal"),
-            resample_v: pipeline(&resample, "vertical"),
-            primary: pipeline(&primary, "main"),
-            layer: pipeline(&layer, "main"),
-            pack_luma: pipeline(&pack, "luma"),
-            pack_chroma: pipeline(&pack, "chroma"),
-            planar: pipeline(&planar, "main"),
-            grade: pipeline(&grade, "main"),
-            lut: pipeline(&lut, "main"),
-            hblur: pipeline(&hblur, "main"),
-            pixel: pipeline(&pixel, "main"),
-            blur_load: pipeline(&blur, "load_yuv"),
-            blur_rows: pipeline(&blur, "rows"),
-            blur_columns: pipeline(&blur, "columns"),
-            blur_store: pipeline(&blur, "store_rgb"),
-            blur_load_rgb: pipeline(&blur, "load_rgb"),
-            blur_store_raw: pipeline(&blur, "store_raw"),
-            combine: pipeline(&combine, "main"),
-            light: pipeline(&light, "main"),
-            conv: pipeline(&conv, "main"),
+            modules: [("resample", resample), ("primary", primary), ("layer", layer), ("pack", pack), ("planar", planar), ("grade", grade), ("lut", lut), ("hblur", hblur), ("pixel", pixel), ("blur", blur), ("combine", combine), ("light", light), ("conv", conv)].into_iter().collect(),
+            pipelines: vec![
+                ("resample", "horizontal", std::sync::OnceLock::new()),
+                ("resample", "vertical", std::sync::OnceLock::new()),
+                ("primary", "main", std::sync::OnceLock::new()),
+                ("layer", "main", std::sync::OnceLock::new()),
+                ("pack", "luma", std::sync::OnceLock::new()),
+                ("pack", "chroma", std::sync::OnceLock::new()),
+                ("planar", "main", std::sync::OnceLock::new()),
+                ("grade", "main", std::sync::OnceLock::new()),
+                ("lut", "main", std::sync::OnceLock::new()),
+                ("hblur", "main", std::sync::OnceLock::new()),
+                ("pixel", "main", std::sync::OnceLock::new()),
+                ("blur", "load_yuv", std::sync::OnceLock::new()),
+                ("blur", "rows", std::sync::OnceLock::new()),
+                ("blur", "columns", std::sync::OnceLock::new()),
+                ("blur", "store_rgb", std::sync::OnceLock::new()),
+                ("blur", "load_rgb", std::sync::OnceLock::new()),
+                ("blur", "store_raw", std::sync::OnceLock::new()),
+                ("combine", "main", std::sync::OnceLock::new()),
+                ("light", "main", std::sync::OnceLock::new()),
+                ("conv", "main", std::sync::OnceLock::new()),
+            ],
             device,
             queue,
             info,
         })
+    }
+
+    /**
+     * Pipeline `k` (in the order of the getters below), built on first use. The driver compiles each
+     * one (about half a second on an Intel laptop GPU under Direct3D 12): building all twenty at
+     * start took 11 s, paid at every start of the engine, which renders start each time.
+     */
+    fn pipeline(&self, k: usize) -> &wgpu::ComputePipeline {
+        let (module, entry, cell) = &self.pipelines[k];
+        cell.get_or_init(|| {
+            self.device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(entry),
+                layout: None,
+                module: &self.modules[module],
+                entry_point: Some(entry),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        })
+    }
+
+    /** Start building every pipeline on threads at once, so work that comes next finds them ready (or waits only for its own). */
+    pub fn warm(&'static self) {
+        for k in 0..self.pipelines.len() {
+            std::thread::spawn(move || {
+                self.pipeline(k);
+            });
+        }
+    }
+
+    pub fn resample_h(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(0)
+    }
+
+    pub fn resample_v(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(1)
+    }
+
+    pub fn primary(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(2)
+    }
+
+    pub fn layer(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(3)
+    }
+
+    pub fn pack_luma(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(4)
+    }
+
+    pub fn pack_chroma(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(5)
+    }
+
+    pub fn planar(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(6)
+    }
+
+    pub fn grade(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(7)
+    }
+
+    pub fn lut(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(8)
+    }
+
+    pub fn hblur(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(9)
+    }
+
+    pub fn pixel(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(10)
+    }
+
+    pub fn blur_load(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(11)
+    }
+
+    pub fn blur_rows(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(12)
+    }
+
+    pub fn blur_columns(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(13)
+    }
+
+    pub fn blur_store(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(14)
+    }
+
+    pub fn blur_load_rgb(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(15)
+    }
+
+    pub fn blur_store_raw(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(16)
+    }
+
+    pub fn combine(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(17)
+    }
+
+    pub fn light(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(18)
+    }
+
+    pub fn conv(&self) -> &wgpu::ComputePipeline {
+        self.pipeline(19)
     }
 
     pub fn describe(&self) -> Value {

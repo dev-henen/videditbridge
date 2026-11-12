@@ -74,7 +74,7 @@ On the reference laptop (Intel i3-1005G1, 2 cores, 4 threads):
 
 ## Limits
 
-- Accuracy against hand-made mattes on real clips, and sky slide on real pans, wait for the test clips of the design's section 11.
+- On a fast pan the new sky follows the middle of the frame and lags toward its sides (about 14% on a real handheld pan): one flat picture cannot follow a pan's perspective. `review_edit` samples about 12 frames a second, judges the slide against how far the scenery moves, and says when a pan is the cause; mist drifting over hills reads as a slow slide too.
 - Where haze blends the far ridge into the sky, the model may keep a pale band of old sky above the ridge, or patches of it on some frames. Check those frames with `render_mask` and cover them with a key mask combined into the sky mask if needed.
 - Fine structures against the sky (a lattice tower, power lines, thin twigs) keep some old sky between their parts.
 - The camera's motion comes from distant scenery. With nothing distant in view (a close-up against the sky), set `follow` to 0 or a little more.

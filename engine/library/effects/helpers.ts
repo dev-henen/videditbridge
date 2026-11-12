@@ -135,7 +135,7 @@ export function bakeColor(ctx: EffectContext, filters: string[]): string {
   const label = labeler(ctx);
   const [main, clut] = [label("cbm"), label("cbc")];
   return [
-    `format=${rgbFormat(ctx)}[${main}]`,
+    `format=${haldFormat(ctx)}[${main}]`,
     `${haldClutChain(filters)}[${clut}]`,
     `[${main}][${clut}]haldclut=clut=first,format=${yuvFormat(ctx)}`,
   ].join(";");
@@ -153,6 +153,12 @@ export type SubjectRegion = z.infer<typeof SubjectRegionSchema>;
 export const yuvFormat = (ctx: { alpha?: boolean; deep?: boolean }): string => `${ctx.alpha ? "yuva420p" : "yuv420p"}${ctx.deep ? "10le" : ""}`;
 /** An RGB format for RGB-only filters: packed 8-bit, or planar 12-bit in deep renders (12, not 16: FFmpeg 6.1's blend screen is wrong on 16-bit planes). */
 export const rgbFormat = (ctx: { alpha?: boolean; deep?: boolean }) => (ctx.deep ? (ctx.alpha ? "gbrap12le" : "gbrp12le") : ctx.alpha ? "rgba" : "rgb24");
+/**
+ * RGB for haldclut: packed, 8-bit or 16-bit in deep renders. FFmpeg 6.1's haldclut reads planar RGB
+ * in the wrong channel order (green as red, blue as green, red as blue), which turned graded 10-bit
+ * and ProRes exports magenta; packed RGB it reads right.
+ */
+export const haldFormat = (ctx: { alpha?: boolean; deep?: boolean }) => (ctx.deep ? (ctx.alpha ? "rgba64le" : "rgb48le") : ctx.alpha ? "rgba" : "rgb24");
 /** Planar RGB: 8-bit, or 12-bit in deep renders (see rgbFormat). */
 export const gbrFormat = (ctx: { alpha?: boolean; deep?: boolean }) => `${ctx.alpha ? "gbrap" : "gbrp"}${ctx.deep ? "12le" : ""}`;
 /** A matte's format: 8-bit gray, or 16-bit in deep renders. */

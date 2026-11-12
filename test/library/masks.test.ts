@@ -86,6 +86,8 @@ describe("masks", () => {
     p = addLayer(p, { type: "media", assetId: "c", start: 0.5, duration: 1, size: { width: 0.5 }, blend: "colordodge" });
     const graph = compileProject(p, { output: "x.mp4" }).filterGraph;
     expect(graph).toContain("blend=all_mode=dodge:enable='between(t,0.5,1.5)'");
+    // FFmpeg's dodge brightens its second input by its first: the layer goes first (found on real footage).
+    expect(graph).toMatch(/\[lbr\d+\]\[lbt\d+\]blend=all_mode=dodge/);
     expect(graph).toContain("alphaextract");
     p = addLayer(p, { type: "media", assetId: "c", start: 0, duration: 1, size: { width: 0.5 } });
     expect(compileProject(p, { output: "x.mp4" }).filterGraph.match(/blend=all_mode/g)).toHaveLength(1);
