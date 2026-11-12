@@ -260,8 +260,21 @@ function sizes(width: number, height: number) {
   return { mask: fit(OBJECT_MASK_SIZE), key: fit(KEY_SIZE) };
 }
 
+export interface DecodeOptions extends FfmpegOptions {
+  signal?: AbortSignal;
+  /**
+   * The YUV matrix the file's colors are stored with (the asset's colorMatrix, colorMatrixOf): RGB
+   * frames are read with it. FFmpeg reads a file without a tag as BT.601, which shifts the colors
+   * of untagged HD video; frames that go back into the picture (smooth motion, removal fills) must
+   * have the footage's own colors.
+   */
+  colorMatrix?: "bt601" | "bt709" | "bt2020";
+}
+
+const matrixArg = (opts: DecodeOptions) => (opts.colorMatrix ? `:in_color_matrix=${opts.colorMatrix}` : "");
+
 /** Frames of a source range at `fps`, as raw bytes of `w` x `h` (gray or rgb24). `pick` keeps only those frame numbers. */
-export async function decodeFrames(src: string, range: { start: number; end: number }, fps: number, size: { w: number; h: number }, fmt: "gray" | "rgb24", opts: FfmpegOptions & { signal?: AbortSignal }, pick?: number[]): Promise<Uint8Array[]> {
+export async function decodeFrames(src: string, range: { start: number; end: number }, fps: number, size: { w: number; h: number }, fmt: "gray" | "rgb24", opts: DecodeOptions, pick?: number[]): Promise<Uint8Array[]> {
   const select = pick ? `,select='${pick.map((n) => `eq(n\\,${n})`).join("+")}'` : "";
   const res = await runFfmpegOrThrow(
     [
@@ -269,7 +282,7 @@ export async function decodeFrames(src: string, range: { start: number; end: num
       ...(range.start > 0 ? ["-ss", String(round3(range.start))] : []),
       "-t", String(round3(Math.max(0.05, range.end - range.start))),
       "-i", src,
-      "-an", "-vf", `fps=${fps},scale=${size.w}:${size.h}${select}`,
+      "-an", "-vf", `fps=${fps},scale=${size.w}:${size.h}${matrixArg(opts)}${select}`,
       "-fps_mode", "passthrough",
       "-f", "rawvideo", "-pix_fmt", fmt, "-",
     ],
@@ -285,7 +298,7 @@ export async function decodeFrames(src: string, range: { start: number; end: num
  * single decode: for long ranges, where decodeFrames would hold every frame, and where seeking for
  * each chunk would decode from the previous keyframe again (slow for AV1 and VP9).
  */
-export async function* streamFrames(src: string, range: { start: number; end: number }, fps: number, size: { w: number; h: number }, fmt: "gray" | "rgb24", opts: FfmpegOptions & { signal?: AbortSignal }): AsyncGenerator<Uint8Array> {
+export async function* streamFrames(src: string, range: { start: number; end: number }, fps: number, size: { w: number; h: number }, fmt: "gray" | "rgb24", opts: DecodeOptions): AsyncGenerator<Uint8Array> {
   const proc = spawn(
     resolveFfmpegPath(opts),
     [
@@ -293,7 +306,7 @@ export async function* streamFrames(src: string, range: { start: number; end: nu
       ...(range.start > 0 ? ["-ss", String(round3(range.start))] : []),
       "-t", String(round3(Math.max(0.05, range.end - range.start))),
       "-i", src,
-      "-an", "-vf", `fps=${fps},scale=${size.w}:${size.h}`,
+      "-an", "-vf", `fps=${fps},scale=${size.w}:${size.h}${matrixArg(opts)}`,
       "-fps_mode", "passthrough",
       "-f", "rawvideo", "-pix_fmt", fmt, "-",
     ],

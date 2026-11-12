@@ -9,6 +9,7 @@ import { controlled, native } from "../native/index.js";
 import { createOrtSession, ensureModelFile, loadOrt, modelsDir, ortProviders, type Ort, type OrtSession } from "./faces.js";
 import { decodeFrames, streamFrames } from "./objects.js";
 import { TRACK_SIZE } from "./points.js";
+import { colorMatrixOf } from "../../library/color/spaces.js";
 
 /**
  * Object removal (docs/design/cinematic-grade-and-vfx.md, section 7.2): the area under tracked
@@ -29,7 +30,7 @@ export const INPAINT_MODEL = { url: "https://huggingface.co/Carve/LaMa-ONNX/reso
 /** The model's fixed input size. */
 export const INPAINT_SIZE = 512;
 /** Bump when a removal for the same input would come out differently. */
-export const REMOVAL_VERSION = 1;
+export const REMOVAL_VERSION = 4;
 /** Long side of removal fills (the source's own size when smaller). */
 export const REMOVAL_SIZE = 1920;
 /** Pool frames per second of the range, and their bounds (memory: about 8 MB a frame at 1080p). */
@@ -353,7 +354,12 @@ export async function* removalFrames(
   opts.onProgress?.(0.1);
 
   // The pool: frames spread evenly over the range.
-  const poolSize = Math.max(1, Math.min(total, Math.floor(POOL_BYTES / (w * h * 4)), Math.max(POOL_MIN, Math.min(POOL_MAX, Math.round((total / opts.fps) * POOL_PER_SECOND)))));
+  // A moving camera takes from the pool frames nearest in time, so they must be near: at 3 a second a
+  // handheld pan is hundreds of pixels apart between them, and leaves or grass seen from that far
+  // off (parallax) no longer line up. The camera's speed sets the spacing, about 40 px of motion
+  // between pool frames, within the memory budget.
+  const perSecond = locked ? POOL_PER_SECOND : Math.max(POOL_PER_SECOND, Math.min(opts.fps, (moved / Math.max(1 / opts.fps, total / opts.fps)) / 40));
+  const poolSize = Math.max(1, Math.min(total, Math.floor(POOL_BYTES / (w * h * 4)), Math.max(POOL_MIN, Math.min(locked ? POOL_MAX : POOL_MAX * 4, Math.round((total / opts.fps) * perSecond)))));
   const pool = [...new Set(Array.from({ length: poolSize }, (_, i) => Math.round(((i + 0.5) * total) / poolSize - 0.5)))];
   const remover = new k.Remover(w, h, motion, {
     grow: opts.grow * short,
@@ -361,7 +367,9 @@ export async function* removalFrames(
     ring: Math.max(6, 0.012 * short),
     locked,
   });
-  const poolRgb = still ? await decodeFrames(src, range, opts.fps, size, "rgb24", opts) : await decodeFrames(src, range, opts.fps, size, "rgb24", opts, pool);
+  // Read with the footage's own matrix: the fill goes back over the picture.
+  const rgbOpts = { ...opts, colorMatrix: colorMatrixOf(info) };
+  const poolRgb = still ? await decodeFrames(src, range, opts.fps, size, "rgb24", rgbOpts) : await decodeFrames(src, range, opts.fps, size, "rgb24", rgbOpts, pool);
   const poolMasks = await opts.masks(pool, size);
   for (const [i, f] of pool.entries()) {
     const rgb = poolRgb[Math.min(i, poolRgb.length - 1)];
@@ -372,7 +380,7 @@ export async function* removalFrames(
   const inpainter = opts.inpainter ?? new Inpainter(opts);
   const track: RemovalTrack = { fps: opts.fps, start: round3(from), width: w, height: h, locked, moved: round3(moved), area: [], real: [], generated: [], inpainted: [] };
   // Frames come from one decode; masks are read a few seconds at a time.
-  const stream = still ? undefined : streamFrames(src, range, opts.fps, size, "rgb24", opts);
+  const stream = still ? undefined : streamFrames(src, range, opts.fps, size, "rgb24", rgbOpts);
   const step = Math.max(1, Math.round(opts.fps * MASK_SECONDS));
   let [masks, m0] = [[] as Uint8Array[], 0];
   let last: Uint8Array | undefined;

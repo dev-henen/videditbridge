@@ -573,7 +573,7 @@ pub struct RemoverOptions {
     pub ring: Option<f64>,
     /// The camera does not move: take the median of the whole pool, unmatched (default false).
     pub locked: Option<bool>,
-    /// Pool frames nearest in time a moving camera's fill takes the median of (default 5).
+    /// Pool frames a moving camera's fill takes the median of: those that line up best on the ring around the hole (default 3).
     pub nearest: Option<u32>,
     /// Leftovers within this many pixels of a filled one are interpolated (default 3); thicker ones are returned.
     pub thin: Option<f64>,

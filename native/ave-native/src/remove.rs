@@ -33,7 +33,7 @@ pub struct RemoveOptions {
 
 impl Default for RemoveOptions {
     fn default() -> Self {
-        RemoveOptions { grow: 6.0, feather: 4.0, ring: 12.0, locked: false, nearest: 5, thin: 3.0 }
+        RemoveOptions { grow: 6.0, feather: 4.0, ring: 12.0, locked: false, nearest: 3, thin: 3.0 }
     }
 }
 
@@ -342,9 +342,40 @@ impl Remover {
                 [0, 1, 2].map(|ch| ((a[ch] + n as f64) / (b[ch] + n as f64)).clamp(0.7, 1.4) as f32)
             })
             .collect();
-        // Pool frames by distance in time, for a moving camera's median.
+        // Pool frames for a moving camera's median: those that line up best with this frame on the
+        // ring around the hole first (then by distance in time). A camera track drifts a few pixels
+        // over a clip of fine texture (leaves, grass), and the median of frames that are off by that
+        // much is a smear; the ring shows which ones still line up where the hole is.
         let mut order: Vec<usize> = (0..self.pool.len()).collect();
         order.sort_by_key(|&j| (self.pool[j].index as i64 - index as i64).abs());
+        if !self.opts.locked && ring.len() >= 32 {
+            let stride = (ring.len() / 1500).max(1);
+            let errors: Vec<f32> = self
+                .pool
+                .par_iter()
+                .zip(&maps)
+                .zip(&gains)
+                .map(|((s, m), g)| {
+                    let (mut e, mut n) = (0f32, 0usize);
+                    for &k in ring.iter().step_by(stride) {
+                        let (x, y) = apply(m, (k % w) as f64, (k / w) as f64);
+                        if !valid_at(&s.valid, w, h, x, y) {
+                            continue;
+                        }
+                        if let Some(c) = sample(&s.rgb, w, h, x, y) {
+                            e += (0..3).map(|ch| (c[ch] * g[ch] - rgb[k * 3 + ch] as f32).abs()).sum::<f32>() / 3.0;
+                            n += 1;
+                        }
+                    }
+                    // A frame that sees little of the ring says little about how it lines up.
+                    if n * 3 < ring.len().div_ceil(stride) { f32::INFINITY } else { e / n as f32 }
+                })
+                .collect();
+            if errors.iter().any(|e| e.is_finite()) {
+                let rank: Vec<usize> = order.clone();
+                order.sort_by(|&a, &b| errors[a].total_cmp(&errors[b]).then(rank.iter().position(|&x| x == a).cmp(&rank.iter().position(|&x| x == b))));
+            }
+        }
         let mut layer_order: Vec<usize> = (0..self.layers.len()).collect();
         layer_order.sort_by_key(|&j| (self.layers[j].index as i64 - index as i64).abs());
         let layer_maps: Vec<Mat3> = self.layers.iter().map(|s| self.between(index, s.index)).collect();

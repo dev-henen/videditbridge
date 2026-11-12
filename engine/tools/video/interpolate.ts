@@ -9,6 +9,7 @@ import { SEGMENT_CODEC } from "../render/compile.js";
 import { createOrtSession, ensureModelFile, loadOrt, modelsDir, ortProviders, type Ort, type OrtSession } from "../vision/faces.js";
 import { streamFrames } from "../vision/objects.js";
 import { fitSize } from "../vision/removal.js";
+import { colorMatrixOf } from "../../library/color/spaces.js";
 
 /**
  * Smooth slow motion and frame rate conversion (docs/design/cinematic-grade-and-vfx.md, section
@@ -23,7 +24,7 @@ import { fitSize } from "../vision/removal.js";
 
 export const INTERPOLATE_MODEL = { url: "https://huggingface.co/FuryTMP/RIFE_v4.9/resolve/main/rife_v4.9.onnx", file: "rife-v4.9.onnx", minBytes: 20_000_000 };
 /** Bump when the frames for the same input would come out differently. */
-export const INTERPOLATE_VERSION = 1;
+export const INTERPOLATE_VERSION = 2;
 /** Long side of interpolated pictures (the source's own size when smaller). */
 export const INTERPOLATE_SIZE = 1920;
 /** A frame this near a real one (in frames) is the real one. */
@@ -177,7 +178,7 @@ export async function writeInterpolated(
     if (!enc.stdin.write(px)) await new Promise((r) => enc.stdin.once("drain", r));
     track.frames++;
   };
-  const frames = streamFrames(src, { start: first / info.fps, end: (last + 1) / info.fps }, info.fps, size, "rgb24", opts);
+  const frames = streamFrames(src, { start: first / info.fps, end: (last + 1) / info.fps }, info.fps, size, "rgb24", { ...opts, colorMatrix: colorMatrixOf(info) });
   // The two source frames around the current time, numbers `at` and `at + 1`.
   let previous: Uint8Array | undefined;
   const read = async () => {

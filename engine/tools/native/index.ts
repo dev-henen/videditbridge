@@ -100,7 +100,7 @@ export interface RemoverOptions {
   ring?: number;
   /** The camera does not move: the median of the whole pool, without exposure matching. */
   locked?: boolean;
-  /** Pool frames nearest in time that a moving camera's fill takes the median of. */
+  /** Pool frames a moving camera's fill takes the median of: those that line up best around the hole (default 3). */
   nearest?: number;
   /** Leftovers within this many pixels of a filled one are interpolated; thicker ones come back in `residual`. */
   thin?: number;

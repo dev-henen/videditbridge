@@ -131,7 +131,7 @@ Depth Anything V2 Small on keyframes, aligned and carried between them in Rust; 
 
 ### 7.2 Object removal (`remove_object`)
 
-A tracked object or a fixed box is filled from a clean plate built from other frames (locked-off and moving cameras), with LaMa where no frame shows the area. See [the removal guide](../guides/removal.md).
+A tracked object or a fixed box is filled from a clean plate built from other frames (locked-off and moving cameras), with LaMa where no frame shows the area. On a moving camera the pool of frames is as dense as the camera is fast (about 40 px of motion between them), and each pixel takes the median of the three pool frames that line up best with the frame on a ring around the hole. See [the removal guide](../guides/removal.md).
 
 ### 7.3 Smooth slow motion (`interpolate`)
 
@@ -162,7 +162,7 @@ While building, run only the tests of the code that changed (the matching `test/
 - Green screen and raw or log clips can be downloaded where the project's footage cannot exercise a feature (keying, camera log, other effects).
 - When a part is done, write down here what was tested on real clips.
 
-The clips are cut from the footage in `projects/*/media` to 960x540 (`test/.output/real/clips`, gitignored, as are the scripts next to them, one per feature: `01-grade.ts` to `08-frames.ts` so far). Each script drives the tools through an `EditorSession` one call at a time, as the app's model does, and checks the pictures it gets.
+The clips are cut from the footage in `projects/*/media` to 960x540 (`test/.output/real/clips`, gitignored, as are the scripts next to them, one per feature: `01-grade.ts` to `10-slowmo.ts` so far). Each script drives the tools through an `EditorSession` one call at a time, as the app's model does, and checks the pictures it gets.
 
 ### 10.2 Tested on real clips so far
 
@@ -177,8 +177,10 @@ The clips are cut from the footage in `projects/*/media` to 960x540 (`test/.outp
 | Sky replacement (5.3) | mountain (a slow drift, mist over the hills), forest (a fast handheld pan) | `replace_sky` with a gradient and with a photo of a sky, both renderers, the land left alone, steadiness between frames, `review_edit` | The slide check sampled 10 frames a second, too far apart to follow a pan, and called drifting mist a problem. It now samples about 12 a second, judges the slide against how far the scenery moves, and names the likely cause. Measured on the pan: the new sky follows the middle of the frame and lags about 14% toward its sides (one flat picture cannot follow a pan's perspective); the finding says so |
 | Points and surfaces (5.4) | phone (a green screen on a desk, fingers moving over it), flower as the insert | `track_points` on the screen's corners and on a point, `replace_screen`, `pin_layer`, `pin_mask`, the corners measured against the green itself | The track followed the fingers and the insert collapsed into a corner (190 px off): a blank screen has nothing inside to hold. The margin around a surface is now found when not given (4 px off, sureness 0.96). The insert was blurred 4.8 px because smooth wood read as a soft scene (sharpness is now the steepest edges, 2.4 px), and left green slivers along an edge (it now reaches 1.5 px past the corners) |
 | Single frames against the export (3.4) | phone, pushups (25 fps), hedge (23.98), couch (24), in 24 and 30 fps edits, cut in at odd times, at 0.5x and 1.5x | Every `render_frame` on the engine against the export's frame at that time | For footage at another rate than the edit's, the engine's single frames and viewer showed the next source frame about every other time. A restart now keeps the whole decode's frame count (needs the file's rate: the asset's `fps`, set by probe) |
+| Object removal (7.2) | phone (locked off: an empty patch of desk and the pen), chairs (the seated man, tracked), mountain (slow drift), forest (fast pan), hedge (handheld, close leaves) | `remove_object` with boxes and a tracked object; where the box held nothing special the fill is checked against the footage itself; the rest of the frame, steadiness, both renderers | On a moving camera the pool was 3 frames a second, hundreds of pixels apart on a pan, so the median mixed frames that no longer lined up. The pool now follows the camera's speed (about 40 px between pool frames), and the median takes the three frames that line up best on the ring around the hole. Fills now read the footage with its own matrix. Results: desk 30 dB to the truth and still, pan 33 to 40 dB, hillside 32 dB, the man gone with a fill steadier than the seats around him. Not solved: handheld close-up foliage (hedge, 16 dB): the camera track drifts several pixels over leaves at different depths, and no frame lines up there |
+| Smooth slow motion (7.3) | hedge, street (untagged HD), phone, pushups, forest, each at 12 fps (every other frame dropped) in a 24 fps edit | `interpolate`; each made frame against the original frame that was dropped; the real frames against the edit without smooth motion | Works on all five: made frames 22 to 37 dB to the truth, against 19 to 23 dB for the repeated frame. Frames are now read with the footage's own matrix, so untagged HD keeps its colors (street 41 to 43 dB) |
 
-Still to test on real clips: blend modes (5.1), atmosphere and light (6), depth effects (7.1), removal (7.2), slow motion (7.3), 10-bit and ProRes exports (3.3), hardware encoding (3.6), camera log (4.1, needs a downloaded clip), keying on a green screen (needs a downloaded clip), and the app's matte and scopes views (9).
+Still to test on real clips: blend modes (5.1), atmosphere and light (6), depth effects (7.1), 10-bit and ProRes exports (3.3), hardware encoding (3.6), camera log (4.1, needs a downloaded clip), keying on a green screen (needs a downloaded clip), and the app's matte and scopes views (9).
 
 ## 11. Packaging (on hold)
 
