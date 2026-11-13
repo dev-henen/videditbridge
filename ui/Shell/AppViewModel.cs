@@ -145,6 +145,9 @@ public sealed class AppViewModel : Observable, IDisposable
     /// <summary>The app's settings from the host (the API key hidden), with its folders.</summary>
     public Task<JsonNode?> GetSettingsAsync() => Engine.CallAsync("settings.get");
 
+    /// <summary>Call a host method the app view model has no wrapper for (Settings, Connections: connect.*).</summary>
+    public Task<JsonNode?> CallHostAsync(string method, object? parameters = null) => Engine.CallAsync(method, parameters);
+
     /// <summary>Change settings; they apply at once (which providers can edit, and the default model, follow).</summary>
     public async Task<JsonNode?> SetSettingsAsync(object changes)
     {

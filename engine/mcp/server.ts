@@ -33,17 +33,30 @@ const nameOf = (state: unknown) => {
   return { dir: String(s.projectDir ?? s.project ?? ""), name: String(s.name ?? "") };
 };
 
-/** Drive the running desktop app (it shows every edit; the project it has open is the one edited). */
+/** Calls a host method (the app's JSON-RPC handlers). */
+export type HostCall = (method: string, params: Record<string, unknown>) => Promise<unknown>;
+
+/**
+ * Drive the desktop app (it shows every edit; the project it has open is the one edited): through
+ * its remote control socket from another process, or, inside the app's host, its handlers directly.
+ */
 export class AppBackend implements EditorBackend {
   readonly kind = "app";
   private host: RemoteHost | undefined;
   /** The project opened or created through MCP; otherwise the app's current tab. */
   private project: string | undefined;
+  private readonly projectsDir: string;
+  private readonly direct: HostCall | undefined;
 
-  constructor(private readonly projectsDir: string) {}
+  /** `projectsDir` reaches the running app through its .host.json; `call` runs in the host itself. */
+  constructor(projectsDir: string, call?: HostCall) {
+    this.projectsDir = projectsDir;
+    this.direct = call;
+  }
 
   /** Connect, again after the app restarted. */
   private async call<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    if (this.direct) return (await this.direct(method, params)) as T;
     for (let attempt = 0; ; attempt++) {
       this.host ??= await RemoteHost.connect(this.projectsDir);
       try {

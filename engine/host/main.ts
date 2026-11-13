@@ -41,6 +41,9 @@ import { COVER_FILE, ProjectStore } from "./projects.js";
 import { RpcError, StdioRpc, serveLocal, type Handler } from "./rpc.js";
 import { HOST_INFO_FILE } from "./remote.js";
 import { applySettings, availableProviders, loadSettings, publicSettings, saveSettings, storeKey } from "./settings.js";
+import { CLIENT_IDS, MCP_NAME, clientInfo, commandLine, isClientId, mcpLaunch, setClientConnected } from "./connect.js";
+import { DEFAULT_MCP_PORT, mcpToken, startMcpHttp, type McpHttpServer } from "../mcp/http.js";
+import { AppBackend } from "../mcp/server.js";
 import { appDir, defaultFontsDir, defaultModelsDir } from "../tools/appdirs.js";
 
 // stdout is the protocol channel: route stray console output to stderr.
@@ -298,7 +301,71 @@ const handlers: Record<string, Handler> = {
   },
   "performance.get": async () => (await loadPerformance()) ?? null,
   "performance.run": () => (testing ??= runPerformanceTest().finally(() => (testing = undefined))),
+
+  /**
+   * Settings, Connections: how other AI apps reach the editor over MCP. The apps that start MCP
+   * servers themselves (the Claude app, Gemini CLI) and whether they are connected, the command for
+   * apps set up by hand, and the connector address for ChatGPT and others (`connect.http`).
+   */
+  "connect.get": () => connectState(),
+  /** Add the editor to an app's MCP config (`client`: "claude" or "gemini-cli"), or take it out with `connected: false`. */
+  "connect.set": async (p) => {
+    if (!isClientId(p.client)) throw new RpcError(1, `Unknown app "${String(p.client)}"`);
+    await setClientConnected(p.client, p.connected !== false, mcpLaunch(store.root));
+    return connectState();
+  },
+  /** Turn the connector address on or off (`enabled`), change its `port`, or make a new address (`renew`, the old one stops working). */
+  "connect.http": async (p) => {
+    const current = settings.mcpHttp ?? { enabled: false };
+    const port = Number.isInteger(p.port) && Number(p.port) > 0 && Number(p.port) < 65536 ? Number(p.port) : current.port;
+    settings = { ...settings, mcpHttp: { enabled: typeof p.enabled === "boolean" ? p.enabled : current.enabled, ...(port ? { port } : {}) } };
+    await saveSettings(settings);
+    if (p.renew === true) await mcpToken(true);
+    await applyMcpHttp();
+    return connectState();
+  },
 };
+
+/** The MCP connector address the host serves (Settings, Connections), when it is on. */
+let mcpHttp: { server?: McpHttpServer; error?: string } = {};
+
+/** Start, restart or stop the connector address to match the settings. */
+async function applyMcpHttp(): Promise<void> {
+  await mcpHttp.server?.close();
+  mcpHttp = {};
+  if (!settings.mcpHttp?.enabled) return;
+  const port = settings.mcpHttp.port ?? DEFAULT_MCP_PORT;
+  try {
+    // Calls go to the same handlers as remote control, so projects opened over MCP show in a tab.
+    const backend = new AppBackend(store.root, async (method, params) => {
+      const handler = remoteHandlers[method];
+      if (!handler) throw new Error(`Unknown method ${method}`);
+      return handler(params);
+    });
+    mcpHttp.server = await startMcpHttp(backend, { token: await mcpToken(), port });
+  } catch (e) {
+    const err = e as NodeJS.ErrnoException;
+    mcpHttp.error = err.code === "EADDRINUSE" ? `Port ${port} is used by another program. Pick another port.` : err.message;
+  }
+}
+
+async function connectState() {
+  const launch = mcpLaunch(store.root);
+  const line = launch ? commandLine(launch) : null;
+  return {
+    command: line,
+    claudeCode: line ? `claude mcp add --scope user ${MCP_NAME} -- ${line}` : null,
+    clients: await Promise.all(CLIENT_IDS.map((id) => clientInfo(id, launch))),
+    http: {
+      enabled: !!settings.mcpHttp?.enabled,
+      port: mcpHttp.server?.port ?? settings.mcpHttp?.port ?? DEFAULT_MCP_PORT,
+      running: !!mcpHttp.server,
+      url: mcpHttp.server?.url ?? null,
+      path: mcpHttp.server?.path ?? null,
+      error: mcpHttp.error ?? null,
+    },
+  };
+}
 
 let testing: Promise<PerformanceReport> | undefined;
 
@@ -607,20 +674,19 @@ async function play(o: OpenProject, time: number): Promise<{ live: boolean; audi
 // Remote control: other local processes (scripts, Claude Code, the MCP server in engine/mcp) can drive
 // the open projects through a token-protected socket advertised in <projectsDir>/.host.json.
 const token = randomBytes(24).toString("hex");
-const remote = await serveLocal(
-  {
-    ...handlers,
-    "project.open": async (p) => notifyOpened(await handlers["project.open"]!(p)),
-    "project.create": async (p) => notifyOpened(await handlers["project.create"]!(p)),
-    "project.close": async (p) => {
-      const dir = target(p).dir;
-      const r = await handlers["project.close"]!(p);
-      rpc.notify("project.closed", { project: dir });
-      return r;
-    },
+/** The handlers for other processes (and the MCP connector): projects they open or close show in the app. */
+const remoteHandlers: Record<string, Handler> = {
+  ...handlers,
+  "project.open": async (p) => notifyOpened(await handlers["project.open"]!(p)),
+  "project.create": async (p) => notifyOpened(await handlers["project.create"]!(p)),
+  "project.close": async (p) => {
+    const dir = target(p).dir;
+    const r = await handlers["project.close"]!(p);
+    rpc.notify("project.closed", { project: dir });
+    return r;
   },
-  token,
-);
+};
+const remote = await serveLocal(remoteHandlers, token);
 function notifyOpened<T>(state: T): T {
   rpc.notify("project.opened", state);
   return state;
@@ -636,6 +702,7 @@ let stopping: Promise<never> | undefined;
 const stop = () =>
   (stopping ??= (async () => {
     remote.server.close();
+    await mcpHttp.server?.close();
     for (const o of open.values()) o.agent?.cancel();
     await store.flush();
     process.exit(0);
@@ -645,6 +712,8 @@ for (const signal of ["SIGTERM", "SIGHUP", "SIGINT"] as const) process.on(signal
 // The app's settings: the API key, the renderer (by default what the performance test chose), hardware encoding.
 let settings = await loadSettings();
 await applySettings(settings);
+// The MCP connector address, when it was left on (a failure shows in Settings, not here).
+await applyMcpHttp();
 
 // FFmpeg builds differ per platform; say early (on stderr, the host log) when this one lacks something.
 void checkFfmpeg()

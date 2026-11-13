@@ -4,6 +4,15 @@ The editor is also an [MCP](https://modelcontextprotocol.io) server, so you can 
 
 It offers the editor's tools (the [Claude tools reference](../reference/claude-tools.md)) and three tools for choosing the project: `list_projects`, `open_project` and `create_project`. Read-only tools are marked `readOnlyHint`, so apps that ask before a change ask only for edits. Rendered frames and contact sheets come back as pictures, so the model can see its work. The server's instructions are the desktop agent's system prompt.
 
+## From the app: Settings, Connections
+
+The usual way. In the app, open Settings (the menu at the top left), then Connections:
+
+- **Apps on this computer.** Connect adds the editor to the Claude app's or Gemini CLI's own MCP config, with the command for this install and its projects folder. The rest of the file stays as it was, and the previous one is kept as `<file>.bak`. Quit and reopen the Claude app, or start a new Gemini CLI session, to use it. Disconnect takes the entry out. An entry that points at another copy of the editor shows Update. For Claude Code, and for apps not listed, copy the command.
+- **Apps that connect to an address.** Turn on Connector address to run the HTTP server inside the app (it stays on across restarts). Copy the address, or the path to put after a tunnel's https address for ChatGPT (see below). Make new replaces the secret address; Port changes the port.
+
+The host methods behind it are `connect.get`, `connect.set` and `connect.http` ([engine/host/connect.ts](../../engine/host/connect.ts)). The sections below are for doing the same by hand.
+
 ## Two ways to run
 
 - **With the desktop app (the default).** The server drives the running app through its remote control socket (`<projects folder>/.host.json`). Edits land in the project the app has open, you watch them happen, and the app saves them and keeps the undo history. A project opened or created over MCP opens in a tab. Start the app first.

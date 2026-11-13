@@ -48,5 +48,12 @@ public static class Icons
     public static readonly string Settings = G(63145);
     public static readonly string PanelLeft = G(59568);
     public static readonly string Key = G(62646);
+    public static readonly string Search = G(63119);
+    public static readonly string Copy = G(62251);
+    public static readonly string ChevronRight = G(62128);
+    public static readonly string PlugConnected = G(59801);
+    public static readonly string Link = G(62692);
+    public static readonly string Globe = G(62554);
+    public static readonly string Bot = G(57784);
     public static readonly string Reopen = G(61759);
 }

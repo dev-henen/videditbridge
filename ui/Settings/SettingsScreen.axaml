@@ -3,118 +3,122 @@
              xmlns:shared="using:VideoEditor.Shared"
              x:Class="VideoEditor.Settings.SettingsScreen">
   <UserControl.Styles>
-    <Style Selector="TextBlock.section">
-      <Setter Property="FontSize" Value="13"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
+    <!-- Sections on the left: a quiet list, the open one on a blue pill -->
+    <Style Selector="Button.nav">
+      <Setter Property="HorizontalAlignment" Value="Stretch"/>
+      <Setter Property="HorizontalContentAlignment" Value="Left"/>
+      <Setter Property="Padding" Value="14,7"/>
+      <Setter Property="Margin" Value="0,1,10,1"/>
       <Setter Property="Foreground" Value="{StaticResource Text}"/>
     </Style>
-    <Style Selector="TextBlock.label">
+    <Style Selector="Button.nav /template/ Border#b">
+      <Setter Property="CornerRadius" Value="0,16,16,0"/>
+    </Style>
+    <Style Selector="Button.nav.current /template/ Border#b">
+      <Setter Property="Background" Value="{StaticResource AccentSoft}"/>
+    </Style>
+    <Style Selector="Button.nav.current TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource AccentHover}"/>
+    </Style>
+    <!-- A page title, a group heading above a card, and a card of rows -->
+    <Style Selector="TextBlock.pageTitle">
+      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Margin" Value="2,0,0,10"/>
+    </Style>
+    <Style Selector="TextBlock.group">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="Margin" Value="2,14,0,8"/>
+    </Style>
+    <Style Selector="TextBlock.intro">
       <Setter Property="FontSize" Value="12"/>
       <Setter Property="Foreground" Value="{StaticResource Muted}"/>
-      <Setter Property="VerticalAlignment" Value="Center"/>
-      <Setter Property="Width" Value="130"/>
-    </Style>
-    <Style Selector="TextBlock.note">
-      <Setter Property="FontSize" Value="11"/>
-      <Setter Property="Foreground" Value="{StaticResource Faint}"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="Margin" Value="2,0,0,10"/>
     </Style>
     <Style Selector="Border.card">
-      <Setter Property="Background" Value="{StaticResource Panel}"/>
+      <Setter Property="Background" Value="{StaticResource Panel2}"/>
       <Setter Property="CornerRadius" Value="8"/>
-      <Setter Property="Padding" Value="14,12"/>
+      <Setter Property="ClipToBounds" Value="True"/>
+    </Style>
+    <Style Selector="Border.row">
+      <Setter Property="Padding" Value="16,10"/>
+      <Setter Property="MinHeight" Value="46"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+    </Style>
+    <Style Selector="Border.row.last">
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <Style Selector="TextBlock.rowTitle">
+      <Setter Property="FontSize" Value="12.5"/>
+      <Setter Property="Foreground" Value="{StaticResource Text}"/>
+    </Style>
+    <Style Selector="TextBlock.rowSub, SelectableTextBlock.rowSub">
+      <Setter Property="FontSize" Value="11.5"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="Margin" Value="0,2,0,0"/>
+    </Style>
+    <Style Selector="TextBlock.rowSub.error">
+      <Setter Property="Foreground" Value="#F87171"/>
+    </Style>
+    <Style Selector="Border.chip">
+      <Setter Property="Background" Value="{StaticResource AccentSoft}"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="7,1"/>
+      <Setter Property="Margin" Value="8,0,0,0"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Border.chip TextBlock">
+      <Setter Property="FontSize" Value="10.5"/>
+      <Setter Property="Foreground" Value="{StaticResource AccentHover}"/>
+    </Style>
+    <Style Selector="Button.outline">
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="Padding" Value="12,5"/>
+    </Style>
+    <Style Selector="Button.outline /template/ Border#b">
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="#3A3A3A"/>
+      <Setter Property="CornerRadius" Value="14"/>
+    </Style>
+    <Style Selector="Button.primary /template/ Border#b">
+      <Setter Property="CornerRadius" Value="14"/>
+    </Style>
+    <Style Selector="TextBox.search">
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="Padding" Value="10,6"/>
+      <Setter Property="MinHeight" Value="32"/>
+    </Style>
+    <Style Selector="TextBox.search:focus /template/ Border#PART_BorderElement">
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+      <Setter Property="BorderThickness" Value="1"/>
     </Style>
   </UserControl.Styles>
 
-  <!-- The app's settings, in a tab of their own. Changes apply at once; the host keeps them for next time. -->
+  <!-- Settings like a browser's: search on top, sections on the left, cards of rows on the right.
+       The rows are built in SettingsScreen.axaml.cs so the search can filter them all. -->
   <DockPanel Background="{StaticResource Bg}">
-    <Border DockPanel.Dock="Top" Background="{StaticResource Toolbar}" Padding="12,4,8,4" MinHeight="34">
-      <TextBlock Text="Settings" FontWeight="SemiBold" VerticalAlignment="Center"/>
-    </Border>
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="24,20,24,24" MaxWidth="640" HorizontalAlignment="Left" Spacing="14">
-
-        <!-- The AI that edits: a key for each provider (Claude, the default; ChatGPT; Gemini), and the model new conversations start with -->
-        <Border Classes="card">
-          <StackPanel Spacing="10">
-            <TextBlock Classes="section" Text="AI models"/>
-            <TextBlock Classes="note" Text="Claude is the default. Add an OpenAI or Google key to edit with ChatGPT or Gemini too; pick the model in the chat."/>
-            <!-- One row per provider, built from the host's list (SettingsScreen.BuildKeyRows) -->
-            <StackPanel x:Name="KeyRows" Spacing="12"/>
-            <TextBlock x:Name="KeyNote" Classes="note"/>
-            <DockPanel>
-              <TextBlock Classes="label" DockPanel.Dock="Left" Text="Default model"/>
-              <ComboBox x:Name="ModelBox" MinWidth="260" SelectionChanged="OnModelChanged" AutomationProperties.Name="Default model">
-                <ComboBox.ItemTemplate>
-                  <DataTemplate>
-                    <StackPanel>
-                      <TextBlock Text="{Binding Label}" FontSize="12"/>
-                      <TextBlock Text="{Binding Description}" FontSize="10" Foreground="{StaticResource Faint}"/>
-                    </StackPanel>
-                  </DataTemplate>
-                </ComboBox.ItemTemplate>
-              </ComboBox>
-            </DockPanel>
-            <TextBlock Classes="note" Text="New conversations start with this model; each conversation keeps the one it was given."/>
-          </StackPanel>
-        </Border>
-
-        <!-- Rendering: which renderer draws the picture, and encoding on the graphics card -->
-        <Border Classes="card">
-          <StackPanel Spacing="10">
-            <TextBlock Classes="section" Text="Rendering"/>
-            <DockPanel>
-              <TextBlock Classes="label" DockPanel.Dock="Left" Text="Renderer"/>
-              <ComboBox x:Name="RendererBox" MinWidth="260" SelectionChanged="OnRendererChanged" AutomationProperties.Name="Renderer">
-                <ComboBoxItem Tag="auto" Content="Automatic (from the performance test)"/>
-                <ComboBoxItem Tag="engine" Content="GPU engine (FFmpeg if it fails)"/>
-                <ComboBoxItem Tag="ffmpeg" Content="FFmpeg only"/>
-              </ComboBox>
-            </DockPanel>
-            <DockPanel>
-              <Button x:Name="TestButton" DockPanel.Dock="Right" Click="OnRunTest" Margin="8,0,0,0" VerticalAlignment="Top" AutomationProperties.Name="Run the performance test">
-                <StackPanel Orientation="Horizontal">
-                  <TextBlock Classes="icon" Text="{x:Static shared:Icons.Sync}" FontSize="13" Margin="0,0,6,0"/>
-                  <TextBlock Text="Test again" FontSize="12" VerticalAlignment="Center"/>
-                </StackPanel>
-              </Button>
-              <TextBlock x:Name="PerformanceText" Classes="note" VerticalAlignment="Center"/>
-            </DockPanel>
-            <CheckBox x:Name="HardwareBox" IsCheckedChanged="OnHardwareChanged" AutomationProperties.Name="Encode exports on the graphics card">
-              <TextBlock Text="Encode exports on the graphics card when one works (faster; 10-bit and ProRes exports always encode in software)" FontSize="12" TextWrapping="Wrap"/>
-            </CheckBox>
-          </StackPanel>
-        </Border>
-
-        <!-- Folders the app uses -->
-        <Border Classes="card">
-          <StackPanel Spacing="8">
-            <TextBlock Classes="section" Text="Folders"/>
-            <ItemsControl x:Name="FolderList">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <DockPanel Margin="0,3">
-                    <TextBlock Classes="label" DockPanel.Dock="Left" Text="{Binding Name}"/>
-                    <Button DockPanel.Dock="Right" Click="OnOpenFolder" Tag="{Binding Path}" Margin="8,0,0,0" ToolTip.Tip="Open this folder" AutomationProperties.Name="{Binding Name}">
-                      <StackPanel Orientation="Horizontal">
-                        <TextBlock Classes="icon" Text="{x:Static shared:Icons.FolderOpen}" FontSize="13" Margin="0,0,6,0"/>
-                        <TextBlock Text="Open" FontSize="12" VerticalAlignment="Center"/>
-                      </StackPanel>
-                    </Button>
-                    <SelectableTextBlock Text="{Binding Path}" FontSize="11" Foreground="{StaticResource Muted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                  </DockPanel>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </StackPanel>
-        </Border>
-
-        <Border Classes="card">
-          <StackPanel Spacing="6">
-            <TextBlock Classes="section" Text="About"/>
-            <TextBlock x:Name="AboutText" Classes="note"/>
-          </StackPanel>
-        </Border>
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="190,*" Height="52">
+      <StackPanel Orientation="Horizontal" Spacing="10" Margin="18,0,0,0" VerticalAlignment="Center">
+        <TextBlock Classes="icon" Text="{x:Static shared:Icons.Settings}" FontSize="18" Foreground="{StaticResource Accent}"/>
+        <TextBlock Text="Settings" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+      </StackPanel>
+      <TextBox x:Name="SearchBox" Grid.Column="1" Classes="search" MaxWidth="520" HorizontalAlignment="Stretch" Margin="0,0,24,0"
+               VerticalAlignment="Center" Watermark="Search settings" AutomationProperties.Name="Search settings">
+        <TextBox.InnerLeftContent>
+          <TextBlock Classes="icon" Text="{x:Static shared:Icons.Search}" FontSize="14" Foreground="{StaticResource Muted}" Margin="4,0,0,0" VerticalAlignment="Center"/>
+        </TextBox.InnerLeftContent>
+      </TextBox>
+    </Grid>
+    <StackPanel x:Name="Nav" DockPanel.Dock="Left" Width="190" Margin="0,4,0,0"/>
+    <ScrollViewer x:Name="Scroll" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="10,6,24,24" MaxWidth="640" HorizontalAlignment="Left">
+        <StackPanel x:Name="Pages"/>
+        <TextBlock x:Name="NoMatch" Classes="intro" IsVisible="False" Margin="2,20,0,0"/>
       </StackPanel>
     </ScrollViewer>
   </DockPanel>

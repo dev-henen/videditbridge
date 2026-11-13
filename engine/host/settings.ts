@@ -24,6 +24,8 @@ export interface AppSettings {
   /** "auto": what the performance test found (the GPU engine, FFmpeg where it fails); or one renderer always. */
   renderer: "auto" | "engine" | "ffmpeg";
   hardwareEncoding: boolean;
+  /** The MCP connector address for ChatGPT and other apps that connect to one: on or off, and its port. */
+  mcpHttp?: { enabled: boolean; port?: number };
 }
 
 const DEFAULTS: AppSettings = { renderer: "auto", hardwareEncoding: true };
