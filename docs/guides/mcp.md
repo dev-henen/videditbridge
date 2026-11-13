@@ -1,6 +1,6 @@
 # Using the editor from other AI apps (MCP)
 
-The editor is also an [MCP](https://modelcontextprotocol.io) server, so you can add it as a connector in the Claude, ChatGPT and Gemini apps (and in Gemini CLI or Claude Code) and edit by asking there. The server is [engine/mcp/server.ts](../../engine/mcp/server.ts) and its command is [engine/mcp/main.ts](../../engine/mcp/main.ts) (`ave-mcp`).
+The editor is also an [MCP](https://modelcontextprotocol.io) server, so you can add it to the Claude app (and to Gemini CLI or Claude Code) and edit by asking there. The Gemini app and ChatGPT need a public address and are turned off for now (see below). The server is [engine/mcp/server.ts](../../engine/mcp/server.ts) and its command is [engine/mcp/main.ts](../../engine/mcp/main.ts) (`ave-mcp`).
 
 It offers the editor's tools (the [Claude tools reference](../reference/claude-tools.md)) and three tools for choosing the project: `list_projects`, `open_project` and `create_project`. Read-only tools are marked `readOnlyHint`, so apps that ask before a change ask only for edits. Rendered frames and contact sheets come back as pictures, so the model can see its work. The server's instructions are the desktop agent's system prompt.
 
@@ -18,7 +18,7 @@ The server tells them apart by the client's `io.modelcontextprotocol/ui` capabil
 The usual way. In the app, open Settings (the menu at the top left), then Connections:
 
 - **Apps on this computer.** Connect adds the editor to the Claude app's or Gemini CLI's own MCP config, with the command for this install and its projects folder. The rest of the file stays as it was, and the previous one is kept as `<file>.bak`. Quit and reopen the Claude app, or start a new Gemini CLI session, to use it. Disconnect takes the entry out. An entry that points at another copy of the editor shows Update. For Claude Code, and for apps not listed, copy the command.
-- **Apps that connect to an address.** Turn on Connector address to run the HTTP server inside the app (it stays on across restarts). Copy the address, or the path to put after a tunnel's https address for ChatGPT (see below). Make new replaces the secret address; Port changes the port.
+- **The Gemini app and ChatGPT: turned off for now.** Their connectors are called from Google's and OpenAI's servers, so they need the editor on a public https address (a tunnel to this computer), unlike the Claude app, which starts the editor on this computer. The code for it stays: the connector inside the app (`connect.http`) and a Cloudflare quick tunnel ([engine/mcp/tunnel.ts](../../engine/mcp/tunnel.ts), downloaded on first use, run with a config file of its own so a person's `~/.cloudflared/config.yml` does not take over). `REMOTE_APPS` in [engine/host/main.ts](../../engine/host/main.ts) turns it back on; while it is false, Settings shows no section for them and nothing starts the connector.
 
 The host methods behind it are `connect.get`, `connect.set` and `connect.http` ([engine/host/connect.ts](../../engine/host/connect.ts)). The sections below are for doing the same by hand.
 

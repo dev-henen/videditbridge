@@ -44,6 +44,7 @@ import { applySettings, availableProviders, loadSettings, publicSettings, saveSe
 import { CLIENT_IDS, MCP_NAME, clientInfo, commandLine, isClientId, mcpLaunch, setClientConnected } from "./connect.js";
 import { DEFAULT_MCP_PORT, mcpToken, startMcpHttp, type McpHttpServer } from "../mcp/http.js";
 import { AppBackend, appLaunchFile } from "../mcp/server.js";
+import { startTunnel, type Tunnel } from "../mcp/tunnel.js";
 import { appDir, defaultFontsDir, defaultModelsDir } from "../tools/appdirs.js";
 
 // stdout is the protocol channel: route stray console output to stderr.
@@ -323,26 +324,49 @@ const handlers: Record<string, Handler> = {
     await setClientConnected(p.client, p.connected !== false, mcpLaunch(store.root));
     return connectState();
   },
-  /** Turn the connector address on or off (`enabled`), change its `port`, or make a new address (`renew`, the old one stops working). */
+  /**
+   * The connector for apps that connect to an address (the Gemini app, ChatGPT): turn it on or off
+   * (`enabled`), with a public https address through a tunnel (`public`, what those apps need), change
+   * its `port`, or make a new secret path (`renew`, the old address stops working). Turning it on
+   * waits until the public address is ready (the first time, after downloading the tunnel program).
+   */
   "connect.http": async (p) => {
+    if (!REMOTE_APPS && p.enabled === true) throw new RpcError(1, "Connecting the Gemini app and ChatGPT is turned off for now; the Claude app connects in Settings, Connections.");
     const current = settings.mcpHttp ?? { enabled: false };
     const port = Number.isInteger(p.port) && Number(p.port) > 0 && Number(p.port) < 65536 ? Number(p.port) : current.port;
-    settings = { ...settings, mcpHttp: { enabled: typeof p.enabled === "boolean" ? p.enabled : current.enabled, ...(port ? { port } : {}) } };
+    const enabled = typeof p.enabled === "boolean" ? p.enabled : current.enabled;
+    const isPublic = typeof p.public === "boolean" ? p.public : (current.public ?? false);
+    settings = { ...settings, mcpHttp: { enabled, ...(port ? { port } : {}), ...(isPublic ? { public: true } : {}) } };
     await saveSettings(settings);
     if (p.renew === true) await mcpToken(true);
-    await applyMcpHttp();
+    await applyMcpHttp(true);
     return connectState();
   },
 };
 
-/** The MCP connector address the host serves (Settings, Connections), when it is on. */
-let mcpHttp: { server?: McpHttpServer; error?: string } = {};
+/**
+ * Apps that reach MCP servers only through a public address (the Gemini app, ChatGPT): off for now.
+ * They need the editor on the internet (a tunnel), unlike the Claude app, which starts it on this
+ * computer. The connector and tunnel code stays (connect.http, mcp/tunnel.ts) for when it comes back;
+ * while this is false nothing starts it, not even a setting saved as on.
+ */
+const REMOTE_APPS = false;
 
-/** Start, restart or stop the connector address to match the settings. */
-async function applyMcpHttp(): Promise<void> {
+/** The MCP connector the host serves (Settings, Connections), when it is on: the local server and its public address. */
+let mcpHttp: { server?: McpHttpServer; error?: string; tunnel?: Tunnel; tunnelStatus?: string; tunnelProgress?: number; tunnelError?: string } = {};
+/** Each start of the connector; a tunnel that comes up for an older one is closed. */
+let mcpHttpRun = 0;
+
+/**
+ * Start, restart or stop the connector to match the settings. The public address starts in the
+ * background (at startup), or is waited for (`wait`, when the user just turned it on).
+ */
+async function applyMcpHttp(wait = false): Promise<void> {
+  const run = ++mcpHttpRun;
+  mcpHttp.tunnel?.close();
   await mcpHttp.server?.close();
   mcpHttp = {};
-  if (!settings.mcpHttp?.enabled) return;
+  if (!REMOTE_APPS || !settings.mcpHttp?.enabled) return;
   const port = settings.mcpHttp.port ?? DEFAULT_MCP_PORT;
   try {
     // The apps that connect to an address (ChatGPT, Claude) show the previews in their chat, so the
@@ -359,7 +383,33 @@ async function applyMcpHttp(): Promise<void> {
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     mcpHttp.error = err.code === "EADDRINUSE" ? `Port ${port} is used by another program. Pick another port.` : err.message;
+    return;
   }
+  if (!settings.mcpHttp.public) return;
+  const state = mcpHttp;
+  state.tunnelStatus = "Starting";
+  const starting = startTunnel(mcpHttp.server.port, {
+    onStatus: (text, progress) => {
+      state.tunnelStatus = text;
+      state.tunnelProgress = progress;
+    },
+  })
+    .then((tunnel) => {
+      if (run !== mcpHttpRun) return tunnel.close();
+      state.tunnel = tunnel;
+      state.tunnelStatus = undefined;
+      tunnel.onExit = (message) => {
+        if (run !== mcpHttpRun) return;
+        state.tunnel = undefined;
+        state.tunnelError = message;
+      };
+    })
+    .catch((e: Error) => {
+      if (run !== mcpHttpRun) return;
+      state.tunnelStatus = undefined;
+      state.tunnelError = e.message;
+    });
+  if (wait) await starting;
 }
 
 async function connectState() {
@@ -370,12 +420,22 @@ async function connectState() {
     claudeCode: line ? `claude mcp add --scope user ${MCP_NAME} -- ${line}` : null,
     clients: await Promise.all(CLIENT_IDS.map((id) => clientInfo(id, launch))),
     http: {
+      /** Whether the Gemini app and ChatGPT can be connected at all (off for now; see REMOTE_APPS). */
+      available: REMOTE_APPS,
       enabled: !!settings.mcpHttp?.enabled,
+      public: !!settings.mcpHttp?.public,
       port: mcpHttp.server?.port ?? settings.mcpHttp?.port ?? DEFAULT_MCP_PORT,
       running: !!mcpHttp.server,
       url: mcpHttp.server?.url ?? null,
       path: mcpHttp.server?.path ?? null,
       error: mcpHttp.error ?? null,
+      /** The address to paste into the Gemini app or ChatGPT (the tunnel's, with the secret path). */
+      publicUrl: mcpHttp.tunnel && mcpHttp.server ? `${mcpHttp.tunnel.url}${mcpHttp.server.path}` : null,
+      /** What the public address is doing while it starts, or why it stopped. */
+      publicStatus: mcpHttp.tunnelStatus ?? null,
+      publicError: mcpHttp.tunnelError ?? null,
+      /** How far the setup is (0..1), while the tunnel program downloads. */
+      publicProgress: mcpHttp.tunnelProgress ?? null,
     },
   };
 }
@@ -728,7 +788,11 @@ function markVia<T>(state: T, p: Record<string, unknown>): T {
 const infoFile = path.join(store.root, HOST_INFO_FILE);
 await mkdir(store.root, { recursive: true });
 await writeFile(infoFile, JSON.stringify({ port: remote.port, token, pid: process.pid }), "utf8");
-process.on("exit", () => rmSync(infoFile, { force: true }));
+process.on("exit", () => {
+  rmSync(infoFile, { force: true });
+  // The tunnel program is a process of its own: it must not outlive the app.
+  mcpHttp.tunnel?.close();
+});
 
 // The app closes stdin to stop the host, but on macOS and Linux a signal can come first (the app
 // killed, the terminal closed, a service stopping): either way pending saves finish before exit.
@@ -736,6 +800,7 @@ let stopping: Promise<never> | undefined;
 const stop = () =>
   (stopping ??= (async () => {
     remote.server.close();
+    mcpHttp.tunnel?.close();
     await mcpHttp.server?.close();
     for (const o of open.values()) o.agent?.cancel();
     await store.flush();

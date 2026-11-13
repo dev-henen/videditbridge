@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import path from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -16,6 +16,8 @@ import { createMcpServer, type McpServerOptions } from "./server.js";
 export const DEFAULT_MCP_PORT = 3920;
 
 const tokenFile = () => process.env.AVE_MCP_TOKEN_FILE || path.join(appDir("data"), "mcp-token");
+/** Requests the server turned away (without the token), for diagnosing connections. */
+const refusedLog = () => path.join(appDir("data"), "mcp-http.log");
 
 /** The token kept in the app's data folder (made on first use, or again with `renew`), so the address stays the same. */
 export async function mcpToken(renew = false): Promise<string> {
@@ -53,6 +55,9 @@ export async function startMcpHttp(mcpOptions: McpServerOptions, opts: { token: 
   const host = opts.host ?? "127.0.0.1";
   const server: Server = createServer(async (req, res) => {
     if (!authorized(req, opts.token)) {
+      // Kept for finding out why an app cannot connect (the secret never goes in the log).
+      const seen = (req.url ?? "").split(opts.token).join("<token>").replace(/\/mcp\/[^/?]+/, (m) => (m.includes("<token>") ? m : "/mcp/<other>"));
+      void appendFile(refusedLog(), `${new Date().toISOString()} refused ${req.method} ${seen} host=${req.headers.host ?? ""} auth=${req.headers.authorization ? "yes" : "no"}\n`).catch(() => undefined);
       res.writeHead(404).end();
       return;
     }

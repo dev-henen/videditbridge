@@ -226,7 +226,7 @@ public partial class SettingsScreen : UserControl
             _views.Clear();
             Pages.Children.Clear();
             BuildModels(NewPage("ai", "Claude is the default. Add an OpenAI or Google key to edit with ChatGPT or Gemini too, and pick the model in the chat."));
-            BuildConnections(NewPage("connections", "Edit from the Claude, Gemini and ChatGPT apps, with your own account there. Those apps show the previews in their chat; Gemini CLI and Claude Code open the project here to show it."));
+            BuildConnections(NewPage("connections", "Edit from the Claude app with your own Claude account; it shows the previews in its chat. Gemini CLI and Claude Code open the project here to show it."));
             BuildRendering(NewPage("rendering"));
             BuildFolders(NewPage("folders"));
             BuildAbout(NewPage("about"));
@@ -330,7 +330,7 @@ public partial class SettingsScreen : UserControl
             var installed = c["installed"]?.GetValue<bool>() == true;
             var note = c["note"]?.GetValue<string>() ?? "";
             // Gemini CLI is Google's terminal tool; the Gemini app connects to an address instead.
-            var what = id == "gemini-cli" ? "Google's terminal tool. For the Gemini app, use the connector address below. " : "";
+            var what = id == "gemini-cli" ? "Google's terminal tool (not the Gemini app). " : "";
             var sub = what + (connected
                 ? outdated ? "Connected to another copy of the editor. Connect again to use this one." : $"Connected. {note}"
                 : installed ? "Not connected." : "Not found on this computer. Install it, then connect.");
@@ -347,35 +347,56 @@ public partial class SettingsScreen : UserControl
         }
         Card(page, "Apps on this computer", [.. rows]);
 
+        // The Gemini app and ChatGPT reach servers only over the internet: Connect starts the local
+        // server and a public https address for it (a tunnel), here and whenever the app starts.
+        // Three states: off (a Connect button per app), setting up (one progress row), ready (the
+        // address to copy and one step per app). The technical parts stay under Advanced.
         var http = _connect["http"];
+        // The Gemini app and ChatGPT need a public address; off for now (the host says so), so no section.
+        if (http?["available"]?.GetValue<bool>() != true) return;
         var enabled = http?["enabled"]?.GetValue<bool>() == true;
+        var on = _httpStarting || (enabled && http?["public"]?.GetValue<bool>() == true);
         var url = http?["url"]?.GetValue<string>();
-        var path = http?["path"]?.GetValue<string>() ?? "";
+        var publicUrl = http?["publicUrl"]?.GetValue<string>();
+        var starting = _httpStarting || http?["publicStatus"]?.GetValue<string>() is not null;
+        var progress = http?["publicProgress"]?.GetValue<double>();
+        var problem = http?["error"]?.GetValue<string>() ?? http?["publicError"]?.GetValue<string>();
         var port = http?["port"]?.GetValue<int>() ?? 3920;
-        var error = http?["error"]?.GetValue<string>();
-        var web = new List<Border>
+        var ready = on && publicUrl is not null;
+        Task Connect() => StartPublic();
+        Task Off() => SetHttp(new { enabled = false });
+        var web = new List<Border>();
+        if (!on)
         {
-            Row("Connector address", "For the Gemini app, ChatGPT and other apps that connect to an address. It works while this app is open.",
-                Toggle(enabled, "Connector address", on => SetHttp(new { enabled = on }))),
-        };
-        if (error is not null) web.Add(Row("Could not start", error, error: true));
-        if (url is not null)
-        {
-            web.Add(Row("Address on this computer", url, Btn("Copy", () => Copy(url, "address"), icon: Icons.Copy, name: "Copy the address"), selectable: true));
-            web.Add(Row("Public address", $"The Gemini app and ChatGPT reach only https addresses on the internet. Run a tunnel to port {port} (for example cloudflared tunnel --url http://127.0.0.1:{port}); your public address is the tunnel's address followed by this path.",
-                Btn("Copy path", () => Copy(path, "path"), icon: Icons.Copy, name: "Copy the connector path")));
-            web.Add(Row("Gemini app", "In Gemini: Settings, Connected apps, Custom (Add a custom app), then paste the public address. Google is still rolling this out, so your account may not have it yet."));
-            web.Add(Row("ChatGPT", "In ChatGPT: turn on developer mode (Settings, Apps and connectors, Advanced), then add a connector at the public address, with no authentication."));
-            web.Add(Row("New address", "Anyone with the address can edit your projects, so keep it private. A new one stops the old one working.",
-                Btn("Make new", () => SetHttp(new { renew = true }))));
+            web.Add(Row("Gemini app", "Use the editor from Gemini, with your Google account.", Btn("Connect", Connect, primary: true, name: "Connect the Gemini app")));
+            web.Add(Row("ChatGPT", "Use the editor from ChatGPT, with your OpenAI account.", Btn("Connect", Connect, primary: true, name: "Connect ChatGPT")));
         }
-        if (enabled || error is not null)
+        else if (ready)
+        {
+            web.Add(Row("Your connection address", publicUrl, Btn("Copy", () => Copy(publicUrl!, "address"), primary: true, icon: Icons.Copy, name: "Copy the address"), chip: "Ready", selectable: true));
+            web.Add(Row("Gemini app", "Open Gemini, then Settings, Connected apps, Custom, and paste the address. (Google is still rolling this out, so it may not show for you yet.)"));
+            web.Add(Row("ChatGPT", "Open ChatGPT, turn on developer mode (Settings, Apps and connectors, Advanced), then add a connector with the address."));
+            web.Add(Row("Keep it private", "Anyone with it can edit your projects. It changes when this app restarts.", Btn("Disconnect", Off, name: "Disconnect Gemini and ChatGPT")));
+        }
+        else if (problem is not null && !starting)
+            web.Add(Row("Couldn't get an address", problem, Controls(Btn("Try again", Connect, primary: true), Btn("Cancel", Off)), error: true));
+        else
+        {
+            // Setting up: the download (with how far it is), then the connection.
+            var bar = new ProgressBar { Width = 160, Height = 4, MinHeight = 4, Minimum = 0, Maximum = 1, IsIndeterminate = progress is null, Value = progress ?? 0 };
+            var line = Controls(bar, Btn("Cancel", Off));
+            web.Add(Row("Getting your connection address", progress is { } p && p < 1 ? $"Setting up, {p * 100:0}%. This happens once." : "Connecting to Cloudflare", line));
+            PollWhileStarting();
+        }
+        // Advanced: what most people never need.
+        web.Add(Row("Advanced", _showAdvanced ? null : "Port and local address", Btn(_showAdvanced ? "Hide" : "Show", () => { _showAdvanced = !_showAdvanced; Build(); return Task.CompletedTask; }, name: "Show or hide advanced connection settings")));
+        if (_showAdvanced)
         {
             var box = new TextBox { Text = port.ToString(CultureInfo.InvariantCulture), Width = 76 };
             AutomationProperties.SetName(box, "Port");
             async Task Apply()
             {
-                if (int.TryParse(box.Text, out var p) && p > 0 && p < 65536 && p != port) await SetHttp(new { port = p });
+                if (int.TryParse(box.Text, out var v) && v > 0 && v < 65536 && v != port) await SetHttp(new { port = v });
             }
             box.KeyDown += async (_, e) =>
             {
@@ -383,8 +404,13 @@ public partial class SettingsScreen : UserControl
             };
             box.LostFocus += async (_, _) => await Apply();
             web.Add(Row("Port", "The port on this computer. Change it if another program uses it.", box));
+            if (url is not null)
+            {
+                web.Add(Row("Address on this computer", url, Btn("Copy", () => Copy(url, "address"), icon: Icons.Copy, name: "Copy the local address"), selectable: true));
+                web.Add(Row("New secret address", "The old address stops working.", Btn("Make new", () => SetHttp(new { renew = true }))));
+            }
         }
-        Card(page, "Apps that connect to an address", [.. web]);
+        Card(page, "Gemini and ChatGPT", [.. web]);
     }
 
     private void BuildRendering(PageView page)
@@ -427,7 +453,7 @@ public partial class SettingsScreen : UserControl
     private void BuildAbout(PageView page)
     {
         Card(page, null,
-            Row("AI Video Editor", "Edit video by asking Claude, ChatGPT or Gemini, here or from their own apps."),
+            Row("AI Video Editor", "Edit video by asking Claude, ChatGPT or Gemini here, or from the Claude app."),
             Row("Settings file", _settings?["file"]?.GetValue<string>() ?? "", selectable: true));
     }
 
@@ -492,6 +518,50 @@ public partial class SettingsScreen : UserControl
             _vm.ShowError(e.Message);
         }
         Build();
+    }
+
+    /// <summary>Connect clicked: show it starting, then wait for the host to have the public address.</summary>
+    private bool _httpStarting;
+    private bool _showAdvanced;
+
+    private async Task StartPublic()
+    {
+        _httpStarting = true;
+        Build();
+        try
+        {
+            _connect = await _vm.CallHostAsync("connect.http", new { enabled = true, @public = true });
+        }
+        catch (Exception e)
+        {
+            _vm.ShowError($"Could not make the public address: {e.Message}");
+        }
+        _httpStarting = false;
+        Build();
+    }
+
+    private Avalonia.Threading.DispatcherTimer? _poll;
+
+    /// <summary>While the public address starts in the background (after the app started), ask again every two seconds.</summary>
+    private void PollWhileStarting()
+    {
+        if (_poll is not null) return;
+        _poll = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _poll.Tick += async (_, _) =>
+        {
+            _poll?.Stop();
+            _poll = null;
+            try
+            {
+                _connect = await _vm.CallHostAsync("connect.get");
+            }
+            catch
+            {
+                return;
+            }
+            Build();
+        };
+        _poll.Start();
     }
 
     private async Task SetHttp(object changes)
