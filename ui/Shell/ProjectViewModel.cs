@@ -111,6 +111,18 @@ public sealed class ProjectViewModel : Observable
     private bool _agentRunning;
     public bool AgentRunning { get => _agentRunning; private set => Set(ref _agentRunning, value, nameof(AgentRunning), nameof(CanAsk)); }
 
+    private string? _mcpClient;
+    /// <summary>
+    /// The AI app editing this project over MCP when it cannot show previews itself (Gemini CLI, say):
+    /// the page then is its preview window, without the chat. Null otherwise.
+    /// </summary>
+    public string? McpClient { get => _mcpClient; private set => Set(ref _mcpClient, value, nameof(McpClient), nameof(IsMcpDriven), nameof(McpNote)); }
+    public bool IsMcpDriven => McpClient is not null;
+    public string McpNote => $"Edited from {McpClient}. Ask there; this window shows the edit.";
+
+    /// <summary>Bring the chat back to a page an MCP app is editing.</summary>
+    public Task UseChatHereAsync() => Guard(async () => await Call("mcp.release"));
+
     /// <summary>Whether the chosen model's provider has a key (Claude needs Anthropic's, ChatGPT OpenAI's, Gemini Google's).</summary>
     public bool ModelAvailable => _app.IsAvailable(Model.Provider);
     public bool CanAsk => ModelAvailable && !AgentRunning;
@@ -501,6 +513,7 @@ public sealed class ProjectViewModel : Observable
         CanRedo = s["canRedo"]?.GetValue<bool>() ?? false;
         Summary = s["summary"]?.GetValue<string>() ?? "";
         HasObjects = (s["objects"]?.AsArray().Count ?? 0) > 0;
+        McpClient = s["mcpClient"]?.GetValue<string>();
         if (s["conversation"]?["title"]?.GetValue<string>() is { } title && s["conversation"]?["id"]?.GetValue<string>() == _conversationId) ConversationTitle = title;
         ApplyChoices(s["choices"]);
         if (_reviewedRevision is not null && s["revision"]?.ToString() != _reviewedRevision && !ReviewSummary.EndsWith("check again"))

@@ -58,6 +58,8 @@ public sealed class EngineClient : IDisposable
         foreach (var a in host.Args) psi.ArgumentList.Add(a);
         psi.ArgumentList.Add("--projects-dir");
         psi.ArgumentList.Add(projectsDir);
+        // The host records how to start the app, so an MCP app that needs its window can open it.
+        if (Environment.ProcessPath is { } exe) psi.Environment["AVE_APP_EXE"] = exe;
         var process = Process.Start(psi) ?? throw new InvalidOperationException($"Failed to start the editing engine ({host.FileName}).");
         var client = new EngineClient(process, host.WorkingDirectory, projectsDir);
         client.BeginReading();

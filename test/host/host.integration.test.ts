@@ -171,27 +171,55 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     expect(cleared.aiAvailable).toBe(false);
   });
 
-  it("lets other AI apps edit the open project over MCP, through the app", async () => {
-    const { AppBackend, createMcpServer } = await import("../../engine/mcp/server.js");
+  it("lets other AI apps edit over MCP: a terminal app in a tab without the chat, a chat app out of sight", async () => {
+    const { backendFor, createMcpServer } = await import("../../engine/mcp/server.js");
     const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
     const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
-    const backend = new AppBackend(dir);
-    const [a, b] = InMemoryTransport.createLinkedPair();
-    const client = new Client({ name: "test", version: "1" });
-    await Promise.all([createMcpServer(backend).connect(a), client.connect(b)]);
-    try {
-      const created = (await client.callTool({ name: "create_project", arguments: { name: "Via MCP" } })) as { content: { text: string }[] };
-      const project = created.content[0]!.text.match(/^Opened "Via MCP" \((.+)\)\. /)?.[1];
+    type State = { layers: { label: string }[]; mcpClient: string | null };
+    const connectAs = async (name: string, views: boolean) => {
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      const client = new Client({ name, version: "1" }, { capabilities: views ? { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } } } : {} });
+      await Promise.all([createMcpServer({ projectsDir: dir, backend: (c) => backendFor(c, dir) }).connect(a), client.connect(b)]);
+      return client;
+    };
+    const open = async (client: InstanceType<typeof Client>, name: string) => {
+      const created = (await client.callTool({ name: "create_project", arguments: { name } })) as { content: { text: string }[] };
+      const project = created.content[0]!.text.match(/^Opened ".+" \((.+)\)\. /)?.[1];
       expect(project, created.content[0]!.text).toBeTruthy();
-      // The app is told to show it, and the edit lands in its session.
-      expect(host.notifications.some((n) => n.method === "project.opened")).toBe(true);
-      const added = await client.callTool({ name: "add_text", arguments: { text: "Typed elsewhere", start: 0, duration: 1 } });
+      const added = await client.callTool({ name: "add_text", arguments: { text: `Typed in ${name}`, start: 0, duration: 1 } });
       expect(added.isError, JSON.stringify(added)).toBeFalsy();
-      const state = await host.call<{ layers: { label: string }[] }>("state.get", { project });
-      expect(state.layers.some((l) => l.label === "Typed elsewhere")).toBe(true);
+      return project!;
+    };
+    const opened = () => host.notifications.filter((n) => n.method === "project.opened").length;
+
+    // A terminal app (no views): the app shows the project, marked with the app it is edited from.
+    const terminal = await connectAs("Gemini CLI", false);
+    try {
+      const before = opened();
+      const project = await open(terminal, "From the terminal");
+      expect(opened()).toBe(before + 1);
+      const state = await host.call<State>("state.get", { project });
+      expect(state.layers.some((l) => l.label === "Typed in From the terminal")).toBe(true);
+      expect(state.mcpClient).toBe("Gemini CLI");
+      // "Use the chat here" gives the tab its chat back.
+      await host.call("mcp.release", { project });
+      expect((await host.call<State>("state.get", { project })).mcpClient).toBeNull();
     } finally {
-      await client.close();
-      await backend.close();
+      await terminal.close();
+    }
+
+    // A chat app that shows views: the edit goes through the app, which opens no tab for it.
+    const chat = await connectAs("Claude", true);
+    try {
+      expect((await chat.listTools()).tools.find((t) => t.name === "render_preview")?._meta).toMatchObject({ ui: { resourceUri: "ui://ai-video-editor/preview.html" } });
+      const before = opened();
+      const project = await open(chat, "From the chat");
+      expect(opened()).toBe(before);
+      const state = await host.call<State>("state.get", { project });
+      expect(state.layers.some((l) => l.label === "Typed in From the chat")).toBe(true);
+      expect(state.mcpClient).toBeNull();
+    } finally {
+      await chat.close();
     }
   });
 

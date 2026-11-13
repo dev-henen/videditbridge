@@ -5,17 +5,29 @@
              xmlns:timeline="using:VideoEditor.Timeline"
              xmlns:chat="using:VideoEditor.Chat"
              xmlns:shell="using:VideoEditor.Shell"
+             xmlns:shared="using:VideoEditor.Shared"
              x:Class="VideoEditor.Shell.ProjectView">
   <!-- Everything of one project: its commands under the tab, then activity on the left, the preview and
-       timeline in the middle, and the chat with Claude on the right -->
+       timeline in the middle, and the chat with Claude on the right. When another AI app edits the
+       project over MCP (and cannot show previews itself), the page is its preview window: a note on
+       top instead of the chat. -->
   <DockPanel>
   <shell:TopBar x:Name="Bar" DockPanel.Dock="Top"/>
-  <Grid Margin="8,6,8,8" ColumnDefinitions="218,6,*,6,272" RowDefinitions="*,Auto">
+  <Border DockPanel.Dock="Top" IsVisible="{Binding IsMcpDriven}" Background="{StaticResource AccentSoft}" Margin="8,6,8,0" CornerRadius="6" Padding="10,5">
+    <DockPanel>
+      <Button DockPanel.Dock="Right" Click="OnUseChatHere" Padding="10,3" AutomationProperties.Name="Use the chat here">
+        <TextBlock Text="Use the chat here" FontSize="12"/>
+      </Button>
+      <TextBlock Classes="icon" DockPanel.Dock="Left" Text="{x:Static shared:Icons.PlugConnected}" FontSize="14" Foreground="{StaticResource AccentHover}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+      <TextBlock Text="{Binding McpNote}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+    </DockPanel>
+  </Border>
+  <Grid x:Name="Layout" Margin="8,6,8,8" ColumnDefinitions="218,6,*,6,272" RowDefinitions="*,Auto">
     <session:SessionPanel x:Name="Side" Grid.Column="0" Grid.RowSpan="2"/>
     <GridSplitter Grid.Column="1" Grid.RowSpan="2" Background="Transparent" ResizeDirection="Columns"/>
     <preview:PreviewScreen x:Name="Screen" Grid.Column="2" Grid.Row="0"/>
     <timeline:TimelineStrip x:Name="Strip" Grid.Column="2" Grid.Row="1" Margin="0,6,0,0"/>
-    <GridSplitter Grid.Column="3" Grid.RowSpan="2" Background="Transparent" ResizeDirection="Columns"/>
+    <GridSplitter x:Name="ChatSplitter" Grid.Column="3" Grid.RowSpan="2" Background="Transparent" ResizeDirection="Columns"/>
     <chat:ChatPanel x:Name="Chat" Grid.Column="4" Grid.RowSpan="2"/>
   </Grid>
   </DockPanel>

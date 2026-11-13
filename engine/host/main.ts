@@ -43,7 +43,7 @@ import { HOST_INFO_FILE } from "./remote.js";
 import { applySettings, availableProviders, loadSettings, publicSettings, saveSettings, storeKey } from "./settings.js";
 import { CLIENT_IDS, MCP_NAME, clientInfo, commandLine, isClientId, mcpLaunch, setClientConnected } from "./connect.js";
 import { DEFAULT_MCP_PORT, mcpToken, startMcpHttp, type McpHttpServer } from "../mcp/http.js";
-import { AppBackend } from "../mcp/server.js";
+import { AppBackend, appLaunchFile } from "../mcp/server.js";
 import { appDir, defaultFontsDir, defaultModelsDir } from "../tools/appdirs.js";
 
 // stdout is the protocol channel: route stray console output to stderr.
@@ -64,6 +64,8 @@ interface OpenProject {
   coverTimer?: NodeJS.Timeout;
   /** The edit as it was when the latest request to Claude started: the "before" of the viewer's A/B. */
   before?: { project: Project; revision: number };
+  /** The MCP app editing this project when it cannot show previews itself (Gemini CLI, say): the tab shows the edit, without its chat. */
+  mcpClient?: string;
   /** Live playback in progress (`render.play`). */
   playback?: { stopped: boolean };
   /** The sound mix of a revision, for live playback. */
@@ -164,6 +166,13 @@ const handlers: Record<string, Handler> = {
   "render.scopes": (p) => scopes(target(p), Number(p.time ?? 0)),
   "render.stop": (p) => {
     stopPlayback(target(p));
+    return true;
+  },
+  /** The user wants the chat in a tab an MCP app is editing ("Use the chat here"). */
+  "mcp.release": (p) => {
+    const o = target(p);
+    o.mcpClient = undefined;
+    pushState(o);
     return true;
   },
   "choices.dismiss": (p) => {
@@ -336,13 +345,17 @@ async function applyMcpHttp(): Promise<void> {
   if (!settings.mcpHttp?.enabled) return;
   const port = settings.mcpHttp.port ?? DEFAULT_MCP_PORT;
   try {
-    // Calls go to the same handlers as remote control, so projects opened over MCP show in a tab.
-    const backend = new AppBackend(store.root, async (method, params) => {
-      const handler = remoteHandlers[method];
-      if (!handler) throw new Error(`Unknown method ${method}`);
-      return handler(params);
+    // The apps that connect to an address (ChatGPT, Claude) show the previews in their chat, so the
+    // projects they edit open here without a tab; the host stays the one program writing them.
+    const backend = new AppBackend(store.root, {
+      quiet: true,
+      call: async (method: string, params: Record<string, unknown>) => {
+        const handler = remoteHandlers[method];
+        if (!handler) throw new Error(`Unknown method ${method}`);
+        return handler(params);
+      },
     });
-    mcpHttp.server = await startMcpHttp(backend, { token: await mcpToken(), port });
+    mcpHttp.server = await startMcpHttp({ projectsDir: store.root, backend, assumeViews: true }, { token: await mcpToken(), port });
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     mcpHttp.error = err.code === "EADDRINUSE" ? `Port ${port} is used by another program. Pick another port.` : err.message;
@@ -407,6 +420,7 @@ function snapshot(o: OpenProject) {
     // The viewer can show the edit as it was before the latest request (`render.scrub` with `before`).
     canCompare: !!o.before && o.before.revision !== o.session.revision,
     conversation: { id: o.conversation.id, title: o.conversation.title, model: o.conversation.model },
+    mcpClient: o.mcpClient ?? null,
   };
 }
 
@@ -677,8 +691,20 @@ const token = randomBytes(24).toString("hex");
 /** The handlers for other processes (and the MCP connector): projects they open or close show in the app. */
 const remoteHandlers: Record<string, Handler> = {
   ...handlers,
-  "project.open": async (p) => notifyOpened(await handlers["project.open"]!(p)),
-  "project.create": async (p) => notifyOpened(await handlers["project.create"]!(p)),
+  // MCP marks its calls: `quiet` (the MCP app shows the previews itself: no tab here) or `via` (the
+  // app it comes from: the tab shows the edit from there, without its own chat).
+  "project.open": async (p) => notifyOpened(markVia(await handlers["project.open"]!(p), p), p),
+  "project.create": async (p) => notifyOpened(markVia(await handlers["project.create"]!(p), p), p),
+  "tools.execute": async (p) => {
+    if (typeof p.via === "string" && p.quiet !== true) {
+      const o = target(p);
+      if (o.mcpClient !== p.via) {
+        o.mcpClient = p.via;
+        pushState(o);
+      }
+    }
+    return handlers["tools.execute"]!(p);
+  },
   "project.close": async (p) => {
     const dir = target(p).dir;
     const r = await handlers["project.close"]!(p);
@@ -687,9 +713,17 @@ const remoteHandlers: Record<string, Handler> = {
   },
 };
 const remote = await serveLocal(remoteHandlers, token);
-function notifyOpened<T>(state: T): T {
-  rpc.notify("project.opened", state);
+function notifyOpened<T>(state: T, p: Record<string, unknown> = {}): T {
+  if (p.quiet !== true) rpc.notify("project.opened", state);
   return state;
+}
+/** A project opened for an MCP app that cannot show previews: its tab says so and hides the chat. */
+function markVia<T>(state: T, p: Record<string, unknown>): T {
+  if (typeof p.via !== "string" || p.quiet === true) return state;
+  const o = open.get(keyOf(String((state as { projectDir?: string }).projectDir ?? "")));
+  if (!o) return state;
+  o.mcpClient = p.via;
+  return snapshot(o) as T;
 }
 const infoFile = path.join(store.root, HOST_INFO_FILE);
 await mkdir(store.root, { recursive: true });
@@ -708,6 +742,13 @@ const stop = () =>
     process.exit(0);
   })());
 for (const signal of ["SIGTERM", "SIGHUP", "SIGINT"] as const) process.on(signal, () => void stop());
+
+// How to start the app (it says when it starts the host), so an MCP app that needs the window can open it.
+if (process.env.AVE_APP_EXE) {
+  const file = appLaunchFile();
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify({ command: process.env.AVE_APP_EXE, args: [] }), "utf8").catch(() => undefined);
+}
 
 // The app's settings: the API key, the renderer (by default what the performance test chose), hardware encoding.
 let settings = await loadSettings();

@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import path from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { appDir } from "../tools/appdirs.js";
-import { createMcpServer, type EditorBackend } from "./server.js";
+import { createMcpServer, type McpServerOptions } from "./server.js";
 
 /**
  * The MCP server over Streamable HTTP, for apps that connect to an address (ChatGPT, Claude and
@@ -48,15 +48,15 @@ export interface McpHttpServer {
   close(): Promise<void>;
 }
 
-/** Serve MCP over HTTP: a server and transport per request (stateless), over one shared backend. */
-export async function startMcpHttp(backend: EditorBackend, opts: { token: string; port?: number; host?: string }): Promise<McpHttpServer> {
+/** Serve MCP over HTTP: a server and transport per request (stateless); give it one shared backend. */
+export async function startMcpHttp(mcpOptions: McpServerOptions, opts: { token: string; port?: number; host?: string }): Promise<McpHttpServer> {
   const host = opts.host ?? "127.0.0.1";
   const server: Server = createServer(async (req, res) => {
     if (!authorized(req, opts.token)) {
       res.writeHead(404).end();
       return;
     }
-    const mcp = createMcpServer(backend);
+    const mcp = createMcpServer(mcpOptions);
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     res.on("close", () => {
       void transport.close();

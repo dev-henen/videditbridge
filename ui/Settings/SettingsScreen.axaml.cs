@@ -226,7 +226,7 @@ public partial class SettingsScreen : UserControl
             _views.Clear();
             Pages.Children.Clear();
             BuildModels(NewPage("ai", "Claude is the default. Add an OpenAI or Google key to edit with ChatGPT or Gemini too, and pick the model in the chat."));
-            BuildConnections(NewPage("connections", "Edit from the Claude, ChatGPT and Gemini apps. They use this editor's tools on the project open here, and you watch the edits happen."));
+            BuildConnections(NewPage("connections", "Edit from the Claude, ChatGPT and Gemini apps, with your own account there. Claude and ChatGPT show the previews in their chat; Gemini CLI and Claude Code open the project here to show it."));
             BuildRendering(NewPage("rendering"));
             BuildFolders(NewPage("folders"));
             BuildAbout(NewPage("about"));

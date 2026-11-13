@@ -4,6 +4,15 @@ The editor is also an [MCP](https://modelcontextprotocol.io) server, so you can 
 
 It offers the editor's tools (the [Claude tools reference](../reference/claude-tools.md)) and three tools for choosing the project: `list_projects`, `open_project` and `create_project`. Read-only tools are marked `readOnlyHint`, so apps that ask before a change ask only for edits. Rendered frames and contact sheets come back as pictures, so the model can see its work. The server's instructions are the desktop agent's system prompt.
 
+## Where the preview shows
+
+The preview shows in one place, picked by what the connected app can do:
+
+- **Apps that show MCP Apps views (Claude, ChatGPT).** `render_preview`, `render_frame` and `render_contact_sheet` carry a view (`ui://ai-video-editor/preview.html`, [engine/mcp/view.ts](../../engine/mcp/view.ts)) that the app shows in the chat: the preview plays there, frames and contact sheets show there. The view loads the file with `fetch_media`, a tool only views can call, which reads only renders inside the projects' `.render` folders (40 MB at most). The editor app stays out of sight: when it is running, edits go through it without opening a tab (so one program writes the project), otherwise the server edits the project itself.
+- **Apps that cannot show views (Gemini CLI, Claude Code).** The editor app is the preview window. It opens the project in a tab with a note ("Edited from Gemini CLI") instead of its chat, and the preview takes the chat's room; "Use the chat here" brings the chat back. When the app is not running, the server starts it (the app records how to start it in `app-launch.json` in its data folder, the first time it runs).
+
+The server tells them apart by the client's `io.modelcontextprotocol/ui` capability. Over HTTP every request is a new connection, so the HTTP server treats its clients as apps that show views.
+
 ## From the app: Settings, Connections
 
 The usual way. In the app, open Settings (the menu at the top left), then Connections:

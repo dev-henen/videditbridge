@@ -4322,14 +4322,14 @@ export const TOOLS: ToolDefinition[] = [
       const out = path.join(s.options.outputDir, `preview-${key}.mp4`);
       if (await stat(out).then((f) => f.size > 0, () => false)) {
         s.recordRender({ kind: "preview", path: out });
-        return ok(`Preview is up to date (nothing changed since it was rendered): ${out}`);
+        return ok(`Preview is up to date (nothing changed since it was rendered): ${out}`, { path: out });
       }
       // Written under another name first, so a cancelled render never looks finished.
       const part = await s.outputPath("preview.part.mp4");
       const r = await render(s.project, { output: part, scale: i.scale, range, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], proxies: true, ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
       await rename(part, out);
       s.recordRender({ kind: "preview", path: out });
-      return ok(`Preview rendered (${r.duration}s): ${out}`);
+      return ok(`Preview rendered (${r.duration}s): ${out}`, { path: out });
     },
   }),
   tool({

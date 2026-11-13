@@ -43,7 +43,30 @@ public partial class ProjectView : UserControl
             Screen.Follow();
             await project.AskClaudeAsync(prompt, Strip.Selected, Screen.Spot, attachments: files);
         };
+
+        // Edited from another AI app: no chat here, and the preview takes its room.
+        ShowChat(!project.IsMcpDriven);
+        project.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ProjectViewModel.IsMcpDriven)) ShowChat(!project.IsMcpDriven);
+        };
     }
+
+    private GridLength _chatWidth = new(272);
+
+    private void ShowChat(bool show)
+    {
+        var column = Layout.ColumnDefinitions[4];
+        if (!show && column.Width.Value > 0) _chatWidth = column.Width;
+        column.Width = show ? _chatWidth : new GridLength(0);
+        Layout.ColumnDefinitions[3].Width = new GridLength(show ? 6 : 0);
+        Chat.IsVisible = show;
+        ChatSplitter.IsVisible = show;
+        // New edits come from the other app: follow them.
+        if (!show) Screen.Follow();
+    }
+
+    private async void OnUseChatHere(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Project.UseChatHereAsync();
 
     /// <summary>Show each new render as it comes (a command is about to render something).</summary>
     public void Follow() => Screen.Follow();

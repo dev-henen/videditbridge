@@ -23,6 +23,13 @@
     <SolidColorBrush x:Key="AccentSoft" Color="#263B82F6"/>
     <SolidColorBrush x:Key="OnAccent" Color="#FFFFFF"/>
     <Color x:Key="SystemAccentColor">#3B82F6</Color>
+    <!-- The theme's lighter and darker accent shades (switch hover and press) stay blue too -->
+    <Color x:Key="SystemAccentColorLight1">#5B9BFF</Color>
+    <Color x:Key="SystemAccentColorLight2">#7FB0FF</Color>
+    <Color x:Key="SystemAccentColorLight3">#A3C6FF</Color>
+    <Color x:Key="SystemAccentColorDark1">#2F6FD8</Color>
+    <Color x:Key="SystemAccentColorDark2">#255DBA</Color>
+    <Color x:Key="SystemAccentColorDark3">#1C4B9C</Color>
     <!-- Bundled icon font (Fluent UI System Icons, MIT), so icons look the same on every system -->
     <FontFamily x:Key="Icons">avares://VideoEditor/Assets/Fonts#FluentSystemIcons-Regular</FontFamily>
 
