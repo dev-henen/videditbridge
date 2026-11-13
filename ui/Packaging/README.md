@@ -8,7 +8,7 @@ Per-system files for the desktop app. Building installers (MSIX or MSI, a signed
 | macOS | `macOS/Info.plist`; `AppIcon.icns` made from `icons/` with `iconutil` |
 | Linux | `linux/videditbridge.desktop`; icons from `icons/` installed as `hicolor/<size>x<size>/apps/videditbridge.png` |
 
-`AppIcon.svg` is the source of every icon. After changing it, re-render `icons/AppIcon-<size>.png` (16 to 1024), `../Assets/AppIcon.png` (256) and `../Assets/AppIcon.ico` (16, 32, 48, 256).
+`logo.jpg` is the source of every icon (the VideditBridge logo). After changing it, run `npx tsx scripts/make-icons.ts`: it cuts the light background away (keeping the white inside the logo), crops it square and writes `AppIcon.png` (1024, the master), `icons/AppIcon-<size>.png` (16 to 1024), `../Assets/AppIcon.png` (256, the window icon) and `../Assets/AppIcon.ico` (16 to 256).
 
 ## Where things go in an installed app
 
