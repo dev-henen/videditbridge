@@ -107,11 +107,7 @@ registerTool({
 
 The tool then appears in `toAnthropicTools()`, runs through `executeTool`, and shows up in the generated docs.
 
-## Toward an MCP connector
+## MCP server
 
-An MCP server needs to:
-
-1. keep one `EditorSession` per connection or project,
-2. list `TOOLS` (names, descriptions, `z.toJSONSchema(tool.input)`), and
-3. route each call to `executeTool`, returning text and image content.
+The same tools are served over MCP for other AI apps (the Claude, ChatGPT and Gemini apps, Gemini CLI, Claude Code), driving the open desktop app or a session of their own. `createMcpServer(backend)` in [engine/mcp/server.ts](../../engine/mcp/server.ts) lists `TOOLS` with their JSON schemas and routes each call to `executeTool`, returning text and image content. Setup for each app is in the [MCP guide](mcp.md).
 

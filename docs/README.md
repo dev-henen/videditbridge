@@ -6,7 +6,8 @@
 |---|---|
 | [Getting started](guides/getting-started.md) | Install, render your first video, build from a template |
 | [The project document](guides/project-format.md) | The JSON edit format: assets, clips, layers, audio, captions, timing rules |
-| [Claude integration](guides/claude-integration.md) | Sessions, tool execution, the agent loop, letting Claude see its work, the future MCP connector |
+| [Claude integration](guides/claude-integration.md) | Sessions, tool execution, the agent loop with Claude (default), ChatGPT or Gemini, letting the model see its work |
+| [Using it from other AI apps (MCP)](guides/mcp.md) | The editor as an MCP server for the Claude, ChatGPT and Gemini apps, Gemini CLI and Claude Code, with or without the desktop app |
 | [Transcripts & captions](guides/transcripts-and-captions.md) | Importing and producing transcripts, correcting names, speech search, filler/pause removal, caption styling and export |
 | [Design: cinematic grading & CGI](design/cinematic-grade-and-vfx.md) | Movie-level grading and VFX: checklist of what is built and what is left, quality bar, architecture |
 | [Design: cross-platform fixes](design/cross-platform.md) | Everything that must change for Windows, macOS and Linux, with locations and fixes |

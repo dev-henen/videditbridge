@@ -32,6 +32,7 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 - Several projects are open at once, one per tab, each with its own session, conversations and renders; nothing in a tab's page is shared with another tab. Host notifications carry `project`, and the app routes them to that tab.
 - Projects live in `projects/<slug>/` (gitignored app storage), and the host autosaves them, with `cover.png` (a frame of the edit, for the projects page; the app draws a default cover until there is one) and `.conversations/` (chats with Claude, continued when the project opens).
 - The agent edits with Claude by default, or with ChatGPT (OpenAI) or Gemini (Google): models and providers in `engine/host/models.ts`, one adapter each in `engine/host/providers.ts`. History stays in the Messages format for all of them (provider-only data rides on assistant turns as `native`), and each provider's key has its own keychain entry. Keep Claude first in `AGENT_MODELS`.
+- Other AI apps (the Claude, ChatGPT and Gemini apps, Gemini CLI) edit through the MCP server in `engine/mcp/` (`ave-mcp`, stdio or `--http`), which drives the running app over the remote control socket, or its own session with `--standalone`. See `docs/guides/mcp.md`.
 - The app is AI-first: people edit by asking Claude. It is not a manual editor (not competing with CapCut or Premiere), so direct interaction serves the conversation (pointing Claude at a clip, reviewing what it offers, undo) rather than drag-to-trim editing.
 - UI rules from the user:
   - compact default window (960x460)

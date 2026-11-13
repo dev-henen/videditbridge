@@ -171,6 +171,30 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     expect(cleared.aiAvailable).toBe(false);
   });
 
+  it("lets other AI apps edit the open project over MCP, through the app", async () => {
+    const { AppBackend, createMcpServer } = await import("../../engine/mcp/server.js");
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+    const backend = new AppBackend(dir);
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test", version: "1" });
+    await Promise.all([createMcpServer(backend).connect(a), client.connect(b)]);
+    try {
+      const created = (await client.callTool({ name: "create_project", arguments: { name: "Via MCP" } })) as { content: { text: string }[] };
+      const project = created.content[0]!.text.match(/^Opened "Via MCP" \((.+)\)\. /)?.[1];
+      expect(project, created.content[0]!.text).toBeTruthy();
+      // The app is told to show it, and the edit lands in its session.
+      expect(host.notifications.some((n) => n.method === "project.opened")).toBe(true);
+      const added = await client.callTool({ name: "add_text", arguments: { text: "Typed elsewhere", start: 0, duration: 1 } });
+      expect(added.isError, JSON.stringify(added)).toBeFalsy();
+      const state = await host.call<{ layers: { label: string }[] }>("state.get", { project });
+      expect(state.layers.some((l) => l.label === "Typed elsewhere")).toBe(true);
+    } finally {
+      await client.close();
+      await backend.close();
+    }
+  });
+
   it("renders the viewer's matte and the Review tab's scopes", async () => {
     const created = await host.call<{ projectDir: string }>("project.create", { name: "Mattes" });
     const project = created.projectDir;

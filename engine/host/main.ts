@@ -604,7 +604,7 @@ async function play(o: OpenProject, time: number): Promise<{ live: boolean; audi
   return { live: true, audio, time };
 }
 
-// Remote control: other local processes (scripts, Claude Code, a future MCP connector) can drive
+// Remote control: other local processes (scripts, Claude Code, the MCP server in engine/mcp) can drive
 // the open projects through a token-protected socket advertised in <projectsDir>/.host.json.
 const token = randomBytes(24).toString("hex");
 const remote = await serveLocal(

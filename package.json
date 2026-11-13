@@ -30,7 +30,8 @@
   },
   "bin": {
     "ave": "./dist/cli.js",
-    "ave-host": "./dist/host/main.js"
+    "ave-host": "./dist/host/main.js",
+    "ave-mcp": "./dist/mcp/main.js"
   },
   "files": [
     "dist",
@@ -46,6 +47,7 @@
     "docs": "tsx scripts/gen-docs.ts",
     "docs:check": "tsx scripts/gen-docs.ts --check",
     "host": "tsx engine/host/main.ts",
+    "mcp": "tsx engine/mcp/main.ts",
     "native": "tsx scripts/build-native.ts"
   },
   "engines": {
@@ -55,6 +57,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
     "@google/genai": "^3.3.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@napi-rs/keyring": "^2.1.2",
     "openai": "^7.56.0",
     "zod": "^4.6.7"

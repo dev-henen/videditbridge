@@ -70,7 +70,7 @@ export class StdioRpc {
 const tokensMatch = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
 /**
- * Serve the same handlers on 127.0.0.1 for remote control (scripts, Claude Code, a future MCP connector),
+ * Serve the same handlers on 127.0.0.1 for remote control (scripts, Claude Code, the MCP server in engine/mcp),
  * so they drive the exact session the app is showing. Each connection must first call
  * `auth` with the token; anything else before that is rejected.
  */
