@@ -5,8 +5,13 @@
         x:Class="VideoEditor.Shell.MainWindow"
         Title="{Binding Title}" Width="960" Height="460" MinWidth="760" MinHeight="400"
         Background="{StaticResource Bg}" WindowStartupLocation="CenterScreen"
+        TransparencyLevelHint="Mica, AcrylicBlur, None"
         Icon="/Assets/AppIcon.png"
         ExtendClientAreaToDecorationsHint="True" ExtendClientAreaChromeHints="PreferSystemChrome" ExtendClientAreaTitleBarHeightHint="38">
+  <Window.Resources>
+    <!-- The title bar: solid, or see-through to the system material (Mica, acrylic) where there is one (MainWindow.UseMaterial) -->
+    <SolidColorBrush x:Key="TitleBarBg" Color="#0A0A0A"/>
+  </Window.Resources>
   <Window.Styles>
     <!-- A row of the side panel: flat, full width, lit on hover; the current tab in the accent color -->
     <Style Selector="Button.side">
@@ -24,15 +29,32 @@
        Each tab's page holds everything of its project; nothing is shared between tabs. -->
   <Grid RowDefinitions="38,*">
     <!-- The title bar's color; it lets clicks through, so its empty parts move the window -->
-    <Border Grid.Row="0" Background="{StaticResource TabBar}" IsHitTestVisible="False"/>
+    <Border Grid.Row="0" Background="{DynamicResource TitleBarBg}" IsHitTestVisible="False"/>
     <tabs:TabStrip x:Name="Tabs" Grid.Row="0"/>
-    <Panel Grid.Row="1" x:Name="Pages"/>
+    <!-- The pages blur behind the side panel while it is open -->
+    <Panel Grid.Row="1" x:Name="Pages" Background="{StaticResource Bg}">
+      <Panel.Transitions>
+        <Transitions><EffectTransition Property="Effect" Duration="0:0:0.2"/></Transitions>
+      </Panel.Transitions>
+    </Panel>
 
     <!-- The side panel (the menu button in the title bar): open tabs, recently closed projects, new tab and settings.
          It lies over the page; a click beside it or Escape closes it. -->
     <Panel Grid.Row="1" x:Name="SidePanel" IsVisible="False">
-      <Border Background="#66000000" PointerPressed="OnSideBackdrop"/>
-      <Border Width="270" HorizontalAlignment="Left" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}" BorderThickness="0,0,1,0">
+      <Border x:Name="SideBackdrop" Background="#59000000" PointerPressed="OnSideBackdrop" Opacity="0">
+        <Border.Transitions>
+          <Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.2"/></Transitions>
+        </Border.Transitions>
+      </Border>
+      <!-- Slides in from the left, frosted over the blurred page -->
+      <Border x:Name="SideSheet" Width="270" HorizontalAlignment="Left" Background="#E6181818" BorderBrush="#26FFFFFF" BorderThickness="0,0,1,0"
+              BoxShadow="8 0 32 0 #66000000" Opacity="0" RenderTransform="translateX(-18px)">
+        <Border.Transitions>
+          <Transitions>
+            <DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+            <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22" Easing="CubicEaseOut"/>
+          </Transitions>
+        </Border.Transitions>
         <DockPanel Margin="8,10,8,10">
           <StackPanel DockPanel.Dock="Bottom" Spacing="2" Margin="0,8,0,0">
             <Rectangle Height="1" Fill="{StaticResource Line}" Margin="0,0,0,6"/>

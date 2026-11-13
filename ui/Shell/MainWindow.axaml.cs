@@ -3,7 +3,11 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.Animation;
+using Avalonia.Animation.Easings;
 using Avalonia.Media;
+using Avalonia.Media.Transformation;
+using Avalonia.Threading;
 using VideoEditor.Engine;
 using VideoEditor.Projects;
 using VideoEditor.Settings;
@@ -33,7 +37,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = _vm;
         Tabs.Attach(_vm);
-        Tabs.MenuRequested += () => ShowSidePanel(!SidePanel.IsVisible);
+        Tabs.MenuRequested += () => ShowSidePanel(!_sideOpen);
         SideTabs.ItemsSource = _vm.Tabs;
         SideClosed.ItemsSource = _vm.RecentlyClosed;
         _vm.RecentlyClosed.CollectionChanged += (_, _) => SideNoneClosed.IsVisible = _vm.RecentlyClosed.Count == 0;
@@ -47,6 +51,7 @@ public partial class MainWindow : Window
         Opened += async (_, _) =>
         {
             PlaceTabs();
+            UseMaterial();
             await _vm.StartAsync(_args.Length > 0 && Directory.Exists(_args[0]) ? _args[0] : null, _engine);
         };
         PropertyChanged += (_, e) =>
@@ -58,6 +63,18 @@ public partial class MainWindow : Window
             foreach (var page in _pages.Values) (page as ProjectView)?.Dispose();
             _vm.Dispose();
         };
+    }
+
+    /// <summary>
+    /// Where the system gives the window a material (Mica on Windows 11, the blur on macOS), the title
+    /// bar lets it through, tinted dark; the pages stay solid. Elsewhere the bar stays solid too.
+    /// </summary>
+    private void UseMaterial()
+    {
+        var level = ActualTransparencyLevel;
+        if (level == WindowTransparencyLevel.None || level == WindowTransparencyLevel.Transparent) return;
+        Background = Brushes.Transparent;
+        Resources["TitleBarBg"] = new SolidColorBrush(Color.Parse(level == WindowTransparencyLevel.Mica ? "#990A0A0A" : "#C00A0A0A"));
     }
 
     /// <summary>
@@ -101,7 +118,7 @@ public partial class MainWindow : Window
         (page as ProjectView)?.Dispose();
     }
 
-    /// <summary>Show the selected tab's page; the others stay alive behind it.</summary>
+    /// <summary>Show the selected tab's page, easing it in; the others stay alive behind it.</summary>
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(AppViewModel.SelectedTab)) return;
@@ -109,16 +126,68 @@ public partial class MainWindow : Window
         {
             var shown = tab == _vm.SelectedTab;
             if (page.IsVisible && !shown) (page as ProjectView)?.Deactivate();
+            if (shown && !page.IsVisible) EaseIn(page);
             page.IsVisible = shown;
         }
     }
 
+    private static readonly TransformOperations Rest = TransformOperations.Parse("translateY(0px)");
+    private static readonly TransformOperations Below = TransformOperations.Parse("translateY(6px)");
+
+    /// <summary>A page coming forward: a short fade while it rises 6 px into place.</summary>
+    private static void EaseIn(Control page)
+    {
+        page.Transitions ??=
+        [
+            new DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(160) },
+            new TransformOperationsTransition { Property = RenderTransformProperty, Duration = TimeSpan.FromMilliseconds(200), Easing = new CubicEaseOut() },
+        ];
+        page.Opacity = 0;
+        page.RenderTransform = Below;
+        Dispatcher.UIThread.Post(() =>
+        {
+            page.Opacity = 1;
+            page.RenderTransform = Rest;
+        }, DispatcherPriority.Render);
+    }
+
     // ------------------------------------------------------------- side panel
 
-    private void ShowSidePanel(bool show)
+    private int _sideRun;
+    /// <summary>Open, or opening (the panel stays visible while it slides away).</summary>
+    private bool _sideOpen;
+    private static readonly TransformOperations SideIn = TransformOperations.Parse("translateX(0px)");
+    private static readonly TransformOperations SideOut = TransformOperations.Parse("translateX(-18px)");
+
+    /// <summary>The side panel slides in over the page, which blurs and dims behind it; closing runs it backwards.</summary>
+    private async void ShowSidePanel(bool show)
     {
         SideNoneClosed.IsVisible = _vm.RecentlyClosed.Count == 0;
-        SidePanel.IsVisible = show;
+        var run = ++_sideRun;
+        _sideOpen = show;
+        if (show)
+        {
+            SidePanel.IsVisible = true;
+            Pages.Effect ??= new BlurEffect { Radius = 0 };
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (run != _sideRun) return;
+                SideBackdrop.Opacity = 1;
+                SideSheet.Opacity = 1;
+                SideSheet.RenderTransform = SideIn;
+                Pages.Effect = new BlurEffect { Radius = 8 };
+            }, DispatcherPriority.Render);
+            return;
+        }
+        SideBackdrop.Opacity = 0;
+        SideSheet.Opacity = 0;
+        SideSheet.RenderTransform = SideOut;
+        if (Pages.Effect is not null) Pages.Effect = new BlurEffect { Radius = 0 };
+        await Task.Delay(220);
+        if (run != _sideRun) return;
+        SidePanel.IsVisible = false;
+        // No effect at rest: the page draws as it is (a blur of 0 still costs a pass).
+        Pages.Effect = null;
     }
 
     private void OnSideBackdrop(object? sender, PointerPressedEventArgs e) => ShowSidePanel(false);
@@ -150,7 +219,7 @@ public partial class MainWindow : Window
     // Ctrl+T new tab, Ctrl+W close it, Ctrl+Tab and Ctrl+Shift+Tab move between tabs, Ctrl+, settings; Escape closes the side panel.
     private async void OnKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Escape && SidePanel.IsVisible)
+        if (e.Key == Key.Escape && _sideOpen)
         {
             ShowSidePanel(false);
             e.Handled = true;

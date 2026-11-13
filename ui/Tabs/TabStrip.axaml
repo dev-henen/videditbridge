@@ -37,7 +37,10 @@
   </UserControl.Styles>
 
   <!-- Empty space lets clicks through to the title bar, so it still moves the window -->
-  <DockPanel Margin="6,0,0,0">
+  <DockPanel Margin="10,0,0,0">
+    <!-- The app's logo, as in any desktop app's corner -->
+    <Image DockPanel.Dock="Left" Source="/Assets/AppIcon.png" Width="20" Height="20" Margin="0,2,8,0" VerticalAlignment="Center"
+           RenderOptions.BitmapInterpolationMode="HighQuality" IsHitTestVisible="False" AutomationProperties.Name="VideditBridge"/>
     <!-- The side panel: open tabs, recently closed projects, settings -->
     <Button x:Name="MenuButton" DockPanel.Dock="Left" Classes="chrome" Click="OnMenu" ToolTip.Tip="Menu: tabs, recently closed, settings" AutomationProperties.Name="Menu" Margin="0,2,6,0">
       <TextBlock Classes="icon" Text="{x:Static shared:Icons.PanelLeft}" FontSize="14"/>

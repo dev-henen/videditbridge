@@ -55,6 +55,8 @@ public partial class ChatPanel : UserControl
         NoConversations.IsVisible = _vm.Conversations.Count == 0;
     }
 
+    private void OnOpenSettings(object? sender, RoutedEventArgs e) => _vm.OpenSettings();
+
     private async void OnNewConversation(object? sender, RoutedEventArgs e)
     {
         await _vm.NewConversationAsync();

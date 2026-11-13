@@ -272,10 +272,13 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     await host.call("chat.rename", { project: b.projectDir, id: listed.current, title: "First cut" });
     const fresh = await host.call<{ id: string; transcript: unknown[] }>("chat.new", { project: b.projectDir });
     expect(fresh.transcript).toHaveLength(0);
-    const reopened = await host.call<{ title: string; transcript: { role: string; text: string }[] }>("chat.open", { project: b.projectDir, id: listed.current });
+    const reopened = await host.call<{ title: string; transcript: { role: string; text: string; error?: string }[] }>("chat.open", { project: b.projectDir, id: listed.current });
     expect(reopened.title).toBe("First cut");
     expect(reopened.transcript.map((l) => l.role)).toEqual(["user", "assistant"]);
-    expect(reopened.transcript[1]!.text).toMatch(/^Error:/);
+    // The failure is kept apart from the reply, as one plain sentence (no provider JSON).
+    expect(reopened.transcript[1]!.text).toBe("");
+    expect(reopened.transcript[1]!.error).toBeTruthy();
+    expect(reopened.transcript[1]!.error).not.toMatch(/[{}]/);
     await host.call("chat.delete", { project: b.projectDir, id: listed.current });
     expect((await host.call<{ conversations: unknown[] }>("chat.list", { project: b.projectDir })).conversations).toHaveLength(0);
 

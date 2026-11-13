@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { withoutImages, type AgentMessage } from "./agent.js";
+import { describeAgentError } from "./errors.js";
 
 /**
  * Conversations with Claude, kept per project in <project>/.conversations/<id>.json: what the chat
@@ -14,6 +15,8 @@ export interface ChatLine {
   text: string;
   /** Files sent with a request, as paths inside the project (media/...). */
   attachments?: string[];
+  /** The request failed: what went wrong, in a sentence (the chat shows it apart from the reply). */
+  error?: string;
   at: string;
 }
 
@@ -72,7 +75,15 @@ export async function listConversations(projectDir: string): Promise<Conversatio
 }
 
 export async function loadConversation(projectDir: string, id: string): Promise<Conversation> {
-  return JSON.parse(await readFile(fileOf(projectDir, id), "utf8")) as Conversation;
+  const c = JSON.parse(await readFile(fileOf(projectDir, id), "utf8")) as Conversation;
+  // Saved before errors had their own field: the provider's raw report at the end of a reply.
+  for (const line of c.transcript) {
+    const raw = line.role === "assistant" && !line.error ? line.text.match(/(?:^|\n\n)Error: ([\s\S]*)$/) : null;
+    if (!raw) continue;
+    line.error = describeAgentError(new Error(raw[1]), c.model);
+    line.text = line.text.slice(0, raw.index).trim();
+  }
+  return c;
 }
 
 /** Write it (through a temporary file, so a crash never leaves half a conversation). */

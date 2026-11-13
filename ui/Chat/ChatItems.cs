@@ -25,6 +25,11 @@ public sealed class ChatMessage(bool isUser, string text, IReadOnlyList<string>?
     public bool IsThinking => IsStreaming && !HasText;
 
     public void Append(string delta) => Text += delta;
+
+    private string? _error;
+    /// <summary>The request failed: what went wrong, in a sentence; the chat shows it in an error box under the reply.</summary>
+    public string? Error { get => _error; set => Set(ref _error, value, nameof(Error), nameof(HasError)); }
+    public bool HasError => !string.IsNullOrEmpty(Error);
 }
 
 /// <summary>A saved conversation in the history list.</summary>

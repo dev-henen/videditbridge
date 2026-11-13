@@ -88,7 +88,7 @@
                   AutomationProperties.Name="Add files" MinHeight="24" MinWidth="24" Padding="3">
             <TextBlock Classes="icon" Text="{x:Static shared:Icons.Add}" FontSize="15"/>
           </Button>
-          <ComboBox DockPanel.Dock="Left" Classes="model" ItemsSource="{Binding Models}" SelectedItem="{Binding Model}" Margin="2,0,0,0"
+          <ComboBox DockPanel.Dock="Left" Classes="model" ItemsSource="{Binding AvailableModels}" SelectedItem="{Binding Model}" IsEnabled="{Binding HasAnyKey}" Margin="2,0,0,0"
                     ToolTip.Tip="Model for the next request" AutomationProperties.Name="Model">
             <ComboBox.ItemTemplate>
               <DataTemplate>

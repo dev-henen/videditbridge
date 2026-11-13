@@ -35,6 +35,7 @@ import { LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.j
 import type { Project } from "../core/schema.js";
 import type { AspectRatio } from "../core/util.js";
 import { EditorAgent } from "./agent.js";
+import { describeAgentError } from "./errors.js";
 import { AGENT_MODELS, DEFAULT_MODEL, PROVIDERS, assistantOf, isProviderId } from "./models.js";
 import { deleteConversation, listConversations, loadConversation, newConversation, saveConversation, titleFrom, type Conversation } from "./conversations.js";
 import { COVER_FILE, ProjectStore } from "./projects.js";
@@ -253,6 +254,7 @@ const handlers: Record<string, Handler> = {
     pushState(o);
     let reply = "";
     let result: { stopReason: string } = { stopReason: "error" };
+    let failure: string | undefined;
     let agent: EditorAgent | undefined;
     try {
       agent = o.agent ??= new EditorAgent(s, { model: c.model, messages: c.messages });
@@ -268,11 +270,13 @@ const handlers: Record<string, Handler> = {
       );
       return result;
     } catch (e) {
-      reply += `${reply ? "\n\n" : ""}Error: ${(e as Error).message}`;
-      throw e;
+      // One plain sentence for the chat; the provider's own report stays in the host log.
+      console.error(`Request to ${c.model} failed: ${(e as Error).message}`);
+      failure = describeAgentError(e, c.model);
+      throw new RpcError(1, failure);
     } finally {
       const end = result.stopReason === "cancelled" ? "(stopped)" : result.stopReason === "refusal" ? `(${assistantOf(c.model)} declined this request)` : "";
-      c.transcript.push({ role: "assistant", text: [reply.trim(), end].filter(Boolean).join("\n"), at: new Date().toISOString() });
+      c.transcript.push({ role: "assistant", text: [reply.trim(), end].filter(Boolean).join("\n"), ...(failure ? { error: failure } : {}), at: new Date().toISOString() });
       if (agent) c.messages = [...agent.history];
       c.updatedAt = new Date().toISOString();
       await saveConversation(o.dir, c).catch((e) => rpc.notify("log", { project: o.dir, level: "error", message: `Could not save the conversation: ${(e as Error).message}` }));

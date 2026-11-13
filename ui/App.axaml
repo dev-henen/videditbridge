@@ -74,7 +74,16 @@
       <Setter Property="VerticalContentAlignment" Value="Center"/>
       <Setter Property="Template">
         <ControlTemplate>
-          <Border Name="b" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+          <!-- Hover colors fade in, and a press sinks the button a little -->
+          <Border Name="b" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}" RenderTransformOrigin="50%,50%">
+            <Border.Transitions>
+              <Transitions>
+                <BrushTransition Property="Background" Duration="0:0:0.14"/>
+                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.09" Easing="CubicEaseOut"/>
+                <DoubleTransition Property="Opacity" Duration="0:0:0.12"/>
+                <BoxShadowsTransition Property="BoxShadow" Duration="0:0:0.18"/>
+              </Transitions>
+            </Border.Transitions>
             <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
                               HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                               VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
@@ -85,7 +94,7 @@
         <Setter Property="Background" Value="{StaticResource Hover}"/>
       </Style>
       <Style Selector="^:pressed /template/ Border#b">
-        <Setter Property="Opacity" Value="0.8"/>
+        <Setter Property="RenderTransform" Value="scale(0.96)"/>
       </Style>
       <Style Selector="^:disabled /template/ Border#b">
         <Setter Property="Opacity" Value="0.35"/>
@@ -111,6 +120,9 @@
       <Setter Property="Template">
         <ControlTemplate>
           <Border Name="b" Padding="{TemplateBinding Padding}" Margin="0,0,2,0" CornerRadius="5" Background="Transparent">
+            <Border.Transitions>
+              <Transitions><BrushTransition Property="Background" Duration="0:0:0.14"/></Transitions>
+            </Border.Transitions>
             <ContentPresenter Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
                               HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
           </Border>
@@ -134,6 +146,9 @@
       <Setter Property="Template">
         <ControlTemplate>
           <Border Name="b" Background="Transparent" CornerRadius="5" Padding="{TemplateBinding Padding}">
+            <Border.Transitions>
+              <Transitions><BrushTransition Property="Background" Duration="0:0:0.14"/></Transitions>
+            </Border.Transitions>
             <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
                               HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"/>
           </Border>
@@ -204,6 +219,8 @@
     </Style>
 
     <Style Selector="ToolTip">
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Padding" Value="8,5"/>
       <Setter Property="Background" Value="{StaticResource Panel2}"/>
       <Setter Property="Foreground" Value="{StaticResource Text}"/>
       <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
@@ -223,6 +240,16 @@
       <Setter Property="FontSize" Value="12"/>
       <Setter Property="Padding" Value="8,4"/>
       <Setter Property="MinHeight" Value="28"/>
+    </Style>
+    <!-- Drop-down lists float: rounded corners, a hairline edge -->
+    <Style Selector="ComboBox /template/ Border#PopupBorder">
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="BorderBrush" Value="#33FFFFFF"/>
+      <Setter Property="Padding" Value="4"/>
+    </Style>
+    <Style Selector="ComboBoxItem">
+      <Setter Property="CornerRadius" Value="5"/>
+      <Setter Property="Margin" Value="0,1"/>
     </Style>
   </Application.Styles>
 </Application>

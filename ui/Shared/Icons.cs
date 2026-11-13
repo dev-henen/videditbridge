@@ -30,7 +30,7 @@ public static class Icons
     public static readonly string Send = G(61851);
     public static readonly string ChevronUp = G(62134);
     public static readonly string ChevronDown = G(62115);
-    public static readonly string Export = G(57543);
+    public static readonly string Export = G(63157); // share_ios: a box with an arrow going up out of it
     public static readonly string Review = G(60562);
     public static readonly string History = G(62590);
     public static readonly string Compose = G(62228);

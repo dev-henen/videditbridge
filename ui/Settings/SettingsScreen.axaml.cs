@@ -101,6 +101,10 @@ public partial class SettingsScreen : UserControl
                 SearchBox.Text = "";
                 ApplySearch();
                 Scroll.Offset = default;
+                // The new section fades in.
+                Pages.Transitions ??= [new Avalonia.Animation.DoubleTransition { Property = OpacityProperty, Duration = TimeSpan.FromMilliseconds(160) }];
+                Pages.Opacity = 0;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => Pages.Opacity = 1, Avalonia.Threading.DispatcherPriority.Render);
             };
             _nav[s.Id] = button;
             Nav.Children.Add(button);

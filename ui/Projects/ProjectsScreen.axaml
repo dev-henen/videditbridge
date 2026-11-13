@@ -14,9 +14,24 @@
     </Style>
     <Style Selector="Button.card projects|ProjectCover">
       <Setter Property="Opacity" Value="0.9"/>
+      <Setter Property="Transitions">
+        <Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.16"/></Transitions>
+      </Setter>
     </Style>
     <Style Selector="Button.card:pointerover projects|ProjectCover">
       <Setter Property="Opacity" Value="1"/>
+    </Style>
+    <!-- On hover the card lifts a little, with a soft shadow under it -->
+    <Style Selector="Button.card /template/ Border#b">
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="BoxShadow" Value="0 0 0 0 #00000000"/>
+    </Style>
+    <Style Selector="Button.card:pointerover /template/ Border#b">
+      <Setter Property="RenderTransform" Value="translateY(-3px)"/>
+      <Setter Property="BoxShadow" Value="0 8 22 0 #73000000"/>
+    </Style>
+    <Style Selector="Button.card:pressed /template/ Border#b">
+      <Setter Property="RenderTransform" Value="translateY(-1px) scale(0.98)"/>
     </Style>
   </UserControl.Styles>
 

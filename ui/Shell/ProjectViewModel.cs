@@ -69,6 +69,7 @@ public sealed class ProjectViewModel : Observable
         _engine = engine;
         Dir = state["projectDir"]!.GetValue<string>();
         _model = app.DefaultModel;
+        UseAvailableModel();
         ApplyState(state);
         ProjectChanged?.Invoke();
     }
@@ -131,7 +132,23 @@ public sealed class ProjectViewModel : Observable
     public string EmptyTitle => $"Edit by asking {Assistant}";
     public string AskHint => ModelAvailable
         ? $"Ask {Assistant} to edit, for example “cut this into a 30 second trailer”"
-        : $"Add {(_app.Providers.FirstOrDefault(p => p.Id == Model.Provider)?.Label ?? "the provider")}'s API key in Settings (the menu at the top left) to let {Assistant} edit, or pick another model";
+        : HasAnyKey ? "Pick a model to edit with" : "Add an API key in Settings to start editing";
+
+    /// <summary>The models whose provider has a key: the only ones the chat offers.</summary>
+    public IReadOnlyList<ModelOption> AvailableModels => Models.Where(m => _app.IsAvailable(m.Provider)).ToList();
+    /// <summary>Whether any provider has a key; without one the chat is off and says where to add one.</summary>
+    public bool HasAnyKey => Models.Any(m => _app.IsAvailable(m.Provider));
+    public bool NoKey => !HasAnyKey;
+
+    /// <summary>Go to Settings (to add an API key).</summary>
+    public void OpenSettings() => _app.OpenSettings();
+
+    /// <summary>A model without a key gives way to one with: the default model if it has one, else the first that does.</summary>
+    private void UseAvailableModel()
+    {
+        if (ModelAvailable || !HasAnyKey) return;
+        Model = _app.IsAvailable(_app.DefaultModel.Provider) ? _app.DefaultModel : AvailableModels[0];
+    }
 
     // ---------------------------------------------------------------- conversations
 
@@ -146,8 +163,17 @@ public sealed class ProjectViewModel : Observable
     public ModelOption Model
     {
         get => _model;
-        set => Set(ref _model, value, nameof(Model), nameof(ModelAvailable), nameof(CanAsk), nameof(AskHint), nameof(Assistant), nameof(EmptyTitle));
+        set
+        {
+            // The picker lists only models with a key and sends null for one it does not list: keep the model.
+            if (value is null) return;
+            Set(ref _model, value, nameof(Model), nameof(ModelAvailable), nameof(CanAsk), nameof(AskHint), nameof(Assistant), nameof(EmptyTitle));
+        }
     }
+
+    /// <summary>A model to use: this one if its provider has a key, else the default or the first that has one.</summary>
+    private ModelOption Usable(ModelOption m) =>
+        _app.IsAvailable(m.Provider) || !HasAnyKey ? m : _app.IsAvailable(_app.DefaultModel.Provider) ? _app.DefaultModel : AvailableModels[0];
 
     /// <summary>Refresh the list of this project's conversations (newest first).</summary>
     public Task RefreshConversationsAsync() => Guard(async () =>
@@ -184,12 +210,15 @@ public sealed class ProjectViewModel : Observable
         if (c is null) return;
         _conversationId = c["id"]!.GetValue<string>();
         ConversationTitle = c["title"]!.GetValue<string>();
-        if (Models.FirstOrDefault(m => m.Id == c["model"]?.GetValue<string>()) is { } model) Model = model;
+        // A conversation kept with a model whose key is gone carries on with one that has a key (set once,
+        // so the picker never gets a model it does not list).
+        if (Models.FirstOrDefault(m => m.Id == c["model"]?.GetValue<string>()) is { } model) Model = Usable(model);
+        else UseAvailableModel();
         Messages.Clear();
         foreach (var line in c["transcript"]?.AsArray() ?? [])
             if (line is not null)
                 Messages.Add(new ChatMessage(line["role"]!.GetValue<string>() == "user", line["text"]?.GetValue<string>() ?? "",
-                    line["attachments"]?.AsArray().Select(a => Path.GetFileName(a!.GetValue<string>())).ToList() ?? []));
+                    line["attachments"]?.AsArray().Select(a => Path.GetFileName(a!.GetValue<string>())).ToList() ?? []) { Error = line["error"]?.GetValue<string>() });
         Raise(nameof(HasMessages));
         ChatChanged?.Invoke();
     }
@@ -354,7 +383,8 @@ public sealed class ProjectViewModel : Observable
         }
         catch (Exception e)
         {
-            reply.Append($"{(reply.Text.Length > 0 ? "\n\n" : "")}Error: {e.Message}");
+            // The host words it already (engine/host/errors.ts): one sentence, shown in its own box.
+            reply.Error = e.Message;
         }
         finally
         {
@@ -417,6 +447,10 @@ public sealed class ProjectViewModel : Observable
     /// <summary>Which providers have a key changed (a key was saved or removed in Settings).</summary>
     public void RefreshAvailability()
     {
+        Raise(nameof(AvailableModels));
+        Raise(nameof(HasAnyKey));
+        Raise(nameof(NoKey));
+        UseAvailableModel();
         Raise(nameof(ModelAvailable));
         Raise(nameof(CanAsk));
         Raise(nameof(AskHint));
