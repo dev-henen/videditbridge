@@ -8,18 +8,21 @@ Tools marked **edits** change the project, record an undo step and notify the li
 
 ## Contents
 
-- **Inspect & project**: [get_project](#get_project), [new_project](#new_project), [set_project_settings](#set_project_settings), [undo](#undo), [redo](#redo)
+- **Inspect & project**: [get_project](#get_project), [new_project](#new_project), [set_project_settings](#set_project_settings), [undo](#undo), [redo](#redo), [clean_up_media](#clean_up_media), [review_edit](#review_edit), [offer_choices](#offer_choices)
 - **Library**: [list_templates](#list_templates), [get_template](#get_template), [apply_template](#apply_template), [list_effects](#list_effects), [list_audio_effects](#list_audio_effects), [list_transitions](#list_transitions), [list_animations](#list_animations), [list_caption_styles](#list_caption_styles), [list_components](#list_components)
-- **Media & primary track**: [import_media](#import_media), [add_clip](#add_clip), [update_clip](#update_clip), [remove_clip](#remove_clip), [move_clip](#move_clip), [split_clip](#split_clip), [trim_clip](#trim_clip), [set_speed](#set_speed), [set_transition](#set_transition), [add_effect](#add_effect), [remove_effect](#remove_effect)
-- **Retouch**: [retouch](#retouch)
-- **Layers**: [add_text](#add_text), [add_media_overlay](#add_media_overlay), [add_shape](#add_shape), [add_component](#add_component), [update_layer](#update_layer), [reorder_layer](#reorder_layer), [remove_layer](#remove_layer)
+- **Media & primary track**: [import_media](#import_media), [add_clip](#add_clip), [update_clip](#update_clip), [remove_clip](#remove_clip), [move_clip](#move_clip), [split_clip](#split_clip), [trim_clip](#trim_clip), [split_edit](#split_edit), [freeze_frame](#freeze_frame), [set_speed](#set_speed), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [set_transition](#set_transition), [add_effect](#add_effect), [remove_effect](#remove_effect), [create_effect](#create_effect), [animate_effect](#animate_effect)
+- **People & faces**: [retouch](#retouch), [detect_faces](#detect_faces), [reframe](#reframe), [follow_face](#follow_face)
+- **Layers**: [add_text](#add_text), [add_media_overlay](#add_media_overlay), [add_shape](#add_shape), [add_component](#add_component), [update_layer](#update_layer), [reorder_layer](#reorder_layer), [remove_layer](#remove_layer), [animate_layer](#animate_layer)
+- **Graphics, icons & fonts**: [create_graphic](#create_graphic), [update_graphic](#update_graphic), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [make_thumbnail](#make_thumbnail)
 - **Audio**: [add_audio](#add_audio), [update_audio](#update_audio), [remove_audio](#remove_audio), [set_volume](#set_volume), [enhance_audio](#enhance_audio), [add_audio_effect](#add_audio_effect), [remove_audio_effect](#remove_audio_effect)
 - **Sound map, beats & moments**: [analyze_audio](#analyze_audio), [remove_silences](#remove_silences), [detect_scenes](#detect_scenes), [detect_beats](#detect_beats), [beat_sync](#beat_sync), [add_moment_effect](#add_moment_effect), [list_sound_effects](#list_sound_effects), [add_sound_effect](#add_sound_effect)
-- **Transcript & captions**: [transcribe](#transcribe), [set_transcript](#set_transcript), [get_transcript](#get_transcript), [search_transcript](#search_transcript), [find_retakes](#find_retakes), [remove_retakes](#remove_retakes), [cleanup_speech](#cleanup_speech), [cut_ranges](#cut_ranges), [assemble_from_source](#assemble_from_source), [set_captions](#set_captions), [export_captions](#export_captions)
+- **Transcript & captions**: [transcribe](#transcribe), [set_transcript](#set_transcript), [get_transcript](#get_transcript), [fix_transcript](#fix_transcript), [search_transcript](#search_transcript), [find_retakes](#find_retakes), [remove_retakes](#remove_retakes), [cleanup_speech](#cleanup_speech), [cut_ranges](#cut_ranges), [assemble_from_source](#assemble_from_source), [set_captions](#set_captions), [export_captions](#export_captions)
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
-- **Color**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes)
+- **Color & looks**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes), [set_color_space](#set_color_space), [apply_look](#apply_look), [match_color](#match_color), [grade_scene](#grade_scene), [grade_region](#grade_region), [render_mask](#render_mask), [export_lut](#export_lut)
+- **Objects & tracking**: [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [pin_mask](#pin_mask), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object)
+- **Depth**: [estimate_depth](#estimate_depth), [set_focus](#set_focus)
+- **Atmosphere & light**: [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light)
 - **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
-- **Other**: [clean_up_media](#clean_up_media), [freeze_frame](#freeze_frame), [split_edit](#split_edit), [create_effect](#create_effect), [detect_faces](#detect_faces), [reframe](#reframe), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [animate_effect](#animate_effect), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [create_graphic](#create_graphic), [update_graphic](#update_graphic), [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light), [animate_layer](#animate_layer), [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [pin_mask](#pin_mask), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object), [follow_face](#follow_face), [fix_transcript](#fix_transcript), [offer_choices](#offer_choices), [set_color_space](#set_color_space), [apply_look](#apply_look), [export_lut](#export_lut), [match_color](#match_color), [grade_scene](#grade_scene), [estimate_depth](#estimate_depth), [set_focus](#set_focus), [grade_region](#grade_region), [render_mask](#render_mask), [review_edit](#review_edit), [make_thumbnail](#make_thumbnail)
 
 ## Inspect & project
 
@@ -65,6 +68,35 @@ _No parameters._
 **edits**. Redo the last undone edit.
 
 _No parameters._
+
+### clean_up_media
+
+**edits**. Tidy the project's media: assets that are the same file content (imported twice, or copies under other names) become one, and assets nothing in the edit uses are removed (pass keep for ones you still plan to use). deleteFiles also deletes files in the project's media folder that no asset uses any more (this cannot be undone; ask the user first).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `removeUnused` | boolean |  | `true` |  |
+| `keep` | string[] |  | `[]` | Asset ids to keep even if unused |
+| `deleteFiles` | boolean |  | `false` | Also delete unused files in <project>/media |
+
+### review_edit
+
+**read-only**. Check the edit for what a viewer notices, with timeline times, without changing anything. It renders sample frames and the audio mix in one pass and reports: text that is hard to read against the picture, runs off the frame, or collides with captions or other text (text); text and captions where TikTok, Reels and Shorts put their buttons and captions (safe-zones); black, frozen or repeated footage (frames); words cut off at an edit, doubled caption words, captions over silence, and speech the transcript skipped (speech); loudness off target, peaks, and music too loud under the voice (audio); screen color a chroma key left behind (key); highlights or shadows the grade clipped, skin pushed off the skin line, banding the grade brought out in skies and walls, each against the same frame without the grade (grade); model mattes that flicker, tracks that pinned layers and masks follow where they are unsure, and a replaced sky sliding against the scenery (vfx). It also finds text and captions covering a face (local face detection). Run it before render_video and after big changes, fix what it finds, then run it again.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `checks` | "text" \| "safe-zones" \| "frames" \| "speech" \| "audio" \| "key" \| "grade" \| "vfx"[] |  |  | Only these checks (default all) |
+| `platform` | "auto" \| "tiktok" \| "reels" \| "shorts" \| "vertical" \| "none" |  | `"auto"` | Safe zones to check: auto = all three vertical apps for a portrait video, none for landscape |
+| `loudnessTarget` | number |  | `-14` | Integrated loudness to aim for in LUFS: -14 social video and YouTube, -16 podcasts (≥ -30, ≤ -8) |
+
+### offer_choices
+
+**read-only**. Let the user choose when taste decides, instead of deciding for them: a narration voice (play the files preview_voice made), a music track, a sound effect, or a look (show frames you rendered with each option, e.g. render_frame after each title style, then undo). The app shows the options as cards they can play or view and pick. Offer 2 to 6, each with a short label. End your turn right after calling it: their pick arrives as their next message, and then you apply it.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `question` | string | yes |  | What to choose, e.g. 'Which voice should narrate?' |
+| `options` | { label, description, audio, image }[] | yes |  |  |
 
 ## Library
 
@@ -221,6 +253,25 @@ _No parameters._
 | `sourceIn` | number | yes |  | (≥ 0) |
 | `sourceOut` | number | yes |  | (> 0) |
 
+### split_edit
+
+**edits**. Make a J or L cut at the cut into a primary clip, so sound and picture change at different moments (standard in interviews and talking heads). 'j': the clip's sound starts early, heard under the end of the previous shot (we hear the next speaker before we see them). 'l': the previous clip's sound carries on under the start of this one (we keep hearing the speaker while cutting to a reaction or b-roll). The other clip's sound is muted where they overlap; captions follow the sound. seconds 0 removes it. Needs footage beyond the cut (trimmed-off source).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipId` | string | yes |  | The clip right after the cut |
+| `type` | "j" \| "l" | yes |  |  |
+| `seconds` | number | yes |  | How far the sound leads (j) or trails (l) the picture cut; 0.5-2 is typical (≥ 0, ≤ 10) |
+
+### freeze_frame
+
+**edits**. Hold one frame of the video still for a few seconds (a freeze-frame, e.g. for a 'that's me' title or a dramatic beat). The frame at the given timeline time is held there and the rest of the clip continues after it, so the video gets longer by seconds. The still keeps the clip's fit, crop and effects. Add a title or effect on top afterwards.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `time` | number | yes |  | Timeline seconds of the frame to hold (≥ 0) |
+| `seconds` | number |  | `2` | (≥ 0.1, ≤ 30) |
+
 ### set_speed
 
 **edits**. Speed up or slow down a primary clip or an audio clip (0.25-4; 0.5 = half speed slow motion, 2 = double speed). Audio keeps its pitch. The clip covers the same source footage, so it gets shorter or longer on the timeline and later clips move. Captions follow automatically. Slowing a video clip below its footage's frame rate turns on smooth motion (see interpolate), so frames are made in between instead of repeated; smooth: false keeps repeated frames.
@@ -230,6 +281,25 @@ _No parameters._
 | `target` | string | yes |  | Clip id or audio clip id |
 | `speed` | number | yes |  | (≥ 0.25, ≤ 4) |
 | `smooth` | boolean |  |  | Video clips: make in-between frames where the footage runs out (default: yes when it does) |
+
+### speed_ramp
+
+**edits**. Change a clip's speed over time: fast, then slow motion on the moment that matters, then back (a speed ramp). Keyframes give the speed at moments of the clip's FOOTAGE (seconds from its in point, as in its source), with easing into each; the speed holds before the first and after the last. Example, a 2x run-up into slow motion: [{time: 0, speed: 2}, {time: 1.5, speed: 2}, {time: 2, speed: 0.4}, {time: 3, speed: 0.4}, {time: 3.4, speed: 1}]. The clip keeps the same footage, so its length on the timeline changes and later clips move. Sound follows with its pitch kept; captions and cuts follow too. Pass null to go back to the clip's steady speed. Slow parts below the footage's frame rate get smooth motion (see interpolate) unless smooth is false.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipId` | string | yes |  |  |
+| `keyframes` | { time, speed, easing }[] \| null | yes |  |  |
+| `smooth` | boolean |  |  | Make in-between frames where the footage runs out (default: yes when it does) |
+
+### interpolate
+
+**edits**. Smooth motion for video clips that show more frames than their footage has: slow motion and speed ramps below the footage's frame rate, or a lower frame rate than the edit's (24 fps footage in a 60 fps edit). Without it those frames repeat and motion stutters; with it a model on this machine (RIFE, a 21 MB model downloads once) makes the frames in between, only the ones the edit shows. About half a second a frame at 1080p with a graphics card and several seconds without, done once and cached; reports per clip how many frames were made. set_speed and speed_ramp turn it on by themselves when they slow a clip that far; this prepares the frames now (so previews show them too) or turns it off. Check fast movement and edges where things cross (hands, spokes, water) with render_preview; a cut inside a clip is never blended across.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipIds` | string[] |  |  | Clips (default: every primary video clip with smooth motion on, or that shows frames its footage lacks) |
+| `off` | boolean |  |  | Turn smooth motion off for these clips (frames repeat again) |
 
 ### set_transition
 
@@ -266,7 +336,28 @@ _No parameters._
 | `type` | string |  | `""` |  |
 | `label` | string |  |  |  |
 
-## Retouch
+### create_effect
+
+**edits**. Make your own reusable visual effect from an FFmpeg filter chain and save it in the project by name; then add it anywhere with add_effect (type 'custom', params { name }). Use it for looks the catalog lacks: per-pixel math with geq (X, Y, W, H, T and functions like sin, hypot, st/ld), color math, displacement-free distortions (lenscorrection, v360, perspective), glitches (rgbashift, chromashift, noise), trails (lagfun, tmix), edge and comic looks (edgedetect, posterize via lutrgb, elbg). Allowed filters: eq, hue, curves, colorbalance, colorchannelmixer, colorlevels, colortemperature, colorcontrast, colorcorrect, colorize, vibrance, selectivecolor, huesaturation, exposure, lutrgb, lutyuv, lut, negate, monochrome, grayworld, normalize, pseudocolor, geq, gblur, boxblur, avgblur, dblur, smartblur, unsharp, cas, convolution, edgedetect, sobel, prewitt, roberts, deband, gradfun, bilateral, median, vignette, noise, chromashift, rgbashift, pixelize, elbg, posterize, kirsch, colorhold, chromakey, colorkey, hsvhold, hsvkey, lenscorrection, rotate, hflip, vflip, transpose, crop, scale, pad, perspective, shear, swaprect, v360, fillborders, tmix, lagfun, tblend, deflicker, fade, format, setsar, null. The chain is test-rendered before saving, so mistakes come back as errors. Saving a name again replaces it.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Short name, e.g. 'neon edges' |
+| `filter` | string | yes |  | Comma-separated FFmpeg filters for one stream |
+| `description` | string |  |  | What it looks like, for later |
+
+### animate_effect
+
+**edits**. Change an effect's settings over time: a blur that ramps up into a transition, a grade that shifts from cold to warm, a vignette that closes in. The effect must already be on the target (add_effect, color_adjust, retouch). Each keyframe sets some of the effect's settings at a time (timeline seconds, or seconds into the clip or layer with relative), with easing into it; the settings hold before the first keyframe and after the last. Numbers move smoothly between keyframes; other settings switch half way. A ramp runs up to six copies of the effect, so it costs more to render. Pass null to remove the keyframes.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | Clip id, media layer id, or "global" |
+| `type` | string | yes |  | Effect type on the target, e.g. blur, color, vignette |
+| `keyframes` | { time, params, easing }[] \| null | yes |  |  |
+| `relative` | boolean |  | `false` | Times count from the clip's or layer's start instead of the timeline |
+
+## People & faces
 
 ### retouch
 
@@ -278,6 +369,35 @@ _No parameters._
 | `beauty` | false \| { smooth, brighten, warmth, region } |  |  |  |
 | `backgroundBlur` | false \| { amount, subject, feather, dim } |  |  |  |
 | `replaceBackground` | false \| { color, mix, feather } |  |  |  |
+
+### detect_faces
+
+**read-only**. Find and follow the faces in primary clips (or in a source asset), on this machine (a small model downloads once). For each person: when they are on screen (timeline times), where the face sits in the edit's frame after the clip's crop, and how far it moves. Use it to place titles and callouts away from faces, to check what a 9:16 crop keeps (then reframe), and for retouch with region or subject "face". Zooms and shakes from effects are not followed.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string |  |  | Clip id, asset id (source times and source frame), or omit for every primary clip |
+| `fps` | number |  | `2` | Frames checked per second (≥ 0.5, ≤ 10) |
+
+### reframe
+
+**edits**. Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip. By default the crop is fixed: it keeps the main face's whole path in frame, or its usual spot when it moves more than the crop can show. With follow, the crop pans with the person like a camera operator (focus keyframes, smoothed).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipIds` | string[] |  |  | Clips to reframe (default: every cover-fit clip whose source shape differs) |
+| `follow` | boolean |  | `false` | Pan the crop with the person over time instead of a fixed crop |
+
+### follow_face
+
+**edits**. Make a layer (a name label, a callout, an arrow, a sticker) follow a person on screen: it finds the main face in the clips under the layer and sets position keyframes beside it (above, below, left, right, or on it), smoothed so it glides rather than jitters. The layer stays inside the frame. Where no face is found it holds its last spot.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `clipId` | string |  |  | Clip to follow (default: the primary clips under the layer) |
+| `side` | "above" \| "below" \| "left" \| "right" \| "on" |  | `"above"` |  |
+| `gap` | number |  | `0.02` | Space between the face and the layer (frame fraction) (≥ 0, ≤ 0.3) |
 
 ## Layers
 
@@ -421,6 +541,139 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `layerId` | string | yes |  |  |
+
+### animate_layer
+
+**edits**. Move, scale, turn or fade a layer over time with keyframes (text, shapes and media overlays): a label that slides along with a product, a logo that grows, a title that drifts. Give a list of keyframes per property; each has a time (timeline seconds, or seconds into the layer with relative), a value, and easing into it from the previous keyframe (default ease-in-out; linear for steady motion). Before the first keyframe a property holds its first value, after the last its last. Pass null to remove a property's keyframes. Entrance and exit animations still play. To follow a person, use follow_face.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `position` | { time, x, y, easing }[] \| null |  |  | Center of the layer (frame fractions) |
+| `scale` | { time, value, easing }[] \| null |  |  | Size multiplier (1 = its own size) |
+| `rotation` | { time, value, easing }[] \| null |  |  | Degrees clockwise |
+| `opacity` | { time, value, easing }[] \| null |  |  | Multiplies the layer's opacity |
+| `rotateX` | { time, value, easing }[] \| null |  |  | 3D tilt in degrees, media and graphic layers (+ tips the top away; 90 is edge-on) |
+| `rotateY` | { time, value, easing }[] \| null |  |  | 3D turn in degrees, media and graphic layers (+ turns the right side away; 0 to 360 is a full spin) |
+| `relative` | boolean |  | `false` | Times count from the layer's start instead of the timeline |
+
+## Graphics, icons & fonts
+
+### create_graphic
+
+**edits**. Design your own graphic in SVG and put it on the video: lower thirds, title cards, styled or 3D-looking text, UI mockups (app screens, notifications, chat bubbles, buttons, progress bars), charts, badges, stickers, frames, logos, patterns. Anything SVG can draw works: paths, gradients, patterns, masks, clip paths, strokes, any installed font (font-family by name; see list_fonts and install_fonts), and filters for drop shadows (feDropShadow), glows, blurs, inner shadows, long shadows and extrusions (stacked offset copies). The <svg> needs a viewBox; it is drawn at width (fraction of frame width) with the viewBox's shape, centered at position. Animate it with {{ expression }} placeholders anywhere in the SVG (attributes, transforms, colors' opacity, text positions), evaluated on every frame. Variables: t (seconds from the graphic's start), p (progress 0..1 over its duration), d (duration), n (frame number), w and h (canvas size in pixels), PI. Operators: + - * / % ** and parentheses, comparisons < <= > >= == != (1 or 0), and cond ? a : b. Functions: sin cos tan asin acos atan atan2 abs min max pow sqrt exp log floor ceil round sign clamp(x,a,b) lerp(a,b,u) step(edge,x) smooth(a,b,x) ease(u) easeIn(u) easeOut(u) easeInOut(u) back(u) elastic(u) bounce(u) (easings take 0..1), seg(t,a,b) (0..1 progress of t from a to b), wave(t,period) (0..1 sine), rad(deg), deg(rad). Example: <rect width="{{ 600*easeOut(seg(t,0,0.8)) }}" .../> grows a bar in 0.8 s; transform="rotate({{ 360*p }} 100 100)" spins once. For depth, turn the whole graphic in 3D with rotateX/rotateY (animate them with animate_layer). The layer also takes animate_layer keyframes, entrance/exit animations and layer effects like any overlay. Check the result with render_frame.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `svg` | string | yes |  | SVG markup with a viewBox, optionally with {{ expression }} placeholders |
+| `start` | number | yes |  | (≥ 0) |
+| `duration` | number | yes |  | (> 0) |
+| `width` | number |  | `0.5` | Width as a fraction of frame width (> 0, ≤ 2) |
+| `position` | { x, y } |  |  | Center (frame fractions, default the middle) |
+| `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `opacity` | number |  |  | (≥ 0, ≤ 1) |
+| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" \| "addlight" \| "screenlight" |  |  | screen or add for glows and light drawn on black; see update_layer |
+| `shadow` | number |  |  | Extra soft drop shadow under the whole graphic, in pixels (≥ 0) |
+| `rotateX` | number |  |  | 3D tilt in degrees (≥ -89, ≤ 89) |
+| `rotateY` | number |  |  | 3D turn in degrees (≥ -89, ≤ 89) |
+| `perspective` | number |  |  | Camera distance in widths for 3D (default 2) (≥ 0.5, ≤ 20) |
+| `behindSubject` | boolean |  |  | Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them |
+| `animationIn` | { type, duration, easing } |  |  |  |
+| `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationIn.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+| `animationOut` | { type, duration, easing } |  |  |  |
+| `animationOut.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationOut.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationOut.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+| `label` | string |  |  |  |
+
+### update_graphic
+
+**edits**. Redraw a graphic made with create_graphic from new SVG (read the current SVG on its asset with get_project), or redraw it for a new duration. Position, 3D and animations are kept; change those with update_layer.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `svg` | string |  |  | New SVG; omit to keep the current one |
+| `duration` | number |  |  | New duration in seconds (animated graphics are redrawn for it) (> 0) |
+
+### search_icons
+
+**read-only**. Find icons for feature callouts, lists and lower thirds (the Lucide set, about 1,600 line icons, free to use). Search by what it shows: 'battery', 'camera', 'arrow right', 'check'. Returns icon names for add_icon. The icon font downloads once on first use.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string | yes |  |  |
+| `limit` | integer |  | `30` | (≥ 1, ≤ 100) |
+
+### add_icon
+
+**edits**. Put an icon on screen (see search_icons for names), drawn sharp at any size like text, optionally on a round or rounded badge. Position is the icon center in 0-1 frame coordinates; size is its height as a fraction of the frame height. Animate it like text.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes |  | Icon name from search_icons, e.g. 'battery-charging' |
+| `start` | number | yes |  | (≥ 0) |
+| `duration` | number | yes |  | (> 0) |
+| `position` | { x, y } |  | `{"x":0.5,"y":0.5}` |  |
+| `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `size` | number |  | `0.1` | (≥ 0.02, ≤ 0.8) |
+| `color` | string |  | `"#FFFFFF"` |  |
+| `badge` | { color, shape } |  |  | A filled circle or rounded square behind the icon |
+| `badge.color` | string | yes |  |  |
+| `badge.shape` | "ellipse" \| "roundedRect" |  | `"ellipse"` |  |
+| `animationIn` | { type, duration, easing } |  |  |  |
+| `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationIn.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+| `animationOut` | { type, duration, easing } |  |  |  |
+| `animationOut.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationOut.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationOut.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+
+### list_fonts
+
+**read-only**. List the font families text can use: the ones added with install_font, the bundled ones (Arimo, Archivo Black, Gelasio, Anton, Cousine, Comic Neue: the same on every computer, so prefer them and added fonts over system fonts) and the ones installed on this computer. Use the family name exactly as listed in a text style's fontFamily.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string |  |  | Filter by name, e.g. 'mono' or 'sans' |
+
+### install_font
+
+**read-only**. Add a font from Google Fonts (all open-licensed, free for video), e.g. 'Montserrat', 'Bebas Neue', 'Playfair Display', 'Inter', 'Anton'. It downloads once into the fonts folder and every render can use it as fontFamily.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `family` | string | yes |  | Family name as on fonts.google.com |
+| `weights` | integer[] |  |  | Weights to add, default [400, 700] |
+| `italic` | boolean |  | `false` |  |
+
+### install_fonts
+
+**read-only**. Install many Google Fonts families at once: whole packs and/or a list of families. Packs: sans (30: Inter, Montserrat, Poppins, Roboto, Open Sans…); display (35: Bebas Neue, Anton, Oswald, Archivo Black, Black Ops One…); serif (20: Playfair Display, Merriweather, Lora, DM Serif Display, Cormorant Garamond…); script (20: Pacifico, Lobster, Dancing Script, Great Vibes, Satisfy…); handwriting (15: Caveat, Permanent Marker, Shadows Into Light, Indie Flower, Amatic SC…); mono (12: JetBrains Mono, Fira Code, Roboto Mono, Space Mono, IBM Plex Mono…). Families already installed are skipped. Installed fonts work in text styles, captions and create_graphic SVG (font-family by name).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `packs` | "sans" \| "display" \| "serif" \| "script" \| "handwriting" \| "mono"[] |  |  |  |
+| `families` | string[] |  |  | More families by name as on fonts.google.com |
+
+### make_thumbnail
+
+**read-only**. Make a thumbnail image (YouTube style: a frame of the video, punchier color, a big bold title of 2-5 words). The frame comes from the edit at time (without its own titles and captions). The title goes on the side away from the faces in the frame (side auto), wrapped onto short lines. Saved as a 1280x720 JPEG for landscape projects (YouTube's size), else the project's size. Look at the result and try another time or title if it does not read at a glance.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `title` | string | yes |  | 2-5 words; wrapped automatically |
+| `subtitle` | string |  |  | Small line under the title, in a colored box |
+| `time` | number |  |  | Timeline time of the frame (default: the middle) (≥ 0) |
+| `side` | "auto" \| "left" \| "right" \| "top" \| "bottom" |  | `"auto"` |  |
+| `color` | string |  | `"#FFFFFF"` | Title color |
+| `accentColor` | string |  | `"#FFD000"` | Subtitle box color |
+| `punch` | number |  | `0.6` | How much to boost contrast and color (0 = frame as is) (≥ 0, ≤ 1) |
 
 ## Audio
 
@@ -617,6 +870,16 @@ _No parameters._
 |---|---|---|---|---|
 | `assetId` | string | yes |  |  |
 
+### fix_transcript
+
+**edits**. Correct words the speech recognizer got wrong, keeping their timings: find and replace words or phrases ("cloud" to "Claude", "cooper netties" to "Kubernetes") in one transcript or all of them. Matching ignores case and punctuation; punctuation around a match is kept. Captions, search and text-based cuts all use the corrected words. vocabulary saves the names and terms said in the video: transcribe passes them to recognizers that take hints, and this tool and transcribe list words that look like mishearings of them, so you can confirm each before replacing. An empty replace removes words from the transcript only (the video is not cut).
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `assetId` | string |  |  | Transcript to fix (default: every transcript) |
+| `replace` | { find, replace }[] |  | `[]` | Applied in order |
+| `vocabulary` | string[] |  |  | Names and terms said in the video; replaces the saved list |
+
 ### search_transcript
 
 **read-only**. Find where a phrase is said. Returns source times and, if that part is in the edit, timeline times.
@@ -754,7 +1017,7 @@ _No parameters._
 | `speed` | number |  |  |  |
 | `text` | string |  |  | New wording (one target only) |
 
-## Color
+## Color & looks
 
 ### color_adjust
 
@@ -871,549 +1134,6 @@ _No parameters._
 | `time` | number |  |  | (≥ 0) |
 | `scopes` | "histogram" \| "waveform" \| "parade" \| "vectorscope"[] |  |  |  |
 
-## Preview & render
-
-### render_frame
-
-**read-only**. Render one frame of the edit at a timeline time and look at it. Use to check layout, text, captions and effects.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `time` | number | yes |  | (≥ 0) |
-| `scale` | number |  | `0.5` | (≥ 0.1, ≤ 1) |
-
-### render_contact_sheet
-
-**read-only**. Render a grid of frames sampled across the whole video, a one-image overview of the edit's pacing and look.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `columns` | integer |  | `4` | (≥ 1, ≤ 8) |
-| `rows` | integer |  | `3` | (≥ 1, ≤ 8) |
-| `thumbWidth` | integer |  | `320` | (≥ -9007199254740991) |
-
-### render_preview
-
-**read-only**. Render a fast low-resolution preview video (shown in the desktop app for the user). Optionally only a time range.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `scale` | number |  | `0.5` | (≥ 0.1, ≤ 1) |
-| `start` | number |  |  | (≥ 0) |
-| `end` | number |  |  | (> 0) |
-
-### render_video
-
-**read-only**. Render the final full-quality video file. bitDepth 10 writes 10-bit video (H.264 High 10 or HEVC Main 10): smooth skies and gradients after heavy grades of camera log, for delivery where 10-bit plays; 8 (the project's default) plays everywhere. format prores writes ProRes 422 HQ (10-bit 4:2:2, a .mov), the master to grade or edit further in Resolve, Premiere or Final Cut; large files, not for sharing.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `output` | string | yes |  | Output path, e.g. out/final.mp4 (out/master.mov for prores) |
-| `bitDepth` | 8 \| 10 |  |  | Bits per sample of this render (default: the project's export setting, 8) |
-| `format` | "default" \| "prores" |  | `"default"` | prores: ProRes 422 HQ master; default: the project's codec |
-
-## Other
-
-### clean_up_media
-
-**edits**. Tidy the project's media: assets that are the same file content (imported twice, or copies under other names) become one, and assets nothing in the edit uses are removed (pass keep for ones you still plan to use). deleteFiles also deletes files in the project's media folder that no asset uses any more (this cannot be undone; ask the user first).
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `removeUnused` | boolean |  | `true` |  |
-| `keep` | string[] |  | `[]` | Asset ids to keep even if unused |
-| `deleteFiles` | boolean |  | `false` | Also delete unused files in <project>/media |
-
-### freeze_frame
-
-**edits**. Hold one frame of the video still for a few seconds (a freeze-frame, e.g. for a 'that's me' title or a dramatic beat). The frame at the given timeline time is held there and the rest of the clip continues after it, so the video gets longer by seconds. The still keeps the clip's fit, crop and effects. Add a title or effect on top afterwards.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `time` | number | yes |  | Timeline seconds of the frame to hold (≥ 0) |
-| `seconds` | number |  | `2` | (≥ 0.1, ≤ 30) |
-
-### split_edit
-
-**edits**. Make a J or L cut at the cut into a primary clip, so sound and picture change at different moments (standard in interviews and talking heads). 'j': the clip's sound starts early, heard under the end of the previous shot (we hear the next speaker before we see them). 'l': the previous clip's sound carries on under the start of this one (we keep hearing the speaker while cutting to a reaction or b-roll). The other clip's sound is muted where they overlap; captions follow the sound. seconds 0 removes it. Needs footage beyond the cut (trimmed-off source).
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `clipId` | string | yes |  | The clip right after the cut |
-| `type` | "j" \| "l" | yes |  |  |
-| `seconds` | number | yes |  | How far the sound leads (j) or trails (l) the picture cut; 0.5-2 is typical (≥ 0, ≤ 10) |
-
-### create_effect
-
-**edits**. Make your own reusable visual effect from an FFmpeg filter chain and save it in the project by name; then add it anywhere with add_effect (type 'custom', params { name }). Use it for looks the catalog lacks: per-pixel math with geq (X, Y, W, H, T and functions like sin, hypot, st/ld), color math, displacement-free distortions (lenscorrection, v360, perspective), glitches (rgbashift, chromashift, noise), trails (lagfun, tmix), edge and comic looks (edgedetect, posterize via lutrgb, elbg). Allowed filters: eq, hue, curves, colorbalance, colorchannelmixer, colorlevels, colortemperature, colorcontrast, colorcorrect, colorize, vibrance, selectivecolor, huesaturation, exposure, lutrgb, lutyuv, lut, negate, monochrome, grayworld, normalize, pseudocolor, geq, gblur, boxblur, avgblur, dblur, smartblur, unsharp, cas, convolution, edgedetect, sobel, prewitt, roberts, deband, gradfun, bilateral, median, vignette, noise, chromashift, rgbashift, pixelize, elbg, posterize, kirsch, colorhold, chromakey, colorkey, hsvhold, hsvkey, lenscorrection, rotate, hflip, vflip, transpose, crop, scale, pad, perspective, shear, swaprect, v360, fillborders, tmix, lagfun, tblend, deflicker, fade, format, setsar, null. The chain is test-rendered before saving, so mistakes come back as errors. Saving a name again replaces it.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `name` | string | yes |  | Short name, e.g. 'neon edges' |
-| `filter` | string | yes |  | Comma-separated FFmpeg filters for one stream |
-| `description` | string |  |  | What it looks like, for later |
-
-### detect_faces
-
-**read-only**. Find and follow the faces in primary clips (or in a source asset), on this machine (a small model downloads once). For each person: when they are on screen (timeline times), where the face sits in the edit's frame after the clip's crop, and how far it moves. Use it to place titles and callouts away from faces, to check what a 9:16 crop keeps (then reframe), and for retouch with region or subject "face". Zooms and shakes from effects are not followed.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `target` | string |  |  | Clip id, asset id (source times and source frame), or omit for every primary clip |
-| `fps` | number |  | `2` | Frames checked per second (≥ 0.5, ≤ 10) |
-
-### reframe
-
-**edits**. Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip. By default the crop is fixed: it keeps the main face's whole path in frame, or its usual spot when it moves more than the crop can show. With follow, the crop pans with the person like a camera operator (focus keyframes, smoothed).
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `clipIds` | string[] |  |  | Clips to reframe (default: every cover-fit clip whose source shape differs) |
-| `follow` | boolean |  | `false` | Pan the crop with the person over time instead of a fixed crop |
-
-### speed_ramp
-
-**edits**. Change a clip's speed over time: fast, then slow motion on the moment that matters, then back (a speed ramp). Keyframes give the speed at moments of the clip's FOOTAGE (seconds from its in point, as in its source), with easing into each; the speed holds before the first and after the last. Example, a 2x run-up into slow motion: [{time: 0, speed: 2}, {time: 1.5, speed: 2}, {time: 2, speed: 0.4}, {time: 3, speed: 0.4}, {time: 3.4, speed: 1}]. The clip keeps the same footage, so its length on the timeline changes and later clips move. Sound follows with its pitch kept; captions and cuts follow too. Pass null to go back to the clip's steady speed. Slow parts below the footage's frame rate get smooth motion (see interpolate) unless smooth is false.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `clipId` | string | yes |  |  |
-| `keyframes` | { time, speed, easing }[] \| null | yes |  |  |
-| `smooth` | boolean |  |  | Make in-between frames where the footage runs out (default: yes when it does) |
-
-### interpolate
-
-**edits**. Smooth motion for video clips that show more frames than their footage has: slow motion and speed ramps below the footage's frame rate, or a lower frame rate than the edit's (24 fps footage in a 60 fps edit). Without it those frames repeat and motion stutters; with it a model on this machine (RIFE, a 21 MB model downloads once) makes the frames in between, only the ones the edit shows. About half a second a frame at 1080p with a graphics card and several seconds without, done once and cached; reports per clip how many frames were made. set_speed and speed_ramp turn it on by themselves when they slow a clip that far; this prepares the frames now (so previews show them too) or turns it off. Check fast movement and edges where things cross (hands, spokes, water) with render_preview; a cut inside a clip is never blended across.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `clipIds` | string[] |  |  | Clips (default: every primary video clip with smooth motion on, or that shows frames its footage lacks) |
-| `off` | boolean |  |  | Turn smooth motion off for these clips (frames repeat again) |
-
-### animate_effect
-
-**edits**. Change an effect's settings over time: a blur that ramps up into a transition, a grade that shifts from cold to warm, a vignette that closes in. The effect must already be on the target (add_effect, color_adjust, retouch). Each keyframe sets some of the effect's settings at a time (timeline seconds, or seconds into the clip or layer with relative), with easing into it; the settings hold before the first keyframe and after the last. Numbers move smoothly between keyframes; other settings switch half way. A ramp runs up to six copies of the effect, so it costs more to render. Pass null to remove the keyframes.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `target` | string | yes |  | Clip id, media layer id, or "global" |
-| `type` | string | yes |  | Effect type on the target, e.g. blur, color, vignette |
-| `keyframes` | { time, params, easing }[] \| null | yes |  |  |
-| `relative` | boolean |  | `false` | Times count from the clip's or layer's start instead of the timeline |
-
-### search_icons
-
-**read-only**. Find icons for feature callouts, lists and lower thirds (the Lucide set, about 1,600 line icons, free to use). Search by what it shows: 'battery', 'camera', 'arrow right', 'check'. Returns icon names for add_icon. The icon font downloads once on first use.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `query` | string | yes |  |  |
-| `limit` | integer |  | `30` | (≥ 1, ≤ 100) |
-
-### add_icon
-
-**edits**. Put an icon on screen (see search_icons for names), drawn sharp at any size like text, optionally on a round or rounded badge. Position is the icon center in 0-1 frame coordinates; size is its height as a fraction of the frame height. Animate it like text.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `name` | string | yes |  | Icon name from search_icons, e.g. 'battery-charging' |
-| `start` | number | yes |  | (≥ 0) |
-| `duration` | number | yes |  | (> 0) |
-| `position` | { x, y } |  | `{"x":0.5,"y":0.5}` |  |
-| `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `size` | number |  | `0.1` | (≥ 0.02, ≤ 0.8) |
-| `color` | string |  | `"#FFFFFF"` |  |
-| `badge` | { color, shape } |  |  | A filled circle or rounded square behind the icon |
-| `badge.color` | string | yes |  |  |
-| `badge.shape` | "ellipse" \| "roundedRect" |  | `"ellipse"` |  |
-| `animationIn` | { type, duration, easing } |  |  |  |
-| `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
-| `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
-| `animationIn.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
-| `animationOut` | { type, duration, easing } |  |  |  |
-| `animationOut.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
-| `animationOut.duration` | number |  | `0.4` | (> 0, ≤ 10) |
-| `animationOut.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
-
-### list_fonts
-
-**read-only**. List the font families text can use: the ones added with install_font, the bundled ones (Arimo, Archivo Black, Gelasio, Anton, Cousine, Comic Neue: the same on every computer, so prefer them and added fonts over system fonts) and the ones installed on this computer. Use the family name exactly as listed in a text style's fontFamily.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `query` | string |  |  | Filter by name, e.g. 'mono' or 'sans' |
-
-### install_font
-
-**read-only**. Add a font from Google Fonts (all open-licensed, free for video), e.g. 'Montserrat', 'Bebas Neue', 'Playfair Display', 'Inter', 'Anton'. It downloads once into the fonts folder and every render can use it as fontFamily.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `family` | string | yes |  | Family name as on fonts.google.com |
-| `weights` | integer[] |  |  | Weights to add, default [400, 700] |
-| `italic` | boolean |  | `false` |  |
-
-### install_fonts
-
-**read-only**. Install many Google Fonts families at once: whole packs and/or a list of families. Packs: sans (30: Inter, Montserrat, Poppins, Roboto, Open Sans…); display (35: Bebas Neue, Anton, Oswald, Archivo Black, Black Ops One…); serif (20: Playfair Display, Merriweather, Lora, DM Serif Display, Cormorant Garamond…); script (20: Pacifico, Lobster, Dancing Script, Great Vibes, Satisfy…); handwriting (15: Caveat, Permanent Marker, Shadows Into Light, Indie Flower, Amatic SC…); mono (12: JetBrains Mono, Fira Code, Roboto Mono, Space Mono, IBM Plex Mono…). Families already installed are skipped. Installed fonts work in text styles, captions and create_graphic SVG (font-family by name).
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `packs` | "sans" \| "display" \| "serif" \| "script" \| "handwriting" \| "mono"[] |  |  |  |
-| `families` | string[] |  |  | More families by name as on fonts.google.com |
-
-### create_graphic
-
-**edits**. Design your own graphic in SVG and put it on the video: lower thirds, title cards, styled or 3D-looking text, UI mockups (app screens, notifications, chat bubbles, buttons, progress bars), charts, badges, stickers, frames, logos, patterns. Anything SVG can draw works: paths, gradients, patterns, masks, clip paths, strokes, any installed font (font-family by name; see list_fonts and install_fonts), and filters for drop shadows (feDropShadow), glows, blurs, inner shadows, long shadows and extrusions (stacked offset copies). The <svg> needs a viewBox; it is drawn at width (fraction of frame width) with the viewBox's shape, centered at position. Animate it with {{ expression }} placeholders anywhere in the SVG (attributes, transforms, colors' opacity, text positions), evaluated on every frame. Variables: t (seconds from the graphic's start), p (progress 0..1 over its duration), d (duration), n (frame number), w and h (canvas size in pixels), PI. Operators: + - * / % ** and parentheses, comparisons < <= > >= == != (1 or 0), and cond ? a : b. Functions: sin cos tan asin acos atan atan2 abs min max pow sqrt exp log floor ceil round sign clamp(x,a,b) lerp(a,b,u) step(edge,x) smooth(a,b,x) ease(u) easeIn(u) easeOut(u) easeInOut(u) back(u) elastic(u) bounce(u) (easings take 0..1), seg(t,a,b) (0..1 progress of t from a to b), wave(t,period) (0..1 sine), rad(deg), deg(rad). Example: <rect width="{{ 600*easeOut(seg(t,0,0.8)) }}" .../> grows a bar in 0.8 s; transform="rotate({{ 360*p }} 100 100)" spins once. For depth, turn the whole graphic in 3D with rotateX/rotateY (animate them with animate_layer). The layer also takes animate_layer keyframes, entrance/exit animations and layer effects like any overlay. Check the result with render_frame.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `svg` | string | yes |  | SVG markup with a viewBox, optionally with {{ expression }} placeholders |
-| `start` | number | yes |  | (≥ 0) |
-| `duration` | number | yes |  | (> 0) |
-| `width` | number |  | `0.5` | Width as a fraction of frame width (> 0, ≤ 2) |
-| `position` | { x, y } |  |  | Center (frame fractions, default the middle) |
-| `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `opacity` | number |  |  | (≥ 0, ≤ 1) |
-| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" \| "addlight" \| "screenlight" |  |  | screen or add for glows and light drawn on black; see update_layer |
-| `shadow` | number |  |  | Extra soft drop shadow under the whole graphic, in pixels (≥ 0) |
-| `rotateX` | number |  |  | 3D tilt in degrees (≥ -89, ≤ 89) |
-| `rotateY` | number |  |  | 3D turn in degrees (≥ -89, ≤ 89) |
-| `perspective` | number |  |  | Camera distance in widths for 3D (default 2) (≥ 0.5, ≤ 20) |
-| `behindSubject` | boolean |  |  | Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them |
-| `animationIn` | { type, duration, easing } |  |  |  |
-| `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
-| `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
-| `animationIn.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
-| `animationOut` | { type, duration, easing } |  |  |  |
-| `animationOut.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
-| `animationOut.duration` | number |  | `0.4` | (> 0, ≤ 10) |
-| `animationOut.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
-| `label` | string |  |  |  |
-
-### update_graphic
-
-**edits**. Redraw a graphic made with create_graphic from new SVG (read the current SVG on its asset with get_project), or redraw it for a new duration. Position, 3D and animations are kept; change those with update_layer.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `layerId` | string | yes |  |  |
-| `svg` | string |  |  | New SVG; omit to keep the current one |
-| `duration` | number |  |  | New duration in seconds (animated graphics are redrawn for it) (> 0) |
-
-### add_particles
-
-**edits**. Add weather, atmosphere or celebration over the video: rain, heavy rain with splashes, snow, dust motes in light, rising embers, sparks, confetti, bokeh orbs, smoke or fog. A seeded simulation (the same seed always draws the same frames) is drawn into a full-frame layer that mixes with the picture by the preset's blend mode; near particles are bigger, faster and softer than far ones, and everything slows down with slow-motion footage under it. Shape it with density, size, speed, wind (slants rain, pushes snow and smoke), color, area (where particles are born: the spot sparks fly from, the fire embers rise from) and ground (where heavy rain splashes). Limit it with mask: snow or rain only in the sky (kind sky), embers kept off a person (kind person, invert true, or behindSubject true), dust only in a beam of light (luma or shape). Weather looks real with a matching grade: cooler, darker and flatter for rain, brighter and cooler for snow. Check with render_frame at a dark and a bright moment, and render_preview for the motion. Change it later with update_particles.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `preset` | "rain" \| "heavyRain" \| "snow" \| "dust" \| "embers" \| "sparks" \| "confetti" \| "bokeh" \| "smoke" \| "fog" | yes |  | rain: Light rain: thin pale streaks falling fast, nearer drops bigger and softer. Lighten the picture with it; a cool, darker grade sells it. heavyRain: A downpour: dense streaks and droplets splashing up from a ground line (ground, default 0.86 of the frame height; set it to where the street or floor is). snow: Falling snow: flakes of many sizes drifting down and swaying, near flakes large and out of focus. Works on dark and bright plates; for snow only in the sky, give mask { kind: 'sky' }. dust: Dust floating in a beam of light: a few hundred tiny specks drifting slowly and twinkling as they catch the light. Best over a shaft of light or a window; limit it there with a shape or luma mask. embers: Glowing embers rising from below and flickering out: fire scenes, campfires, dramatic or heroic moments. Put them behind a person with behindSubject or mask { kind: 'person', invert: true }. sparks: A fountain of hot sparks thrown up and arcing down, streaked by their speed: grinders, welding, impacts, fireworks on the ground. Place it with area (default a small spot at the bottom middle). confetti: A burst of colored paper pieces fluttering down, spinning and tumbling: celebrations, reveals, wins, announcements. Starts with a burst at the layer's start. bokeh: Large soft out-of-focus light orbs drifting slowly upward and fading in and out: romantic, festive, dreamy, night and title backgrounds. smoke: Billowing gray smoke drifting up and across, thicker low in the frame: fires, battlefields, concerts, mystery. Not particles: layers of drifting noise. fog: Low fog or mist rolling slowly across, dense at the bottom and clear at the top: moody landscapes, horror, mornings, depth in a wide shot. |
-| `start` | number | yes |  | (≥ 0) |
-| `duration` | number | yes |  | (> 0, ≤ 600) |
-| `density` | number |  | `1` | More or fewer particles (smoke and fog: thicker or thinner), 1 = the preset (≥ 0.1, ≤ 4) |
-| `size` | number |  | `1` | Particle size (smoke and fog: size of the billows), 1 = the preset (≥ 0.25, ≤ 4) |
-| `speed` | number |  | `1` | How fast everything moves, 1 = the preset (≥ 0.25, ≤ 4) |
-| `wind` | number |  | `0` | Sideways wind in frame heights per second, + to the right (0.1 is a breeze, 0.5 a storm); slants rain (≥ -1, ≤ 1) |
-| `color` | string |  |  | One color for every particle (#RRGGBB), replacing the preset's colors |
-| `area` | { x0, y0, x1, y1 } |  |  | Where particles are born (frame fractions; may reach outside the frame): sparks from a grinder at a spot, embers from a fire's area, confetti over one side |
-| `area.x0` | number | yes |  | (≥ -1, ≤ 2) |
-| `area.y0` | number | yes |  | (≥ -1, ≤ 2) |
-| `area.x1` | number | yes |  | (≥ -1, ≤ 2) |
-| `area.y1` | number | yes |  | (≥ -1, ≤ 2) |
-| `ground` | number |  |  | Height of the ground line (frame fraction) where falling particles stop; heavyRain splashes there (≥ 0, ≤ 1.5) |
-| `seed` | integer |  | `1` | Another seed gives another, equally random, arrangement; the same seed always draws the same frames (≥ 0, ≤ 1000000) |
-| `opacity` | number |  |  | (≥ 0, ≤ 1) |
-| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" \| "addlight" \| "screenlight" |  |  | Override the preset's blend (screen for light on dark, normal for snow and smoke) |
-| `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | Show the particles only where this selects in the picture under them (sky, person, key, luma or shape) |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = an ellipse, rectangle or polygon, fixed, moving with keyframes, or pinned to a track |
-| `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
-| `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
-| `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
-| `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
-| `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
-| `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
-| `mask.shape` | { type, x, y, width, height, points, keyframes, corners, track } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
-| `mask.shape.type` | "ellipse" \| "rect" \| "polygon" |  | `"ellipse"` |  |
-| `mask.shape.x` | number |  |  | ellipse and rect: center x as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.y` | number |  |  | ellipse and rect: center y as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.width` | number |  |  | ellipse and rect: width as a fraction of frame width (> 0, ≤ 2) |
-| `mask.shape.height` | number |  |  | ellipse and rect: height as a fraction of frame height (> 0, ≤ 2) |
-| `mask.shape.points` | unknown[][] |  |  | polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face |
-| `mask.shape.keyframes` | { time, value, easing }[] |  |  | Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box |
-| `mask.shape.corners` | { time, value, easing }[] |  |  | Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set |
-| `mask.shape.track` | string |  |  | The track the corners follow (pin_mask sets it); review_edit checks it for drift |
-| `mask.invert` | boolean |  | `false` | Select everything except this |
-| `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
-| `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
-| `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
-| `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
-| `mask.combine` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
-| `behindSubject` | boolean |  |  | Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them |
-| `followSpeed` | boolean |  | `true` | Slow down with slow-motion footage under the layer (and speed up with fast footage) |
-| `animationIn` | { type, duration, easing } |  |  | e.g. { type: 'fade', duration: 1 } to let the weather come in |
-| `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
-| `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
-| `animationIn.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
-| `animationOut` | { type, duration, easing } |  |  |  |
-| `animationOut.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
-| `animationOut.duration` | number |  | `0.4` | (> 0, ≤ 10) |
-| `animationOut.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
-| `label` | string |  |  |  |
-
-### update_particles
-
-**edits**. Change particles made with add_particles and draw them again: any of their settings (density, size, speed, wind, color, area, ground, seed), the preset, or the duration. Blend, opacity, mask and animations are layer properties: change those with update_layer.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `layerId` | string | yes |  |  |
-| `preset` | "rain" \| "heavyRain" \| "snow" \| "dust" \| "embers" \| "sparks" \| "confetti" \| "bokeh" \| "smoke" \| "fog" |  |  |  |
-| `density` | number |  |  | More or fewer particles (smoke and fog: thicker or thinner), 1 = the preset (≥ 0.1, ≤ 4) |
-| `size` | number |  |  | Particle size (smoke and fog: size of the billows), 1 = the preset (≥ 0.25, ≤ 4) |
-| `speed` | number |  |  | How fast everything moves, 1 = the preset (≥ 0.25, ≤ 4) |
-| `wind` | number |  |  | Sideways wind in frame heights per second, + to the right (0.1 is a breeze, 0.5 a storm); slants rain (≥ -1, ≤ 1) |
-| `color` | string |  |  | One color for every particle (#RRGGBB), replacing the preset's colors |
-| `area` | { x0, y0, x1, y1 } |  |  | Where particles are born (frame fractions; may reach outside the frame): sparks from a grinder at a spot, embers from a fire's area, confetti over one side |
-| `area.x0` | number | yes |  | (≥ -1, ≤ 2) |
-| `area.y0` | number | yes |  | (≥ -1, ≤ 2) |
-| `area.x1` | number | yes |  | (≥ -1, ≤ 2) |
-| `area.y1` | number | yes |  | (≥ -1, ≤ 2) |
-| `ground` | number |  |  | Height of the ground line (frame fraction) where falling particles stop; heavyRain splashes there (≥ 0, ≤ 1.5) |
-| `seed` | integer |  |  | Another seed gives another, equally random, arrangement; the same seed always draws the same frames (≥ 0, ≤ 1000000) |
-| `duration` | number |  |  | New duration in seconds (> 0, ≤ 600) |
-| `followSpeed` | boolean |  |  |  |
-
-### add_light
-
-**edits**. Add light effects that make a shot feel lit: rays or a lens flare. rays: shafts of light streaming from a bright source (sun through trees or a window, a stage light): the parts of the picture brighter than threshold are smeared outward from source and added back, so put source on the light itself and lower threshold for dimmer lights. It is an effect on target (a clip, all-clips, global or a media layer) with a label; the same label updates it and remove: true deletes it; mask limits where rays show. flare: a lens flare from a light (glow, streak and ghosts along the line through the frame center) as a layer from start for duration. It follows a moving light by path (keyframes) or track (a point from track_points), and by default its size and strength follow how bright the picture is at the source, so it fades when the light is blocked or leaves the frame. Check with render_frame; for a flare also at the start and end, and render_preview for the motion.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `kind` | "rays" \| "flare" | yes |  |  |
-| `source` | { x, y } |  |  | Where the light is (frame fractions); rays default to the top middle |
-| `source.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `source.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `target` | string |  | `"all-clips"` | rays: a clip id, "all-clips", "global", or a media layer id |
-| `label` | string |  |  | rays: name of these rays (default "light rays"); flare: layer label |
-| `threshold` | number |  |  | rays: only parts brighter than this cast rays (default 0.7) (≥ 0, ≤ 0.98) |
-| `length` | number |  |  | rays: how far they reach toward the frame edges (default 0.5) (≥ 0.05, ≤ 1) |
-| `intensity` | number |  |  | Brightness: rays default 0.8, flare 1 (≥ 0, ≤ 3) |
-| `color` | string |  |  | Light color (rays default warm #FFE6B8; flare by look) |
-| `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | rays: where they show; flare: where the flare layer shows |
-| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = an ellipse, rectangle or polygon, fixed, moving with keyframes, or pinned to a track |
-| `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
-| `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
-| `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
-| `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
-| `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
-| `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
-| `mask.shape` | { type, x, y, width, height, points, keyframes, corners, track } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
-| `mask.shape.type` | "ellipse" \| "rect" \| "polygon" |  | `"ellipse"` |  |
-| `mask.shape.x` | number |  |  | ellipse and rect: center x as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.y` | number |  |  | ellipse and rect: center y as a frame fraction (≥ 0, ≤ 1) |
-| `mask.shape.width` | number |  |  | ellipse and rect: width as a fraction of frame width (> 0, ≤ 2) |
-| `mask.shape.height` | number |  |  | ellipse and rect: height as a fraction of frame height (> 0, ≤ 2) |
-| `mask.shape.points` | unknown[][] |  |  | polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face |
-| `mask.shape.keyframes` | { time, value, easing }[] |  |  | Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box |
-| `mask.shape.corners` | { time, value, easing }[] |  |  | Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set |
-| `mask.shape.track` | string |  |  | The track the corners follow (pin_mask sets it); review_edit checks it for drift |
-| `mask.invert` | boolean |  | `false` | Select everything except this |
-| `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
-| `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
-| `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
-| `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
-| `mask.combine` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
-| `remove` | boolean |  |  | rays: delete the rays with this label from target |
-| `start` | number |  |  | flare: timeline start (≥ 0) |
-| `duration` | number |  |  | flare: seconds (> 0, ≤ 600) |
-| `look` | "natural" \| "anamorphic" \| "subtle" |  | `"natural"` | natural: A spherical lens: warm glow, a short streak and a chain of faint colored ghosts and rings across the frame; anamorphic: An anamorphic lens: a long thin blue streak across the frame and blue ghosts (sci-fi, night city, car lights); subtle: A soft glow with two faint ghosts, for a light that should catch the lens without drawing attention |
-| `path` | { time, x, y }[] |  |  | flare: the light's position over time (frame fractions), straight between points |
-| `track` | string |  |  | flare: follow the center of this tracked point or surface (track_points) |
-| `matchBrightness` | boolean |  | `true` | flare: size and strength follow the picture's brightness at the source |
-
-### animate_layer
-
-**edits**. Move, scale, turn or fade a layer over time with keyframes (text, shapes and media overlays): a label that slides along with a product, a logo that grows, a title that drifts. Give a list of keyframes per property; each has a time (timeline seconds, or seconds into the layer with relative), a value, and easing into it from the previous keyframe (default ease-in-out; linear for steady motion). Before the first keyframe a property holds its first value, after the last its last. Pass null to remove a property's keyframes. Entrance and exit animations still play. To follow a person, use follow_face.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `layerId` | string | yes |  |  |
-| `position` | { time, x, y, easing }[] \| null |  |  | Center of the layer (frame fractions) |
-| `scale` | { time, value, easing }[] \| null |  |  | Size multiplier (1 = its own size) |
-| `rotation` | { time, value, easing }[] \| null |  |  | Degrees clockwise |
-| `opacity` | { time, value, easing }[] \| null |  |  | Multiplies the layer's opacity |
-| `rotateX` | { time, value, easing }[] \| null |  |  | 3D tilt in degrees, media and graphic layers (+ tips the top away; 90 is edge-on) |
-| `rotateY` | { time, value, easing }[] \| null |  |  | 3D turn in degrees, media and graphic layers (+ turns the right side away; 0 to 360 is a full spin) |
-| `relative` | boolean |  | `false` | Times count from the layer's start instead of the timeline |
-
-### select_object
-
-**edits**. Select any object in a video clip (a phone, a car, a cup, a person, a sign, the sky) so effects and corrections can be limited to it: a glow on one object, a grade on one car, a blur on everything else. Point at it, give a box around it, or name it ('the red car'); positions are fractions of the edit's frame at the timeline time, as you see it in render_frame. A box is the most reliable prompt: a single point often selects only part of the object (a shirt for the person). Runs on this machine (SAM 2.1; a 155 MB model downloads once, plus a detector for names). It shows the selection in blue on the source frame; if it is wrong, select again with a box. The object is then followed through every clip of its video wherever a mask uses it: mask { kind: 'object', object: '<id>' } in grade_region, render_mask or any effect. Run track_object next to follow it through the clips and see how well it held.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `time` | number | yes |  | Timeline time of a frame the object is clearly visible in (≥ 0) |
-| `point` | { x, y } |  |  | A point on the object (frame fractions) |
-| `point.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `point.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `box` | { x0, y0, x1, y1 } |  |  | A box around the whole object (frame fractions); the most reliable prompt |
-| `box.x0` | number | yes |  |  |
-| `box.y0` | number | yes |  |  |
-| `box.x1` | number | yes |  |  |
-| `box.y1` | number | yes |  |  |
-| `text` | string |  |  | What the object is, e.g. 'the red car', when you give no point or box |
-| `label` | string |  |  | A short name, e.g. 'phone'; also the id when no id is given |
-| `id` | string |  |  | Reselect an existing object under this id |
-| `remove` | boolean |  |  | Forget the object with this id |
-
-### track_object
-
-**read-only**. Follow a selected object (select_object) through every primary clip of its video, or the given clips, and report how well it held: per clip the frames, how many keyframes the model segmented, confidence, and the timeline ranges where the object was lost or unsure. Shows the mask in blue on a few frames, including the least sure one. Slow on a laptop (about a minute per 10 s of footage, on this machine), and done once: renders reuse the result. Run it before relying on an object mask, and check the unsure ranges with render_mask.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `objectId` | string | yes |  |  |
-| `clipIds` | string[] |  |  | Only these clips (default: every primary clip of the object's video) |
-
-### track_points
-
-**edits**. Follow a point or a flat surface through a video, to attach graphics to it (pin_layer) or put a new picture on a screen or sign (replace_screen). Mark it on a frame where it is clearly visible, in fractions of the edit's frame at a timeline time as in render_frame: the four corners of a surface (a phone or monitor screen, a sign, a poster, a picture frame, a wall), or a point with the square around it (a logo on a shirt, a car door, a spot on a table). Pick something rigid with texture or edges; plain areas, reflections and things that bend track badly. A blank screen, or one that shows moving content, has nothing to follow inside its corners: without a margin the area around the surface (its bezel, a sign's frame) is tried too, as far out as it takes to track surely. Runs on this machine in seconds (no model). Follows it through every primary clip of that video, reports per clip how sure the tracking is and the unsure ranges, and shows the corners in blue on the marked clip's start, least sure frame, middle and end. Mark again under the same id to fix it; remove forgets it.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `time` | number | yes |  | Timeline time of a frame where it is clearly visible (≥ 0) |
-| `corners` | { tl, tr, br, bl } |  |  | Corners of a flat surface (frame fractions), top-left, top-right, bottom-right, bottom-left as seen in the frame |
-| `corners.tl` | { x, y } | yes |  | Top-left corner |
-| `corners.tl.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `corners.tl.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `corners.tr` | { x, y } | yes |  | Top-right corner |
-| `corners.tr.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `corners.tr.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `corners.br` | { x, y } | yes |  | Bottom-right corner |
-| `corners.br.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `corners.br.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `corners.bl` | { x, y } | yes |  | Bottom-left corner |
-| `corners.bl.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `corners.bl.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `point` | { x, y } |  |  | A point to follow (frame fractions) |
-| `point.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `point.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `radius` | number |  |  | point: half the size of the tracked square around it, as a fraction of the source's long side (default 0.04); cover the thing that moves with the point, not the background (> 0, ≤ 0.5) |
-| `margin` | number |  |  | corners: also track this much around the surface (a fraction of its size): a screen's bezel, a sign's frame. Leave it out to have it found; 0 tracks the surface alone (≥ 0, ≤ 1) |
-| `motion` | "translation" \| "similarity" \| "perspective" |  |  | translation (position only), similarity (also size and turn), perspective (a flat surface at any angle). Default perspective for corners, similarity for a point |
-| `label` | string |  |  | A short name, e.g. 'phone screen'; also the id when no id is given |
-| `id` | string |  |  | Mark an existing track again under this id |
-| `remove` | boolean |  |  | Forget the track with this id |
-
-### pin_layer
-
-**edits**. Attach a layer (a label, an arrow, a sticker, a graphic, a media overlay) to a tracked point or surface (track_points), so it moves with it: position, and for similarity and perspective tracks also size and turn. Place the layer where it should sit first; it keeps that offset from the tracked thing as it is at the layer's first tracked moment. Sets position, scale and rotation keyframes (replacing those properties' keyframes); where the track does not cover the layer, it holds still. Check with render_frame at the start, middle and end, or render_preview.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `layerId` | string | yes |  |  |
-| `trackId` | string | yes |  |  |
-| `follow` | "position" \| "scale" \| "rotation"[] |  |  | What to follow (default: position for translation tracks; position, scale and rotation otherwise) |
-
-### pin_mask
-
-**edits**. Pin a shape mask to a tracked point or surface (track_points), so the shape moves, grows and turns in perspective with it: a grade on a sign or a building's face, a blur over a license plate, a glow on a moving object's area. The effect is found by its label (grade_region's label, or the label of any effect with a shape mask). Draw the shape where it belongs at the first moment the track covers the clip; it keeps that place on the tracked thing. Sets the shape's corners (replacing its keyframes); before and after the track it holds still. Check with render_mask at the start, middle and end, and at the fastest motion.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `target` | string | yes |  | The clip id, media layer id or "global" the effect is on |
-| `label` | string | yes |  | The masked effect's label |
-| `trackId` | string | yes |  |  |
-
-### replace_screen
-
-**edits**. Put an image or video on a tracked flat surface (track_points with corners): a phone or monitor screen, a TV, a billboard, a sign, a picture frame. The insert is corner-pinned to the four tracked corners on every frame, so it stays on the surface as the camera or the surface moves. By default it covers the clip the surface was marked in, cropped to the surface's shape (fit cover). It sits the insert in the shot by itself (match): blurred to the sharpness of the scene around the screen, tinted to the shot's white balance, its blacks lifted by the ambient light, and a faint glare over it (glare). Things passing in front of the screen (a finger, a hand) are covered by the insert unless you name them as occluder: select them first with select_object, and they stay in front. Check the corners at the start, middle, end and fastest motion with render_frame.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `trackId` | string | yes |  | A track made with track_points from corners |
-| `assetId` | string | yes |  | The image or video to show on the surface |
-| `start` | number |  |  | Timeline start (default: the start of the clip the surface was marked in) (≥ 0) |
-| `duration` | number |  |  | Seconds (default: to the end of that clip) (> 0) |
-| `in` | number |  |  | Seconds into a video insert to start from (≥ 0) |
-| `fit` | "cover" \| "contain" \| "stretch" \| "blur" |  |  | How the insert fills the surface (default cover: fill and crop) |
-| `opacity` | number |  |  | (≥ 0, ≤ 1) |
-| `effects` | { type, params, mask, label, keyframes }[] |  |  | More effects on the insert (before the match's own) |
-| `match` | boolean |  | `true` | Match the insert to the shot: blur, white balance and ambient light on its blacks, measured on a frame of the edit |
-| `glare` | number |  | `0.08` | A soft diagonal sheen over the screen, screened on at this opacity (0 = none) (≥ 0, ≤ 0.5) |
-| `occluder` | string |  |  | An object (select_object) that passes in front of the screen and stays in front of the insert |
-| `label` | string |  |  |  |
-
-### replace_sky
-
-**edits**. Replace the sky in video clips with a picture or video (a sky photo, a sunset, a time-lapse of clouds) or a gradient. The sky is found by a model on this machine (a 176 MB model downloads once; about a second of work per second of footage) and followed through every frame. The new sky moves with the camera (measured from the distant scenery), is matched in brightness to the old sky, softened to the scene's sharpness, and gets the scene's own horizon haze, and the scenery is tinted slightly toward the new sky. Shows the result on a frame of each clip. Pick a new sky whose light suits the scene (a sunset sky over midday shadows looks wrong; grade the clip warmer to go with it). Check edges where trees, hair or buildings meet the sky with render_frame, and the sky's motion with render_preview. To fine-tune haze, relight or softening, call again with them; remove takes it out.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `clipIds` | string[] |  |  | Clips to change (default: every primary video clip that shows sky) |
-| `assetId` | string |  |  | Image or video asset for the new sky; omit for a gradient |
-| `colors` | unknown[] |  |  | Gradient top and bottom colors (#RRGGBB) when there is no picture, e.g. a deep blue over a pale one |
-| `focus` | { x, y } |  |  | Which part of the new sky picture shows when it is cropped (0 = left or top, 1 = right or bottom; default the middle) |
-| `focus.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `focus.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `follow` | number |  | `1` | How much the new sky moves with the camera: 1 like distant scenery (pans, tilts, zooms), 0 fixed (≥ 0, ≤ 1) |
-| `match` | number |  | `0.5` | Bring the new sky's brightness this far toward the old sky's (0 keeps it as it is) (≥ 0, ≤ 1) |
-| `haze` | number |  |  | Horizon haze strength (default 0.35) (≥ 0, ≤ 1) |
-| `relight` | number |  |  | Tint of the scenery toward the new sky (default 0.12, subtle) (≥ 0, ≤ 1) |
-| `blur` | number |  |  | Softening of the new sky in pixels at 1080p (default 0.6) (≥ 0, ≤ 20) |
-| `remove` | boolean |  |  | Take the sky replacement out of these clips |
-
-### remove_object
-
-**edits**. Remove an object from video clips and fill in what was behind it: a person walking through, a car, a sign, a cable, a logo or watermark. Give a tracked object (objectId from select_object, followed through every frame; it is tracked first if it is not yet) or a box: a fixed area of the edit's frame that stays put (a logo, a date stamp, a dust spot on the lens). Behind the object is rebuilt from other frames of the clip, where the object moves away or the camera moves past it: on a locked-off shot this is exact and does not flicker. What no frame ever shows (an object that never moves on a still shot, a photo) is painted by an inpainting model on this machine (a 208 MB model downloads once; about 10 s each time it runs, plus 20 s to load it), on as few frames as possible, and the rest take from that, so it stays put. Shows the clip before and after at the frame with the most removed, and reports per clip whether the camera moved and how much of the area came from real frames. Check the result with render_preview: generated areas on moving shots can wobble, and large objects on moving shots are the hardest case. Calling again adds to the clip's removal; remove takes an object out of it, or everything when no object or box is given. Primary video and photo clips only.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `objectId` | string |  |  | A tracked object to remove (select_object) |
-| `box` | { x0, y0, x1, y1 } |  |  | A fixed area to remove instead, in fractions of the edit's frame as in render_frame; draw it a little larger than the thing |
-| `box.x0` | number | yes |  |  |
-| `box.y0` | number | yes |  |  |
-| `box.x1` | number | yes |  |  |
-| `box.y1` | number | yes |  |  |
-| `shape` | "rect" \| "ellipse" |  | `"rect"` | Shape of the box's area |
-| `time` | number |  |  | Timeline time the box was drawn at (default: the middle of each clip); it maps the box into the source (≥ 0) |
-| `clipIds` | string[] |  |  | Clips to remove it from (default: every primary clip of the object's video, or the clip playing at time for a box) |
-| `grow` | number |  |  | Grow the removed area by this fraction of the frame's short side (default 0.008); more covers a soft edge or a shadow (≥ 0, ≤ 0.05) |
-| `feather` | number |  |  | Soft edge beyond that (default 0.006) (≥ 0, ≤ 0.03) |
-| `remove` | boolean |  |  | Take the object (or, with neither objectId nor box, the whole removal) out of these clips |
-
-### follow_face
-
-**edits**. Make a layer (a name label, a callout, an arrow, a sticker) follow a person on screen: it finds the main face in the clips under the layer and sets position keyframes beside it (above, below, left, right, or on it), smoothed so it glides rather than jitters. The layer stays inside the frame. Where no face is found it holds its last spot.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `layerId` | string | yes |  |  |
-| `clipId` | string |  |  | Clip to follow (default: the primary clips under the layer) |
-| `side` | "above" \| "below" \| "left" \| "right" \| "on" |  | `"above"` |  |
-| `gap` | number |  | `0.02` | Space between the face and the layer (frame fraction) (≥ 0, ≤ 0.3) |
-
-### fix_transcript
-
-**edits**. Correct words the speech recognizer got wrong, keeping their timings: find and replace words or phrases ("cloud" to "Claude", "cooper netties" to "Kubernetes") in one transcript or all of them. Matching ignores case and punctuation; punctuation around a match is kept. Captions, search and text-based cuts all use the corrected words. vocabulary saves the names and terms said in the video: transcribe passes them to recognizers that take hints, and this tool and transcribe list words that look like mishearings of them, so you can confirm each before replacing. An empty replace removes words from the transcript only (the video is not cut).
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `assetId` | string |  |  | Transcript to fix (default: every transcript) |
-| `replace` | { find, replace }[] |  | `[]` | Applied in order |
-| `vocabulary` | string[] |  |  | Names and terms said in the video; replaces the saved list |
-
-### offer_choices
-
-**read-only**. Let the user choose when taste decides, instead of deciding for them: a narration voice (play the files preview_voice made), a music track, a sound effect, or a look (show frames you rendered with each option, e.g. render_frame after each title style, then undo). The app shows the options as cards they can play or view and pick. Offer 2 to 6, each with a short label. End your turn right after calling it: their pick arrives as their next message, and then you apply it.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `question` | string | yes |  | What to choose, e.g. 'Which voice should narrate?' |
-| `options` | { label, description, audio, image }[] | yes |  |  |
-
 ### set_color_space
 
 **edits**. Say what color space a video or picture was recorded in, so it renders as its maker defines it: camera log (flat, gray-looking footage) and HDR are converted to the edit's Rec.709 with the maker's published curve and gamut, through ACES with a filmic highlight roll-off. Set it before grading log footage: color_adjust's exposure, temperature, tint, contrast, saturation and wheels then grade on scene light (in ACEScct, inside the conversion), the rest of the panel on the finished picture. HDR files tagged as HLG or PQ are set when imported. For delivery without banding after heavy grades, render_video with bitDepth 10. Log footage is usually tagged Rec.709, so look at it first (render_frame, render_scopes): a flat, low-contrast picture with no deep blacks and no bright whites is likely log. When the camera is unknown, offer_choices with a frame converted with the two or three likeliest spaces. Spaces: "rec709" (Rec.709: Ordinary video (phones, most cameras, screen recordings, the web). The default: the picture is used as it is.); "srgb" (sRGB: Pictures and graphics made for screens. Used as it is.); "slog3-sgamut3cine" (Sony S-Log3 / S-Gamut3.Cine: Sony cameras (FX3, FX6, A7S III, Venice) shot in S-Log3 with S-Gamut3.Cine: flat, gray-looking footage, 18% gray near 41%.); "slog3-sgamut3" (Sony S-Log3 / S-Gamut3: Sony S-Log3 with the wider S-Gamut3.); "vlog-vgamut" (Panasonic V-Log / V-Gamut: Panasonic cameras (GH5S, GH6, S1H, S5) shot in V-Log: flat footage, 18% gray near 42%.); "applelog" (Apple Log: iPhone 15 Pro and later recording in Apple Log (ProRes Log): very flat footage, 18% gray near 49%, Rec.2020 primaries.); "logc3-awg3" (ARRI LogC3 / ALEXA Wide Gamut 3: ARRI ALEXA cameras before the ALEXA 35 (LogC3 at EI 800): 18% gray near 39%.); "logc4-awg4" (ARRI LogC4 / ALEXA Wide Gamut 4: ARRI ALEXA 35 footage: 18% gray near 28%.); "clog3-cinemagamut" (Canon Log 3 / Cinema Gamut: Canon cameras (C70, C300 Mark III, R5 C, R5, R6 II) shot in Canon Log 3: flat footage, 18% gray near 34%.); "bmdfilm-gen5" (Blackmagic Film Gen 5: Blackmagic cameras (Pocket 4K/6K, URSA) in Film mode, Generation 5 color science: 18% gray near 38%.); "hlg-rec2020" (HLG (Rec.2020): HDR video in HLG, as phones and cameras record HDR (often tagged arib-std-b67).); "pq-rec2020" (PQ / HDR10 (Rec.2020): HDR video in PQ (HDR10, Dolby Vision base layers; tagged smpte2084).). "rec709" sets it back to ordinary video.
@@ -1432,16 +1152,6 @@ _No parameters._
 | `target` | string |  | `"all-clips"` | "all-clips", "global" (the whole video, after the clips are joined), a clip id or a media layer id |
 | `look` | string | yes |  | A look id, or "none" to remove the look |
 | `strength` | number |  | `1` | How much of the look (0..1) (≥ 0, ≤ 1) |
-
-### export_lut
-
-**read-only**. Save a clip's grade as a .cube 3D LUT for DaVinci Resolve, Premiere, Final Cut or a camera monitor: its color space conversion (for log footage, the LUT takes the camera's own log signal), the grade and every per-pixel effect (the color panel, a look's grade and print-film curve, LUT files). Spatial effects (secondaries, grain, glows, vignette, sharpening) cannot be in a LUT: the result names what it left out. 33 points is the common size; 65 is finer.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `clipId` | string | yes |  |  |
-| `output` | string | yes |  | Where to save it, e.g. luts/scene1.cube |
-| `size` | 33 \| 65 |  | `33` |  |
 
 ### match_color
 
@@ -1464,40 +1174,6 @@ _No parameters._
 | `strength` | number |  | `0.85` | (≥ 0, ≤ 1) |
 | `method` | "auto" \| "transfer" \| "reinhard" \| "curves" |  | `"auto"` | auto tries each and keeps the closest; transfer (Oklab color transfer), reinhard (mean and spread), curves (per-channel) |
 | `maxHueShift` | number |  | `15` | Largest hue turn allowed, degrees (raise only when asked for a strong color change) (≥ 0, ≤ 180) |
-
-### estimate_depth
-
-**read-only**. Estimate how far everything is from the camera in video and photo clips (Depth Anything V2 on keyframes, aligned and carried between them, about 5 s per second of footage on a laptop, cached), and show it: the frame next to its depth, near white and far black. Distance runs from 0 (the nearest things in the clip) to 1 (the farthest). Give points or boxes to read the distance of things, e.g. a face, for focus or for a depth mask. Depth drives: mask { kind: 'depth', distance: [a, b] } in grade_region, render_mask and any effect (grade the background, darken the foreground), set_focus (depth of field and rack focus), and the effects depthFog (haze that thickens with distance) and parallax (a 2.5D camera move through a photo) through add_effect.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `clipId` | string | yes |  |  |
-| `time` | number |  |  | Timeline time to show and measure (default the middle of the clip) (≥ 0) |
-| `points` | { x, y }[] |  |  | Points to read the distance at (edit frame fractions) |
-| `boxes` | { x0, y0, x1, y1 }[] |  |  | Boxes to read the median distance in (edit frame fractions) |
-| `scale` | number |  | `0.5` | (≥ 0.1, ≤ 1) |
-
-### set_focus
-
-**edits**. Depth of field on a video or photo clip, from its depth (estimated if needed): what is at the focus stays sharp and everything nearer or farther blurs the more it is out of focus, like a fast lens. Focus on a point, a box, a distance, or a tracked object (select_object), which the focus then follows. rack moves the focus over time (a focus pull from one subject to another): each step gives a timeline time and a point, box or distance. blur sets the strength (pixels at 1080p), range how deep the sharp zone is. remove: true takes it out. Check the sharp subject's edges with render_frame (no halo, no sharp background left around it), and a rack with render_preview.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `clipId` | string | yes |  |  |
-| `point` | { x, y } |  |  | A point on what should be sharp (edit frame fractions) |
-| `point.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
-| `point.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
-| `box` | { x0, y0, x1, y1 } |  |  | A box around it (edit frame fractions) |
-| `box.x0` | number | yes |  |  |
-| `box.y0` | number | yes |  |  |
-| `box.x1` | number | yes |  |  |
-| `box.y1` | number | yes |  |  |
-| `distance` | number |  |  | Or the distance itself (0 near .. 1 far) (≥ 0, ≤ 1) |
-| `object` | string |  |  | Keep this tracked object (project.objects) in focus as it moves |
-| `rack` | { point, box, distance, time }[] |  |  | Focus over time; the focus eases from one step to the next |
-| `blur` | number |  |  | Blur of the most out-of-focus parts, pixels at 1080p (default 25) (≥ 0, ≤ 100) |
-| `range` | number |  |  | Depth of the sharp zone (default: the depth the person under a point, or the tracked object, spans; else 0.1) (≥ 0, ≤ 0.6) |
-| `remove` | boolean |  |  |  |
 
 ### grade_region
 
@@ -1639,26 +1315,359 @@ _No parameters._
 | `style` | "matte" \| "overlay" |  | `"matte"` |  |
 | `scale` | number |  | `0.5` | (≥ 0.1, ≤ 1) |
 
-### review_edit
+### export_lut
 
-**read-only**. Check the edit for what a viewer notices, with timeline times, without changing anything. It renders sample frames and the audio mix in one pass and reports: text that is hard to read against the picture, runs off the frame, or collides with captions or other text (text); text and captions where TikTok, Reels and Shorts put their buttons and captions (safe-zones); black, frozen or repeated footage (frames); words cut off at an edit, doubled caption words, captions over silence, and speech the transcript skipped (speech); loudness off target, peaks, and music too loud under the voice (audio); screen color a chroma key left behind (key); highlights or shadows the grade clipped, skin pushed off the skin line, banding the grade brought out in skies and walls, each against the same frame without the grade (grade); model mattes that flicker, tracks that pinned layers and masks follow where they are unsure, and a replaced sky sliding against the scenery (vfx). It also finds text and captions covering a face (local face detection). Run it before render_video and after big changes, fix what it finds, then run it again.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `checks` | "text" \| "safe-zones" \| "frames" \| "speech" \| "audio" \| "key" \| "grade" \| "vfx"[] |  |  | Only these checks (default all) |
-| `platform` | "auto" \| "tiktok" \| "reels" \| "shorts" \| "vertical" \| "none" |  | `"auto"` | Safe zones to check: auto = all three vertical apps for a portrait video, none for landscape |
-| `loudnessTarget` | number |  | `-14` | Integrated loudness to aim for in LUFS: -14 social video and YouTube, -16 podcasts (≥ -30, ≤ -8) |
-
-### make_thumbnail
-
-**read-only**. Make a thumbnail image (YouTube style: a frame of the video, punchier color, a big bold title of 2-5 words). The frame comes from the edit at time (without its own titles and captions). The title goes on the side away from the faces in the frame (side auto), wrapped onto short lines. Saved as a 1280x720 JPEG for landscape projects (YouTube's size), else the project's size. Look at the result and try another time or title if it does not read at a glance.
+**read-only**. Save a clip's grade as a .cube 3D LUT for DaVinci Resolve, Premiere, Final Cut or a camera monitor: its color space conversion (for log footage, the LUT takes the camera's own log signal), the grade and every per-pixel effect (the color panel, a look's grade and print-film curve, LUT files). Spatial effects (secondaries, grain, glows, vignette, sharpening) cannot be in a LUT: the result names what it left out. 33 points is the common size; 65 is finer.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `title` | string | yes |  | 2-5 words; wrapped automatically |
-| `subtitle` | string |  |  | Small line under the title, in a colored box |
-| `time` | number |  |  | Timeline time of the frame (default: the middle) (≥ 0) |
-| `side` | "auto" \| "left" \| "right" \| "top" \| "bottom" |  | `"auto"` |  |
-| `color` | string |  | `"#FFFFFF"` | Title color |
-| `accentColor` | string |  | `"#FFD000"` | Subtitle box color |
-| `punch` | number |  | `0.6` | How much to boost contrast and color (0 = frame as is) (≥ 0, ≤ 1) |
+| `clipId` | string | yes |  |  |
+| `output` | string | yes |  | Where to save it, e.g. luts/scene1.cube |
+| `size` | 33 \| 65 |  | `33` |  |
+
+## Objects & tracking
+
+### select_object
+
+**edits**. Select any object in a video clip (a phone, a car, a cup, a person, a sign, the sky) so effects and corrections can be limited to it: a glow on one object, a grade on one car, a blur on everything else. Point at it, give a box around it, or name it ('the red car'); positions are fractions of the edit's frame at the timeline time, as you see it in render_frame. A box is the most reliable prompt: a single point often selects only part of the object (a shirt for the person). Runs on this machine (SAM 2.1; a 155 MB model downloads once, plus a detector for names). It shows the selection in blue on the source frame; if it is wrong, select again with a box. The object is then followed through every clip of its video wherever a mask uses it: mask { kind: 'object', object: '<id>' } in grade_region, render_mask or any effect. Run track_object next to follow it through the clips and see how well it held.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `time` | number | yes |  | Timeline time of a frame the object is clearly visible in (≥ 0) |
+| `point` | { x, y } |  |  | A point on the object (frame fractions) |
+| `point.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `point.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `box` | { x0, y0, x1, y1 } |  |  | A box around the whole object (frame fractions); the most reliable prompt |
+| `box.x0` | number | yes |  |  |
+| `box.y0` | number | yes |  |  |
+| `box.x1` | number | yes |  |  |
+| `box.y1` | number | yes |  |  |
+| `text` | string |  |  | What the object is, e.g. 'the red car', when you give no point or box |
+| `label` | string |  |  | A short name, e.g. 'phone'; also the id when no id is given |
+| `id` | string |  |  | Reselect an existing object under this id |
+| `remove` | boolean |  |  | Forget the object with this id |
+
+### track_object
+
+**read-only**. Follow a selected object (select_object) through every primary clip of its video, or the given clips, and report how well it held: per clip the frames, how many keyframes the model segmented, confidence, and the timeline ranges where the object was lost or unsure. Shows the mask in blue on a few frames, including the least sure one. Slow on a laptop (about a minute per 10 s of footage, on this machine), and done once: renders reuse the result. Run it before relying on an object mask, and check the unsure ranges with render_mask.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `objectId` | string | yes |  |  |
+| `clipIds` | string[] |  |  | Only these clips (default: every primary clip of the object's video) |
+
+### track_points
+
+**edits**. Follow a point or a flat surface through a video, to attach graphics to it (pin_layer) or put a new picture on a screen or sign (replace_screen). Mark it on a frame where it is clearly visible, in fractions of the edit's frame at a timeline time as in render_frame: the four corners of a surface (a phone or monitor screen, a sign, a poster, a picture frame, a wall), or a point with the square around it (a logo on a shirt, a car door, a spot on a table). Pick something rigid with texture or edges; plain areas, reflections and things that bend track badly. A blank screen, or one that shows moving content, has nothing to follow inside its corners: without a margin the area around the surface (its bezel, a sign's frame) is tried too, as far out as it takes to track surely. Runs on this machine in seconds (no model). Follows it through every primary clip of that video, reports per clip how sure the tracking is and the unsure ranges, and shows the corners in blue on the marked clip's start, least sure frame, middle and end. Mark again under the same id to fix it; remove forgets it.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `time` | number | yes |  | Timeline time of a frame where it is clearly visible (≥ 0) |
+| `corners` | { tl, tr, br, bl } |  |  | Corners of a flat surface (frame fractions), top-left, top-right, bottom-right, bottom-left as seen in the frame |
+| `corners.tl` | { x, y } | yes |  | Top-left corner |
+| `corners.tl.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `corners.tl.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `corners.tr` | { x, y } | yes |  | Top-right corner |
+| `corners.tr.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `corners.tr.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `corners.br` | { x, y } | yes |  | Bottom-right corner |
+| `corners.br.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `corners.br.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `corners.bl` | { x, y } | yes |  | Bottom-left corner |
+| `corners.bl.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `corners.bl.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `point` | { x, y } |  |  | A point to follow (frame fractions) |
+| `point.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `point.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `radius` | number |  |  | point: half the size of the tracked square around it, as a fraction of the source's long side (default 0.04); cover the thing that moves with the point, not the background (> 0, ≤ 0.5) |
+| `margin` | number |  |  | corners: also track this much around the surface (a fraction of its size): a screen's bezel, a sign's frame. Leave it out to have it found; 0 tracks the surface alone (≥ 0, ≤ 1) |
+| `motion` | "translation" \| "similarity" \| "perspective" |  |  | translation (position only), similarity (also size and turn), perspective (a flat surface at any angle). Default perspective for corners, similarity for a point |
+| `label` | string |  |  | A short name, e.g. 'phone screen'; also the id when no id is given |
+| `id` | string |  |  | Mark an existing track again under this id |
+| `remove` | boolean |  |  | Forget the track with this id |
+
+### pin_layer
+
+**edits**. Attach a layer (a label, an arrow, a sticker, a graphic, a media overlay) to a tracked point or surface (track_points), so it moves with it: position, and for similarity and perspective tracks also size and turn. Place the layer where it should sit first; it keeps that offset from the tracked thing as it is at the layer's first tracked moment. Sets position, scale and rotation keyframes (replacing those properties' keyframes); where the track does not cover the layer, it holds still. Check with render_frame at the start, middle and end, or render_preview.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `trackId` | string | yes |  |  |
+| `follow` | "position" \| "scale" \| "rotation"[] |  |  | What to follow (default: position for translation tracks; position, scale and rotation otherwise) |
+
+### pin_mask
+
+**edits**. Pin a shape mask to a tracked point or surface (track_points), so the shape moves, grows and turns in perspective with it: a grade on a sign or a building's face, a blur over a license plate, a glow on a moving object's area. The effect is found by its label (grade_region's label, or the label of any effect with a shape mask). Draw the shape where it belongs at the first moment the track covers the clip; it keeps that place on the tracked thing. Sets the shape's corners (replacing its keyframes); before and after the track it holds still. Check with render_mask at the start, middle and end, and at the fastest motion.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `target` | string | yes |  | The clip id, media layer id or "global" the effect is on |
+| `label` | string | yes |  | The masked effect's label |
+| `trackId` | string | yes |  |  |
+
+### replace_screen
+
+**edits**. Put an image or video on a tracked flat surface (track_points with corners): a phone or monitor screen, a TV, a billboard, a sign, a picture frame. The insert is corner-pinned to the four tracked corners on every frame, so it stays on the surface as the camera or the surface moves. By default it covers the clip the surface was marked in, cropped to the surface's shape (fit cover). It sits the insert in the shot by itself (match): blurred to the sharpness of the scene around the screen, tinted to the shot's white balance, its blacks lifted by the ambient light, and a faint glare over it (glare). Things passing in front of the screen (a finger, a hand) are covered by the insert unless you name them as occluder: select them first with select_object, and they stay in front. Check the corners at the start, middle, end and fastest motion with render_frame.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `trackId` | string | yes |  | A track made with track_points from corners |
+| `assetId` | string | yes |  | The image or video to show on the surface |
+| `start` | number |  |  | Timeline start (default: the start of the clip the surface was marked in) (≥ 0) |
+| `duration` | number |  |  | Seconds (default: to the end of that clip) (> 0) |
+| `in` | number |  |  | Seconds into a video insert to start from (≥ 0) |
+| `fit` | "cover" \| "contain" \| "stretch" \| "blur" |  |  | How the insert fills the surface (default cover: fill and crop) |
+| `opacity` | number |  |  | (≥ 0, ≤ 1) |
+| `effects` | { type, params, mask, label, keyframes }[] |  |  | More effects on the insert (before the match's own) |
+| `match` | boolean |  | `true` | Match the insert to the shot: blur, white balance and ambient light on its blacks, measured on a frame of the edit |
+| `glare` | number |  | `0.08` | A soft diagonal sheen over the screen, screened on at this opacity (0 = none) (≥ 0, ≤ 0.5) |
+| `occluder` | string |  |  | An object (select_object) that passes in front of the screen and stays in front of the insert |
+| `label` | string |  |  |  |
+
+### replace_sky
+
+**edits**. Replace the sky in video clips with a picture or video (a sky photo, a sunset, a time-lapse of clouds) or a gradient. The sky is found by a model on this machine (a 176 MB model downloads once; about a second of work per second of footage) and followed through every frame. The new sky moves with the camera (measured from the distant scenery), is matched in brightness to the old sky, softened to the scene's sharpness, and gets the scene's own horizon haze, and the scenery is tinted slightly toward the new sky. Shows the result on a frame of each clip. Pick a new sky whose light suits the scene (a sunset sky over midday shadows looks wrong; grade the clip warmer to go with it). Check edges where trees, hair or buildings meet the sky with render_frame, and the sky's motion with render_preview. To fine-tune haze, relight or softening, call again with them; remove takes it out.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipIds` | string[] |  |  | Clips to change (default: every primary video clip that shows sky) |
+| `assetId` | string |  |  | Image or video asset for the new sky; omit for a gradient |
+| `colors` | unknown[] |  |  | Gradient top and bottom colors (#RRGGBB) when there is no picture, e.g. a deep blue over a pale one |
+| `focus` | { x, y } |  |  | Which part of the new sky picture shows when it is cropped (0 = left or top, 1 = right or bottom; default the middle) |
+| `focus.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `focus.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `follow` | number |  | `1` | How much the new sky moves with the camera: 1 like distant scenery (pans, tilts, zooms), 0 fixed (≥ 0, ≤ 1) |
+| `match` | number |  | `0.5` | Bring the new sky's brightness this far toward the old sky's (0 keeps it as it is) (≥ 0, ≤ 1) |
+| `haze` | number |  |  | Horizon haze strength (default 0.35) (≥ 0, ≤ 1) |
+| `relight` | number |  |  | Tint of the scenery toward the new sky (default 0.12, subtle) (≥ 0, ≤ 1) |
+| `blur` | number |  |  | Softening of the new sky in pixels at 1080p (default 0.6) (≥ 0, ≤ 20) |
+| `remove` | boolean |  |  | Take the sky replacement out of these clips |
+
+### remove_object
+
+**edits**. Remove an object from video clips and fill in what was behind it: a person walking through, a car, a sign, a cable, a logo or watermark. Give a tracked object (objectId from select_object, followed through every frame; it is tracked first if it is not yet) or a box: a fixed area of the edit's frame that stays put (a logo, a date stamp, a dust spot on the lens). Behind the object is rebuilt from other frames of the clip, where the object moves away or the camera moves past it: on a locked-off shot this is exact and does not flicker. What no frame ever shows (an object that never moves on a still shot, a photo) is painted by an inpainting model on this machine (a 208 MB model downloads once; about 10 s each time it runs, plus 20 s to load it), on as few frames as possible, and the rest take from that, so it stays put. Shows the clip before and after at the frame with the most removed, and reports per clip whether the camera moved and how much of the area came from real frames. Check the result with render_preview: generated areas on moving shots can wobble, and large objects on moving shots are the hardest case. Calling again adds to the clip's removal; remove takes an object out of it, or everything when no object or box is given. Primary video and photo clips only.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `objectId` | string |  |  | A tracked object to remove (select_object) |
+| `box` | { x0, y0, x1, y1 } |  |  | A fixed area to remove instead, in fractions of the edit's frame as in render_frame; draw it a little larger than the thing |
+| `box.x0` | number | yes |  |  |
+| `box.y0` | number | yes |  |  |
+| `box.x1` | number | yes |  |  |
+| `box.y1` | number | yes |  |  |
+| `shape` | "rect" \| "ellipse" |  | `"rect"` | Shape of the box's area |
+| `time` | number |  |  | Timeline time the box was drawn at (default: the middle of each clip); it maps the box into the source (≥ 0) |
+| `clipIds` | string[] |  |  | Clips to remove it from (default: every primary clip of the object's video, or the clip playing at time for a box) |
+| `grow` | number |  |  | Grow the removed area by this fraction of the frame's short side (default 0.008); more covers a soft edge or a shadow (≥ 0, ≤ 0.05) |
+| `feather` | number |  |  | Soft edge beyond that (default 0.006) (≥ 0, ≤ 0.03) |
+| `remove` | boolean |  |  | Take the object (or, with neither objectId nor box, the whole removal) out of these clips |
+
+## Depth
+
+### estimate_depth
+
+**read-only**. Estimate how far everything is from the camera in video and photo clips (Depth Anything V2 on keyframes, aligned and carried between them, about 5 s per second of footage on a laptop, cached), and show it: the frame next to its depth, near white and far black. Distance runs from 0 (the nearest things in the clip) to 1 (the farthest). Give points or boxes to read the distance of things, e.g. a face, for focus or for a depth mask. Depth drives: mask { kind: 'depth', distance: [a, b] } in grade_region, render_mask and any effect (grade the background, darken the foreground), set_focus (depth of field and rack focus), and the effects depthFog (haze that thickens with distance) and parallax (a 2.5D camera move through a photo) through add_effect.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipId` | string | yes |  |  |
+| `time` | number |  |  | Timeline time to show and measure (default the middle of the clip) (≥ 0) |
+| `points` | { x, y }[] |  |  | Points to read the distance at (edit frame fractions) |
+| `boxes` | { x0, y0, x1, y1 }[] |  |  | Boxes to read the median distance in (edit frame fractions) |
+| `scale` | number |  | `0.5` | (≥ 0.1, ≤ 1) |
+
+### set_focus
+
+**edits**. Depth of field on a video or photo clip, from its depth (estimated if needed): what is at the focus stays sharp and everything nearer or farther blurs the more it is out of focus, like a fast lens. Focus on a point, a box, a distance, or a tracked object (select_object), which the focus then follows. rack moves the focus over time (a focus pull from one subject to another): each step gives a timeline time and a point, box or distance. blur sets the strength (pixels at 1080p), range how deep the sharp zone is. remove: true takes it out. Check the sharp subject's edges with render_frame (no halo, no sharp background left around it), and a rack with render_preview.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `clipId` | string | yes |  |  |
+| `point` | { x, y } |  |  | A point on what should be sharp (edit frame fractions) |
+| `point.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `point.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `box` | { x0, y0, x1, y1 } |  |  | A box around it (edit frame fractions) |
+| `box.x0` | number | yes |  |  |
+| `box.y0` | number | yes |  |  |
+| `box.x1` | number | yes |  |  |
+| `box.y1` | number | yes |  |  |
+| `distance` | number |  |  | Or the distance itself (0 near .. 1 far) (≥ 0, ≤ 1) |
+| `object` | string |  |  | Keep this tracked object (project.objects) in focus as it moves |
+| `rack` | { point, box, distance, time }[] |  |  | Focus over time; the focus eases from one step to the next |
+| `blur` | number |  |  | Blur of the most out-of-focus parts, pixels at 1080p (default 25) (≥ 0, ≤ 100) |
+| `range` | number |  |  | Depth of the sharp zone (default: the depth the person under a point, or the tracked object, spans; else 0.1) (≥ 0, ≤ 0.6) |
+| `remove` | boolean |  |  |  |
+
+## Atmosphere & light
+
+### add_particles
+
+**edits**. Add weather, atmosphere or celebration over the video: rain, heavy rain with splashes, snow, dust motes in light, rising embers, sparks, confetti, bokeh orbs, smoke or fog. A seeded simulation (the same seed always draws the same frames) is drawn into a full-frame layer that mixes with the picture by the preset's blend mode; near particles are bigger, faster and softer than far ones, and everything slows down with slow-motion footage under it. Shape it with density, size, speed, wind (slants rain, pushes snow and smoke), color, area (where particles are born: the spot sparks fly from, the fire embers rise from) and ground (where heavy rain splashes). Limit it with mask: snow or rain only in the sky (kind sky), embers kept off a person (kind person, invert true, or behindSubject true), dust only in a beam of light (luma or shape). Weather looks real with a matching grade: cooler, darker and flatter for rain, brighter and cooler for snow. Check with render_frame at a dark and a bright moment, and render_preview for the motion. Change it later with update_particles.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `preset` | "rain" \| "heavyRain" \| "snow" \| "dust" \| "embers" \| "sparks" \| "confetti" \| "bokeh" \| "smoke" \| "fog" | yes |  | rain: Light rain: thin pale streaks falling fast, nearer drops bigger and softer. Lighten the picture with it; a cool, darker grade sells it. heavyRain: A downpour: dense streaks and droplets splashing up from a ground line (ground, default 0.86 of the frame height; set it to where the street or floor is). snow: Falling snow: flakes of many sizes drifting down and swaying, near flakes large and out of focus. Works on dark and bright plates; for snow only in the sky, give mask { kind: 'sky' }. dust: Dust floating in a beam of light: a few hundred tiny specks drifting slowly and twinkling as they catch the light. Best over a shaft of light or a window; limit it there with a shape or luma mask. embers: Glowing embers rising from below and flickering out: fire scenes, campfires, dramatic or heroic moments. Put them behind a person with behindSubject or mask { kind: 'person', invert: true }. sparks: A fountain of hot sparks thrown up and arcing down, streaked by their speed: grinders, welding, impacts, fireworks on the ground. Place it with area (default a small spot at the bottom middle). confetti: A burst of colored paper pieces fluttering down, spinning and tumbling: celebrations, reveals, wins, announcements. Starts with a burst at the layer's start. bokeh: Large soft out-of-focus light orbs drifting slowly upward and fading in and out: romantic, festive, dreamy, night and title backgrounds. smoke: Billowing gray smoke drifting up and across, thicker low in the frame: fires, battlefields, concerts, mystery. Not particles: layers of drifting noise. fog: Low fog or mist rolling slowly across, dense at the bottom and clear at the top: moody landscapes, horror, mornings, depth in a wide shot. |
+| `start` | number | yes |  | (≥ 0) |
+| `duration` | number | yes |  | (> 0, ≤ 600) |
+| `density` | number |  | `1` | More or fewer particles (smoke and fog: thicker or thinner), 1 = the preset (≥ 0.1, ≤ 4) |
+| `size` | number |  | `1` | Particle size (smoke and fog: size of the billows), 1 = the preset (≥ 0.25, ≤ 4) |
+| `speed` | number |  | `1` | How fast everything moves, 1 = the preset (≥ 0.25, ≤ 4) |
+| `wind` | number |  | `0` | Sideways wind in frame heights per second, + to the right (0.1 is a breeze, 0.5 a storm); slants rain (≥ -1, ≤ 1) |
+| `color` | string |  |  | One color for every particle (#RRGGBB), replacing the preset's colors |
+| `area` | { x0, y0, x1, y1 } |  |  | Where particles are born (frame fractions; may reach outside the frame): sparks from a grinder at a spot, embers from a fire's area, confetti over one side |
+| `area.x0` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.y0` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.x1` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.y1` | number | yes |  | (≥ -1, ≤ 2) |
+| `ground` | number |  |  | Height of the ground line (frame fraction) where falling particles stop; heavyRain splashes there (≥ 0, ≤ 1.5) |
+| `seed` | integer |  | `1` | Another seed gives another, equally random, arrangement; the same seed always draws the same frames (≥ 0, ≤ 1000000) |
+| `opacity` | number |  |  | (≥ 0, ≤ 1) |
+| `blend` | "normal" \| "screen" \| "add" \| "multiply" \| "overlay" \| "softlight" \| "lighten" \| "darken" \| "colordodge" \| "difference" \| "addlight" \| "screenlight" |  |  | Override the preset's blend (screen for light on dark, normal for snow and smoke) |
+| `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | Show the particles only where this selects in the picture under them (sky, person, key, luma or shape) |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = an ellipse, rectangle or polygon, fixed, moving with keyframes, or pinned to a track |
+| `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
+| `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
+| `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
+| `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
+| `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
+| `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.shape` | { type, x, y, width, height, points, keyframes, corners, track } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
+| `mask.shape.type` | "ellipse" \| "rect" \| "polygon" |  | `"ellipse"` |  |
+| `mask.shape.x` | number |  |  | ellipse and rect: center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number |  |  | ellipse and rect: center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number |  |  | ellipse and rect: width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number |  |  | ellipse and rect: height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape.points` | unknown[][] |  |  | polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face |
+| `mask.shape.keyframes` | { time, value, easing }[] |  |  | Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box |
+| `mask.shape.corners` | { time, value, easing }[] |  |  | Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set |
+| `mask.shape.track` | string |  |  | The track the corners follow (pin_mask sets it); review_edit checks it for drift |
+| `mask.invert` | boolean |  | `false` | Select everything except this |
+| `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
+| `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
+| `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
+| `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
+| `mask.combine` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `behindSubject` | boolean |  |  | Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them |
+| `followSpeed` | boolean |  | `true` | Slow down with slow-motion footage under the layer (and speed up with fast footage) |
+| `animationIn` | { type, duration, easing } |  |  | e.g. { type: 'fade', duration: 1 } to let the weather come in |
+| `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationIn.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+| `animationOut` | { type, duration, easing } |  |  |  |
+| `animationOut.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
+| `animationOut.duration` | number |  | `0.4` | (> 0, ≤ 10) |
+| `animationOut.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+| `label` | string |  |  |  |
+
+### update_particles
+
+**edits**. Change particles made with add_particles and draw them again: any of their settings (density, size, speed, wind, color, area, ground, seed), the preset, or the duration. Blend, opacity, mask and animations are layer properties: change those with update_layer.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `layerId` | string | yes |  |  |
+| `preset` | "rain" \| "heavyRain" \| "snow" \| "dust" \| "embers" \| "sparks" \| "confetti" \| "bokeh" \| "smoke" \| "fog" |  |  |  |
+| `density` | number |  |  | More or fewer particles (smoke and fog: thicker or thinner), 1 = the preset (≥ 0.1, ≤ 4) |
+| `size` | number |  |  | Particle size (smoke and fog: size of the billows), 1 = the preset (≥ 0.25, ≤ 4) |
+| `speed` | number |  |  | How fast everything moves, 1 = the preset (≥ 0.25, ≤ 4) |
+| `wind` | number |  |  | Sideways wind in frame heights per second, + to the right (0.1 is a breeze, 0.5 a storm); slants rain (≥ -1, ≤ 1) |
+| `color` | string |  |  | One color for every particle (#RRGGBB), replacing the preset's colors |
+| `area` | { x0, y0, x1, y1 } |  |  | Where particles are born (frame fractions; may reach outside the frame): sparks from a grinder at a spot, embers from a fire's area, confetti over one side |
+| `area.x0` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.y0` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.x1` | number | yes |  | (≥ -1, ≤ 2) |
+| `area.y1` | number | yes |  | (≥ -1, ≤ 2) |
+| `ground` | number |  |  | Height of the ground line (frame fraction) where falling particles stop; heavyRain splashes there (≥ 0, ≤ 1.5) |
+| `seed` | integer |  |  | Another seed gives another, equally random, arrangement; the same seed always draws the same frames (≥ 0, ≤ 1000000) |
+| `duration` | number |  |  | New duration in seconds (> 0, ≤ 600) |
+| `followSpeed` | boolean |  |  |  |
+
+### add_light
+
+**edits**. Add light effects that make a shot feel lit: rays or a lens flare. rays: shafts of light streaming from a bright source (sun through trees or a window, a stage light): the parts of the picture brighter than threshold are smeared outward from source and added back, so put source on the light itself and lower threshold for dimmer lights. It is an effect on target (a clip, all-clips, global or a media layer) with a label; the same label updates it and remove: true deletes it; mask limits where rays show. flare: a lens flare from a light (glow, streak and ghosts along the line through the frame center) as a layer from start for duration. It follows a moving light by path (keyframes) or track (a point from track_points), and by default its size and strength follow how bright the picture is at the source, so it fades when the light is blocked or leaves the frame. Check with render_frame; for a flare also at the start and end, and render_preview for the motion.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `kind` | "rays" \| "flare" | yes |  |  |
+| `source` | { x, y } |  |  | Where the light is (frame fractions); rays default to the top middle |
+| `source.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `source.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `target` | string |  | `"all-clips"` | rays: a clip id, "all-clips", "global", or a media layer id |
+| `label` | string |  |  | rays: name of these rays (default "light rays"); flare: layer label |
+| `threshold` | number |  |  | rays: only parts brighter than this cast rays (default 0.7) (≥ 0, ≤ 0.98) |
+| `length` | number |  |  | rays: how far they reach toward the frame edges (default 0.5) (≥ 0.05, ≤ 1) |
+| `intensity` | number |  |  | Brightness: rays default 0.8, flare 1 (≥ 0, ≤ 3) |
+| `color` | string |  |  | Light color (rays default warm #FFE6B8; flare by look) |
+| `mask` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, feather, grow, smooth, denoise, combine } |  |  | rays: where they show; flare: where the flare layer shows |
+| `mask.kind` | "person" \| "face" \| "object" \| "sky" \| "depth" \| "key" \| "luma" \| "shape" | yes |  | person = the person's cutout, face = soft ellipses following every face, object = a tracked object from select_object, sky = the sky, depth = a range of distance (all five found per frame by a model; primary video clips only), key = an HSL qualifier on hue, saturation and luma ranges, luma = a brightness range only, shape = an ellipse, rectangle or polygon, fixed, moving with keyframes, or pinned to a track |
+| `mask.object` | string |  |  | object: the id of a tracked object (project.objects, made with select_object) |
+| `mask.hue` | unknown[] |  |  | key: hue range in degrees, going clockwise from the first to the second, so [340, 20] selects reds. 0 red, 30 orange, 60 yellow, 120 green, 180 cyan, 210 sky blue, 240 blue, 300 magenta; skin is about [5, 45]. Omit for any hue |
+| `mask.saturation` | unknown[] |  |  | key: saturation range 0..1 (HSV); [0.15, 1] skips grays, whose hue is unreliable. Omit for any |
+| `mask.luma` | unknown[] |  |  | key and luma: brightness range 0..1, e.g. [0.7, 1] for highlights, [0, 0.25] for shadows. Omit for any |
+| `mask.distance` | unknown[] |  |  | depth: distance range, 0 = the nearest things in the clip, 1 = the farthest (see estimate_depth), e.g. [0, 0.3] for the foreground, [0.7, 1] for the background |
+| `mask.softness` | number |  | `0.2` | key, luma and depth: how gradually the ranges fall off at their ends (0 = hard edge) (≥ 0, ≤ 1) |
+| `mask.shape` | { type, x, y, width, height, points, keyframes, corners, track } |  |  | shape: an area of the frame (ellipse, rect or polygon), fixed, moved by keyframes, or pinned to a track |
+| `mask.shape.type` | "ellipse" \| "rect" \| "polygon" |  | `"ellipse"` |  |
+| `mask.shape.x` | number |  |  | ellipse and rect: center x as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.y` | number |  |  | ellipse and rect: center y as a frame fraction (≥ 0, ≤ 1) |
+| `mask.shape.width` | number |  |  | ellipse and rect: width as a fraction of frame width (> 0, ≤ 2) |
+| `mask.shape.height` | number |  |  | ellipse and rect: height as a fraction of frame height (> 0, ≤ 2) |
+| `mask.shape.points` | unknown[][] |  |  | polygon: its corners in order around the outline, [x, y] frame fractions (3 to 32), e.g. a window, a road, a building's face |
+| `mask.shape.keyframes` | { time, value, easing }[] |  |  | Move the shape over time: its center (frame fractions) and size multiplier at times from the clip's start (or the layer's, or the video's for whole-video effects). The shape as given is the size 1 shape; for a polygon the center is the middle of its points' box |
+| `mask.shape.corners` | { time, value, easing }[] |  |  | Pinned to a track (pin_mask sets it): where the frame's four corners go over time, carrying the shape in perspective. Replaces keyframes while set |
+| `mask.shape.track` | string |  |  | The track the corners follow (pin_mask sets it); review_edit checks it for drift |
+| `mask.invert` | boolean |  | `false` | Select everything except this |
+| `mask.feather` | number |  | `0.01` | Edge softness as a fraction of frame height (0.01 is subtle, 0.05 very soft) (≥ 0, ≤ 0.2) |
+| `mask.grow` | number |  | `0` | Grow (+) or shrink (-) the selection by a fraction of frame height (≥ -0.05, ≤ 0.05) |
+| `mask.smooth` | integer |  | `0` | Average the matte over this many frames to stop flicker (0 = off) (≥ 0, ≤ 10) |
+| `mask.denoise` | boolean |  | `false` | key and luma: clean speckles from noisy footage with a small median |
+| `mask.combine` | { kind, object, hue, saturation, luma, distance, softness, shape, invert, op }[] |  |  | More masks merged into this one, in order, e.g. a key intersected with a shape |
+| `remove` | boolean |  |  | rays: delete the rays with this label from target |
+| `start` | number |  |  | flare: timeline start (≥ 0) |
+| `duration` | number |  |  | flare: seconds (> 0, ≤ 600) |
+| `look` | "natural" \| "anamorphic" \| "subtle" |  | `"natural"` | natural: A spherical lens: warm glow, a short streak and a chain of faint colored ghosts and rings across the frame; anamorphic: An anamorphic lens: a long thin blue streak across the frame and blue ghosts (sci-fi, night city, car lights); subtle: A soft glow with two faint ghosts, for a light that should catch the lens without drawing attention |
+| `path` | { time, x, y }[] |  |  | flare: the light's position over time (frame fractions), straight between points |
+| `track` | string |  |  | flare: follow the center of this tracked point or surface (track_points) |
+| `matchBrightness` | boolean |  | `true` | flare: size and strength follow the picture's brightness at the source |
+
+## Preview & render
+
+### render_frame
+
+**read-only**. Render one frame of the edit at a timeline time and look at it. Use to check layout, text, captions and effects.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `time` | number | yes |  | (≥ 0) |
+| `scale` | number |  | `0.5` | (≥ 0.1, ≤ 1) |
+
+### render_contact_sheet
+
+**read-only**. Render a grid of frames sampled across the whole video, a one-image overview of the edit's pacing and look.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `columns` | integer |  | `4` | (≥ 1, ≤ 8) |
+| `rows` | integer |  | `3` | (≥ 1, ≤ 8) |
+| `thumbWidth` | integer |  | `320` | (≥ -9007199254740991) |
+
+### render_preview
+
+**read-only**. Render a fast low-resolution preview video (shown in the desktop app for the user). Optionally only a time range.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `scale` | number |  | `0.5` | (≥ 0.1, ≤ 1) |
+| `start` | number |  |  | (≥ 0) |
+| `end` | number |  |  | (> 0) |
+
+### render_video
+
+**read-only**. Render the final full-quality video file. bitDepth 10 writes 10-bit video (H.264 High 10 or HEVC Main 10): smooth skies and gradients after heavy grades of camera log, for delivery where 10-bit plays; 8 (the project's default) plays everywhere. format prores writes ProRes 422 HQ (10-bit 4:2:2, a .mov), the master to grade or edit further in Resolve, Premiere or Final Cut; large files, not for sharing.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `output` | string | yes |  | Output path, e.g. out/final.mp4 (out/master.mov for prores) |
+| `bitDepth` | 8 \| 10 |  |  | Bits per sample of this render (default: the project's export setting, 8) |
+| `format` | "default" \| "prores" |  | `"default"` | prores: ProRes 422 HQ master; default: the project's codec |

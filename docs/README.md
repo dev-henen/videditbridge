@@ -1,5 +1,7 @@
 # Documentation
 
+For people using the app: the [user guide](https://dev-henen.github.io/videditbridge/) (API keys, the Claude app, editing by asking, all tools, troubleshooting). This folder is for developers.
+
 ## Guides
 
 | Guide | Covers |

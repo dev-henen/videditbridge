@@ -1,0 +1,84 @@
+<!-- description: How to get an API key from Anthropic (Claude), OpenAI (ChatGPT) or Google (Gemini) and add it to VideditBridge. -->
+<h1>API keys</h1>
+<p class="lead">To edit in VideditBridge's own chat, the app needs an API key from at least one AI company. A key is like a password that lets the app use your account with that company. Here is how to get one and add it.</p>
+
+<div class="cards">
+  <a class="card" href="#anthropic"><span class="badge">Default</span><h3>Claude (Anthropic)</h3><p>Opus, Sonnet and Haiku. The default, and the one the editor was built around.</p></a>
+  <a class="card" href="#openai"><span class="badge">Optional</span><h3>ChatGPT (OpenAI)</h3><p>GPT models from OpenAI, with the same editing tools.</p></a>
+  <a class="card" href="#google"><span class="badge">Optional</span><h3>Gemini (Google)</h3><p>Gemini models; Google AI Studio has a free tier to start with.</p></a>
+</div>
+
+<div class="note">
+  <strong>An API key is not your chat subscription.</strong>
+  <p>Claude Pro, ChatGPT Plus and Gemini Advanced are for the companies' own apps. API use is paid separately, by what you use. If you already pay for Claude and would rather not set up an API key, <a href="claude-app.html">use VideditBridge from the Claude app</a> instead.</p>
+</div>
+
+<h2>Where to add a key</h2>
+<p>Open <em>Settings</em> (the menu at the top left, or <kbd>Ctrl</kbd> + <kbd>,</kbd>) and go to <em>AI models</em>. Each company has a row with <em>How to get one</em> (this page) and <em>Add key</em>.</p>
+<figure>
+  <img class="shot" src="assets/screens/settings-api-keys.png" alt="Settings, AI models: Claude, ChatGPT and Gemini rows, each with How to get one and Add key">
+  <figcaption>Settings, AI models, before any key is added.</figcaption>
+</figure>
+
+<h2 id="anthropic">Claude (Anthropic)</h2>
+<ol class="steps">
+  <li><strong>Sign in to the Anthropic Console.</strong> Go to <a href="https://console.anthropic.com">console.anthropic.com</a> and sign in or create an account. This is separate from claude.ai, though you can use the same email.</li>
+  <li><strong>Add credit.</strong> Under <em>Billing</em>, add a payment method and buy some credit. The API needs credit before it answers; a few dollars goes a long way for trying things out.</li>
+  <li><strong>Create a key.</strong> Open <em>API keys</em> and press <em>Create key</em>. Name it something you will recognize, like "VideditBridge".</li>
+  <li><strong>Copy it.</strong> The key starts with <code>sk-ant-</code>. It is shown only once, so copy it now.</li>
+  <li><strong>Add it to VideditBridge.</strong> In <em>Settings</em>, <em>AI models</em>, press <em>Add key</em> on the Claude row, paste, and press <em>Save</em> (or <kbd>Enter</kbd>).</li>
+</ol>
+<figure>
+  <img class="shot" src="assets/screens/settings-add-key.png" alt="The key box open on the Claude row, with Save and Cancel">
+  <figcaption>The key is hidden as you paste it. Press Save or Enter.</figcaption>
+</figure>
+<figure>
+  <img class="shot" src="assets/screens/settings-key-saved.png" alt="The Claude row now says Key ending in 0000, saved in Windows Credential Manager">
+  <figcaption>Once saved, the row shows the last four characters and where the key is kept.</figcaption>
+</figure>
+
+<h2 id="openai">ChatGPT (OpenAI)</h2>
+<ol class="steps">
+  <li><strong>Sign in to the OpenAI platform.</strong> Go to <a href="https://platform.openai.com">platform.openai.com</a>. Your ChatGPT login works here too, but API billing is separate from a ChatGPT plan.</li>
+  <li><strong>Set up billing.</strong> In the settings, under <em>Billing</em>, add a payment method or credit.</li>
+  <li><strong>Create a key.</strong> Open <em>API keys</em> and press <em>Create new secret key</em>. Give it a name and create it.</li>
+  <li><strong>Copy it.</strong> The key starts with <code>sk-</code> and is shown only once.</li>
+  <li><strong>Add it to VideditBridge.</strong> In <em>Settings</em>, <em>AI models</em>, press <em>Add key</em> on the ChatGPT row, paste and save.</li>
+</ol>
+
+<h2 id="google">Gemini (Google)</h2>
+<ol class="steps">
+  <li><strong>Open Google AI Studio.</strong> Go to <a href="https://aistudio.google.com">aistudio.google.com</a> and sign in with a Google account. A personal account works.</li>
+  <li><strong>Get a key.</strong> Press <em>Get API key</em>, then <em>Create API key</em>. If it asks for a Google Cloud project, let it make one.</li>
+  <li><strong>Copy it.</strong> The key starts with <code>AIza</code>.</li>
+  <li><strong>Add it to VideditBridge.</strong> In <em>Settings</em>, <em>AI models</em>, press <em>Add key</em> on the Gemini row, paste and save.</li>
+</ol>
+<div class="note">
+  <strong>The free tier has limits.</strong>
+  <p>Without billing, Gemini allows only so much per minute and per day. A long edit can reach the limit; the chat then says so and when to try again. Turning on billing in Google AI Studio raises the limits.</p>
+</div>
+
+<h2>Choosing the model</h2>
+<p>The model picker under the chat box lists only the models whose key you added. New conversations start with the <em>Default model</em> from Settings, and each conversation keeps the model it uses. You can switch at any time; the conversation carries on.</p>
+<figure>
+  <img class="shot" src="assets/screens/model-picker.png" alt="The model picker open under the chat box, listing Claude Opus, Sonnet and Haiku">
+  <figcaption>With only a Claude key, the picker offers the Claude models.</figcaption>
+</figure>
+<table>
+  <tr><th>Model</th><th>Good for</th></tr>
+  <tr><td>Claude Opus, GPT Astra, Gemini Carbon</td><td>Full edits from raw footage: the most capable, and the slowest and priciest.</td></tr>
+  <tr><td>Claude Sonnet, GPT Sol, Gemini Hydrogen</td><td>Most everyday edits: fast and capable.</td></tr>
+  <tr><td>Claude Haiku, GPT Luna, Gemini Flash-Lite</td><td>Small changes ("make the title red"): the fastest and cheapest.</td></tr>
+</table>
+
+<h2>Keeping keys safe</h2>
+<ul>
+  <li>Keys are kept on this computer only, in the system keychain: Windows Credential Manager, the macOS Keychain, or the keyring on Linux. Each key is sent only to its own company.</li>
+  <li>To change a key, press <em>Change</em>; to delete it, press <em>Remove</em>. You can also delete a key in the company's console, which stops it working everywhere.</li>
+  <li>Never share a key or paste it into a chat. If one leaks, delete it in the company's console and make a new one.</li>
+</ul>
+<div class="note">
+  <strong>For developers: environment variables</strong>
+  <p>A key in <code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code> or <code>GEMINI_API_KEY</code> (or <code>GOOGLE_API_KEY</code>) is used instead of a saved one, and Settings says so.</p>
+</div>
+<p class="muted">The companies' websites change their menus now and then; if a step looks different, look for "API keys" in the console's menu.</p>

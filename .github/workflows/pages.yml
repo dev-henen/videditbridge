@@ -1,0 +1,44 @@
+name: User guide
+
+# Builds the user guide (site/, see scripts/build-site.mjs) and publishes it to GitHub Pages at
+# https://dev-henen.github.io/videditbridge/, which the app links to. Turn Pages on once: repository
+# Settings, Pages, Source: GitHub Actions.
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "docs/reference/tools.json", "scripts/build-site.mjs", "ui/Packaging/icons/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Plain Node, no install: the tool list comes from docs/reference/tools.json (npm run docs).
+      - run: node scripts/build-site.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

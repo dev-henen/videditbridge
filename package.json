@@ -48,7 +48,8 @@
     "docs:check": "tsx scripts/gen-docs.ts --check",
     "host": "tsx engine/host/main.ts",
     "mcp": "tsx engine/mcp/main.ts",
-    "native": "tsx scripts/build-native.ts"
+    "native": "tsx scripts/build-native.ts",
+    "site": "node scripts/build-site.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -208,16 +208,44 @@ public partial class SettingsScreen : UserControl
         return page;
     }
 
-    private async Task Copy(string text, string what)
+    /// <summary>A copy button: it copies, then says so (a check mark and "Copied") for a moment.</summary>
+    private Button CopyBtn(string label, string text, string what, bool primary = false, string? name = null)
+    {
+        Button? button = null;
+        button = Btn(label, () => Copy(text, what, button), primary, Icons.Copy, name);
+        return button;
+    }
+
+    private async Task Copy(string text, string what, Button? button = null)
     {
         try
         {
-            if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
+            if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+            await clipboard.SetTextAsync(text);
         }
         catch (Exception e)
         {
             _vm.ShowError($"Could not copy the {what}: {e.Message}");
+            return;
         }
+        if (button is null) return;
+        // The same width while it says "Copied", so nothing beside it moves.
+        var before = button.Content;
+        button.MinWidth = button.Bounds.Width;
+        var copied = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            Children =
+            {
+                new TextBlock { Classes = { "icon" }, Text = Icons.Check, FontSize = 13, VerticalAlignment = VerticalAlignment.Center },
+                new TextBlock { Text = "Copied", FontSize = 12, VerticalAlignment = VerticalAlignment.Center },
+            },
+        };
+        button.Content = copied;
+        AutomationProperties.SetName(button, $"Copied the {what}");
+        await Task.Delay(1500);
+        if (button.Content == copied) button.Content = before;
     }
 
     // ---------------------------------------------------------------- pages
@@ -268,6 +296,8 @@ public partial class SettingsScreen : UserControl
                     ? $"Key ending in {hint}, set by an environment variable."
                     : $"Key ending in {hint}, saved in {(source == "keychain" ? store : "the settings file")}.";
             var buttons = new List<Control>();
+            // Step by step, with screenshots, on the user guide.
+            if (!set) buttons.Add(Btn("How to get one", () => Docs.Open(this, Docs.ApiKeys(p.Id)), icon: Icons.Open, name: $"How to get a {p.Label} API key"));
             if (set && source != "environment") buttons.Add(Btn("Remove", () => Change(new { provider = p.Id, apiKey = "" }), name: $"Remove the {p.Label} key"));
             if (_editingKey != p.Id)
                 buttons.Add(Btn(set ? "Change" : "Add key", () => { _editingKey = p.Id; Build(); FocusKeyBox(); return Task.CompletedTask; }, primary: !set && p.Id == "anthropic", name: $"{(set ? "Change" : "Add")} the {p.Label} key"));
@@ -341,13 +371,14 @@ public partial class SettingsScreen : UserControl
             var buttons = new List<Control>();
             if (connected) buttons.Add(Btn("Disconnect", () => SetClient(id, false), name: $"Disconnect {name}"));
             if (!connected || outdated) buttons.Add(Btn(outdated ? "Update" : "Connect", () => SetClient(id, true), primary: installed, name: $"Connect {name}"));
+            if (id == "claude") buttons.Insert(0, Btn("Guide", () => Docs.Open(this, Docs.ClaudeApp), icon: Icons.Open, name: "How to use VideditBridge from the Claude app"));
             rows.Add(Row(name, sub, Controls([.. buttons]), chip: connected && !outdated ? "Connected" : null));
         }
         if (command is not null)
         {
             var claudeCode = _connect["claudeCode"]?.GetValue<string>() ?? "";
-            rows.Add(Row("Claude Code", "Run this command once in a terminal.", Btn("Copy command", () => Copy(claudeCode, "command"), icon: Icons.Copy)));
-            rows.Add(Row("Other apps", "For apps not listed: the command that starts the editor's MCP server.", Btn("Copy command", () => Copy(command, "command"), icon: Icons.Copy, name: "Copy the MCP command")));
+            rows.Add(Row("Claude Code", "Run this command once in a terminal.", CopyBtn("Copy command", claudeCode, "command", name: "Copy the Claude Code command")));
+            rows.Add(Row("Other apps", "For apps not listed: the command that starts the editor's MCP server.", CopyBtn("Copy command", command, "command", name: "Copy the MCP command")));
         }
         Card(page, "Apps on this computer", [.. rows]);
 
@@ -377,7 +408,7 @@ public partial class SettingsScreen : UserControl
         }
         else if (ready)
         {
-            web.Add(Row("Your connection address", publicUrl, Btn("Copy", () => Copy(publicUrl!, "address"), primary: true, icon: Icons.Copy, name: "Copy the address"), chip: "Ready", selectable: true));
+            web.Add(Row("Your connection address", publicUrl, CopyBtn("Copy", publicUrl!, "address", primary: true, name: "Copy the address"), chip: "Ready", selectable: true));
             web.Add(Row("Gemini app", "Open Gemini, then Settings, Connected apps, Custom, and paste the address. (Google is still rolling this out, so it may not show for you yet.)"));
             web.Add(Row("ChatGPT", "Open ChatGPT, turn on developer mode (Settings, Apps and connectors, Advanced), then add a connector with the address."));
             web.Add(Row("Keep it private", "Anyone with it can edit your projects. It changes when this app restarts.", Btn("Disconnect", Off, name: "Disconnect Gemini and ChatGPT")));
@@ -410,7 +441,7 @@ public partial class SettingsScreen : UserControl
             web.Add(Row("Port", "The port on this computer. Change it if another program uses it.", box));
             if (url is not null)
             {
-                web.Add(Row("Address on this computer", url, Btn("Copy", () => Copy(url, "address"), icon: Icons.Copy, name: "Copy the local address"), selectable: true));
+                web.Add(Row("Address on this computer", url, CopyBtn("Copy", url, "address", name: "Copy the local address"), selectable: true));
                 web.Add(Row("New secret address", "The old address stops working.", Btn("Make new", () => SetHttp(new { renew = true }))));
             }
         }
@@ -458,6 +489,10 @@ public partial class SettingsScreen : UserControl
     {
         Card(page, null,
             Row("VideditBridge", "Edit video by asking Claude, ChatGPT or Gemini here, or from the Claude app."),
+            Row("User guide", "Getting started, API keys, the Claude app, what you can ask.", Btn("Open", () => Docs.Open(this, Docs.Home), icon: Icons.Open, name: "Open the user guide")),
+            Row("All tools", "Everything the AI can do in the editor, by topic.", Btn("Open", () => Docs.Open(this, Docs.Tools), icon: Icons.Open, name: "Open the tools list")),
+            Row("Troubleshooting", "When a key, a connection or a render does not work.", Btn("Open", () => Docs.Open(this, Docs.Troubleshooting), icon: Icons.Open, name: "Open troubleshooting")),
+            Row("Report a problem", "On GitHub, with what you did and what happened.", Btn("Open", () => Docs.Open(this, Docs.Issues), icon: Icons.Open, name: "Report a problem on GitHub")),
             Row("Settings file", _settings?["file"]?.GetValue<string>() ?? "", selectable: true));
     }
 

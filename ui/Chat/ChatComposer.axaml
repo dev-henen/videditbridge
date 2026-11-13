@@ -78,7 +78,7 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <TextBox x:Name="PromptBox" Classes="bare" KeyDown="OnPromptKeyDown" IsEnabled="{Binding CanAsk}" Padding="2,3" MinHeight="24" MaxHeight="120"
+        <TextBox x:Name="PromptBox" Classes="bare" IsEnabled="{Binding CanAsk}" Padding="2,3" MinHeight="24" MaxHeight="120"
                  AcceptsReturn="True" TextWrapping="Wrap" Watermark="{Binding AskHint}" VerticalContentAlignment="Top"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"/>
 

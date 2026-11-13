@@ -1,0 +1,56 @@
+<!-- description: VideditBridge is a desktop video editor you use by asking: Claude, ChatGPT or Gemini make the edits while you watch. -->
+<section class="hero">
+  <h1>Edit videos by asking.</h1>
+  <p>VideditBridge is a video editor for Windows, macOS and Linux that you use by talking to an AI. Say what you want, like "cut this into a 30 second trailer", and watch Claude, ChatGPT or Gemini make the edits in front of you.</p>
+  <div class="buttons">
+    <a class="button primary" href="api-keys.html">Set up an API key</a>
+    <a class="button" href="claude-app.html">Use the Claude app instead</a>
+  </div>
+  <img class="shot" src="assets/screens/editor.png" alt="The VideditBridge editor: activity on the left, the preview and timeline in the middle, the chat on the right">
+</section>
+
+<h2>Two ways to edit</h2>
+<div class="cards">
+  <a class="card" href="api-keys.html">
+    <span class="badge">In VideditBridge</span>
+    <h3>Ask in the app's own chat</h3>
+    <p>Add an API key from Anthropic (Claude), OpenAI (ChatGPT) or Google (Gemini) in Settings, then ask in the chat on the right.</p>
+  </a>
+  <a class="card" href="claude-app.html">
+    <span class="badge">In the Claude app</span>
+    <h3>Ask from the Claude app</h3>
+    <p>Connect VideditBridge to the Claude desktop app and edit with your Claude account. No API key needed; previews play in Claude's chat.</p>
+  </a>
+</div>
+
+<h2>Your first edit</h2>
+<ol class="steps">
+  <li><strong>Open VideditBridge and make a project.</strong> On the Projects page, type a name, pick a shape (16:9 for YouTube, 9:16 for Reels, Shorts and TikTok, 1:1 for square) and press <em>Create</em>. Every project is saved as you go.</li>
+  <li><strong>Add an API key.</strong> Until there is one, the chat shows <em>Add an API key to start editing</em>. Press <em>Open Settings</em> and follow <a href="api-keys.html">API keys</a>; it takes about two minutes.</li>
+  <li><strong>Bring in your footage.</strong> Drag video, photo or music files onto the chat, or press <kbd>+</kbd> under the chat box. They are copied into the project.</li>
+  <li><strong>Ask for what you want.</strong> Type in the chat and press <kbd>Enter</kbd>. Be as specific as you like: "Make a 20 second vertical teaser from the best moments, with captions and upbeat music." See <a href="asking.html">Editing by asking</a> for ideas.</li>
+  <li><strong>Watch, adjust, export.</strong> Each step shows in the activity list and the preview updates as the AI works. Ask for changes ("make the title bigger"), undo anything with the arrows at the top, and press <em>Export</em> when you like it.</li>
+</ol>
+
+<figure>
+  <img class="shot" src="assets/screens/editor-no-key.png" alt="The chat says Add an API key to start editing, with an Open Settings button">
+  <figcaption>Without an API key the chat is off and points you to Settings.</figcaption>
+</figure>
+
+<h2>What is on the screen</h2>
+<table>
+  <tr><th>Part</th><th>What it does</th></tr>
+  <tr><td>Tabs, top</td><td>Each open project has a tab, like a browser. The menu button at the top left lists your tabs, recently closed projects, <em>Help and guides</em> and <em>Settings</em>.</td></tr>
+  <tr><td>Left panel</td><td><em>Activity</em> shows every step as it happens; <em>Review</em> lists what could look better; <em>Summary</em> describes the edit; <em>History</em> lists every change.</td></tr>
+  <tr><td>Middle</td><td>The live preview and the timeline strip. Click a clip on the timeline or a spot in the picture to point the AI at it.</td></tr>
+  <tr><td>Right</td><td>The chat: your requests, the AI's replies, and the model picker under the box.</td></tr>
+</table>
+
+<h2>Building it yourself</h2>
+<p>Ready-made installers are on the way. Until then, you can run VideditBridge from its source code: you need <a href="https://nodejs.org">Node.js 20</a> or newer, the <a href="https://dotnet.microsoft.com/download">.NET 10 SDK</a> and <a href="https://rustup.rs">Rust</a> (for the fast parts of the editor; on Windows, with the Visual Studio C++ build tools).</p>
+<pre><code>git clone https://github.com/dev-henen/videditbridge
+cd videditbridge
+npm install
+npm run native
+dotnet run --project ui</code></pre>
+<p class="muted">The first start runs a short performance test to pick the fastest way to draw the preview on your computer.</p>

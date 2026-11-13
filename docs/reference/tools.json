@@ -1,0 +1,655 @@
+{
+  "count": 115,
+  "groups": [
+    {
+      "group": "Inspect & project",
+      "tools": [
+        {
+          "name": "get_project",
+          "edits": false,
+          "summary": "Get a readable summary of the current edit (assets, clips with timeline times, layers, audio, captions) plus validation issues."
+        },
+        {
+          "name": "new_project",
+          "edits": true,
+          "summary": "Start a new empty project (discarding the current one; undo restores it)."
+        },
+        {
+          "name": "set_project_settings",
+          "edits": true,
+          "summary": "Change resolution/aspect ratio, frame rate, background color or name."
+        },
+        {
+          "name": "undo",
+          "edits": true,
+          "summary": "Undo the last edit."
+        },
+        {
+          "name": "redo",
+          "edits": true,
+          "summary": "Redo the last undone edit."
+        },
+        {
+          "name": "clean_up_media",
+          "edits": true,
+          "summary": "Tidy the project's media: assets that are the same file content (imported twice, or copies under other names) become one, and assets nothing in the..."
+        },
+        {
+          "name": "review_edit",
+          "edits": false,
+          "summary": "Check the edit for what a viewer notices, with timeline times, without changing anything."
+        },
+        {
+          "name": "offer_choices",
+          "edits": false,
+          "summary": "Let the user choose when taste decides, instead of deciding for them: a narration voice (play the files preview_voice made), a music track, a sound..."
+        }
+      ]
+    },
+    {
+      "group": "Library",
+      "tools": [
+        {
+          "name": "list_templates",
+          "edits": false,
+          "summary": "Browse video templates (styles to edit toward)."
+        },
+        {
+          "name": "get_template",
+          "edits": false,
+          "summary": "Read a template's brief: required inputs (slots), scenes, look, and guidance on how to edit footage to match it."
+        },
+        {
+          "name": "apply_template",
+          "edits": true,
+          "summary": "Build a new edit from a template and inputs (replaces the current project; undo restores it)."
+        },
+        {
+          "name": "list_effects",
+          "edits": false,
+          "summary": "List available visual effects (color grades, retouch, bokeh and blur, light, zooms and motion, shakes, stylize) with their parameters."
+        },
+        {
+          "name": "list_audio_effects",
+          "edits": false,
+          "summary": "List audio effects (noise reduction, voice enhancement, EQ, dynamics, loudness, reverb, pitch, robot, telephone…) with their parameters."
+        },
+        {
+          "name": "list_transitions",
+          "edits": false,
+          "summary": "List transitions usable between primary-track clips."
+        },
+        {
+          "name": "list_animations",
+          "edits": false,
+          "summary": "List entrance/exit animations for text, shape and media layers."
+        },
+        {
+          "name": "list_caption_styles",
+          "edits": false,
+          "summary": "List caption style presets (bold-pop, karaoke, word-by-word, boxed, cinematic…)."
+        },
+        {
+          "name": "list_components",
+          "edits": false,
+          "summary": "List reusable components (lower-third, title-card, CTA, subscribe button, quote, number badge, countdown…) and their params."
+        }
+      ]
+    },
+    {
+      "group": "Media & primary track",
+      "tools": [
+        {
+          "name": "import_media",
+          "edits": true,
+          "summary": "Add a video, audio or image file to the project's assets (probes duration, size and audio)."
+        },
+        {
+          "name": "add_clip",
+          "edits": true,
+          "summary": "Add a clip to the primary track (clips play back-to-back)."
+        },
+        {
+          "name": "update_clip",
+          "edits": true,
+          "summary": "Change properties of a primary-track clip (in, duration, speed, volume, muted, fit, effects, audioEffects, transition, fadeIn, fadeOut, audioLead..."
+        },
+        {
+          "name": "remove_clip",
+          "edits": true,
+          "summary": "Delete a clip from the primary track."
+        },
+        {
+          "name": "move_clip",
+          "edits": true,
+          "summary": "Reorder a clip on the primary track."
+        },
+        {
+          "name": "split_clip",
+          "edits": true,
+          "summary": "Split a primary clip in two at a timeline time (seconds)."
+        },
+        {
+          "name": "trim_clip",
+          "edits": true,
+          "summary": "Set a clip's source in/out points (seconds in the original media)."
+        },
+        {
+          "name": "split_edit",
+          "edits": true,
+          "summary": "Make a J or L cut at the cut into a primary clip, so sound and picture change at different moments (standard in interviews and talking heads)."
+        },
+        {
+          "name": "freeze_frame",
+          "edits": true,
+          "summary": "Hold one frame of the video still for a few seconds (a freeze-frame, e.g. for a 'that's me' title or a dramatic beat)."
+        },
+        {
+          "name": "set_speed",
+          "edits": true,
+          "summary": "Speed up or slow down a primary clip or an audio clip (0.25-4; 0.5 = half speed slow motion, 2 = double speed)."
+        },
+        {
+          "name": "speed_ramp",
+          "edits": true,
+          "summary": "Change a clip's speed over time: fast, then slow motion on the moment that matters, then back (a speed ramp)."
+        },
+        {
+          "name": "interpolate",
+          "edits": true,
+          "summary": "Smooth motion for video clips that show more frames than their footage has: slow motion and speed ramps below the footage's frame rate, or a lower..."
+        },
+        {
+          "name": "set_transition",
+          "edits": true,
+          "summary": "Set the transition into a clip (or between all clips with all=true)."
+        },
+        {
+          "name": "add_effect",
+          "edits": true,
+          "summary": "Add an effect to a clip, a media layer, or the whole video (target 'global')."
+        },
+        {
+          "name": "remove_effect",
+          "edits": true,
+          "summary": "Remove an effect from a clip, media layer or 'global': by type (the whole-frame one first), or by label for a masked effect such as a grade_region..."
+        },
+        {
+          "name": "create_effect",
+          "edits": true,
+          "summary": "Make your own reusable visual effect from an FFmpeg filter chain and save it in the project by name; then add it anywhere with add_effect (type..."
+        },
+        {
+          "name": "animate_effect",
+          "edits": true,
+          "summary": "Change an effect's settings over time: a blur that ramps up into a transition, a grade that shifts from cold to warm, a vignette that closes in."
+        }
+      ]
+    },
+    {
+      "group": "People & faces",
+      "tools": [
+        {
+          "name": "retouch",
+          "edits": true,
+          "summary": "Retouch people in a clip, a media layer, every clip, or the whole video."
+        },
+        {
+          "name": "detect_faces",
+          "edits": false,
+          "summary": "Find and follow the faces in primary clips (or in a source asset), on this machine (a small model downloads once)."
+        },
+        {
+          "name": "reframe",
+          "edits": true,
+          "summary": "Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video)."
+        },
+        {
+          "name": "follow_face",
+          "edits": true,
+          "summary": "Make a layer (a name label, a callout, an arrow, a sticker) follow a person on screen: it finds the main face in the clips under the layer and sets..."
+        }
+      ]
+    },
+    {
+      "group": "Layers",
+      "tools": [
+        {
+          "name": "add_text",
+          "edits": true,
+          "summary": "Add a text layer (titles, labels, callouts)."
+        },
+        {
+          "name": "add_media_overlay",
+          "edits": true,
+          "summary": "Overlay a video or image (picture-in-picture, b-roll cutaway, logo)."
+        },
+        {
+          "name": "add_shape",
+          "edits": true,
+          "summary": "Add a shape: rect, roundedRect (pills behind labels, cards, a highlight box around part of a screen with fill=false) or ellipse (circles, number..."
+        },
+        {
+          "name": "add_component",
+          "edits": true,
+          "summary": "Insert a reusable component (lower-third, title-card, cta, subscribe, hook-text, quote, number-badge, countdown, label, end-screen…) at a time."
+        },
+        {
+          "name": "update_layer",
+          "edits": true,
+          "summary": "Change a layer's properties (text, start, duration, position, style, size, opacity, animations…)."
+        },
+        {
+          "name": "reorder_layer",
+          "edits": true,
+          "summary": "Change which layer draws on top."
+        },
+        {
+          "name": "remove_layer",
+          "edits": true,
+          "summary": "Delete a layer (text, media overlay or shape)."
+        },
+        {
+          "name": "animate_layer",
+          "edits": true,
+          "summary": "Move, scale, turn or fade a layer over time with keyframes (text, shapes and media overlays): a label that slides along with a product, a logo that..."
+        }
+      ]
+    },
+    {
+      "group": "Graphics, icons & fonts",
+      "tools": [
+        {
+          "name": "create_graphic",
+          "edits": true,
+          "summary": "Design your own graphic in SVG and put it on the video: lower thirds, title cards, styled or 3D-looking text, UI mockups (app screens, notifications..."
+        },
+        {
+          "name": "update_graphic",
+          "edits": true,
+          "summary": "Redraw a graphic made with create_graphic from new SVG (read the current SVG on its asset with get_project), or redraw it for a new duration."
+        },
+        {
+          "name": "search_icons",
+          "edits": false,
+          "summary": "Find icons for feature callouts, lists and lower thirds (the Lucide set, about 1,600 line icons, free to use)."
+        },
+        {
+          "name": "add_icon",
+          "edits": true,
+          "summary": "Put an icon on screen (see search_icons for names), drawn sharp at any size like text, optionally on a round or rounded badge."
+        },
+        {
+          "name": "list_fonts",
+          "edits": false,
+          "summary": "List the font families text can use: the ones added with install_font, the bundled ones (Arimo, Archivo Black, Gelasio, Anton, Cousine, Comic Neue..."
+        },
+        {
+          "name": "install_font",
+          "edits": false,
+          "summary": "Add a font from Google Fonts (all open-licensed, free for video), e.g. 'Montserrat', 'Bebas Neue', 'Playfair Display', 'Inter', 'Anton'."
+        },
+        {
+          "name": "install_fonts",
+          "edits": false,
+          "summary": "Install many Google Fonts families at once: whole packs and/or a list of families."
+        },
+        {
+          "name": "make_thumbnail",
+          "edits": false,
+          "summary": "Make a thumbnail image (YouTube style: a frame of the video, punchier color, a big bold title of 2-5 words)."
+        }
+      ]
+    },
+    {
+      "group": "Audio",
+      "tools": [
+        {
+          "name": "add_audio",
+          "edits": true,
+          "summary": "Add music, voice-over or a sound effect."
+        },
+        {
+          "name": "update_audio",
+          "edits": true,
+          "summary": "Change an audio clip (volume, speed, start, fades, duck, loop, audioEffects…)."
+        },
+        {
+          "name": "remove_audio",
+          "edits": true,
+          "summary": "Delete an audio clip."
+        },
+        {
+          "name": "set_volume",
+          "edits": true,
+          "summary": "Set the volume of a primary clip, an audio clip, a media layer, or the whole mix (target \"master\")."
+        },
+        {
+          "name": "enhance_audio",
+          "edits": true,
+          "summary": "One-call cleanup for speech: removes hum, reduces background noise, enhances the voice (clarity, presence, de-essing, compression, even levels) and..."
+        },
+        {
+          "name": "add_audio_effect",
+          "edits": true,
+          "summary": "Add an audio effect to a primary clip, an audio clip, a media layer, or the final mix (target \"master\")."
+        },
+        {
+          "name": "remove_audio_effect",
+          "edits": true,
+          "summary": "Remove an audio effect (by type) from a clip, audio clip, media layer or \"master\"."
+        }
+      ]
+    },
+    {
+      "group": "Sound map, beats & moments",
+      "tools": [
+        {
+          "name": "analyze_audio",
+          "edits": false,
+          "summary": "Map the sound of a recording without a transcript: where someone is speaking, where it is silent, where music or other sound plays, loud moments..."
+        },
+        {
+          "name": "remove_silences",
+          "edits": true,
+          "summary": "Cut dead air out of footage: removes silent stretches (or everything that is not speech) from primary clips, leaving short padding."
+        },
+        {
+          "name": "detect_scenes",
+          "edits": true,
+          "summary": "Find shot changes (cuts between camera angles or scenes) in a video asset."
+        },
+        {
+          "name": "detect_beats",
+          "edits": false,
+          "summary": "Find the tempo and beat times of music: an audio clip (times on the timeline) or an asset (source times)."
+        },
+        {
+          "name": "beat_sync",
+          "edits": true,
+          "summary": "Edit to the music's beat."
+        },
+        {
+          "name": "add_moment_effect",
+          "edits": true,
+          "summary": "Put a timed effect on whatever primary clip is playing at given timeline moments: zoomPunch, impactShake, flashHits or vibrate at each time, or..."
+        },
+        {
+          "name": "list_sound_effects",
+          "edits": false,
+          "summary": "List the built-in sound effects (whoosh, swoosh, riser, glitch, impact, hit, bass drop, pop, click, notification, error, typing, ding, success..."
+        },
+        {
+          "name": "add_sound_effect",
+          "edits": true,
+          "summary": "Add a sound effect at timeline moments where something visibly happens: a pop when text appears, an impact on a reveal, a riser ending on a drop."
+        }
+      ]
+    },
+    {
+      "group": "Transcript & captions",
+      "tools": [
+        {
+          "name": "transcribe",
+          "edits": true,
+          "summary": "Transcribe an asset's speech with word timings."
+        },
+        {
+          "name": "set_transcript",
+          "edits": true,
+          "summary": "Attach a transcript to an asset from SRT, VTT, Whisper/Deepgram/AssemblyAI JSON, or {words:[{text,start,end}]}."
+        },
+        {
+          "name": "get_transcript",
+          "edits": false,
+          "summary": "Read an asset's transcript as timestamped sentences (source time) with speaking stats."
+        },
+        {
+          "name": "fix_transcript",
+          "edits": true,
+          "summary": "Correct words the speech recognizer got wrong, keeping their timings: find and replace words or phrases (\"cloud\" to \"Claude\", \"cooper netties\" to..."
+        },
+        {
+          "name": "search_transcript",
+          "edits": false,
+          "summary": "Find where a phrase is said."
+        },
+        {
+          "name": "find_retakes",
+          "edits": false,
+          "summary": "Read a transcribed recording sentence by sentence and find retakes (a line said again because the first try had a slip, or a sentence abandoned and..."
+        },
+        {
+          "name": "remove_retakes",
+          "edits": true,
+          "summary": "Cut whole sentences out of a transcribed recording, cleanly: each cut runs from just after the previous kept word to just before the next one, so the..."
+        },
+        {
+          "name": "cleanup_speech",
+          "edits": true,
+          "summary": "Tighten talking-head footage using its transcript: cut filler words (um, uh…), stutters and long pauses."
+        },
+        {
+          "name": "cut_ranges",
+          "edits": true,
+          "summary": "Remove time ranges from the finished timeline (timeline seconds)."
+        },
+        {
+          "name": "assemble_from_source",
+          "edits": true,
+          "summary": "Rebuild the primary track from chosen source ranges of one asset, in the order given (e.g. pick the best moments of a long recording by transcript)."
+        },
+        {
+          "name": "set_captions",
+          "edits": true,
+          "summary": "Turn captions on/off and pick a style (see list_caption_styles)."
+        },
+        {
+          "name": "export_captions",
+          "edits": false,
+          "summary": "Write the captions as a subtitle sidecar file (srt, vtt or ass), e.g. for YouTube upload."
+        }
+      ]
+    },
+    {
+      "group": "Voice",
+      "tools": [
+        {
+          "name": "list_voices",
+          "edits": false,
+          "summary": "List the narration voices: the local voices that run on this machine (with language or accent, gender and quality grade) and the session's own..."
+        },
+        {
+          "name": "preview_voice",
+          "edits": false,
+          "summary": "Speak a sample line in one or more voices and save each as a WAV file to listen to and compare, without changing the project."
+        },
+        {
+          "name": "set_voice",
+          "edits": true,
+          "summary": "Set the project's narration voice and speed, used by generate_voiceover and revoice when no voice is given."
+        },
+        {
+          "name": "generate_voiceover",
+          "edits": true,
+          "summary": "Synthesize narration from text and add it as a voice-over with measured word timings for captions."
+        },
+        {
+          "name": "revoice",
+          "edits": true,
+          "summary": "Re-generate narration already in the project with a new voice, speed or wording, keeping each voice-over where it is on the timeline."
+        }
+      ]
+    },
+    {
+      "group": "Color & looks",
+      "tools": [
+        {
+          "name": "color_adjust",
+          "edits": true,
+          "summary": "Color correct and grade a clip, a media layer, every clip, or the whole video."
+        },
+        {
+          "name": "get_color",
+          "edits": false,
+          "summary": "Read the current color settings of a target (\"global\", a clip id, or a media layer id)."
+        },
+        {
+          "name": "analyze_color",
+          "edits": false,
+          "summary": "Measure the edited video's color at a time: average brightness, shadow/highlight levels, contrast range, saturation and color cast, with..."
+        },
+        {
+          "name": "sample_color",
+          "edits": false,
+          "summary": "Measure the average color of a small area of a source video or image at a source time, e.g. a green screen before chromaKey, or a brand color to..."
+        },
+        {
+          "name": "render_scopes",
+          "edits": false,
+          "summary": "Render video scopes (histogram, luma waveform, RGB parade, vectorscope) for the frame at a time and look at them, like a colorist would."
+        },
+        {
+          "name": "set_color_space",
+          "edits": true,
+          "summary": "Say what color space a video or picture was recorded in, so it renders as its maker defines it: camera log (flat, gray-looking footage) and HDR are..."
+        },
+        {
+          "name": "apply_look",
+          "edits": true,
+          "summary": "Give a clip, a media layer, every clip or the whole video a finished film look: a grade plus film effects (print-film curve, halation, bloom..."
+        },
+        {
+          "name": "match_color",
+          "edits": true,
+          "summary": "Make clips look like a reference clip, so shots from different cameras or lighting cut together."
+        },
+        {
+          "name": "grade_scene",
+          "edits": true,
+          "summary": "Match shots to a hero shot or a reference still, one scene at a time: for each scene, every listed clip is matched to its reference (a clip id, or..."
+        },
+        {
+          "name": "grade_region",
+          "edits": true,
+          "summary": "Secondary color correction: grade only part of the frame, as a colorist does after the primary grade."
+        },
+        {
+          "name": "render_mask",
+          "edits": false,
+          "summary": "Look at a mask before (or after) grading or compositing with it: renders the frame with the mask as white on black (matte) or as a red tint over the..."
+        },
+        {
+          "name": "export_lut",
+          "edits": false,
+          "summary": "Save a clip's grade as a .cube 3D LUT for DaVinci Resolve, Premiere, Final Cut or a camera monitor: its color space conversion (for log footage, the..."
+        }
+      ]
+    },
+    {
+      "group": "Objects & tracking",
+      "tools": [
+        {
+          "name": "select_object",
+          "edits": true,
+          "summary": "Select any object in a video clip (a phone, a car, a cup, a person, a sign, the sky) so effects and corrections can be limited to it: a glow on one..."
+        },
+        {
+          "name": "track_object",
+          "edits": false,
+          "summary": "Follow a selected object (select_object) through every primary clip of its video, or the given clips, and report how well it held: per clip the..."
+        },
+        {
+          "name": "track_points",
+          "edits": true,
+          "summary": "Follow a point or a flat surface through a video, to attach graphics to it (pin_layer) or put a new picture on a screen or sign (replace_screen)."
+        },
+        {
+          "name": "pin_layer",
+          "edits": true,
+          "summary": "Attach a layer (a label, an arrow, a sticker, a graphic, a media overlay) to a tracked point or surface (track_points), so it moves with it..."
+        },
+        {
+          "name": "pin_mask",
+          "edits": true,
+          "summary": "Pin a shape mask to a tracked point or surface (track_points), so the shape moves, grows and turns in perspective with it: a grade on a sign or a..."
+        },
+        {
+          "name": "replace_screen",
+          "edits": true,
+          "summary": "Put an image or video on a tracked flat surface (track_points with corners): a phone or monitor screen, a TV, a billboard, a sign, a picture frame."
+        },
+        {
+          "name": "replace_sky",
+          "edits": true,
+          "summary": "Replace the sky in video clips with a picture or video (a sky photo, a sunset, a time-lapse of clouds) or a gradient."
+        },
+        {
+          "name": "remove_object",
+          "edits": true,
+          "summary": "Remove an object from video clips and fill in what was behind it: a person walking through, a car, a sign, a cable, a logo or watermark."
+        }
+      ]
+    },
+    {
+      "group": "Depth",
+      "tools": [
+        {
+          "name": "estimate_depth",
+          "edits": false,
+          "summary": "Estimate how far everything is from the camera in video and photo clips (Depth Anything V2 on keyframes, aligned and carried between them, about 5 s..."
+        },
+        {
+          "name": "set_focus",
+          "edits": true,
+          "summary": "Depth of field on a video or photo clip, from its depth (estimated if needed): what is at the focus stays sharp and everything nearer or farther..."
+        }
+      ]
+    },
+    {
+      "group": "Atmosphere & light",
+      "tools": [
+        {
+          "name": "add_particles",
+          "edits": true,
+          "summary": "Add weather, atmosphere or celebration over the video: rain, heavy rain with splashes, snow, dust motes in light, rising embers, sparks, confetti..."
+        },
+        {
+          "name": "update_particles",
+          "edits": true,
+          "summary": "Change particles made with add_particles and draw them again: any of their settings (density, size, speed, wind, color, area, ground, seed), the..."
+        },
+        {
+          "name": "add_light",
+          "edits": true,
+          "summary": "Add light effects that make a shot feel lit: rays or a lens flare."
+        }
+      ]
+    },
+    {
+      "group": "Preview & render",
+      "tools": [
+        {
+          "name": "render_frame",
+          "edits": false,
+          "summary": "Render one frame of the edit at a timeline time and look at it."
+        },
+        {
+          "name": "render_contact_sheet",
+          "edits": false,
+          "summary": "Render a grid of frames sampled across the whole video, a one-image overview of the edit's pacing and look."
+        },
+        {
+          "name": "render_preview",
+          "edits": false,
+          "summary": "Render a fast low-resolution preview video (shown in the desktop app for the user)."
+        },
+        {
+          "name": "render_video",
+          "edits": false,
+          "summary": "Render the final full-quality video file."
+        }
+      ]
+    }
+  ]
+}

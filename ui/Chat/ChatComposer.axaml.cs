@@ -45,6 +45,9 @@ public partial class ChatComposer : UserControl
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
         AddHandler(DragDrop.DragLeaveEvent, (_, _) => Box.Classes.Set("dropping", false));
         AddHandler(DragDrop.DropEvent, OnDrop);
+        // Enter sends, Shift+Enter starts a new line. The text box takes Enter for itself (to add a
+        // line) before handlers set in XAML run, so this listens on the way in, before the text box.
+        PromptBox.AddHandler(KeyDownEvent, OnPromptKeyDown, RoutingStrategies.Tunnel);
     }
 
     public void Attach(ProjectViewModel vm)

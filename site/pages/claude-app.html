@@ -1,0 +1,54 @@
+<!-- description: Connect VideditBridge to the Claude desktop app (MCP) and edit videos with your Claude account, no API key needed. -->
+<h1>Use the Claude app</h1>
+<p class="lead">If you use the Claude desktop app, you can edit with VideditBridge from there, with your own Claude account. VideditBridge needs no API key for this, and the previews play right in Claude's chat.</p>
+
+<div class="note">
+  <strong>How it works</strong>
+  <p>VideditBridge adds itself to the Claude app as a connector (an MCP server, the standard way apps give Claude new tools). Claude then has the same editing tools as VideditBridge's own chat, and works on your VideditBridge projects.</p>
+</div>
+
+<h2>Connect it</h2>
+<ol class="steps">
+  <li><strong>Install the Claude desktop app.</strong> Download it from <a href="https://claude.ai/download">claude.ai/download</a> and sign in.</li>
+  <li><strong>Open VideditBridge's Connections.</strong> In VideditBridge, open <em>Settings</em> and go to <em>Connections</em>. The <em>Claude app</em> row says <em>Not connected</em>.</li>
+  <li><strong>Press Connect.</strong> VideditBridge adds itself to the Claude app's settings file. Nothing else in that file changes, and the previous file is kept as a backup.</li>
+  <li><strong>Restart the Claude app.</strong> Quit it completely (on Windows, right-click its icon by the clock and choose <em>Quit</em>; on a Mac, <kbd>Cmd</kbd> + <kbd>Q</kbd>), then open it again. Closing the window is not enough.</li>
+  <li><strong>Ask Claude.</strong> In a new chat, for example: "List my VideditBridge projects", then "Open City Lights Teaser and make the title bigger, then show me a preview." Claude asks before using a tool the first time; allow it.</li>
+</ol>
+<figure>
+  <img class="shot" src="assets/screens/connections.png" alt="Settings, Connections: the Claude app row with Guide and Connect">
+  <figcaption>Before: the Claude app is not connected yet.</figcaption>
+</figure>
+<figure>
+  <img class="shot" src="assets/screens/connections-connected.png" alt="Settings, Connections: the Claude app row says Connected, with Disconnect">
+  <figcaption>After pressing Connect. Restart the Claude app to use it.</figcaption>
+</figure>
+
+<h2>What you will see</h2>
+<ul>
+  <li><strong>Previews in the chat.</strong> When Claude renders a preview, a frame or a contact sheet, it plays or shows inside Claude's reply.</li>
+  <li><strong>Your projects stay in VideditBridge.</strong> Claude works on the same projects. If VideditBridge is open, the edits go through it (and are saved there) without opening a tab; if it is closed, Claude edits the project files directly.</li>
+  <li><strong>Undo still works.</strong> Open the project in VideditBridge to see every change in <em>History</em> and undo any of them.</li>
+</ul>
+
+<h2>Claude Code, Gemini CLI and other tools</h2>
+<p>Developers can use VideditBridge from command-line AI tools too. In <em>Settings</em>, <em>Connections</em>:</p>
+<table>
+  <tr><th>Tool</th><th>How</th></tr>
+  <tr><td>Claude Code</td><td>Press <em>Copy command</em> on the Claude Code row and run it once in a terminal. It looks like this:</td></tr>
+  <tr><td>Gemini CLI</td><td>Press <em>Connect</em> on the Gemini CLI row, then start a new Gemini CLI session. (This is Google's terminal tool, not the Gemini app.)</td></tr>
+  <tr><td>Other MCP tools</td><td>Press <em>Copy command</em> on <em>Other apps</em> and add it as a stdio MCP server in the tool's settings.</td></tr>
+</table>
+<pre><code>claude mcp add --scope user videditbridge -- node "/path/to/videditbridge/dist/mcp/main.js" --projects-dir "/path/to/projects"</code></pre>
+<p class="muted">Terminal tools cannot show video, so VideditBridge opens the project itself as the preview window. Its chat is hidden there, because the conversation happens in the terminal; <em>Use the chat here</em> brings it back.</p>
+
+<h2>The ChatGPT and Gemini apps</h2>
+<p>Not yet. Their connectors are called from OpenAI's and Google's servers, so they would need your computer reachable from the internet. Until there is a safe and simple way, use them through an API key in <a href="api-keys.html">VideditBridge's own chat</a>.</p>
+
+<h2>Disconnect</h2>
+<p>Press <em>Disconnect</em> on the Claude app row, then restart the Claude app. VideditBridge takes only its own entry out of the Claude app's settings.</p>
+
+<div class="note">
+  <strong>Not showing up in Claude?</strong>
+  <p>Make sure you quit the Claude app completely, and that the row in VideditBridge says <em>Connected</em> (if it says <em>Update</em>, press it). More in <a href="troubleshooting.html#claude-app">Troubleshooting</a>.</p>
+</div>

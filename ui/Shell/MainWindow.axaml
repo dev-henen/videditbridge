@@ -65,6 +65,12 @@
                 <TextBlock Text="New tab" FontSize="12" VerticalAlignment="Center"/>
               </DockPanel>
             </Button>
+            <Button Classes="side" Click="OnSideHelp" AutomationProperties.Name="Help and guides">
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Classes="icon" Text="{x:Static shared:Icons.Info}" FontSize="14" Margin="0,0,10,0"/>
+                <TextBlock Text="Help and guides" FontSize="12" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
             <Button Classes="side" Click="OnSideSettings" AutomationProperties.Name="Settings">
               <StackPanel Orientation="Horizontal">
                 <TextBlock Classes="icon" Text="{x:Static shared:Icons.Settings}" FontSize="14" Margin="0,0,10,0"/>

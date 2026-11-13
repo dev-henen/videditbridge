@@ -87,24 +87,55 @@ const jsonSchema = (t: z.ZodType) => z.toJSONSchema(t, { io: "input", unrepresen
 /** GitHub heading anchor: lowercase, punctuation other than - and _ dropped, spaces become -. */
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9 _-]/g, "").replace(/ /g, "-");
 
-function claudeTools(): string {
+/** The tools in groups, for the reference and the website (Other: any tool not placed yet). */
+function toolGroups(): [string, string[]][] {
   const groups: [string, string[]][] = [
-    ["Inspect & project", ["get_project", "new_project", "set_project_settings", "undo", "redo"]],
+    ["Inspect & project", ["get_project", "new_project", "set_project_settings", "undo", "redo", "clean_up_media", "review_edit", "offer_choices"]],
     ["Library", ["list_templates", "get_template", "apply_template", "list_effects", "list_audio_effects", "list_transitions", "list_animations", "list_caption_styles", "list_components"]],
-    ["Media & primary track", ["import_media", "add_clip", "update_clip", "remove_clip", "move_clip", "split_clip", "trim_clip", "set_speed", "set_transition", "add_effect", "remove_effect"]],
-    ["Retouch", ["retouch"]],
-    ["Layers", ["add_text", "add_media_overlay", "add_shape", "add_component", "update_layer", "reorder_layer", "remove_layer"]],
+    ["Media & primary track", ["import_media", "add_clip", "update_clip", "remove_clip", "move_clip", "split_clip", "trim_clip", "split_edit", "freeze_frame", "set_speed", "speed_ramp", "interpolate", "set_transition", "add_effect", "remove_effect", "create_effect", "animate_effect"]],
+    ["People & faces", ["retouch", "detect_faces", "reframe", "follow_face"]],
+    ["Layers", ["add_text", "add_media_overlay", "add_shape", "add_component", "update_layer", "reorder_layer", "remove_layer", "animate_layer"]],
+    ["Graphics, icons & fonts", ["create_graphic", "update_graphic", "search_icons", "add_icon", "list_fonts", "install_font", "install_fonts", "make_thumbnail"]],
     ["Audio", ["add_audio", "update_audio", "remove_audio", "set_volume", "enhance_audio", "add_audio_effect", "remove_audio_effect"]],
     ["Sound map, beats & moments", ["analyze_audio", "remove_silences", "detect_scenes", "detect_beats", "beat_sync", "add_moment_effect", "list_sound_effects", "add_sound_effect"]],
-    ["Transcript & captions", ["transcribe", "set_transcript", "get_transcript", "search_transcript", "find_retakes", "remove_retakes", "cleanup_speech", "cut_ranges", "assemble_from_source", "set_captions", "export_captions"]],
+    ["Transcript & captions", ["transcribe", "set_transcript", "get_transcript", "fix_transcript", "search_transcript", "find_retakes", "remove_retakes", "cleanup_speech", "cut_ranges", "assemble_from_source", "set_captions", "export_captions"]],
     ["Voice", ["list_voices", "preview_voice", "set_voice", "generate_voiceover", "revoice"]],
-    ["Color", ["color_adjust", "get_color", "analyze_color", "sample_color", "render_scopes"]],
+    ["Color & looks", ["color_adjust", "get_color", "analyze_color", "sample_color", "render_scopes", "set_color_space", "apply_look", "match_color", "grade_scene", "grade_region", "render_mask", "export_lut"]],
+    ["Objects & tracking", ["select_object", "track_object", "track_points", "pin_layer", "pin_mask", "replace_screen", "replace_sky", "remove_object"]],
+    ["Depth", ["estimate_depth", "set_focus"]],
+    ["Atmosphere & light", ["add_particles", "update_particles", "add_light"]],
     ["Preview & render", ["render_frame", "render_contact_sheet", "render_preview", "render_video"]],
   ];
   const grouped = new Set(groups.flatMap(([, names]) => names));
   const missing = TOOLS.filter((t) => !grouped.has(t.name)).map((t) => t.name);
   if (missing.length) groups.push(["Other", missing]);
+  return groups;
+}
 
+/**
+ * The tool list for the website (site/tools.html, built by scripts/build-site.mjs): each group with
+ * its tools, whether they edit, and the first sentence of what they do.
+ */
+function toolsJson(): string {
+  // The first sentence (not cut at "e.g." and the like), at most about 150 characters, cut at a word.
+  const first = (d: string) => {
+    const sentence = d.match(/^.*?(?<!\b(?:e\.g|i\.e|etc|vs))[.!?](?=\s|$)/)?.[0] ?? d;
+    if (sentence.length <= 150) return sentence;
+    const cut = sentence.slice(0, 150);
+    return `${cut.slice(0, cut.lastIndexOf(" ")).replace(/[,;:(]+$/, "")}...`;
+  };
+  const groups = toolGroups().map(([group, names]) => ({
+    group,
+    tools: names.flatMap((n) => {
+      const t = TOOLS.find((x) => x.name === n);
+      return t ? [{ name: t.name, edits: t.mutates, summary: first(t.description) }] : [];
+    }),
+  }));
+  return `${JSON.stringify({ count: TOOLS.length, groups }, null, 2)}\n`;
+}
+
+function claudeTools(): string {
+  const groups = toolGroups();
   let out = `${HEADER}# Claude tools\n\n${TOOLS.length} tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with \`toAnthropicTools()\` in Messages API format. Run them with \`executeTool(session, name, input)\`. Inputs are validated against the schemas below, and errors come back as \`isError\` results instead of exceptions.\n\nTools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.\n\n`;
   out += "## Contents\n\n";
   for (const [group, names] of groups) out += `- **${group}**: ${names.map((n) => `[${n}](#${slug(n)})`).join(", ")}\n`;
@@ -213,6 +244,7 @@ function templates(): string {
 export async function generateDocs(): Promise<Record<string, string>> {
   return {
     "claude-tools.md": claudeTools(),
+    "tools.json": toolsJson(),
     "effects.md": effects(),
     "audio-effects.md": audioEffects(),
     "sound-effects.md": soundEffects(),

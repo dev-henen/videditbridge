@@ -197,6 +197,12 @@
                 <TextBlock Text="Open Settings" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource OnAccent}" VerticalAlignment="Center"/>
               </StackPanel>
             </Button>
+            <Button HorizontalAlignment="Center" Click="OnKeyGuide" AutomationProperties.Name="How to get an API key">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock Text="How to get an API key" FontSize="11" Foreground="{StaticResource AccentHover}" VerticalAlignment="Center"/>
+                <TextBlock Classes="icon" Text="{x:Static shared:Icons.Open}" FontSize="11" Foreground="{StaticResource AccentHover}" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Button>
           </StackPanel>
         </Border>
       </Grid>

@@ -210,6 +210,12 @@ public partial class MainWindow : Window
         _vm.NewTab();
     }
 
+    private async void OnSideHelp(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        ShowSidePanel(false);
+        await Docs.Open(this, Docs.Home);
+    }
+
     private void OnSideSettings(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         ShowSidePanel(false);

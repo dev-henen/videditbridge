@@ -57,6 +57,8 @@ public partial class ChatPanel : UserControl
 
     private void OnOpenSettings(object? sender, RoutedEventArgs e) => _vm.OpenSettings();
 
+    private async void OnKeyGuide(object? sender, RoutedEventArgs e) => await VideoEditor.Shared.Docs.Open(this, VideoEditor.Shared.Docs.ApiKeys());
+
     private async void OnNewConversation(object? sender, RoutedEventArgs e)
     {
         await _vm.NewConversationAsync();

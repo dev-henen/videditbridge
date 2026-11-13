@@ -1,0 +1,47 @@
+<!-- description: What VideditBridge's messages mean and how to fix common problems with API keys, the Claude app and rendering. -->
+<h1>Troubleshooting</h1>
+<p class="lead">When something goes wrong, the chat says what happened in one sentence and what to do. Here is what each message means, and fixes for other common problems.</p>
+
+<figure>
+  <img class="shot" src="assets/screens/chat-error.png" alt="An error in the chat: Anthropic did not accept the API key. Check it in Settings (or add a new one), then try again.">
+  <figcaption>Errors show in a red box under your request.</figcaption>
+</figure>
+
+<h2>Messages in the chat</h2>
+<table>
+  <tr><th>The chat says</th><th>What to do</th></tr>
+  <tr><td>... did not accept the API key</td><td>The key is wrong, was deleted, or belongs to another account. In <em>Settings</em>, <em>AI models</em>, press <em>Change</em> and paste a fresh key. See <a href="api-keys.html">API keys</a>.</td></tr>
+  <tr><td>... says this key has hit its usage limit</td><td>You used the key's allowance for now, or ran out of credit. Wait the time it says and try again, add credit in the company's console, or pick a model from another company. Google's free tier has low per-minute limits.</td></tr>
+  <tr><td>... is not available with this key</td><td>Your account cannot use that model yet. Pick another one in the model picker under the chat box.</td></tr>
+  <tr><td>... is busy right now / had a problem on its side</td><td>The company's service is overloaded or down for a moment. Try again shortly.</td></tr>
+  <tr><td>Could not reach ...</td><td>No internet connection, or something blocks the app (a firewall or VPN). Check the connection and try again.</td></tr>
+  <tr><td>This conversation has grown too long</td><td>Long conversations fill the model's memory. Start a new conversation with the pencil icon above the chat; the project is not affected.</td></tr>
+</table>
+
+<h2>The chat is off: "Add an API key to start editing"</h2>
+<p>No API key is set yet. Press <em>Open Settings</em> and add one (<a href="api-keys.html">how</a>), or use VideditBridge from <a href="claude-app.html">the Claude app</a>.</p>
+<figure>
+  <img class="shot" src="assets/screens/editor-no-key.png" alt="The chat says Add an API key to start editing">
+</figure>
+<p>If you have a key but a model is missing from the picker, the picker lists only models whose company has a key. Add that company's key, or pick from the list.</p>
+
+<h2 id="claude-app">The Claude app does not show VideditBridge</h2>
+<ul>
+  <li><strong>Quit the Claude app completely</strong> and open it again: it reads its connectors only when it starts. On Windows, right-click its icon by the clock and choose <em>Quit</em>.</li>
+  <li><strong>Check the row in VideditBridge.</strong> <em>Settings</em>, <em>Connections</em>, <em>Claude app</em> should say <em>Connected</em>. If it says <em>Update</em>, press it (VideditBridge moved or was renamed), then restart the Claude app.</li>
+  <li><strong>Look in the right place.</strong> Connectors on your computer show in the Claude app's settings (under <em>Developer</em>) and in the tools menu of a chat.</li>
+  <li><strong>Still nothing?</strong> Press <em>Disconnect</em>, then <em>Connect</em> again, and restart the Claude app.</li>
+</ul>
+
+<h2>The preview is slow or looks wrong</h2>
+<ul>
+  <li>In <em>Settings</em>, <em>Rendering</em>, press <em>Test again</em>: VideditBridge measures your graphics card and processor and picks the faster one.</li>
+  <li>If the picture looks wrong, set <em>Renderer</em> to <em>FFmpeg only</em> and report it (below) so it can be fixed.</li>
+  <li>Large videos preview from smaller copies made in the background; the first preview of a new file takes longer.</li>
+</ul>
+
+<h2>Where are my files?</h2>
+<p><em>Settings</em>, <em>Folders</em> lists the projects folder, the downloaded models, fonts and the cache, each with an <em>Open</em> button. Each project is a folder with your media, the edit and its conversations.</p>
+
+<h2>Report a problem</h2>
+<p>Open an issue on <a href="https://github.com/dev-henen/videditbridge/issues">GitHub</a> with what you did, what you expected and what happened. A screenshot helps. Never include your API keys.</p>

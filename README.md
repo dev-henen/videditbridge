@@ -10,6 +10,8 @@ An AI-native video editing library. The edit is a plain JSON document that Claud
 - **Voice-over on your machine**: a local neural voice model (27 English voices) with measured word timings, so narration gets captions. No account or key.
 - **Desktop app**: a native app for Windows, macOS and Linux (ui) where you edit by asking Claude and watch every edit land, with the timeline, frames, preview video and review findings. Claude can also render frames and contact sheets to check its own work.
 
+**User guide:** [dev-henen.github.io/videditbridge](https://dev-henen.github.io/videditbridge/) shows how to set up API keys, use the Claude app, and edit by asking, with screenshots (source in [site/](site/)).
+
 **Documentation:** [docs/](docs/README.md) has guides plus a reference for every Claude tool, template, effect, transition, animation, caption style and component.
 
 ## Desktop app
