@@ -109,10 +109,10 @@
       </Border>
 
       <Grid>
-        <!-- An empty conversation: what Claude can do here -->
+        <!-- An empty conversation: what the assistant (Claude, ChatGPT or Gemini) can do here -->
         <StackPanel VerticalAlignment="Center" Margin="18,0" Spacing="6" IsVisible="{Binding !HasMessages}">
           <TextBlock Classes="icon" Text="{x:Static shared:Icons.Sparkle}" FontSize="22" Foreground="{StaticResource Accent}"/>
-          <TextBlock Text="Edit by asking Claude" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+          <TextBlock Text="{Binding EmptyTitle}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
           <TextBlock Text="Describe the video you want, point at a clip on the timeline or a spot in the frame, or add files with +."
                      FontSize="11" Foreground="{StaticResource Muted}" TextWrapping="Wrap" TextAlignment="Center"/>
         </StackPanel>

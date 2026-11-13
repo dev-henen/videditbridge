@@ -46,7 +46,7 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     dir = await mkdtemp(path.join(tmpdir(), "ave-host-"));
     const tsx = path.resolve("node_modules/tsx/dist/cli.mjs");
     // No key: Claude is unavailable, so requests fail the same way on every machine.
-    const env = { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_PROFILE: "", AVE_SETTINGS_FILE: path.join(dir, "settings.json"), AVE_KEYCHAIN_SERVICE: `ai-video-editor-test-${process.pid}` };
+    const env = { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_PROFILE: "", OPENAI_API_KEY: "", GEMINI_API_KEY: "", GOOGLE_API_KEY: "", AVE_SETTINGS_FILE: path.join(dir, "settings.json"), AVE_KEYCHAIN_SERVICE: `ai-video-editor-test-${process.pid}` };
     const proc = spawn(process.execPath, [tsx, "engine/host/main.ts", "--projects-dir", dir], { stdio: "pipe", env });
     host = new HostClient(proc);
   });
@@ -154,6 +154,21 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     const removed = await host.call<Settings & { claudeAvailable: boolean }>("settings.set", { apiKey: "", renderer: "auto", hardwareEncoding: true });
     expect(removed.apiKey.set).toBe(false);
     expect(removed.claudeAvailable).toBe(false);
+
+    // ChatGPT and Gemini: a key per provider makes its models usable; Claude stays the default.
+    type Availability = { aiAvailable: boolean; claudeAvailable: boolean; providers: { id: string; available: boolean }[]; models: { id: string; provider: string; available: boolean }[] };
+    const info = await host.call<Availability & { defaultModel: string }>("host.info");
+    expect(info.providers.map((p) => p.id)).toEqual(["anthropic", "openai", "google"]);
+    expect(info.models[0]!.provider).toBe("anthropic");
+    const openai = await host.call<Availability & { apiKeys: Record<string, { set: boolean; hint?: string }> }>("settings.set", { provider: "openai", apiKey: "sk-openai-test-5678" });
+    expect(openai.apiKeys.openai).toMatchObject({ set: true, hint: "…5678" });
+    expect(openai.apiKeys.anthropic?.set).toBe(false);
+    expect(openai.aiAvailable).toBe(true);
+    expect(openai.claudeAvailable).toBe(false);
+    expect(openai.models.filter((m) => m.available).every((m) => m.provider === "openai")).toBe(true);
+    await expect(host.call("settings.set", { provider: "nope", apiKey: "x" })).rejects.toThrow(/Unknown provider/);
+    const cleared = await host.call<Availability>("settings.set", { provider: "openai", apiKey: "" });
+    expect(cleared.aiAvailable).toBe(false);
   });
 
   it("renders the viewer's matte and the Review tab's scopes", async () => {

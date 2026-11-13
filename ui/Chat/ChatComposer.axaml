@@ -84,7 +84,7 @@
 
         <!-- Add files and pick the model on the left; send (or stop) on the right -->
         <DockPanel>
-          <Button DockPanel.Dock="Left" Click="OnAttach" IsEnabled="{Binding CanAsk}" ToolTip.Tip="Add files (media for the edit, or pictures for Claude to look at)"
+          <Button DockPanel.Dock="Left" Click="OnAttach" IsEnabled="{Binding CanAsk}" ToolTip.Tip="Add files (media for the edit, or pictures for the assistant to look at)"
                   AutomationProperties.Name="Add files" MinHeight="24" MinWidth="24" Padding="3">
             <TextBlock Classes="icon" Text="{x:Static shared:Icons.Add}" FontSize="15"/>
           </Button>
@@ -92,13 +92,13 @@
                     ToolTip.Tip="Model for the next request" AutomationProperties.Name="Model">
             <ComboBox.ItemTemplate>
               <DataTemplate>
-                <StackPanel>
+                <StackPanel ToolTip.Tip="{Binding Description}">
                   <TextBlock Text="{Binding Label}" FontSize="11"/>
                 </StackPanel>
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
-          <Button DockPanel.Dock="Right" Classes="primary" Click="OnStopClaude" ToolTip.Tip="Stop Claude" AutomationProperties.Name="Stop Claude"
+          <Button DockPanel.Dock="Right" Classes="primary" Click="OnStopClaude" ToolTip.Tip="Stop" AutomationProperties.Name="Stop the assistant"
                   Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" IsVisible="{Binding AgentRunning}" HorizontalAlignment="Right">
             <TextBlock Classes="icon" Text="{x:Static shared:Icons.Stop}" FontSize="12" Foreground="{StaticResource OnAccent}"/>
           </Button>

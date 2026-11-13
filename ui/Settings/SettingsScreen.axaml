@@ -34,24 +34,13 @@
     <ScrollViewer VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="24,20,24,24" MaxWidth="640" HorizontalAlignment="Left" Spacing="14">
 
-        <!-- Claude: the key it edits with, and the model new conversations start with -->
+        <!-- The AI that edits: a key for each provider (Claude, the default; ChatGPT; Gemini), and the model new conversations start with -->
         <Border Classes="card">
           <StackPanel Spacing="10">
-            <TextBlock Classes="section" Text="Claude"/>
-            <TextBlock x:Name="KeyStatus" FontSize="12" Foreground="{StaticResource Text}" TextWrapping="Wrap"/>
-            <DockPanel>
-              <TextBlock Classes="label" DockPanel.Dock="Left" Text="API key"/>
-              <Button x:Name="RemoveKeyButton" DockPanel.Dock="Right" Click="OnRemoveKey" Margin="6,0,0,0" ToolTip.Tip="Remove the stored key" AutomationProperties.Name="Remove the stored key">
-                <TextBlock Text="Remove" FontSize="12"/>
-              </Button>
-              <Button DockPanel.Dock="Right" Classes="primary" Click="OnSaveKey" Margin="6,0,0,0" AutomationProperties.Name="Save the API key">
-                <StackPanel Orientation="Horizontal">
-                  <TextBlock Classes="icon" Text="{x:Static shared:Icons.Key}" FontSize="13" Foreground="{StaticResource OnAccent}" Margin="0,0,6,0"/>
-                  <TextBlock Text="Save" FontSize="12" Foreground="{StaticResource OnAccent}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                </StackPanel>
-              </Button>
-              <TextBox x:Name="KeyBox" PasswordChar="•" Watermark="Anthropic API key (sk-ant-...)" AutomationProperties.Name="Anthropic API key"/>
-            </DockPanel>
+            <TextBlock Classes="section" Text="AI models"/>
+            <TextBlock Classes="note" Text="Claude is the default. Add an OpenAI or Google key to edit with ChatGPT or Gemini too; pick the model in the chat."/>
+            <!-- One row per provider, built from the host's list (SettingsScreen.BuildKeyRows) -->
+            <StackPanel x:Name="KeyRows" Spacing="12"/>
             <TextBlock x:Name="KeyNote" Classes="note"/>
             <DockPanel>
               <TextBlock Classes="label" DockPanel.Dock="Left" Text="Default model"/>

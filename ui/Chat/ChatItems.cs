@@ -30,11 +30,14 @@ public sealed class ChatMessage(bool isUser, string text, IReadOnlyList<string>?
 /// <summary>A saved conversation in the history list.</summary>
 public sealed record ConversationEntry(string Id, string Title, string Updated, bool IsCurrent);
 
-/// <summary>A Claude model the chat can use.</summary>
-public sealed record ModelOption(string Id, string Label, string Description)
+/// <summary>A model the chat can use: Claude's (the default), ChatGPT's or Gemini's.</summary>
+public sealed record ModelOption(string Id, string Label, string Description, string Provider = "anthropic", string Assistant = "Claude")
 {
     public override string ToString() => Label;
 }
+
+/// <summary>An AI provider the app can edit with, and whether it has a key.</summary>
+public sealed record ProviderOption(string Id, string Label, string Assistant, string KeyUrl, string KeyHint, bool Available);
 
 /// <summary>A file waiting to be sent with the next request.</summary>
 public sealed record Attachment(string Path)

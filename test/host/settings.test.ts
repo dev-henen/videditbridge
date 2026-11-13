@@ -6,12 +6,43 @@ import { afterAll, describe, expect, it } from "vitest";
 // A keychain entry of its own, and no key from the environment, before the modules read them.
 process.env.AVE_KEYCHAIN_SERVICE = `ai-video-editor-unit-${process.pid}`;
 delete process.env.ANTHROPIC_API_KEY;
+delete process.env.OPENAI_API_KEY;
+delete process.env.GEMINI_API_KEY;
+delete process.env.GOOGLE_API_KEY;
 const { loadSettings, publicSettings, saveSettings, storeKey } = await import("../../engine/host/settings.js");
 const { hasKeychain, writeKeychainKey } = await import("../../engine/host/secrets.js");
 
 describe("app settings and the API key", () => {
   afterAll(async () => {
     await writeKeychainKey(undefined);
+    await writeKeychainKey(undefined, "openai");
+    await writeKeychainKey(undefined, "google");
+  });
+
+  it("keeps a key for each provider apart, with Anthropic's where it always was", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "ave-settings-"));
+    const file = path.join(dir, "settings.json");
+    try {
+      // Where there is no keychain the file holds them: Anthropic's as apiKey, the others under apiKeys.
+      await writeFile(file, JSON.stringify({ renderer: "auto", hardwareEncoding: true, apiKeys: { openai: "sk-openai-file-1111" } }));
+      const s = await loadSettings(file);
+      expect(publicSettings(s).apiKeys.openai).toMatchObject({ set: true, hint: "…1111" });
+      expect(publicSettings(s).apiKeys.anthropic).toEqual({ set: false });
+      expect(await storeKey(s, "AIza-google-2222", "google")).toBe(true);
+      expect(await storeKey(s, "AIza-google-2222", "google")).toBe(false);
+      const shown = publicSettings(s);
+      expect(shown.apiKeys.google).toMatchObject({ set: true, hint: "…2222" });
+      expect(shown.apiKey).toEqual({ set: false });
+      await saveSettings(s, file);
+      const saved = await readFile(file, "utf8");
+      if (await hasKeychain()) expect(saved).not.toMatch(/sk-openai|AIza/);
+      else expect(JSON.parse(saved).apiKeys).toEqual({ openai: "sk-openai-file-1111", google: "AIza-google-2222" });
+      expect(await storeKey(s, undefined, "openai")).toBe(true);
+      expect(await storeKey(s, undefined, "google")).toBe(true);
+      expect(publicSettings(s).apiKeys.openai).toEqual({ set: false });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("moves a key from the settings file into the system keychain, and keeps it out of the file", async () => {

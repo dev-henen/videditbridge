@@ -1,10 +1,14 @@
 using System.Globalization;
 using System.IO;
 using System.Text.Json.Nodes;
+using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using VideoEditor.Chat;
+using VideoEditor.Shared;
 using VideoEditor.Shell;
 
 namespace VideoEditor.Settings;
@@ -13,7 +17,8 @@ namespace VideoEditor.Settings;
 public sealed record FolderRow(string Name, string Path);
 
 /// <summary>
-/// The app's settings tab: Claude's API key and default model, the renderer and encoding on the
+/// The app's settings tab: the AI providers' API keys (Claude's, the default, ChatGPT's and Gemini's)
+/// and the default model, the renderer and encoding on the
 /// graphics card, and the folders the app uses. Every change goes to the host at once, which applies
 /// it and keeps it for next time.
 /// </summary>
@@ -25,11 +30,79 @@ public partial class SettingsScreen : UserControl
 
     public SettingsScreen() => InitializeComponent();
 
+    /// <summary>One provider's key row: what it says about the key, the box to type one, and its remove button.</summary>
+    private sealed record KeyRow(ProviderOption Provider, TextBlock Status, TextBox Box, Button Remove);
+    private readonly List<KeyRow> _keyRows = [];
+
     public void Attach(AppViewModel vm)
     {
         _vm = vm;
         ModelBox.ItemsSource = vm.Models;
+        BuildKeyRows();
         _ = LoadAsync();
+    }
+
+    private IBrush? Brush(string key) => this.TryFindResource(key, out var v) ? v as IBrush : null;
+
+    /// <summary>A key row for each provider the host offers (Anthropic for Claude first, the default).</summary>
+    private void BuildKeyRows()
+    {
+        KeyRows.Children.Clear();
+        _keyRows.Clear();
+        foreach (var p in _vm.Providers)
+        {
+            var status = new TextBlock { FontSize = 12, Foreground = Brush("Text"), TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+            var box = new TextBox { PasswordChar = '•', Watermark = $"{p.Label} API key ({p.KeyHint})" };
+            AutomationProperties.SetName(box, $"{p.Label} API key");
+            var remove = new Button { Margin = new Thickness(6, 0, 0, 0), Content = new TextBlock { Text = "Remove", FontSize = 12 } };
+            ToolTip.SetTip(remove, $"Remove the stored {p.Label} key");
+            AutomationProperties.SetName(remove, $"Remove the stored {p.Label} key");
+            var save = new Button
+            {
+                Margin = new Thickness(6, 0, 0, 0),
+                Content = new StackPanel
+                {
+                    Orientation = Avalonia.Layout.Orientation.Horizontal,
+                    Children =
+                    {
+                        new TextBlock { Classes = { "icon" }, Text = Icons.Key, FontSize = 13, Foreground = Brush("OnAccent"), Margin = new Thickness(0, 0, 6, 0) },
+                        new TextBlock { Text = "Save", FontSize = 12, Foreground = Brush("OnAccent"), FontWeight = FontWeight.SemiBold, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center },
+                    },
+                },
+            };
+            save.Classes.Add("primary");
+            AutomationProperties.SetName(save, $"Save the {p.Label} API key");
+            var row = new KeyRow(p, status, box, remove);
+            save.Click += async (_, _) => await SaveKey(row);
+            box.KeyDown += async (_, e) =>
+            {
+                if (e.Key == Avalonia.Input.Key.Enter) await SaveKey(row);
+            };
+            remove.Click += async (_, _) => await Change(new { provider = p.Id, apiKey = "" });
+
+            var label = new TextBlock { Text = "API key" };
+            label.Classes.Add("label");
+            var line = new DockPanel();
+            DockPanel.SetDock(label, Dock.Left);
+            DockPanel.SetDock(remove, Dock.Right);
+            DockPanel.SetDock(save, Dock.Right);
+            line.Children.Add(label);
+            line.Children.Add(remove);
+            line.Children.Add(save);
+            line.Children.Add(box);
+
+            var title = new TextBlock { Text = $"{p.Assistant}, from {p.Label}{(p.Id == "anthropic" ? " (default)" : "")}", FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Brush("Text") };
+            KeyRows.Children.Add(new StackPanel { Spacing = 6, Children = { title, status, line } });
+            _keyRows.Add(row);
+        }
+    }
+
+    private async Task SaveKey(KeyRow row)
+    {
+        var key = row.Box.Text?.Trim();
+        if (string.IsNullOrEmpty(key)) return;
+        await Change(new { provider = row.Provider.Id, apiKey = key });
+        row.Box.Text = "";
     }
 
     /// <summary>Read the settings from the host and show them.</summary>
@@ -40,6 +113,8 @@ public partial class SettingsScreen : UserControl
             var s = await _vm.GetSettingsAsync();
             if (s is null) return;
             _loading = true;
+            // The provider list comes with host.info, which may arrive after the tab was made.
+            if (!_keyRows.Select(r => r.Provider.Id).SequenceEqual(_vm.Providers.Select(p => p.Id))) BuildKeyRows();
             ShowKey(s);
             ModelBox.SelectedItem = _vm.DefaultModel;
             var renderer = s["renderer"]?.GetValue<string>() ?? "auto";
@@ -66,22 +141,29 @@ public partial class SettingsScreen : UserControl
         }
     }
 
+    /// <summary>Show what each provider's key is (set or not, and where from).</summary>
     private void ShowKey(JsonNode s)
     {
-        var key = s["apiKey"];
-        var set = key?["set"]?.GetValue<bool>() == true;
-        var source = key?["source"]?.GetValue<string>();
-        KeyStatus.Text = set
-            ? $"Claude can edit: a key ending in {key!["hint"]?.GetValue<string>()?.TrimStart('…')} is set{(source == "environment" ? " by the ANTHROPIC_API_KEY environment variable" : "")}."
-            : "Claude cannot edit yet: add an Anthropic API key (console.anthropic.com).";
-        RemoveKeyButton.IsVisible = set && source != "environment";
+        var fromEnvironment = false;
+        foreach (var row in _keyRows)
+        {
+            var p = row.Provider;
+            // An older host only reports Anthropic's key, as apiKey.
+            var key = s["apiKeys"]?[p.Id] ?? (p.Id == "anthropic" ? s["apiKey"] : null);
+            var set = key?["set"]?.GetValue<bool>() == true;
+            var source = key?["source"]?.GetValue<string>();
+            fromEnvironment |= set && source == "environment";
+            row.Status.Text = set
+                ? $"{p.Assistant} can edit: a key ending in {key!["hint"]?.GetValue<string>()?.TrimStart('…')} is set{(source == "environment" ? " by an environment variable" : "")}."
+                : $"{p.Assistant} cannot edit yet: add a {p.Label} API key ({p.KeyUrl}).";
+            row.Remove.IsVisible = set && source != "environment";
+        }
         var keychain = s["keychain"]?.GetValue<bool>() == true;
         var store = OperatingSystem.IsWindows() ? "Windows Credential Manager" : OperatingSystem.IsMacOS() ? "the macOS Keychain" : "the system keyring";
-        KeyNote.Text = source == "environment"
-            ? "The environment variable wins over a key saved here. Unset it to use the saved one."
-            : keychain
-                ? $"Kept in {store}, on this computer only, and sent to nobody but Anthropic. It takes effect right away."
-                : "No system keychain was found, so the key is kept in the settings file on this computer. It takes effect right away.";
+        KeyNote.Text = (keychain
+                ? $"Keys are kept in {store}, on this computer only, and each is sent only to its own provider. They take effect right away."
+                : "No system keychain was found, so keys are kept in the settings file on this computer. They take effect right away.")
+            + (fromEnvironment ? " A key set by an environment variable wins over one saved here." : "");
     }
 
     private void ShowPerformance(JsonNode? report)
@@ -108,16 +190,6 @@ public partial class SettingsScreen : UserControl
             _vm.ShowError($"Could not change the setting: {e.Message}");
         }
     }
-
-    private async void OnSaveKey(object? sender, RoutedEventArgs e)
-    {
-        var key = KeyBox.Text?.Trim();
-        if (string.IsNullOrEmpty(key)) return;
-        await Change(new { apiKey = key });
-        KeyBox.Text = "";
-    }
-
-    private async void OnRemoveKey(object? sender, RoutedEventArgs e) => await Change(new { apiKey = "" });
 
     private async void OnModelChanged(object? sender, SelectionChangedEventArgs e)
     {

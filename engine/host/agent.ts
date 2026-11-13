@@ -1,8 +1,10 @@
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import type { EditorSession } from "../claude/session.js";
 import { executeTool, toAnthropicTools, toToolResultContent } from "../claude/tools.js";
+import { DEFAULT_MODEL, assistantOf, providerOf, type ProviderId } from "./models.js";
+import { AnthropicProvider, providerFor, type AgentMessage, type ContentBlock, type ModelProvider } from "./providers.js";
 
 export const EDITOR_SYSTEM_PROMPT = `You are a professional video editor working through editing tools inside a desktop video editor. The user watches every step live.
 
@@ -23,15 +25,8 @@ How to work:
 - When taste decides (the narration voice, the music, a title style), let the user choose: make the options (preview_voice for voices, render_frame for looks), call offer_choices, and end your turn. Their pick comes back as the next message, starting with "[Choice:".
 - Keep replies short and plain; the user sees each step in the activity feed.`;
 
-/** Models the app offers, the first being the default. */
-export const AGENT_MODELS = [
-  { id: "claude-opus-5-5", label: "Opus 5.5", description: "Most capable, for full edits" },
-  { id: "claude-sonnet-5-5", label: "Sonnet 5.5", description: "Fast and capable" },
-  { id: "claude-haiku-5-5", label: "Haiku 5.5", description: "Fastest, for small changes" },
-] as const;
-export const DEFAULT_MODEL = AGENT_MODELS[0].id;
-
-export type AgentMessage = Anthropic.Beta.BetaMessageParam;
+export { AGENT_MODELS, DEFAULT_MODEL } from "./models.js";
+export type { AgentMessage } from "./providers.js";
 
 export interface AgentCallbacks {
   /** Streamed assistant text. */
@@ -41,7 +36,7 @@ export interface AgentCallbacks {
 export interface AgentRequest {
   /** Model id for this request (AGENT_MODELS); the agent's model when left out. */
   model?: string;
-  /** Pictures Claude should see with the request, as PNG, JPEG, GIF or WebP files. */
+  /** Pictures the model should see with the request, as PNG, JPEG, GIF or WebP files. */
   images?: string[];
 }
 
@@ -70,11 +65,12 @@ export function withoutImages(messages: AgentMessage[]): AgentMessage[] {
 }
 
 /**
- * Claude editing agent bound to one session. Keeps the conversation so follow-up
- * instructions ("make the title bigger") have context. History is append-only.
+ * The editing agent bound to one session: Claude by default, or ChatGPT or Gemini (the model id
+ * picks the provider, see models.ts). Keeps the conversation so follow-up instructions ("make the
+ * title bigger") have context, and it carries on when the model changes. History is append-only.
  */
 export class EditorAgent {
-  private readonly client: Anthropic;
+  private readonly providers: Partial<Record<ProviderId, ModelProvider>>;
   private model: string;
   private readonly messages: AgentMessage[];
   private controller: AbortController | undefined;
@@ -82,9 +78,16 @@ export class EditorAgent {
 
   constructor(
     private readonly session: EditorSession,
-    opts: { client?: Anthropic; model?: string; messages?: AgentMessage[] } = {},
+    opts: {
+      /** An Anthropic client for Claude's requests. */
+      client?: Anthropic;
+      /** Providers to use instead of the built-in ones (tests). */
+      providers?: Partial<Record<ProviderId, ModelProvider>>;
+      model?: string;
+      messages?: AgentMessage[];
+    } = {},
   ) {
-    this.client = opts.client ?? new Anthropic();
+    this.providers = { ...(opts.client ? { anthropic: new AnthropicProvider(opts.client) } : {}), ...opts.providers };
     this.model = opts.model ?? DEFAULT_MODEL;
     this.messages = [...(opts.messages ?? [])];
   }
@@ -103,8 +106,8 @@ export class EditorAgent {
   }
 
   /**
-   * A request stopped while tools ran leaves Claude's tool calls without results, which the API
-   * refuses; answer them as cancelled before going on.
+   * A request stopped while tools ran leaves the model's tool calls without results, which the APIs
+   * refuse; answer them as cancelled before going on.
    */
   private closeOpenToolCalls(): void {
     const last = this.messages[this.messages.length - 1];
@@ -114,9 +117,9 @@ export class EditorAgent {
     this.messages.push({ role: "user", content: calls.map((c) => ({ type: "tool_result" as const, tool_use_id: c.id, is_error: true, content: "Stopped by the user before this ran." })) });
   }
 
-  private async userContent(prompt: string, images: string[] = []): Promise<string | Anthropic.Beta.BetaContentBlockParam[]> {
+  private async userContent(prompt: string, images: string[] = []): Promise<string | ContentBlock[]> {
     if (!images.length) return prompt;
-    const blocks: Anthropic.Beta.BetaContentBlockParam[] = [];
+    const blocks: ContentBlock[] = [];
     for (const file of images) {
       const type = IMAGE_TYPES[extname(file).toLowerCase()];
       const data = type ? await readFile(file).catch(() => undefined) : undefined;
@@ -127,42 +130,29 @@ export class EditorAgent {
   }
 
   async run(prompt: string, callbacks: AgentCallbacks = {}, request: AgentRequest = {}): Promise<{ stopReason: string }> {
-    if (this.busy) throw new Error("Claude is already working on a request");
+    if (this.busy) throw new Error(`${assistantOf(this.model)} is already working on a request`);
     this.busy = true;
     if (request.model) this.model = request.model;
     this.controller = new AbortController();
     const signal = this.controller.signal;
-    const tools = toAnthropicTools() as Anthropic.Beta.BetaTool[];
+    const tools = toAnthropicTools();
     this.closeOpenToolCalls();
     this.messages.push({ role: "user", content: await this.userContent(prompt, request.images) });
-    const thinking = this.session.startActivity("info", "Claude is thinking");
+    const id = providerOf(this.model);
+    const provider = (this.providers[id] ??= providerFor(this.model));
+    const thinking = this.session.startActivity("info", `${assistantOf(this.model)} is thinking`);
     try {
       for (let turn = 0; turn < 80; turn++) {
         if (signal.aborted) return { stopReason: "cancelled" };
-        const stream = this.client.beta.messages.stream(
-          {
-            model: this.model,
-            max_tokens: 64000,
-            output_config: { effort: "high" },
-            betas: ["server-side-fallback-2026-07-01"],
-            fallbacks: "default",
-            system: EDITOR_SYSTEM_PROMPT,
-            tools,
-            messages: this.messages,
-          },
-          { signal },
-        );
-        stream.on("text", (delta) => callbacks.onText?.(delta));
-        const message = await stream.finalMessage();
+        const reply = await provider.turn({ model: this.model, system: EDITOR_SYSTEM_PROMPT, tools, messages: this.messages, signal, onText: callbacks.onText });
 
-        if (message.stop_reason === "refusal") return { stopReason: "refusal" };
-        if (message.stop_reason === "pause_turn") {
-          this.messages.push({ role: "assistant", content: message.content });
-          continue;
-        }
-        this.messages.push({ role: "assistant", content: message.content });
-        const toolUses = message.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
-        if (message.stop_reason !== "tool_use" || toolUses.length === 0) return { stopReason: message.stop_reason ?? "end_turn" };
+        if (reply.stopReason === "refusal") return { stopReason: "refusal" };
+        // An empty reply still needs content: the Messages format refuses an empty assistant turn.
+        const content = reply.content.length ? reply.content : [{ type: "text" as const, text: "(no reply)" }];
+        this.messages.push({ role: "assistant", content, ...(reply.native ? { native: reply.native } : {}) });
+        if (reply.stopReason === "pause_turn") continue;
+        const toolUses = reply.content.filter((b): b is Anthropic.Beta.BetaToolUseBlockParam => b.type === "tool_use");
+        if (reply.stopReason !== "tool_use" || toolUses.length === 0) return { stopReason: reply.stopReason };
 
         // Edits depend on each other: run in order, return all results in one user message.
         const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];

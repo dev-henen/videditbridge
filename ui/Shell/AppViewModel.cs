@@ -85,9 +85,27 @@ public sealed class AppViewModel : Observable, IDisposable
 
     private void UpdateTitle() => Title = SelectedProject is { } p ? $"{p.ProjectName} | AI Video Editor" : "AI Video Editor";
 
-    private bool _claudeAvailable;
-    public bool ClaudeAvailable { get => _claudeAvailable; private set => Set(ref _claudeAvailable, value); }
-    public IReadOnlyList<ModelOption> Models { get; private set; } = [new("claude-opus-5-5", "Opus 5.5", "Most capable, for full edits")];
+    /// <summary>The AI providers (Anthropic for Claude first, the default; OpenAI; Google) and whether each has a key.</summary>
+    public IReadOnlyList<ProviderOption> Providers { get; private set; } = [new("anthropic", "Anthropic", "Claude", "console.anthropic.com", "sk-ant-...", false)];
+    /// <summary>Whether a provider has a key, so its models can edit.</summary>
+    public bool IsAvailable(string provider) => Providers.Any(p => p.Id == provider && p.Available);
+    public IReadOnlyList<ModelOption> Models { get; private set; } = [new("claude-opus-5-5", "Claude Opus 5.5", "Most capable, for full edits")];
+
+    /// <summary>Read the providers' availability from host.info or settings.set; true when it changed.</summary>
+    private bool ReadProviders(JsonNode? r)
+    {
+        var list = r?["providers"]?.AsArray()
+            .Select(p => new ProviderOption(p!["id"]!.GetValue<string>(), p["label"]!.GetValue<string>(), p["assistant"]!.GetValue<string>(),
+                p["keyUrl"]?.GetValue<string>() ?? "", p["keyHint"]?.GetValue<string>() ?? "", p["available"]?.GetValue<bool>() == true))
+            .ToList();
+        // An older host only says whether Claude can edit.
+        if (list is not { Count: > 0 } && r?["claudeAvailable"]?.GetValue<bool>() is { } claude)
+            list = [Providers[0] with { Available = claude }];
+        if (list is not { Count: > 0 } || list.SequenceEqual(Providers)) return false;
+        Providers = list;
+        Raise(nameof(Providers));
+        return true;
+    }
     private string? _defaultModelId;
     /// <summary>The model new conversations start with (the settings' choice, else the first).</summary>
     public ModelOption DefaultModel => Models.FirstOrDefault(m => m.Id == _defaultModelId) ?? Models[0];
@@ -127,15 +145,12 @@ public sealed class AppViewModel : Observable, IDisposable
     /// <summary>The app's settings from the host (the API key hidden), with its folders.</summary>
     public Task<JsonNode?> GetSettingsAsync() => Engine.CallAsync("settings.get");
 
-    /// <summary>Change settings; they apply at once (Claude's availability and the default model follow).</summary>
+    /// <summary>Change settings; they apply at once (which providers can edit, and the default model, follow).</summary>
     public async Task<JsonNode?> SetSettingsAsync(object changes)
     {
         var r = await Engine.CallAsync("settings.set", changes);
-        if (r?["claudeAvailable"]?.GetValue<bool>() is { } available && available != ClaudeAvailable)
-        {
-            ClaudeAvailable = available;
-            foreach (var t in Tabs) t.Project?.RefreshClaude();
-        }
+        if (ReadProviders(r))
+            foreach (var t in Tabs) t.Project?.RefreshAvailability();
         if (r?["defaultModel"]?.GetValue<string>() is { } model)
         {
             _defaultModelId = model;
@@ -179,13 +194,13 @@ public sealed class AppViewModel : Observable, IDisposable
             _engine.Notification += (method, p) => Dispatcher.UIThread.Post(() => OnNotification(method, p));
             _engine.Exited += () => Dispatcher.UIThread.Post(() => EngineError = "The editing engine stopped. Restart the app.");
             var info = await _engine.CallAsync("host.info");
-            ClaudeAvailable = info?["claudeAvailable"]?.GetValue<bool>() ?? false;
+            ReadProviders(info);
             var models = info?["models"]?.AsArray()
-                .Select(m => new ModelOption(m!["id"]!.GetValue<string>(), m["label"]!.GetValue<string>(), m["description"]?.GetValue<string>() ?? ""))
+                .Select(m => new ModelOption(m!["id"]!.GetValue<string>(), m["label"]!.GetValue<string>(), m["description"]?.GetValue<string>() ?? "",
+                    m["provider"]?.GetValue<string>() ?? "anthropic", m["assistant"]?.GetValue<string>() ?? "Claude"))
                 .ToList();
             if (models is { Count: > 0 }) Models = models;
             _defaultModelId = info?["defaultModel"]?.GetValue<string>();
-            Raise(nameof(ClaudeAvailable));
             Raise(nameof(Models));
             await RefreshProjectsAsync();
             await RestoreTabsAsync(openDir);

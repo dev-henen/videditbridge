@@ -20,7 +20,7 @@ An AI-native video editing library. The edit is a plain JSON document that Claud
 - an activity feed
 - a viewer that follows the latest render
 - a compact timeline strip
-- an "Ask Claude" box (requires `ANTHROPIC_API_KEY` to be set)
+- an "Ask Claude" box (needs an Anthropic API key, in Settings or `ANTHROPIC_API_KEY`; with an OpenAI or Google key it can also edit with ChatGPT or Gemini)
 
 ```bash
 dotnet run --project ui          # pass a project folder to open it directly

@@ -111,11 +111,15 @@ public sealed class ProjectViewModel : Observable
     private bool _agentRunning;
     public bool AgentRunning { get => _agentRunning; private set => Set(ref _agentRunning, value, nameof(AgentRunning), nameof(CanAsk)); }
 
-    public bool ClaudeAvailable => _app.ClaudeAvailable;
-    public bool CanAsk => ClaudeAvailable && !AgentRunning;
-    public string AskHint => ClaudeAvailable
-        ? "Ask Claude to edit, for example “cut this into a 30 second trailer”"
-        : "Add an Anthropic API key in Settings (the menu at the top left) to let Claude edit";
+    /// <summary>Whether the chosen model's provider has a key (Claude needs Anthropic's, ChatGPT OpenAI's, Gemini Google's).</summary>
+    public bool ModelAvailable => _app.IsAvailable(Model.Provider);
+    public bool CanAsk => ModelAvailable && !AgentRunning;
+    /// <summary>Who the chat talks to: "Claude", "ChatGPT" or "Gemini", from the chosen model.</summary>
+    public string Assistant => Model.Assistant;
+    public string EmptyTitle => $"Edit by asking {Assistant}";
+    public string AskHint => ModelAvailable
+        ? $"Ask {Assistant} to edit, for example “cut this into a 30 second trailer”"
+        : $"Add {(_app.Providers.FirstOrDefault(p => p.Id == Model.Provider)?.Label ?? "the provider")}'s API key in Settings (the menu at the top left) to let {Assistant} edit, or pick another model";
 
     // ---------------------------------------------------------------- conversations
 
@@ -127,7 +131,11 @@ public sealed class ProjectViewModel : Observable
     public IReadOnlyList<ModelOption> Models => _app.Models;
     private ModelOption _model;
     /// <summary>The model for the next request (kept per conversation by the host).</summary>
-    public ModelOption Model { get => _model; set => Set(ref _model, value); }
+    public ModelOption Model
+    {
+        get => _model;
+        set => Set(ref _model, value, nameof(Model), nameof(ModelAvailable), nameof(CanAsk), nameof(AskHint), nameof(Assistant), nameof(EmptyTitle));
+    }
 
     /// <summary>Refresh the list of this project's conversations (newest first).</summary>
     public Task RefreshConversationsAsync() => Guard(async () =>
@@ -391,13 +399,13 @@ public sealed class ProjectViewModel : Observable
 
     private bool _closed;
 
-    /// <summary>What closing the project now would interrupt (Claude answering, or running activities), or null when nothing would.</summary>
-    public string? BusyReason => AgentRunning ? "Claude is still working on a request" : IsBusy ? StatusText.TrimEnd('.', '…', ' ') : null;
+    /// <summary>What closing the project now would interrupt (the assistant answering, or running activities), or null when nothing would.</summary>
+    public string? BusyReason => AgentRunning ? $"{Assistant} is still working on a request" : IsBusy ? StatusText.TrimEnd('.', '…', ' ') : null;
 
-    /// <summary>The app's Claude availability changed (it is read once at start).</summary>
-    public void RefreshClaude()
+    /// <summary>Which providers have a key changed (a key was saved or removed in Settings).</summary>
+    public void RefreshAvailability()
     {
-        Raise(nameof(ClaudeAvailable));
+        Raise(nameof(ModelAvailable));
         Raise(nameof(CanAsk));
         Raise(nameof(AskHint));
     }

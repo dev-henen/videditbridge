@@ -34,12 +34,13 @@ import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import type { Project } from "../core/schema.js";
 import type { AspectRatio } from "../core/util.js";
-import { AGENT_MODELS, DEFAULT_MODEL, EditorAgent } from "./agent.js";
+import { EditorAgent } from "./agent.js";
+import { AGENT_MODELS, DEFAULT_MODEL, PROVIDERS, assistantOf, isProviderId } from "./models.js";
 import { deleteConversation, listConversations, loadConversation, newConversation, saveConversation, titleFrom, type Conversation } from "./conversations.js";
 import { COVER_FILE, ProjectStore } from "./projects.js";
 import { RpcError, StdioRpc, serveLocal, type Handler } from "./rpc.js";
 import { HOST_INFO_FILE } from "./remote.js";
-import { applySettings, loadSettings, publicSettings, saveSettings, storeKey } from "./settings.js";
+import { applySettings, availableProviders, loadSettings, publicSettings, saveSettings, storeKey } from "./settings.js";
 import { appDir, defaultFontsDir, defaultModelsDir } from "../tools/appdirs.js";
 
 // stdout is the protocol channel: route stray console output to stderr.
@@ -82,12 +83,28 @@ function target(p: Record<string, unknown>): OpenProject {
 
 const conversationInfo = (o: OpenProject) => ({ id: o.conversation.id, title: o.conversation.title, model: o.conversation.model, transcript: o.conversation.transcript });
 
+/** Who is working in a project's conversation ("Claude", "ChatGPT", "Gemini"), for messages. */
+const assistant = (o: OpenProject) => assistantOf(o.conversation.model);
+
+/**
+ * Which AI providers have a key, and the models with whether each can be used now. `claudeAvailable`
+ * (Claude, the default) is kept for older apps; `aiAvailable` is whether any provider can edit.
+ */
+function availability() {
+  const available = availableProviders();
+  return {
+    claudeAvailable: available.anthropic,
+    aiAvailable: Object.values(available).some(Boolean),
+    providers: PROVIDERS.map((p) => ({ id: p.id, label: p.label, assistant: p.assistant, keyUrl: p.keyUrl, keyHint: p.keyHint, available: available[p.id] })),
+    models: AGENT_MODELS.map((m) => ({ ...m, assistant: assistantOf(m.id), available: available[m.provider] })),
+  };
+}
+
 const handlers: Record<string, Handler> = {
   "host.info": () => ({
     version: "0.2.0",
     projectsDir: store.root,
-    claudeAvailable: !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_PROFILE),
-    models: AGENT_MODELS,
+    ...availability(),
     defaultModel: settings.defaultModel && MODELS.includes(settings.defaultModel) ? settings.defaultModel : DEFAULT_MODEL,
     // Transcription and narration run on this machine; no service or key is involved.
     transcriptionAvailable: true,
@@ -160,14 +177,14 @@ const handlers: Record<string, Handler> = {
   "chat.current": (p) => conversationInfo(target(p)),
   "chat.open": async (p) => {
     const o = target(p);
-    if (o.agent?.running) throw new RpcError(1, "Claude is still working; stop it or wait before switching conversations");
+    if (o.agent?.running) throw new RpcError(1, `${assistant(o)} is still working; stop it or wait before switching conversations`);
     o.conversation = await loadConversation(o.dir, String(p.id));
     o.agent = undefined;
     return conversationInfo(o);
   },
   "chat.new": (p) => {
     const o = target(p);
-    if (o.agent?.running) throw new RpcError(1, "Claude is still working; stop it or wait before starting a new conversation");
+    if (o.agent?.running) throw new RpcError(1, `${assistant(o)} is still working; stop it or wait before starting a new conversation`);
     o.conversation = newConversation(MODELS.includes(String(p.model)) ? String(p.model) : o.conversation.model);
     o.agent = undefined;
     return conversationInfo(o);
@@ -185,7 +202,7 @@ const handlers: Record<string, Handler> = {
     const o = target(p);
     const id = String(p.id);
     if (id === o.conversation.id) {
-      if (o.agent?.running) throw new RpcError(1, "Claude is still working in this conversation");
+      if (o.agent?.running) throw new RpcError(1, `${assistant(o)} is still working in this conversation`);
       o.conversation = newConversation(o.conversation.model);
       o.agent = undefined;
     }
@@ -241,7 +258,7 @@ const handlers: Record<string, Handler> = {
       reply += `${reply ? "\n\n" : ""}Error: ${(e as Error).message}`;
       throw e;
     } finally {
-      const end = result.stopReason === "cancelled" ? "(stopped)" : result.stopReason === "refusal" ? "(Claude declined this request)" : "";
+      const end = result.stopReason === "cancelled" ? "(stopped)" : result.stopReason === "refusal" ? `(${assistantOf(c.model)} declined this request)` : "";
       c.transcript.push({ role: "assistant", text: [reply.trim(), end].filter(Boolean).join("\n"), at: new Date().toISOString() });
       if (agent) c.messages = [...agent.history];
       c.updatedAt = new Date().toISOString();
@@ -259,20 +276,25 @@ const handlers: Record<string, Handler> = {
   // becomes the default for this machine. null until it has run.
   /** The Settings tab: what is set (the API key hidden), and the folders the app uses. */
   "settings.get": async () => ({ ...publicSettings(settings), projectsDir: store.root, cacheDir: appDir("cache"), dataDir: appDir("data"), modelsDir: defaultModelsDir(), fontsDir: defaultFontsDir(), performance: (await loadPerformance()) ?? null }),
-  /** Change settings (apiKey "" removes the stored key); they apply at once and are saved for next time. */
+  /**
+   * Change settings; they apply at once and are saved for next time. `apiKey` is the key of
+   * `provider` ("anthropic", the default, "openai" or "google"); "" removes it.
+   */
   "settings.set": async (p) => {
     const next = { ...settings };
+    if (p.provider !== undefined && !isProviderId(p.provider)) throw new RpcError(1, `Unknown provider "${String(p.provider)}"`);
+    const provider = isProviderId(p.provider) ? p.provider : "anthropic";
     // The key goes to the system keychain (the settings file only where there is none).
-    const keyChanged = typeof p.apiKey === "string" && (await storeKey(next, p.apiKey.trim() || undefined));
+    const keyChanged = typeof p.apiKey === "string" && (await storeKey(next, p.apiKey.trim() || undefined, provider));
     if (typeof p.defaultModel === "string" && MODELS.includes(p.defaultModel)) next.defaultModel = p.defaultModel;
     if (p.renderer === "auto" || p.renderer === "engine" || p.renderer === "ffmpeg") next.renderer = p.renderer;
     if (typeof p.hardwareEncoding === "boolean") next.hardwareEncoding = p.hardwareEncoding;
     settings = next;
     await saveSettings(settings);
     await applySettings(settings);
-    // A new key: Claude's clients are made again on the next request (conversations carry on).
+    // A new key: the agents' clients are made again on the next request (conversations carry on).
     if (keyChanged) for (const o of open.values()) if (!o.agent?.running) o.agent = undefined;
-    return { ...publicSettings(settings), claudeAvailable: !!(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_PROFILE) };
+    return { ...publicSettings(settings), ...availability() };
   },
   "performance.get": async () => (await loadPerformance()) ?? null,
   "performance.run": () => (testing ??= runPerformanceTest().finally(() => (testing = undefined))),

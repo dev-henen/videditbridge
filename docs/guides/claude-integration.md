@@ -58,6 +58,20 @@ Some decisions are taste: the narration voice, the music, a title style. Claude 
 
 Your app shows the options, and sends the pick back as the next message, for example `[Choice: Which voice should narrate?] I pick "Heart".` Call `session.clearChoices()` when the user picks, types something else, or closes them. The desktop app shows them as cards in its Claude tab, with play buttons and thumbnails.
 
+## Claude, ChatGPT and Gemini in the desktop app
+
+The app's agent ([engine/host/agent.ts](../../engine/host/agent.ts)) edits with Claude by default, and also with OpenAI's and Google's models. The model id picks the provider ([engine/host/models.ts](../../engine/host/models.ts) lists the models, Claude's first); the tools, the system prompt and the editing loop are the same for all of them.
+
+| Provider | Assistant | Key (Settings tab, or environment) | API |
+| --- | --- | --- | --- |
+| Anthropic (default) | Claude | `ANTHROPIC_API_KEY` | Messages |
+| OpenAI | ChatGPT | `OPENAI_API_KEY` | Responses, stateless (`store: false`) |
+| Google | Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | `generateContent` |
+
+The conversation is kept in one format, the Messages format, which is what saved conversations hold, and [engine/host/providers.ts](../../engine/host/providers.ts) converts it for each provider. So a conversation can switch models between requests. What a provider needs back exactly as it sent it (OpenAI's encrypted reasoning, Gemini's thought signatures) is kept with that assistant turn as `native` and replayed only to the same provider. Gemini refuses a function call without its signature, so tool calls made by another model reach Gemini as text.
+
+Each key is stored in the system keychain under its own entry (`settings.set` with `provider` and `apiKey`). `host.info` and `settings.set` report `providers` and `models` with `available`, plus `aiAvailable` (any provider) and `claudeAvailable`.
+
 ## Providers
 
 ```ts
