@@ -54,7 +54,7 @@ describe("native kernels (ave-native)", () => {
   it("loads for this machine", () => {
     expect(native().version()).toMatch(/^\d+\.\d+\.\d+$/);
     expect(nativeTarget("win32", "x64").file).toBe("ave-native.win32-x64-msvc.node");
-    expect(nativeTarget("linux", "x64").pkg).toBe("@ai-video-editor/native-linux-x64-gnu");
+    expect(nativeTarget("linux", "x64").pkg).toBe("@videditbridge/native-linux-x64-gnu");
     expect(nativeTarget("darwin", "arm64").file).toBe("ave-native.darwin-arm64.node");
   });
 

@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=AI Video Editor
+Name=VideditBridge
 GenericName=Video Editor
 Comment=Edit videos by asking Claude
-Exec=VideoEditor %f
-Icon=ai-video-editor
+Exec=VideditBridge %f
+Icon=videditbridge
 Terminal=false
 Categories=AudioVideo;Video;AudioVideoEditing;
 Keywords=video;editor;claude;captions;
-StartupWMClass=VideoEditor
+StartupWMClass=VideditBridge

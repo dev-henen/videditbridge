@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 // The apps' config files go to a folder of the test's own, before the module reads it.
 const root = await mkdtemp(path.join(tmpdir(), "ave-connect-"));
 process.env.AVE_CLIENT_CONFIG_DIR = root;
-const { MCP_NAME, clientInfo, commandLine, mcpLaunch, setClientConnected } = await import("../../engine/host/connect.js");
+const { MCP_NAME, clientInfo, commandLine, mcpLaunch, renameOldEntries, setClientConnected } = await import("../../engine/host/connect.js");
 
 describe("connecting other AI apps to the editor", () => {
   const launch = { command: "C:\\Program Files\\nodejs\\node.exe", args: ["/app/dist/mcp/main.js", "--projects-dir", "/my projects"] };
@@ -70,6 +70,17 @@ describe("connecting other AI apps to the editor", () => {
     expect(JSON.parse(await readFile(path.join(live, "claude_desktop_config.json"), "utf8"))).toEqual({ preferences: { keep: true }, mcpServers: { [MCP_NAME]: launch } });
     expect(JSON.parse(await readFile(usual, "utf8")).mcpServers).toEqual({ other: { command: "x" } });
     await rm(path.join(root, "claude-candidates"), { recursive: true, force: true });
+  });
+
+  it("renames an entry made under the editor's old name, keeping everything else", async () => {
+    const file = path.join(root, "claude", "claude_desktop_config.json");
+    await writeFile(file, JSON.stringify({ mcpServers: { "ai-video-editor": { command: "old", args: [] }, other: { command: "x" } } }));
+    // Under the old name it counts as connected, but needing an update.
+    expect(await clientInfo("claude", launch)).toMatchObject({ connected: true, outdated: true });
+    await renameOldEntries(launch);
+    expect(JSON.parse(await readFile(file, "utf8")).mcpServers).toEqual({ other: { command: "x" }, [MCP_NAME]: launch });
+    expect(MCP_NAME).toBe("videditbridge");
+    expect(await clientInfo("claude", launch)).toMatchObject({ connected: true, outdated: false });
   });
 
   it("leaves a config it cannot read alone", async () => {

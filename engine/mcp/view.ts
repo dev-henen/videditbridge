@@ -3,7 +3,7 @@
  * it plays the preview a render_preview call made, or shows the frame or contact sheet. It speaks
  * the MCP Apps postMessage protocol (JSON-RPC 2.0 with the host): `ui/initialize`, then
  * `ui/notifications/initialized`; it gets the call's result in `ui/notifications/tool-result`, reads
- * the file it names (result `_meta["ai-video-editor/media"]`) with the server's `fetch_media` tool,
+ * the file it names (result `_meta["videditbridge/media"]`) with the server's `fetch_media` tool,
  * and shows it as a data: URL (the only media source the hosts allow by default). It reports its
  * size with `ui/notifications/size-changed`.
  */
@@ -34,7 +34,7 @@ export const PREVIEW_VIEW_HTML = `<!doctype html>
 </main>
 <script>
 (() => {
-  const MEDIA_META = "ai-video-editor/media";
+  const MEDIA_META = "videditbridge/media";
   let nextId = 1;
   const pending = new Map();
   const post = (msg) => window.parent.postMessage(msg, "*");
@@ -116,7 +116,7 @@ export const PREVIEW_VIEW_HTML = `<!doctype html>
     notify("ui/notifications/size-changed", { width: Math.ceil(r.width), height: Math.ceil(r.height) });
   }).observe(document.documentElement);
 
-  request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "AI Video Editor preview", version: "1" }, appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] } })
+  request("ui/initialize", { protocolVersion: "2026-01-26", appInfo: { name: "VideditBridge preview", version: "1" }, appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] } })
     .then((r) => {
       applyTheme(r && r.hostContext);
       notify("ui/notifications/initialized", {});

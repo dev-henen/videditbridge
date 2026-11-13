@@ -1,6 +1,6 @@
 # native
 
-Rust code of ai-video-editor, as one Cargo workspace. See [the design](../docs/design/cinematic-grade-and-vfx.md), section 3.5, for what moves to Rust and why.
+Rust code of videditbridge, as one Cargo workspace. See [the design](../docs/design/cinematic-grade-and-vfx.md), section 3.5, for what moves to Rust and why.
 
 | Crate | Ships as | Holds |
 |---|---|---|
@@ -17,7 +17,7 @@ cd native && cargo test --release
 
 Needs Rust from [rustup](https://rustup.rs). On Windows the addon is an MSVC build (the script adds the `x86_64-pc-windows-msvc` target and runs cargo inside the Visual Studio environment), so it also needs the Visual Studio C++ build tools and the Windows SDK. The GNU toolchain cannot build Node addons there.
 
-Users never build this: CI builds the addon for every target and keeps it as a build artifact (`ave-native-<os>`). Publishing those as per-platform npm packages (`@ai-video-editor/native-<target>`, which the loader tries first) is not set up yet.
+Users never build this: CI builds the addon for every target and keeps it as a build artifact (`ave-native-<os>`). Publishing those as per-platform npm packages (`@videditbridge/native-<target>`, which the loader tries first) is not set up yet.
 
 ## Rules for kernels
 

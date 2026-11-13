@@ -1,4 +1,4 @@
-//! Node addon with the CPU kernels of ai-video-editor (see docs/design/cinematic-grade-and-vfx.md,
+//! Node addon with the CPU kernels of videditbridge (see docs/design/cinematic-grade-and-vfx.md,
 //! section 3.5). Calls are coarse (a whole buffer each) and run off the JavaScript thread, returning
 //! promises, so the host stays responsive.
 

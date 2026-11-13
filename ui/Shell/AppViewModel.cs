@@ -80,10 +80,10 @@ public sealed class AppViewModel : Observable, IDisposable
     /// <summary>The project of the current tab, or null on the projects page.</summary>
     public ProjectViewModel? SelectedProject => SelectedTab?.Project;
 
-    private string _title = "AI Video Editor";
+    private string _title = "VideditBridge";
     public string Title { get => _title; private set => Set(ref _title, value); }
 
-    private void UpdateTitle() => Title = SelectedProject is { } p ? $"{p.ProjectName} | AI Video Editor" : "AI Video Editor";
+    private void UpdateTitle() => Title = SelectedProject is { } p ? $"{p.ProjectName} | VideditBridge" : "VideditBridge";
 
     /// <summary>The AI providers (Anthropic for Claude first, the default; OpenAI; Google) and whether each has a key.</summary>
     public IReadOnlyList<ProviderOption> Providers { get; private set; } = [new("anthropic", "Anthropic", "Claude", "console.anthropic.com", "sk-ant-...", false)];

@@ -8,7 +8,9 @@ import type { ProviderId } from "./models.js";
  */
 
 /** $AVE_KEYCHAIN_SERVICE (tests), or the app's entry in the keychain. */
-const service = () => process.env.AVE_KEYCHAIN_SERVICE || "ai-video-editor";
+const service = () => process.env.AVE_KEYCHAIN_SERVICE || "videditbridge";
+/** The entries under the app's earlier name ("ai-video-editor"), moved to the new name when first read. */
+const OLD_SERVICE = "ai-video-editor";
 /** The keychain account of each provider's key (Anthropic's keeps the name it always had). */
 const account = (provider: ProviderId) => `${provider}-api-key`;
 
@@ -44,10 +46,32 @@ async function entryOf(provider: ProviderId): Promise<Entry | undefined> {
 /** Whether keys go to the system keychain on this machine. */
 export const hasKeychain = async () => !!(await keychain());
 
-/** A provider's key stored in the keychain, if any. */
+/** A provider's key stored in the keychain, if any (a key under the old name moves to the new one). */
 export async function readKeychainKey(provider: ProviderId = "anthropic"): Promise<string | undefined> {
   try {
-    return (await entryOf(provider))?.getPassword() ?? undefined;
+    const key = (await entryOf(provider))?.getPassword() ?? undefined;
+    return key ?? (await moveOldKey(provider));
+  } catch {
+    return undefined;
+  }
+}
+
+/** The key saved under the app's old name: copied to the new entry, then the old one removed. */
+async function moveOldKey(provider: ProviderId): Promise<string | undefined> {
+  if (process.env.AVE_KEYCHAIN_SERVICE) return undefined;
+  const Entry = await keychain();
+  if (!Entry) return undefined;
+  try {
+    const old = new Entry(OLD_SERVICE, account(provider));
+    const key = old.getPassword() ?? undefined;
+    if (!key) return undefined;
+    (await entryOf(provider))?.setPassword(key);
+    try {
+      old.deletePassword();
+    } catch {
+      // the copy is made; an old entry left behind does no harm
+    }
+    return key;
   } catch {
     return undefined;
   }

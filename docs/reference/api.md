@@ -2,7 +2,7 @@
 
 Everything is exported from the package root. Each area also has its own entry point. Dependencies only point downward: `claude → tools → library → core`.
 
-## `ai-video-editor/core`
+## `videditbridge/core`
 
 The engine model. Pure, with no I/O.
 
@@ -30,7 +30,7 @@ The engine model. Pure, with no I/O.
 
 All operations return a **new** project and never mutate their input.
 
-## `ai-video-editor/library`
+## `videditbridge/library`
 
 Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register…`.
 
@@ -47,7 +47,7 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 | Particles and light | `PARTICLE_PRESETS`, `getParticlePreset`, `resolveParticles`, `ParticleSettingsSchema`, `FLARE_LOOKS` |
 | Color spaces | `COLOR_SPACES`, `colorSpace`, `colorSpaceFromTags`, `GAMUTS`, `ACESCCT`, `gamutMatrix`, `rgbToXyz`, `pqToNits`, `nitsToPq` (from `engine/library/color`: also `acesToRec709`, `toRec709`, `cubeFor`) |
 
-## `ai-video-editor/tools`
+## `videditbridge/tools`
 
 | Area | Exports |
 |---|---|
@@ -62,7 +62,7 @@ Catalogs. Each one has `list…`, `get…` and, where it makes sense, `register�
 | Vision | `FaceDetector` (`detectFile`, `detectRgb`), `trackFaces`, `detectClipFaces`, `detectFacesCached`, `decodeYunet`, `sourceToFrame`, `focusOn`, `faceRegion`, `personRegion`, `PersonSegmenter` (`segmentSquare`, `writeMask`), `maskFile`, `resizeMask`, `stabilizeMask`, `selectObject`, `trackObject`, `ObjectSegmenter`, `ObjectDetector`, `trackPoints`, `trackPointsInClips`, `trackQuad`, `trackSampler`, `trackCornersAt`, `SkySegmenter`, `trackSky`, `writeSkyMask`, `DepthEstimator`, `trackDepth`, `writeDepth`, `depthFile`, `readDepthFrames`, `depthInBox`, `Inpainter`, `removalFrames`, `writeRemoval`, `removalFile`, `removalMasks`, `streamFrames` |
 | Particles and light | `particleSpec`, `drawParticles`, `footageSpeeds`, `flareSpec`, `sourceBrightness`, `writeAlphaVideo` (any RGBA frames to a transparent video) |
 
-## `ai-video-editor/claude`
+## `videditbridge/claude`
 
 | Export | |
 |---|---|

@@ -30,7 +30,7 @@ Times are in **source** seconds of the asset the transcript belongs to. Attach a
 **Transcribe media on this machine (default).** `LocalWhisperTranscriber` runs the open Whisper speech model locally with ONNX Runtime (through the `@huggingface/transformers` package). It needs no account or key and uploads nothing. The model downloads once (about 80 MB: `onnx-community/whisper-base.en_timestamped` for English or no language given, `onnx-community/whisper-base_timestamped` for other languages) to the models folder (or `$AVE_MODELS_DIR`), then works offline. On a laptop CPU, 57 s of speech took 25 s.
 
 ```ts
-import { transcribeMedia, LocalWhisperTranscriber } from "ai-video-editor";
+import { transcribeMedia, LocalWhisperTranscriber } from "videditbridge";
 const t = await transcribeMedia("talk.mp4", new LocalWhisperTranscriber());
 ```
 
@@ -63,7 +63,7 @@ The Claude `transcribe` tool and the desktop app always use the local model.
 ## Editing by transcript
 
 ```ts
-import { cleanupSpeech, cutSourceRanges, assembleFromRanges, cutTimelineRanges } from "ai-video-editor";
+import { cleanupSpeech, cutSourceRanges, assembleFromRanges, cutTimelineRanges } from "videditbridge";
 
 // Tighten a talking head: fillers, stutters, pauses over 0.6s cut down to 0.2s
 const { project, removed, removedDuration } = cleanupSpeech(p, "talk", {

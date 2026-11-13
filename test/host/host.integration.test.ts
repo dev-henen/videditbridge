@@ -46,7 +46,7 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     dir = await mkdtemp(path.join(tmpdir(), "ave-host-"));
     const tsx = path.resolve("node_modules/tsx/dist/cli.mjs");
     // No key: Claude is unavailable, so requests fail the same way on every machine.
-    const env = { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_PROFILE: "", OPENAI_API_KEY: "", GEMINI_API_KEY: "", GOOGLE_API_KEY: "", AVE_SETTINGS_FILE: path.join(dir, "settings.json"), AVE_KEYCHAIN_SERVICE: `ai-video-editor-test-${process.pid}` };
+    const env = { ...process.env, ANTHROPIC_API_KEY: "", ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_PROFILE: "", OPENAI_API_KEY: "", GEMINI_API_KEY: "", GOOGLE_API_KEY: "", AVE_SETTINGS_FILE: path.join(dir, "settings.json"), AVE_KEYCHAIN_SERVICE: `videditbridge-test-${process.pid}` };
     const proc = spawn(process.execPath, [tsx, "engine/host/main.ts", "--projects-dir", dir], { stdio: "pipe", env });
     host = new HostClient(proc);
   });
@@ -211,7 +211,7 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
     // A chat app that shows views: the edit goes through the app, which opens no tab for it.
     const chat = await connectAs("Claude", true);
     try {
-      expect((await chat.listTools()).tools.find((t) => t.name === "render_preview")?._meta).toMatchObject({ ui: { resourceUri: "ui://ai-video-editor/preview.html" } });
+      expect((await chat.listTools()).tools.find((t) => t.name === "render_preview")?._meta).toMatchObject({ ui: { resourceUri: "ui://videditbridge/preview.html" } });
       const before = opened();
       const project = await open(chat, "From the chat");
       expect(opened()).toBe(before);

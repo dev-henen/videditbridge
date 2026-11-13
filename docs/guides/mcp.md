@@ -8,7 +8,7 @@ It offers the editor's tools (the [Claude tools reference](../reference/claude-t
 
 The preview shows in one place, picked by what the connected app can do:
 
-- **Apps that show MCP Apps views (Claude, ChatGPT).** `render_preview`, `render_frame` and `render_contact_sheet` carry a view (`ui://ai-video-editor/preview.html`, [engine/mcp/view.ts](../../engine/mcp/view.ts)) that the app shows in the chat: the preview plays there, frames and contact sheets show there. The view loads the file with `fetch_media`, a tool only views can call, which reads only renders inside the projects' `.render` folders (40 MB at most). The editor app stays out of sight: when it is running, edits go through it without opening a tab (so one program writes the project), otherwise the server edits the project itself.
+- **Apps that show MCP Apps views (Claude, ChatGPT).** `render_preview`, `render_frame` and `render_contact_sheet` carry a view (`ui://videditbridge/preview.html`, [engine/mcp/view.ts](../../engine/mcp/view.ts)) that the app shows in the chat: the preview plays there, frames and contact sheets show there. The view loads the file with `fetch_media`, a tool only views can call, which reads only renders inside the projects' `.render` folders (40 MB at most). The editor app stays out of sight: when it is running, edits go through it without opening a tab (so one program writes the project), otherwise the server edits the project itself.
 - **Apps that cannot show views (Gemini CLI, Claude Code).** The editor app is the preview window. It opens the project in a tab with a note ("Edited from Gemini CLI") instead of its chat, and the preview takes the chat's room; "Use the chat here" brings the chat back. When the app is not running, the server starts it (the app records how to start it in `app-launch.json` in its data folder, the first time it runs).
 
 The server tells them apart by the client's `io.modelcontextprotocol/ui` capability. Over HTTP every request is a new connection, so the HTTP server treats its clients as apps that show views.
@@ -38,13 +38,13 @@ These apps start the server themselves. Add it to their MCP settings: `claude_de
   "mcpServers": {
     "video-editor": {
       "command": "node",
-      "args": ["/path/to/ai-video-editor/dist/mcp/main.js", "--projects-dir", "/path/to/projects"]
+      "args": ["/path/to/videditbridge/dist/mcp/main.js", "--projects-dir", "/path/to/projects"]
     }
   }
 }
 ```
 
-From a source checkout, run it through tsx instead: `"command": "npx", "args": ["tsx", "/path/to/ai-video-editor/engine/mcp/main.ts", "--projects-dir", "/path/to/projects"]`. For Claude Code: `claude mcp add video-editor -- node /path/to/dist/mcp/main.js --projects-dir /path/to/projects`.
+From a source checkout, run it through tsx instead: `"command": "npx", "args": ["tsx", "/path/to/videditbridge/engine/mcp/main.ts", "--projects-dir", "/path/to/projects"]`. For Claude Code: `claude mcp add video-editor -- node /path/to/dist/mcp/main.js --projects-dir /path/to/projects`.
 
 ## ChatGPT, and Claude or Gemini custom connectors (HTTP)
 
@@ -52,7 +52,7 @@ Apps that connect to a URL need the HTTP server:
 
 ```bash
 ave-mcp --http --projects-dir /path/to/projects        # or: npm run mcp -- --http
-# AI Video Editor MCP server (app) at http://127.0.0.1:3920/mcp/<token>
+# VideditBridge MCP server (app) at http://127.0.0.1:3920/mcp/<token>
 ```
 
 - **The token** is part of the URL, because ChatGPT's connectors cannot send a key header. Clients that can send headers may use `/mcp` with `Authorization: Bearer <token>` instead. Requests without the token get 404. The token is kept in the app's data folder (`mcp-token`), so the URL stays the same across restarts. Pass `--token` to choose one, and delete the file to make a new one.

@@ -1,4 +1,4 @@
-# ai-video-editor
+# videditbridge
 
 An AI-native video editing library. The edit is a plain JSON document that Claude (or any model) can read and change through ~46 tools. Rendering goes through FFmpeg.
 
@@ -65,7 +65,7 @@ examples/            claude-agent.ts: Claude editing a video while you watch the
 
 Dependencies only point downward: `host → claude → tools → library → core`. `core` and `library` never import `tools` or `claude`. Rust code is reached only through `engine/tools/native`.
 
-Every area can be imported on its own: `ai-video-editor/core`, `/library`, `/tools`, `/claude`.
+Every area can be imported on its own: `videditbridge/core`, `/library`, `/tools`, `/claude`.
 
 ## Setup
 
@@ -84,7 +84,7 @@ The FFmpeg binary is looked up in this order: `ffmpegPath` option, `$FFMPEG_PATH
 ### Build from a template
 
 ```ts
-import { applyTemplate, probe, render } from "ai-video-editor";
+import { applyTemplate, probe, render } from "videditbridge";
 
 const { project, warnings } = await applyTemplate("viral-talking-head", {
   main: { src: "talk.mp4", transcript },          // transcript enables captions
@@ -99,7 +99,7 @@ await render(project, { output: "out/short.mp4" });
 ### Edit by hand (pure functions, never mutate)
 
 ```ts
-import { createProject, addAsset, addClip, addLayer, setCaptions, addComponent } from "ai-video-editor";
+import { createProject, addAsset, addClip, addLayer, setCaptions, addComponent } from "videditbridge";
 
 let p = createProject({ aspectRatio: "16:9" });
 p = addAsset(p, { type: "video", id: "a", src: "a.mp4" });
@@ -111,7 +111,7 @@ p = addComponent(p, { component: "lower-third", start: 1, params: { name: "Ada",
 ### Let Claude edit
 
 ```ts
-import { EditorSession, executeTool, toAnthropicTools, toToolResultContent } from "ai-video-editor";
+import { EditorSession, executeTool, toAnthropicTools, toToolResultContent } from "videditbridge";
 
 const session = new EditorSession();
 const tools = toAnthropicTools();                       // pass as `tools` to the Messages API

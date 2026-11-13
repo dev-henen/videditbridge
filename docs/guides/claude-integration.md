@@ -11,7 +11,7 @@ The tool layer doesn't depend on any Anthropic package. The same definitions ser
 
 ```ts
 import Anthropic from "@anthropic-ai/sdk";
-import { EditorSession, executeTool, toAnthropicTools, toToolResultContent } from "ai-video-editor";
+import { EditorSession, executeTool, toAnthropicTools, toToolResultContent } from "videditbridge";
 
 const session = new EditorSession(undefined, { baseDir: process.cwd() });
 const tools = toAnthropicTools();                       // [{ name, description, input_schema }]
@@ -89,7 +89,7 @@ new EditorSession(project, {
 
 ```ts
 import { z } from "zod";
-import { registerTool, addEffect, setCaptions } from "ai-video-editor";
+import { registerTool, addEffect, setCaptions } from "videditbridge";
 
 registerTool({
   name: "make_it_pop",

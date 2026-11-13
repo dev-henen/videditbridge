@@ -53,7 +53,7 @@ On media layers and global effects there is no cutout, and the effects use their
 ## In code
 
 ```ts
-import { FaceDetector, trackFaces, detectClipFaces, sourceToFrame, focusOn } from "ai-video-editor";
+import { FaceDetector, trackFaces, detectClipFaces, sourceToFrame, focusOn } from "videditbridge";
 
 const detector = new FaceDetector();
 const { width, height, frames } = await detector.detectFile("talk.mp4", { start: 0, end: 10, fps: 2 });

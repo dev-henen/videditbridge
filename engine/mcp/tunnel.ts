@@ -112,7 +112,7 @@ async function emptyConfig(): Promise<string> {
   const file = path.join(path.dirname(cloudflaredPath()), "quick-tunnel.yml");
   if (!existsSync(file)) {
     await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, "# AI Video Editor: no rules, so the quick tunnel serves the editor's --url.\n", "utf8");
+    await writeFile(file, "# VideditBridge: no rules, so the quick tunnel serves the editor's --url.\n", "utf8");
   }
   return file;
 }

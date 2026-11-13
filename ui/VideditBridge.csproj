@@ -5,9 +5,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>VideoEditor</AssemblyName>
+    <AssemblyName>VideditBridge</AssemblyName>
     <RootNamespace>VideoEditor</RootNamespace>
-    <Product>AI Video Editor</Product>
+    <Product>VideditBridge</Product>
     <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
     <!-- Used for the Windows build only; macOS and Linux metadata lives in Packaging/. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>

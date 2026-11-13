@@ -39,7 +39,7 @@ public sealed class EngineClient : IDisposable
     public static EngineClient Start()
     {
         var host = BundledHost() ?? DevelopmentHost() ?? throw new InvalidOperationException(
-            "Could not find the editing engine. Set AVE_ENGINE_DIR to the ai-video-editor folder.");
+            "Could not find the editing engine. Set AVE_ENGINE_DIR to the videditbridge folder.");
         var projectsDir = Environment.GetEnvironmentVariable("AVE_PROJECTS_DIR") ?? host.DefaultProjectsDir;
 
         var psi = new ProcessStartInfo(host.FileName)
@@ -77,7 +77,11 @@ public sealed class EngineClient : IDisposable
     private static HostCommand? BundledHost()
     {
         var baseDir = AppContext.BaseDirectory;
-        var projects = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AI Video Editor");
+        // Projects made before the app was renamed stay where they are (Documents/AI Video Editor).
+        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var projects = Path.Combine(documents, "VideditBridge");
+        var older = Path.Combine(documents, "AI Video Editor");
+        if (!Directory.Exists(projects) && Directory.Exists(older)) projects = older;
         foreach (var dir in new[] { Path.GetFullPath(Path.Combine(baseDir, "..", "Resources", "engine")), Path.Combine(baseDir, "engine") })
         {
             var single = Path.Combine(dir, $"ave-host{Exe}");
@@ -109,7 +113,8 @@ public sealed class EngineClient : IDisposable
         for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
         {
             var pkg = Path.Combine(dir.FullName, "package.json");
-            if (File.Exists(pkg) && File.ReadAllText(pkg).Contains("\"ai-video-editor\"")) return dir.FullName;
+            // The package's name (and the one it had before the app was renamed).
+            if (File.Exists(pkg) && File.ReadAllText(pkg) is var text && (text.Contains("\"videditbridge\"") || text.Contains("\"ai-video-editor\""))) return dir.FullName;
         }
         return null;
     }

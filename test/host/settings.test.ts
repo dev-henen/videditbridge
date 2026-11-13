@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
 // A keychain entry of its own, and no key from the environment, before the modules read them.
-process.env.AVE_KEYCHAIN_SERVICE = `ai-video-editor-unit-${process.pid}`;
+process.env.AVE_KEYCHAIN_SERVICE = `videditbridge-unit-${process.pid}`;
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.OPENAI_API_KEY;
 delete process.env.GEMINI_API_KEY;

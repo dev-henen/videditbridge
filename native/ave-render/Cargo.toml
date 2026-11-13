@@ -1,7 +1,7 @@
 [package]
 name = "ave-render"
 version = "0.1.0"
-description = "GPU render engine of ai-video-editor: renders an engine plan (from engine/tools/render/plan.ts) in float on the GPU, speaking JSON-RPC over stdio"
+description = "GPU render engine of videditbridge: renders an engine plan (from engine/tools/render/plan.ts) in float on the GPU, speaking JSON-RPC over stdio"
 edition.workspace = true
 license.workspace = true
 

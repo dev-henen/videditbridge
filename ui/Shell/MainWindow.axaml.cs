@@ -221,7 +221,7 @@ public partial class MainWindow : Window
         var ok = new Button { Content = "OK", Classes = { "primary" }, HorizontalAlignment = HorizontalAlignment.Right, IsDefault = true };
         var dialog = new Window
         {
-            Title = "AI Video Editor",
+            Title = "VideditBridge",
             Width = 380,
             SizeToContent = SizeToContent.Height,
             CanResize = false,

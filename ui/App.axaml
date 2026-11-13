@@ -31,7 +31,7 @@
     <Color x:Key="SystemAccentColorDark2">#255DBA</Color>
     <Color x:Key="SystemAccentColorDark3">#1C4B9C</Color>
     <!-- Bundled icon font (Fluent UI System Icons, MIT), so icons look the same on every system -->
-    <FontFamily x:Key="Icons">avares://VideoEditor/Assets/Fonts#FluentSystemIcons-Regular</FontFamily>
+    <FontFamily x:Key="Icons">avares://VideditBridge/Assets/Fonts#FluentSystemIcons-Regular</FontFamily>
 
     <!-- Fluent theme pieces recolored to the palette -->
     <SolidColorBrush x:Key="SliderTrackFill" Color="#333333"/>

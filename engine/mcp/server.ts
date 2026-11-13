@@ -237,9 +237,9 @@ export class StandaloneBackend implements EditorBackend {
 /** The MCP Apps extension, and the view it shows. */
 export const UI_EXTENSION = "io.modelcontextprotocol/ui";
 export const UI_MIME_TYPE = "text/html;profile=mcp-app";
-export const PREVIEW_URI = "ui://ai-video-editor/preview.html";
+export const PREVIEW_URI = "ui://videditbridge/preview.html";
 /** Where a result names the file its view shows (result _meta; the model does not read it). */
-export const MEDIA_META = "ai-video-editor/media";
+export const MEDIA_META = "videditbridge/media";
 /** The view's own tool: the bytes of a rendered file. Only the view can call it. */
 export const FETCH_MEDIA = "fetch_media";
 /** Tools whose results the view shows. */
@@ -354,7 +354,7 @@ export interface McpServerOptions {
 /** An MCP server over a backend. Make one per connection; the backend can be shared. */
 export function createMcpServer(opts: McpServerOptions): Server {
   const server = new Server(
-    { name: "ai-video-editor", title: "AI Video Editor", version: opts.version ?? "0.2.0" },
+    { name: "videditbridge", title: "VideditBridge", version: opts.version ?? "0.2.0" },
     { capabilities: { tools: {}, resources: {} }, instructions: INSTRUCTIONS },
   );
   const client = (): McpClientInfo => ({

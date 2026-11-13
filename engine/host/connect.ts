@@ -11,7 +11,9 @@ import path from "node:path";
  */
 
 /** The name the editor goes by in the other apps' MCP settings. */
-export const MCP_NAME = "ai-video-editor";
+export const MCP_NAME = "videditbridge";
+/** Names the editor had in those configs before (as "AI Video Editor"); an entry under one is renamed. */
+const OLD_MCP_NAMES = ["ai-video-editor"];
 
 export interface McpLaunch {
   command: string;
@@ -160,26 +162,38 @@ async function readConfig(file: string): Promise<McpConfig | undefined> {
   }
 }
 
+/** The editor's entry in a config: under its name, or under the name it had before (which counts as outdated). */
+function entryIn(config: McpConfig | undefined): { entry?: { command?: string; args?: string[] }; old: boolean } {
+  const servers = config?.mcpServers ?? {};
+  if (servers[MCP_NAME]) return { entry: servers[MCP_NAME], old: false };
+  const old = OLD_MCP_NAMES.find((n) => servers[n]);
+  return old ? { entry: servers[old], old: true } : { old: false };
+}
+
+/** The config without the editor's entries under its old names. */
+const withoutOldNames = (servers: NonNullable<McpConfig["mcpServers"]>) => Object.fromEntries(Object.entries(servers).filter(([n]) => !OLD_MCP_NAMES.includes(n)));
+
 export async function clientInfo(id: ClientId, launch: McpLaunch | undefined): Promise<ClientInfo> {
   const dir = dirOf(id);
   const configFile = path.join(dir, CLIENTS[id].file);
-  const entry = (await readConfig(configFile).catch(() => undefined))?.mcpServers?.[MCP_NAME];
-  const outdated = !!entry && !!launch && (entry.command !== launch.command || JSON.stringify(entry.args ?? []) !== JSON.stringify(launch.args));
+  const { entry, old } = entryIn(await readConfig(configFile).catch(() => undefined));
+  const outdated = !!entry && (old || (!!launch && (entry.command !== launch.command || JSON.stringify(entry.args ?? []) !== JSON.stringify(launch.args))));
   const check = process.env.AVE_CLIENT_CONFIG_DIR ? undefined : CLIENTS[id].installed;
   return { id, name: CLIENTS[id].name, configFile, installed: check ? check() : existsSync(dir), connected: !!entry, outdated, note: CLIENTS[id].note };
 }
 
 /**
  * Add the editor to an app's config, or take it out. The rest of the file stays as it was; the
- * previous file is kept as <file>.bak.
+ * previous file is kept as <file>.bak. Entries under the editor's old names go either way.
  */
 export async function setClientConnected(id: ClientId, connected: boolean, launch: McpLaunch | undefined): Promise<ClientInfo> {
   if (connected && !launch) throw new Error("This install has no MCP server to connect (engine/mcp is missing).");
   const file = path.join(dirOf(id), CLIENTS[id].file);
   const config = (await readConfig(file)) ?? {};
-  const servers = { ...config.mcpServers };
+  const servers = withoutOldNames({ ...config.mcpServers });
+  const had = entryIn(config).entry !== undefined;
   if (connected) servers[MCP_NAME] = { command: launch!.command, args: launch!.args };
-  else if (!(MCP_NAME in servers)) return clientInfo(id, launch);
+  else if (!had) return clientInfo(id, launch);
   else delete servers[MCP_NAME];
   await writeConfig(file, { ...config, mcpServers: servers });
   // An entry in a place the app does not read (written there before, or by an older version) goes.
@@ -187,11 +201,20 @@ export async function setClientConnected(id: ClientId, connected: boolean, launc
     const other = path.join(dir, CLIENTS[id].file);
     if (other === file) continue;
     const stale = await readConfig(other).catch(() => undefined);
-    if (!stale?.mcpServers || !(MCP_NAME in stale.mcpServers)) continue;
-    const { [MCP_NAME]: _, ...rest } = stale.mcpServers;
+    if (!entryIn(stale).entry) continue;
+    const { [MCP_NAME]: _, ...rest } = withoutOldNames(stale!.mcpServers!);
     await writeConfig(other, { ...stale, mcpServers: rest });
   }
   return clientInfo(id, launch);
+}
+
+/** At start: an app connected under the editor's old name gets its entry renamed (and pointed at this install). */
+export async function renameOldEntries(launch: McpLaunch | undefined): Promise<void> {
+  if (!launch) return;
+  for (const id of CLIENT_IDS) {
+    const config = await readConfig(path.join(dirOf(id), CLIENTS[id].file)).catch(() => undefined);
+    if (entryIn(config).old) await setClientConnected(id, true, launch).catch(() => undefined);
+  }
 }
 
 /** Write a config through a temporary file, keeping the previous one as <file>.bak. */

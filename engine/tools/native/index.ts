@@ -147,7 +147,7 @@ export interface ParticleSpec {
 /** The prebuilt package for this machine, and the file `npm run native` builds. */
 export function nativeTarget(platform: NodeJS.Platform = process.platform, arch: string = process.arch): { pkg: string; file: string } {
   const triple = `${platform}-${arch}${platform === "win32" ? "-msvc" : platform === "linux" ? "-gnu" : ""}`;
-  return { pkg: `@ai-video-editor/native-${triple}`, file: `ave-native.${triple}.node` };
+  return { pkg: `@videditbridge/native-${triple}`, file: `ave-native.${triple}.node` };
 }
 
 let loaded: NativeKernels | undefined;

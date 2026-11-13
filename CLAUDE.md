@@ -1,4 +1,4 @@
-# ai-video-editor, notes for Claude
+# videditbridge, notes for Claude
 
 TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Rendering is FFmpeg via `ffmpeg-static`. Hot CPU kernels are Rust (`native/`), reached only through `engine/tools/native`. The GPU render engine (`native/ave-render`) is a separate process reached only through `engine/tools/render/engine.ts`.
 

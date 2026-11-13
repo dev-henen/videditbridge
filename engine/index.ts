@@ -1,5 +1,5 @@
 /**
- * ai-video-editor: an AI-native video editing library.
+ * videditbridge: an AI-native video editing library.
  *
  *  core/     the Project document, timeline math, pure edit operations, validation, summaries
  *  library/  effects, transitions, animations, caption styles, components, templates

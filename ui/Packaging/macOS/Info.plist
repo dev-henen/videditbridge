@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Info.plist for "AI Video Editor.app". The bundle holds the app in Contents/MacOS, the engine in
+<!-- Info.plist for "VideditBridge.app". The bundle holds the app in Contents/MacOS, the engine in
      Contents/Resources/engine (see EngineClient.BundledHost) and AppIcon.icns, made from
      Packaging/icons with iconutil when packaging. -->
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>AI Video Editor</string>
+  <string>VideditBridge</string>
   <key>CFBundleDisplayName</key>
-  <string>AI Video Editor</string>
+  <string>VideditBridge</string>
   <key>CFBundleIdentifier</key>
-  <string>app.aivideoeditor.desktop</string>
+  <string>app.videditbridge.desktop</string>
   <key>CFBundleExecutable</key>
-  <string>VideoEditor</string>
+  <string>VideditBridge</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundlePackageType</key>

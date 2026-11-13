@@ -41,7 +41,7 @@ import { COVER_FILE, ProjectStore } from "./projects.js";
 import { RpcError, StdioRpc, serveLocal, type Handler } from "./rpc.js";
 import { HOST_INFO_FILE } from "./remote.js";
 import { applySettings, availableProviders, loadSettings, publicSettings, saveSettings, storeKey } from "./settings.js";
-import { CLIENT_IDS, MCP_NAME, clientInfo, commandLine, isClientId, mcpLaunch, setClientConnected } from "./connect.js";
+import { CLIENT_IDS, MCP_NAME, clientInfo, commandLine, isClientId, mcpLaunch, renameOldEntries, setClientConnected } from "./connect.js";
 import { DEFAULT_MCP_PORT, mcpToken, startMcpHttp, type McpHttpServer } from "../mcp/http.js";
 import { AppBackend, appLaunchFile } from "../mcp/server.js";
 import { startTunnel, type Tunnel } from "../mcp/tunnel.js";
@@ -814,6 +814,9 @@ if (process.env.AVE_APP_EXE) {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify({ command: process.env.AVE_APP_EXE, args: [] }), "utf8").catch(() => undefined);
 }
+
+// Apps connected under the editor's old name ("ai-video-editor") get the new one, pointed at this install.
+void renameOldEntries(mcpLaunch(store.root));
 
 // The app's settings: the API key, the renderer (by default what the performance test chose), hardware encoding.
 let settings = await loadSettings();

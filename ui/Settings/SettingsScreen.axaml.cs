@@ -453,7 +453,7 @@ public partial class SettingsScreen : UserControl
     private void BuildAbout(PageView page)
     {
         Card(page, null,
-            Row("AI Video Editor", "Edit video by asking Claude, ChatGPT or Gemini here, or from the Claude app."),
+            Row("VideditBridge", "Edit video by asking Claude, ChatGPT or Gemini here, or from the Claude app."),
             Row("Settings file", _settings?["file"]?.GetValue<string>() ?? "", selectable: true));
     }
 

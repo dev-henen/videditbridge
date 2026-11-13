@@ -22,16 +22,16 @@ Models download on first use into the models folder, and installed fonts go into
 
 | System | Models (`$AVE_MODELS_DIR`) | Fonts (`$AVE_FONTS_DIR`) |
 |---|---|---|
-| Windows | `%LOCALAPPDATA%\ai-video-editor\models` | `%LOCALAPPDATA%\ai-video-editor\fonts` |
-| macOS | `~/Library/Caches/ai-video-editor/models` | `~/Library/Application Support/ai-video-editor/fonts` |
-| Linux | `$XDG_CACHE_HOME/ai-video-editor/models` (`~/.cache`) | `$XDG_DATA_HOME/ai-video-editor/fonts` (`~/.local/share`) |
+| Windows | `%LOCALAPPDATA%\videditbridge\models` | `%LOCALAPPDATA%\videditbridge\fonts` |
+| macOS | `~/Library/Caches/videditbridge/models` | `~/Library/Application Support/videditbridge/fonts` |
+| Linux | `$XDG_CACHE_HOME/videditbridge/models` (`~/.cache`) | `$XDG_DATA_HOME/videditbridge/fonts` (`~/.local/share`) |
 
-Folders from older versions in `~/.cache/ai-video-editor` move to these places on first use. The face, person cutout and sound models measure the graphics card against the CPU the first time they run on a computer, keep the faster one and save it next to the model (`<model>.provider.json`). Delete that file to measure again; `AVE_ORT_PROVIDERS=cpu` or `gpu` overrides the choice. The default fonts (Arimo, Archivo Black, Gelasio, Anton, Cousine, Comic Neue; all OFL) ship in the package's `fonts` folder and are copied into the fonts folder, so text renders the same on every system. Projects that name Arial, Arial Black, Georgia, Impact, Courier New or Comic Sans MS get those fonts on systems that lack the originals.
+Folders from older versions in `~/.cache/videditbridge` move to these places on first use. The face, person cutout and sound models measure the graphics card against the CPU the first time they run on a computer, keep the faster one and save it next to the model (`<model>.provider.json`). Delete that file to measure again; `AVE_ORT_PROVIDERS=cpu` or `gpu` overrides the choice. The default fonts (Arimo, Archivo Black, Gelasio, Anton, Cousine, Comic Neue; all OFL) ship in the package's `fonts` folder and are copied into the fonts folder, so text renders the same on every system. Projects that name Arial, Arial Black, Georgia, Impact, Courier New or Comic Sans MS get those fonts on systems that lack the originals.
 
 ## Your first render
 
 ```ts
-import { createProject, addAsset, addClip, addLayer, render } from "ai-video-editor";
+import { createProject, addAsset, addClip, addLayer, render } from "videditbridge";
 
 let p = createProject({ name: "Hello", aspectRatio: "9:16" });
 p = addAsset(p, { type: "video", id: "clip", src: "footage.mp4" });
@@ -55,7 +55,7 @@ await render(p, { output: "out/hello.mp4" });
 ## Look before you render
 
 ```ts
-import { renderFrame, renderContactSheet, summarizeProject, validateProject } from "ai-video-editor";
+import { renderFrame, renderContactSheet, summarizeProject, validateProject } from "videditbridge";
 
 console.log(summarizeProject(p));                 // text timeline
 console.log(validateProject(p).issues);           // problems to fix
@@ -66,7 +66,7 @@ await renderContactSheet(p, { output: "out/sheet.png", columns: 4, rows: 3 });
 ## Start from a template
 
 ```ts
-import { applyTemplate, probe, render } from "ai-video-editor";
+import { applyTemplate, probe, render } from "videditbridge";
 
 const { project, warnings } = await applyTemplate(
   "listicle-countdown",

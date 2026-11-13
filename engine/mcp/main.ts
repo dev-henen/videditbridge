@@ -46,10 +46,10 @@ for (const signal of ["SIGTERM", "SIGHUP", "SIGINT"] as const) process.on(signal
 if (values.http) {
   // Over HTTP every request is a new connection: the apps that connect to an address show views.
   const server = await startMcpHttp({ projectsDir, backend, assumeViews: true }, { token: values.token ?? (await mcpToken()), port: Number(values.port), host: values.host });
-  console.error(`AI Video Editor MCP server at ${server.url}`);
+  console.error(`VideditBridge MCP server at ${server.url}`);
 } else {
   const transport = new StdioServerTransport();
   transport.onclose = () => void stop();
   await createMcpServer({ projectsDir, backend }).connect(transport);
-  console.error(`AI Video Editor MCP server on stdio, projects in ${projectsDir}`);
+  console.error(`VideditBridge MCP server on stdio, projects in ${projectsDir}`);
 }

@@ -7,7 +7,7 @@ import { addAsset, createProject, withProjectPaths } from "../../engine/core/ope
 import { toProjectPath } from "../../engine/core/util.js";
 import { fileOnDisk, validateProject } from "../../engine/core/validate.js";
 import { escapeFilterPath } from "../../engine/library/effects/index.js";
-import { appDir, legacyAppDir, migrateLegacyAppDir } from "../../engine/tools/appdirs.js";
+import { appDir, legacyAppDir, migrateLegacyAppDir, renameAppFolder } from "../../engine/tools/appdirs.js";
 import { FONT_REPLACEMENTS, bundledFontsDir, ensureBundledFonts, fontsIn, prepareFonts, replaceFont } from "../../engine/tools/fonts/index.js";
 import { replaceSvgFonts } from "../../engine/tools/graphics/index.js";
 import { runFfmpeg } from "../../engine/tools/render/ffmpeg.js";
@@ -28,14 +28,35 @@ afterAll(async () => {
 describe("app folders (E4)", () => {
   const home = "/home/u";
   it("follows each system's conventions", () => {
-    expect(appDir("cache", { platform: "win32", home: "C:\\Users\\u", env: { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" } })).toBe("C:\\Users\\u\\AppData\\Local\\ai-video-editor");
-    expect(appDir("data", { platform: "darwin", home: "/Users/u", env: {} })).toBe("/Users/u/Library/Application Support/ai-video-editor");
-    expect(appDir("cache", { platform: "darwin", home: "/Users/u", env: {} })).toBe("/Users/u/Library/Caches/ai-video-editor");
-    expect(appDir("cache", { platform: "linux", home, env: {} })).toBe("/home/u/.cache/ai-video-editor");
-    expect(appDir("data", { platform: "linux", home, env: {} })).toBe("/home/u/.local/share/ai-video-editor");
-    expect(appDir("data", { platform: "linux", home, env: { XDG_DATA_HOME: "/xdg/data" } })).toBe("/xdg/data/ai-video-editor");
+    expect(appDir("cache", { platform: "win32", home: "C:\\Users\\u", env: { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" } })).toBe("C:\\Users\\u\\AppData\\Local\\videditbridge");
+    expect(appDir("data", { platform: "darwin", home: "/Users/u", env: {} })).toBe("/Users/u/Library/Application Support/videditbridge");
+    expect(appDir("cache", { platform: "darwin", home: "/Users/u", env: {} })).toBe("/Users/u/Library/Caches/videditbridge");
+    expect(appDir("cache", { platform: "linux", home, env: {} })).toBe("/home/u/.cache/videditbridge");
+    expect(appDir("data", { platform: "linux", home, env: {} })).toBe("/home/u/.local/share/videditbridge");
+    expect(appDir("data", { platform: "linux", home, env: { XDG_DATA_HOME: "/xdg/data" } })).toBe("/xdg/data/videditbridge");
     // Relative XDG paths are ignored, as the spec says.
-    expect(appDir("cache", { platform: "linux", home, env: { XDG_CACHE_HOME: "rel" } })).toBe("/home/u/.cache/ai-video-editor");
+    expect(appDir("cache", { platform: "linux", home, env: { XDG_CACHE_HOME: "rel" } })).toBe("/home/u/.cache/videditbridge");
+  });
+
+  it("takes the folder from before the rename (AI Video Editor) as it is, models and all", async () => {
+    const base = await mkdtemp(path.join(tmpdir(), "ave-rename-"));
+    try {
+      const old = path.join(base, "ai-video-editor");
+      const dir = path.join(base, "videditbridge");
+      await mkdir(path.join(old, "models"), { recursive: true });
+      await writeFile(path.join(old, "models", "model.bin"), "weights");
+      await writeFile(path.join(old, "settings.json"), "{}");
+      expect(renameAppFolder(dir, old)).toBe(dir);
+      expect(existsSync(path.join(dir, "models", "model.bin"))).toBe(true);
+      expect(existsSync(path.join(dir, "settings.json"))).toBe(true);
+      expect(existsSync(old)).toBe(false);
+      // Once the new folder exists, an old one is never merged into it.
+      await mkdir(old);
+      expect(renameAppFolder(dir, old)).toBe(dir);
+      expect(existsSync(old)).toBe(true);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
   });
 
   it("moves the old shared folder without overwriting", async () => {

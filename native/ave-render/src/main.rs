@@ -1,4 +1,4 @@
-//! ave-render: the GPU render engine of ai-video-editor (docs/design/cinematic-grade-and-vfx.md,
+//! ave-render: the GPU render engine of videditbridge (docs/design/cinematic-grade-and-vfx.md,
 //! section 3.4). A separate process speaking JSON-RPC 2.0 over stdio, one message per line:
 //!
 //! - `info` opens the graphics device and describes it.

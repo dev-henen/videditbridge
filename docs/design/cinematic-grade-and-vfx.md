@@ -192,4 +192,4 @@ All parts of sections 3 to 9 are now tested on real clips.
 
 ## 11. Packaging (on hold)
 
-After the checklist: prebuilt npm packages of `ave-native` per target (`@ai-video-editor/native-<target>`, which the loader already tries first) with `ave-render`; macOS x64 and glibc 2.31 builds; the bundled host per target; installers (MSIX or MSI, a notarized DMG, AppImage then Flatpak; metadata in `ui/Packaging`).
+After the checklist: prebuilt npm packages of `ave-native` per target (`@videditbridge/native-<target>`, which the loader already tries first) with `ave-render`; macOS x64 and glibc 2.31 builds; the bundled host per target; installers (MSIX or MSI, a notarized DMG, AppImage then Flatpak; metadata in `ui/Packaging`).
