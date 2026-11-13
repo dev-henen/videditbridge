@@ -42,7 +42,12 @@ public partial class SettingsScreen : UserControl
         _ = LoadAsync();
     }
 
-    private IBrush? Brush(string key) => this.TryFindResource(key, out var v) ? v as IBrush : null;
+    /// <summary>A text block whose color follows a theme resource (looked up once it is in the window, not now).</summary>
+    private static T Colored<T>(T block, string resource) where T : TextBlock
+    {
+        block.Bind(TextBlock.ForegroundProperty, block.GetResourceObservable(resource));
+        return block;
+    }
 
     /// <summary>A key row for each provider the host offers (Anthropic for Claude first, the default).</summary>
     private void BuildKeyRows()
@@ -51,7 +56,7 @@ public partial class SettingsScreen : UserControl
         _keyRows.Clear();
         foreach (var p in _vm.Providers)
         {
-            var status = new TextBlock { FontSize = 12, Foreground = Brush("Text"), TextWrapping = Avalonia.Media.TextWrapping.Wrap };
+            var status = Colored(new TextBlock { FontSize = 12, TextWrapping = Avalonia.Media.TextWrapping.Wrap }, "Text");
             var box = new TextBox { PasswordChar = '•', Watermark = $"{p.Label} API key ({p.KeyHint})" };
             AutomationProperties.SetName(box, $"{p.Label} API key");
             var remove = new Button { Margin = new Thickness(6, 0, 0, 0), Content = new TextBlock { Text = "Remove", FontSize = 12 } };
@@ -65,8 +70,8 @@ public partial class SettingsScreen : UserControl
                     Orientation = Avalonia.Layout.Orientation.Horizontal,
                     Children =
                     {
-                        new TextBlock { Classes = { "icon" }, Text = Icons.Key, FontSize = 13, Foreground = Brush("OnAccent"), Margin = new Thickness(0, 0, 6, 0) },
-                        new TextBlock { Text = "Save", FontSize = 12, Foreground = Brush("OnAccent"), FontWeight = FontWeight.SemiBold, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center },
+                        Colored(new TextBlock { Classes = { "icon" }, Text = Icons.Key, FontSize = 13, Margin = new Thickness(0, 0, 6, 0) }, "OnAccent"),
+                        Colored(new TextBlock { Text = "Save", FontSize = 12, FontWeight = FontWeight.SemiBold, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center }, "OnAccent"),
                     },
                 },
             };
@@ -91,7 +96,7 @@ public partial class SettingsScreen : UserControl
             line.Children.Add(save);
             line.Children.Add(box);
 
-            var title = new TextBlock { Text = $"{p.Assistant}, from {p.Label}{(p.Id == "anthropic" ? " (default)" : "")}", FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Brush("Text") };
+            var title = Colored(new TextBlock { Text = $"{p.Assistant}, from {p.Label}{(p.Id == "anthropic" ? " (default)" : "")}", FontSize = 12, FontWeight = FontWeight.SemiBold }, "Text");
             KeyRows.Children.Add(new StackPanel { Spacing = 6, Children = { title, status, line } });
             _keyRows.Add(row);
         }
@@ -155,7 +160,7 @@ public partial class SettingsScreen : UserControl
             fromEnvironment |= set && source == "environment";
             row.Status.Text = set
                 ? $"{p.Assistant} can edit: a key ending in {key!["hint"]?.GetValue<string>()?.TrimStart('…')} is set{(source == "environment" ? " by an environment variable" : "")}."
-                : $"{p.Assistant} cannot edit yet: add a {p.Label} API key ({p.KeyUrl}).";
+                : $"{p.Assistant} cannot edit yet: add an API key from {p.Label} ({p.KeyUrl}).";
             row.Remove.IsVisible = set && source != "environment";
         }
         var keychain = s["keychain"]?.GetValue<bool>() == true;
