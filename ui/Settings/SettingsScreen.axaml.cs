@@ -226,7 +226,7 @@ public partial class SettingsScreen : UserControl
             _views.Clear();
             Pages.Children.Clear();
             BuildModels(NewPage("ai", "Claude is the default. Add an OpenAI or Google key to edit with ChatGPT or Gemini too, and pick the model in the chat."));
-            BuildConnections(NewPage("connections", "Edit from the Claude, ChatGPT and Gemini apps, with your own account there. Claude and ChatGPT show the previews in their chat; Gemini CLI and Claude Code open the project here to show it."));
+            BuildConnections(NewPage("connections", "Edit from the Claude, Gemini and ChatGPT apps, with your own account there. Those apps show the previews in their chat; Gemini CLI and Claude Code open the project here to show it."));
             BuildRendering(NewPage("rendering"));
             BuildFolders(NewPage("folders"));
             BuildAbout(NewPage("about"));
@@ -329,12 +329,14 @@ public partial class SettingsScreen : UserControl
             var outdated = c["outdated"]?.GetValue<bool>() == true;
             var installed = c["installed"]?.GetValue<bool>() == true;
             var note = c["note"]?.GetValue<string>() ?? "";
-            var sub = connected
+            // Gemini CLI is Google's terminal tool; the Gemini app connects to an address instead.
+            var what = id == "gemini-cli" ? "Google's terminal tool. For the Gemini app, use the connector address below. " : "";
+            var sub = what + (connected
                 ? outdated ? "Connected to another copy of the editor. Connect again to use this one." : $"Connected. {note}"
-                : installed ? "Not connected." : "Not found on this computer. Install it, then connect.";
+                : installed ? "Not connected." : "Not found on this computer. Install it, then connect.");
             var buttons = new List<Control>();
             if (connected) buttons.Add(Btn("Disconnect", () => SetClient(id, false), name: $"Disconnect {name}"));
-            if (!connected || outdated) buttons.Add(Btn(outdated ? "Update" : "Connect", () => SetClient(id, true), primary: true, name: $"Connect {name}"));
+            if (!connected || outdated) buttons.Add(Btn(outdated ? "Update" : "Connect", () => SetClient(id, true), primary: installed, name: $"Connect {name}"));
             rows.Add(Row(name, sub, Controls([.. buttons]), chip: connected && !outdated ? "Connected" : null));
         }
         if (command is not null)
@@ -353,15 +355,17 @@ public partial class SettingsScreen : UserControl
         var error = http?["error"]?.GetValue<string>();
         var web = new List<Border>
         {
-            Row("Connector address", "For ChatGPT and other apps that connect to an address. It works while this app is open.",
+            Row("Connector address", "For the Gemini app, ChatGPT and other apps that connect to an address. It works while this app is open.",
                 Toggle(enabled, "Connector address", on => SetHttp(new { enabled = on }))),
         };
         if (error is not null) web.Add(Row("Could not start", error, error: true));
         if (url is not null)
         {
             web.Add(Row("Address on this computer", url, Btn("Copy", () => Copy(url, "address"), icon: Icons.Copy, name: "Copy the address"), selectable: true));
-            web.Add(Row("ChatGPT", $"ChatGPT reaches only https addresses. Run a tunnel to port {port} (for example cloudflared tunnel --url http://127.0.0.1:{port}), then add a connector in ChatGPT's developer mode at your tunnel's address followed by this path, with no authentication.",
+            web.Add(Row("Public address", $"The Gemini app and ChatGPT reach only https addresses on the internet. Run a tunnel to port {port} (for example cloudflared tunnel --url http://127.0.0.1:{port}); your public address is the tunnel's address followed by this path.",
                 Btn("Copy path", () => Copy(path, "path"), icon: Icons.Copy, name: "Copy the connector path")));
+            web.Add(Row("Gemini app", "In Gemini: Settings, Connected apps, Custom (Add a custom app), then paste the public address. Google is still rolling this out, so your account may not have it yet."));
+            web.Add(Row("ChatGPT", "In ChatGPT: turn on developer mode (Settings, Apps and connectors, Advanced), then add a connector at the public address, with no authentication."));
             web.Add(Row("New address", "Anyone with the address can edit your projects, so keep it private. A new one stops the old one working.",
                 Btn("Make new", () => SetHttp(new { renew = true }))));
         }

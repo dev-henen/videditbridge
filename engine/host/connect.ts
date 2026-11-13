@@ -95,17 +95,35 @@ function claudeDirs(): string[] {
 /** Whether a folder is an app's live data folder (it keeps its settings and storage there), not just a config file. */
 const looksLive = (dir: string) => ["config.json", "Preferences", "Local Storage"].some((f) => existsSync(path.join(dir, f)));
 
+/** Whether a command is on the PATH (with Windows' program extensions). */
+function onPath(command: string): boolean {
+  const exts = process.platform === "win32" ? (process.env.PATHEXT || ".EXE;.CMD;.BAT").split(";").filter(Boolean) : [""];
+  return (process.env.PATH || "")
+    .split(path.delimiter)
+    .filter(Boolean)
+    .some((dir) => exts.some((ext) => existsSync(path.join(dir, command + ext.toLowerCase())) || existsSync(path.join(dir, command + ext))));
+}
+
 interface ClientSpec {
   name: string;
   /** Where the app may keep its config, most likely first. */
   dirs: () => string[];
   file: string;
   note: string;
+  /** Whether the app is installed, when its config folder alone does not tell (the folder may be ours). */
+  installed?: () => boolean;
 }
 
 const CLIENTS: Record<ClientId, ClientSpec> = {
   claude: { name: "Claude app", dirs: claudeDirs, file: "claude_desktop_config.json", note: "Quit and reopen the Claude app to use it." },
-  "gemini-cli": { name: "Gemini CLI", dirs: () => [path.join(os.homedir(), ".gemini")], file: "settings.json", note: "Start a new Gemini CLI session to use it." },
+  // Google's terminal tool, not the Gemini app (which takes an address: see the connector address).
+  "gemini-cli": {
+    name: "Gemini CLI",
+    dirs: () => [path.join(os.homedir(), ".gemini")],
+    file: "settings.json",
+    note: "Start a new Gemini CLI session to use it.",
+    installed: () => onPath("gemini"),
+  },
 };
 export const CLIENT_IDS = Object.keys(CLIENTS) as ClientId[];
 export const isClientId = (v: unknown): v is ClientId => typeof v === "string" && v in CLIENTS;
@@ -147,7 +165,8 @@ export async function clientInfo(id: ClientId, launch: McpLaunch | undefined): P
   const configFile = path.join(dir, CLIENTS[id].file);
   const entry = (await readConfig(configFile).catch(() => undefined))?.mcpServers?.[MCP_NAME];
   const outdated = !!entry && !!launch && (entry.command !== launch.command || JSON.stringify(entry.args ?? []) !== JSON.stringify(launch.args));
-  return { id, name: CLIENTS[id].name, configFile, installed: existsSync(dir), connected: !!entry, outdated, note: CLIENTS[id].note };
+  const check = process.env.AVE_CLIENT_CONFIG_DIR ? undefined : CLIENTS[id].installed;
+  return { id, name: CLIENTS[id].name, configFile, installed: check ? check() : existsSync(dir), connected: !!entry, outdated, note: CLIENTS[id].note };
 }
 
 /**
