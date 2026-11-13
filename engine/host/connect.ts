@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -53,30 +53,77 @@ export interface ClientInfo {
   note: string;
 }
 
-/** The Claude app's config: the Microsoft Store install keeps it in its package folder. */
-function claudeConfigDir(): string {
+/** Subfolders of the given folders whose names match, newest first. */
+function subdirs(parents: string[], name: RegExp): string[] {
+  const found: { dir: string; time: number }[] = [];
+  for (const parent of parents) {
+    if (!existsSync(parent)) continue;
+    for (const d of readdirSync(parent)) {
+      if (!name.test(d)) continue;
+      const dir = path.join(parent, d);
+      try {
+        found.push({ dir, time: statSync(dir).mtimeMs });
+      } catch {
+        // gone meanwhile
+      }
+    }
+  }
+  return found.sort((a, b) => b.time - a.time).map((f) => f.dir);
+}
+
+/**
+ * Where the Claude app may keep its data, most likely first. On Windows the Microsoft Store build
+ * keeps it outside its package, in %LOCALAPPDATA%\Claude-Data\claude_<id> (older builds: the package's
+ * LocalCache\Roaming\Claude); the installer build in %APPDATA%\Claude.
+ */
+function claudeDirs(): string[] {
   const home = os.homedir();
   if (process.platform === "win32") {
     const local = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
-    const packages = path.join(local, "Packages");
-    const store = existsSync(packages) ? readdirSync(packages).find((d) => /^Claude_/i.test(d)) : undefined;
-    if (store) return path.join(packages, store, "LocalCache", "Roaming", "Claude");
-    return path.join(process.env.APPDATA || path.join(home, "AppData", "Roaming"), "Claude");
+    const roaming = process.env.APPDATA || path.join(home, "AppData", "Roaming");
+    return [
+      ...subdirs([path.join(local, "Claude-Data")], /^claude_/i),
+      ...subdirs([path.join(local, "Packages")], /^Claude_/i).map((p) => path.join(p, "LocalCache", "Roaming", "Claude")),
+      path.join(roaming, "Claude"),
+    ];
   }
-  if (process.platform === "darwin") return path.join(home, "Library", "Application Support", "Claude");
+  if (process.platform === "darwin") return [path.join(home, "Library", "Application Support", "Claude")];
   const xdg = process.env.XDG_CONFIG_HOME;
-  return path.join(xdg && path.isAbsolute(xdg) ? xdg : path.join(home, ".config"), "Claude");
+  return [path.join(xdg && path.isAbsolute(xdg) ? xdg : path.join(home, ".config"), "Claude")];
 }
 
-const CLIENTS: Record<ClientId, { name: string; dir: () => string; file: string; note: string }> = {
-  claude: { name: "Claude app", dir: claudeConfigDir, file: "claude_desktop_config.json", note: "Quit and reopen the Claude app to use it." },
-  "gemini-cli": { name: "Gemini CLI", dir: () => path.join(os.homedir(), ".gemini"), file: "settings.json", note: "Start a new Gemini CLI session to use it." },
+/** Whether a folder is an app's live data folder (it keeps its settings and storage there), not just a config file. */
+const looksLive = (dir: string) => ["config.json", "Preferences", "Local Storage"].some((f) => existsSync(path.join(dir, f)));
+
+interface ClientSpec {
+  name: string;
+  /** Where the app may keep its config, most likely first. */
+  dirs: () => string[];
+  file: string;
+  note: string;
+}
+
+const CLIENTS: Record<ClientId, ClientSpec> = {
+  claude: { name: "Claude app", dirs: claudeDirs, file: "claude_desktop_config.json", note: "Quit and reopen the Claude app to use it." },
+  "gemini-cli": { name: "Gemini CLI", dirs: () => [path.join(os.homedir(), ".gemini")], file: "settings.json", note: "Start a new Gemini CLI session to use it." },
 };
 export const CLIENT_IDS = Object.keys(CLIENTS) as ClientId[];
 export const isClientId = (v: unknown): v is ClientId => typeof v === "string" && v in CLIENTS;
 
-/** $AVE_CLIENT_CONFIG_DIR (tests) holds every app's file instead of their real places. */
-const dirOf = (id: ClientId) => (process.env.AVE_CLIENT_CONFIG_DIR ? path.join(process.env.AVE_CLIENT_CONFIG_DIR, id) : CLIENTS[id].dir());
+/** Where an app may keep its config: $AVE_CLIENT_CONFIG_DIR (tests) holds every app's folders instead of their real places. */
+function dirsOf(id: ClientId): string[] {
+  const test = process.env.AVE_CLIENT_CONFIG_DIR;
+  if (!test) return CLIENTS[id].dirs();
+  // In tests, <root>/<id> is the app's folder; <root>/<id>-candidates/* are more places, as the real ones.
+  const extra = path.join(test, `${id}-candidates`);
+  return [...subdirs([extra], /./), path.join(test, id)];
+}
+
+/** The app's config folder: the one it really uses (its live data folder), else one that has its config, else the most likely. */
+function dirOf(id: ClientId): string {
+  const dirs = dirsOf(id);
+  return dirs.find(looksLive) ?? dirs.find((d) => existsSync(path.join(d, CLIENTS[id].file))) ?? dirs.find(existsSync) ?? dirs[dirs.length - 1]!;
+}
 
 type McpConfig = { mcpServers?: Record<string, { command?: string; args?: string[] }> } & Record<string, unknown>;
 
@@ -115,11 +162,24 @@ export async function setClientConnected(id: ClientId, connected: boolean, launc
   if (connected) servers[MCP_NAME] = { command: launch!.command, args: launch!.args };
   else if (!(MCP_NAME in servers)) return clientInfo(id, launch);
   else delete servers[MCP_NAME];
-  const next = { ...config, mcpServers: servers };
+  await writeConfig(file, { ...config, mcpServers: servers });
+  // An entry in a place the app does not read (written there before, or by an older version) goes.
+  for (const dir of dirsOf(id)) {
+    const other = path.join(dir, CLIENTS[id].file);
+    if (other === file) continue;
+    const stale = await readConfig(other).catch(() => undefined);
+    if (!stale?.mcpServers || !(MCP_NAME in stale.mcpServers)) continue;
+    const { [MCP_NAME]: _, ...rest } = stale.mcpServers;
+    await writeConfig(other, { ...stale, mcpServers: rest });
+  }
+  return clientInfo(id, launch);
+}
+
+/** Write a config through a temporary file, keeping the previous one as <file>.bak. */
+async function writeConfig(file: string, config: McpConfig): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
   if (existsSync(file)) await copyFile(file, `${file}.bak`);
   const temp = `${file}.${process.pid}.tmp`;
-  await writeFile(temp, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  await writeFile(temp, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   await rename(temp, file);
-  return clientInfo(id, launch);
 }

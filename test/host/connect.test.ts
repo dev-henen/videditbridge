@@ -51,6 +51,27 @@ describe("connecting other AI apps to the editor", () => {
     expect(JSON.parse(await readFile(path.join(root, "gemini-cli", "settings.json"), "utf8")).mcpServers[MCP_NAME]).toEqual(launch);
   });
 
+  it("writes where the app really keeps its data, and takes the entry out of places it does not read", async () => {
+    // As the Microsoft Store build of the Claude app: its data in a folder of its own, while the
+    // usual place holds an entry written there before.
+    const live = path.join(root, "claude-candidates", "claude_pzs8");
+    await mkdir(live, { recursive: true });
+    await writeFile(path.join(live, "config.json"), "{}");
+    await writeFile(path.join(live, "claude_desktop_config.json"), JSON.stringify({ preferences: { keep: true } }));
+    const usual = path.join(root, "claude", "claude_desktop_config.json");
+    await writeFile(usual, JSON.stringify({ mcpServers: { [MCP_NAME]: launch, other: { command: "x" } } }));
+
+    // The entry in the usual place does not count: the app does not read it.
+    const before = await clientInfo("claude", launch);
+    expect(before.configFile).toBe(path.join(live, "claude_desktop_config.json"));
+    expect(before.connected).toBe(false);
+
+    expect((await setClientConnected("claude", true, launch)).connected).toBe(true);
+    expect(JSON.parse(await readFile(path.join(live, "claude_desktop_config.json"), "utf8"))).toEqual({ preferences: { keep: true }, mcpServers: { [MCP_NAME]: launch } });
+    expect(JSON.parse(await readFile(usual, "utf8")).mcpServers).toEqual({ other: { command: "x" } });
+    await rm(path.join(root, "claude-candidates"), { recursive: true, force: true });
+  });
+
   it("leaves a config it cannot read alone", async () => {
     const file = path.join(root, "claude", "claude_desktop_config.json");
     await writeFile(file, "{ not json");
