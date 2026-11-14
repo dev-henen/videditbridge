@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { defaultModelsDir } from "../appdirs.js";
+import { bundledModelsDir, defaultModelsDir } from "../appdirs.js";
 import path from "node:path";
 import type { Fit, Position } from "../../core/schema.js";
 import { round3 } from "../../core/util.js";
@@ -102,9 +102,13 @@ export async function ensureModelFile(
   folder: string,
   model: { url: string; file: string; /** Smallest complete size (default 100 KB). */ minBytes?: number },
 ): Promise<string> {
+  const complete = (f: string) => stat(f).then((s) => s.size > (model.minBytes ?? 100_000), () => false);
+  // An installed app carries its models: used in place, nothing to download.
+  const bundled = opts.modelsDir ? undefined : bundledModelsDir();
+  if (bundled && (await complete(path.join(bundled, folder, model.file)))) return path.join(bundled, folder, model.file);
   const dir = path.join(modelsDir(opts), folder);
   const file = path.join(dir, model.file);
-  if (await stat(file).then((s) => s.size > (model.minBytes ?? 100_000), () => false)) return file;
+  if (await complete(file)) return file;
   await mkdir(dir, { recursive: true });
   const res = await fetch(model.url);
   if (!res.ok || !res.body) throw new Error(`Could not download the model (${res.status}) from ${model.url}`);

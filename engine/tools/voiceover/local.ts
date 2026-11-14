@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { defaultModelsDir } from "../appdirs.js";
+import { defaultModelsDir, useBundledModels } from "../appdirs.js";
 import path from "node:path";
 import { round3 } from "../../core/util.js";
 import { LocalWhisperTranscriber } from "../transcript/local.js";
@@ -225,6 +225,7 @@ export class LocalTTS implements TTSProvider {
         }
         const tf = await import("@huggingface/transformers");
         tf.env.cacheDir = this.options.cacheDir ?? defaultModelsDir();
+        if (!this.options.cacheDir) useBundledModels(tf.env);
         const files = new Map<string, { loaded: number; total: number }>();
         const tts = await kokoro.KokoroTTS.from_pretrained(this.model, {
           dtype: "q8",

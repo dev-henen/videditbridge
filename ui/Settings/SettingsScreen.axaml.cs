@@ -593,10 +593,14 @@ public partial class SettingsScreen : UserControl
         Card(page, null, folders);
     }
 
+    /// <summary>The app's version (Version in VideditBridge.csproj), as 0.1.0.</summary>
+    private static string AppVersion => typeof(SettingsScreen).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "";
+
     private void BuildAbout(PageView page)
     {
         Card(page, null,
-            Row("VideditBridge", "Edit video by asking Claude, ChatGPT or Gemini here, or from the Claude app."),
+            Row($"VideditBridge {AppVersion}", "Edit video by asking Claude, ChatGPT or Gemini here, or from the Claude app."),
+            Row("Made by Moses Henen", "The app's source and releases are on GitHub.", Btn("Open", () => Docs.Open(this, Docs.Repo), icon: Icons.Open, name: "Open VideditBridge on GitHub")),
             Row("User guide", "Getting started, API keys, the Claude app, what you can ask.", Btn("Open", () => Docs.Open(this, Docs.Home), icon: Icons.Open, name: "Open the user guide")),
             Row("All tools", "Everything the AI can do in the editor, by topic.", Btn("Open", () => Docs.Open(this, Docs.Tools), icon: Icons.Open, name: "Open the tools list")),
             Row("Troubleshooting", "When a key, a connection or a render does not work.", Btn("Open", () => Docs.Open(this, Docs.Troubleshooting), icon: Icons.Open, name: "Open troubleshooting")),

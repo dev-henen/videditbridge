@@ -2,6 +2,18 @@
   "name": "videditbridge",
   "version": "0.1.0",
   "description": "AI-native video editing library: JSON timeline, templates, transcripts, captions, effects, transitions, animations, voice-over, and Claude-ready tool definitions. Renders with FFmpeg.",
+  "author": {
+    "name": "Moses Henen",
+    "url": "https://github.com/dev-henen"
+  },
+  "homepage": "https://dev-henen.github.io/videditbridge/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dev-henen/videditbridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dev-henen/videditbridge/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

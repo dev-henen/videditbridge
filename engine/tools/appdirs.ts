@@ -108,6 +108,31 @@ export function defaultModelsDir(): string {
   return path.join(appDir("cache"), "models");
 }
 
+/**
+ * The models that come with an installed app, read-only: $AVE_BUNDLED_MODELS_DIR, else a `models`
+ * folder next to the engine's executable (the installed app's `engine` folder holds `ave-host` or its
+ * own `node`; see ui/Packaging/README.md). Undefined in a development checkout, where models download
+ * into `defaultModelsDir()` on first use. Laid out like the models folder: a file model at
+ * `<folder>/<file>` (`ensureModelFile`), a transformers.js model at `<model id>/<file>`.
+ */
+export function bundledModelsDir(): string | undefined {
+  const env = process.env.AVE_BUNDLED_MODELS_DIR;
+  if (env) return existsSync(env) ? env : undefined;
+  const beside = path.join(path.dirname(process.execPath), "models");
+  return existsSync(beside) ? beside : undefined;
+}
+
+/**
+ * Points transformers.js at the bundled models, so it reads them in place (it looks in its cache,
+ * then here, then downloads; files read from here are not copied into the cache).
+ */
+export function useBundledModels(env: { localModelPath: string; allowLocalModels: boolean }): void {
+  const dir = bundledModelsDir();
+  if (!dir) return;
+  env.localModelPath = dir.endsWith(path.sep) ? dir : dir + path.sep;
+  env.allowLocalModels = true;
+}
+
 /** Fonts folder: $AVE_FONTS_DIR, else <data>/fonts. */
 export function defaultFontsDir(): string {
   if (process.env.AVE_FONTS_DIR) return process.env.AVE_FONTS_DIR;

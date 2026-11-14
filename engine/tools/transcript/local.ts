@@ -1,4 +1,4 @@
-import { defaultModelsDir } from "../appdirs.js";
+import { defaultModelsDir, useBundledModels } from "../appdirs.js";
 import path from "node:path";
 import type { Transcript, Word } from "../../core/schema.js";
 import { round3 } from "../../core/util.js";
@@ -119,6 +119,7 @@ export class LocalWhisperTranscriber implements TranscriptionProvider {
           throw new Error("Local transcription needs the optional package @huggingface/transformers (npm install @huggingface/transformers).");
         }
         tf.env.cacheDir = this.options.cacheDir ?? defaultModelsDir();
+        if (!this.options.cacheDir) useBundledModels(tf.env);
         const files = new Map<string, { loaded: number; total: number }>();
         const asr = await tf.pipeline("automatic-speech-recognition", model, {
           dtype: "q8",

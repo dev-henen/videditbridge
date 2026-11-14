@@ -12,7 +12,7 @@ export const SOUND_MODEL = {
   file: "ced-tiny.onnx",
 };
 /** The model's label names (AudioSet order), from its config. */
-const SOUND_LABELS = { url: "https://huggingface.co/mispeech/ced-tiny/resolve/main/config.json", file: "config.json", minBytes: 10_000 };
+export const SOUND_LABELS = { url: "https://huggingface.co/mispeech/ced-tiny/resolve/main/config.json", file: "config.json", minBytes: 10_000 };
 
 /** AudioSet label indexes: talking (with shouts and whispers), singing, and music. */
 const SPEECH = range(0, 15);

@@ -33,7 +33,7 @@ Movie-level color grading and the visual effects editors ask for most: log foota
 - [x] 7. **Claude's checks** (section 8): `review_edit` findings for clipping, skin hue off the skin line, banding, matte flicker, track drift and sky slide.
 - [x] 8. **Desktop app** (section 9): the selected object's blue outline, the matte toggle in the viewer, and scopes next to the findings.
 
-When all eight are done, the whole test suite runs once (section 10). Packaging is on hold until then (section 11).
+When all eight are done, the whole test suite runs once (section 10). Packaging follows (section 11).
 
 ## 2. Quality bar
 
@@ -190,6 +190,18 @@ The clips are cut from the footage in `projects/*/media` to 960x540 (`test/.outp
 
 All parts of sections 3 to 9 are now tested on real clips.
 
-## 11. Packaging (on hold)
+## 11. Packaging
 
-After the checklist: prebuilt npm packages of `ave-native` per target (`@videditbridge/native-<target>`, which the loader already tries first) with `ave-render`; macOS x64 and glibc 2.31 builds; the bundled host per target; installers (MSIX or MSI, a notarized DMG, AppImage then Flatpak; metadata in `ui/Packaging`).
+Started 2026-11-14, after the checklist. Details in [ui/Packaging/README.md](../../ui/Packaging/README.md).
+
+Done:
+
+- **Who makes it:** Moses Henen, home at [github.com/dev-henen/videditbridge](https://github.com/dev-henen/videditbridge), in every package's metadata: the Windows executable's properties (`ui/VideditBridge.csproj`), the macOS bundle (`io.github.dev-henen.videditbridge`, the copyright), Linux AppStream metadata for software centers and Flathub (`io.github.dev_henen.videditbridge`, with the desktop file and icons renamed to match), the engine's `package.json`, and the app's About page.
+- **Every model comes with the app** (about 1 GB, twelve models; the list is `engine/tools/bundled-models.ts`, their licenses in `ui/THIRD-PARTY-NOTICES.md`, all MIT or Apache-2.0). An installed app keeps them in `engine/models` and reads them in place (`bundledModelsDir`), so nothing downloads on first use. `scripts/bundle-models.ts` fills the folder; `test/repo/bundled-models.test.ts` fails when the engine loads a model that is not on the list. The models folder in the app cache stays for downloads that are not bundled (another Whisper size through the library).
+
+Left:
+
+- Prebuilt npm packages of `ave-native` per target (`@videditbridge/native-<target>`, which the loader already tries first) with `ave-render`; macOS x64 and glibc 2.31 builds.
+- The bundled host per target (Node and `dist`, or a single `ave-host`), with FFmpeg, the fonts and `engine/models`.
+- Installers: MSIX or MSI, a notarized DMG, AppImage then Flatpak.
+- The whole test suite, once, before the first installer (section 10).

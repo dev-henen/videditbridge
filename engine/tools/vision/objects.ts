@@ -4,7 +4,7 @@ import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { round3 } from "../../core/util.js";
 import { probe, resolveFfmpegPath, runFfmpegOrThrow, type FfmpegOptions } from "../render/ffmpeg.js";
-import { defaultModelsDir } from "../appdirs.js";
+import { defaultModelsDir, useBundledModels } from "../appdirs.js";
 import { controlled, native } from "../native/index.js";
 import { resizeMask } from "./segment.js";
 
@@ -72,6 +72,7 @@ async function loadTf(opts: ObjectOptions): Promise<Tf> {
     throw new Error("Selecting objects needs the optional package @huggingface/transformers (npm install @huggingface/transformers).");
   }
   tf.env.cacheDir = opts.modelsDir ?? defaultModelsDir();
+  if (!opts.modelsDir) useBundledModels(tf.env);
   return tf;
 }
 

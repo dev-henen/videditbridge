@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata: what software centers (GNOME Software, KDE Discover, Flathub) show for the app.
+     Installed as /usr/share/metainfo/io.github.dev_henen.videditbridge.metainfo.xml, next to the
+     .desktop file. The id follows Flathub's rule for GitHub projects (io.github.<user>, "-" as "_"). -->
+<component type="desktop-application">
+  <id>io.github.dev_henen.videditbridge</id>
+  <name>VideditBridge</name>
+  <summary>Edit videos by asking Claude, ChatGPT or Gemini</summary>
+  <developer id="io.github.dev_henen">
+    <name>Moses Henen</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>VideditBridge is a video editor you use by asking. Describe the video you want, point at a clip or a spot in the frame, and the AI cuts, captions, grades and renders it while you watch the preview.</p>
+    <p>It works with Claude, ChatGPT or Gemini using your own API key, and other AI apps can edit through it over MCP.</p>
+  </description>
+  <launchable type="desktop-id">io.github.dev_henen.videditbridge.desktop</launchable>
+  <url type="homepage">https://dev-henen.github.io/videditbridge/</url>
+  <url type="bugtracker">https://github.com/dev-henen/videditbridge/issues</url>
+  <url type="vcs-browser">https://github.com/dev-henen/videditbridge</url>
+  <url type="help">https://dev-henen.github.io/videditbridge/</url>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-14"/>
+  </releases>
+</component>

@@ -8,6 +8,14 @@
     <AssemblyName>VideditBridge</AssemblyName>
     <RootNamespace>VideoEditor</RootNamespace>
     <Product>VideditBridge</Product>
+    <!-- Shown in the executable's properties (Windows), the About page and the packages -->
+    <Version>0.1.0</Version>
+    <Authors>Moses Henen</Authors>
+    <Company>Moses Henen</Company>
+    <Copyright>Copyright (c) 2026 Moses Henen</Copyright>
+    <Description>Edit videos by asking Claude, ChatGPT or Gemini</Description>
+    <RepositoryUrl>https://github.com/dev-henen/videditbridge</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/dev-henen/videditbridge</PackageProjectUrl>
     <ApplicationIcon>Assets/AppIcon.ico</ApplicationIcon>
     <!-- Used for the Windows build only; macOS and Linux metadata lives in Packaging/. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
