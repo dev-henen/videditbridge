@@ -1,0 +1,60 @@
+<!-- description: Download VideditBridge for Windows, macOS and Linux. Free to use, including for work. -->
+<h1>Download</h1>
+<p class="lead">VideditBridge is free to use, including for work. Every AI model it needs comes with it, so the download is large (about 1.1 to 1.3 GB) and nothing more downloads when you start it.</p>
+
+<p class="release-line" id="release-line">The newest version is on the <a href="https://github.com/dev-henen/videditbridge/releases">releases page</a>.</p>
+
+<div class="cards downloads">
+  <div class="card" data-os="windows">
+    <span class="badge">Windows 10 and 11</span>
+    <h3>Windows (x64)</h3>
+    <p>A setup program. It installs for your user, without an administrator prompt.</p>
+    <a class="button primary" data-asset="windows" href="https://github.com/dev-henen/videditbridge/releases">Download for Windows</a>
+    <p class="size" data-size="windows"></p>
+  </div>
+  <div class="card" data-os="macos">
+    <span class="badge">macOS 12 or newer</span>
+    <h3>macOS (Apple Silicon)</h3>
+    <p>A disk image for Macs with an M1 or newer chip. Drag the app to Applications.</p>
+    <a class="button primary" data-asset="macos" href="https://github.com/dev-henen/videditbridge/releases">Download for Mac</a>
+    <p class="size" data-size="macos"></p>
+  </div>
+  <div class="card" data-os="linux">
+    <span class="badge">x86_64</span>
+    <h3>Linux (AppImage)</h3>
+    <p>One file that runs on most distributions. Needs VLC for playback.</p>
+    <a class="button primary" data-asset="linux" href="https://github.com/dev-henen/videditbridge/releases">Download for Linux</a>
+    <p class="size" data-size="linux"></p>
+  </div>
+</div>
+
+<h2 id="install">Install</h2>
+
+<h3 id="windows">Windows</h3>
+<ol class="steps">
+  <li><strong>Run the setup file.</strong> It is the file you downloaded, <code>VideditBridge-...-windows-x64-setup.exe</code>.</li>
+  <li><strong>Get past the SmartScreen warning.</strong> If Windows says "Windows protected your PC", choose <em>More info</em>, then <em>Run anyway</em>. The app is not signed with a paid certificate yet, so Windows does not know it.</li>
+  <li><strong>Finish the setup.</strong> Then open VideditBridge from the Start menu.</li>
+</ol>
+
+<h3 id="macos">macOS</h3>
+<ol class="steps">
+  <li><strong>Copy it to Applications.</strong> Open the disk image, <code>VideditBridge-...-macos-arm64.dmg</code>, and drag VideditBridge onto Applications.</li>
+  <li><strong>Open it with a right-click the first time.</strong> In Applications, right-click VideditBridge and choose <em>Open</em>, then <em>Open</em> again. The app is not notarized by Apple yet, so a double-click alone is refused. If there is no <em>Open</em> button, go to System Settings, Privacy and Security, and press <em>Open Anyway</em>.</li>
+  <li><strong>Use it as usual.</strong> From then on it opens normally.</li>
+</ol>
+
+<h3 id="linux">Linux</h3>
+<ol class="steps">
+  <li><strong>Install VLC.</strong> It plays the video: on Debian and Ubuntu, <code>sudo apt install vlc</code>; on Fedora, <code>sudo dnf install vlc</code>.</li>
+  <li><strong>Make the file executable and run it.</strong> In a terminal, in the folder you downloaded it to:</li>
+</ol>
+<pre><code>chmod +x VideditBridge-*.AppImage
+./VideditBridge-*.AppImage</code></pre>
+
+<h2>Next</h2>
+<p>Open the app, make a project and <a href="api-keys.html">add an API key</a> (or <a href="claude-app.html">use the Claude app</a> instead). <a href="index.html#your-first-edit">Your first edit</a> walks through the rest.</p>
+
+<h2>Older versions and source code</h2>
+<p>Every version, with its notes, is on the <a href="https://github.com/dev-henen/videditbridge/releases">releases page</a>. VideditBridge is source-available under the <a href="https://github.com/dev-henen/videditbridge/blob/main/LICENSE">VideditBridge License</a>: free to use, open for contributions on GitHub. To run it from the source code instead, see <a href="index.html#building-it-yourself">Building it yourself</a>.</p>
+<p class="muted">Something not working? <a href="troubleshooting.html">Troubleshooting</a>, or <a href="https://github.com/dev-henen/videditbridge/issues">report a problem</a>.</p>

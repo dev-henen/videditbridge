@@ -152,6 +152,15 @@ a.card:hover { text-decoration: none; transform: translateY(-2px); border-color:
 .card p { margin: 0; color: var(--muted); font-size: 14px; }
 .card .badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--accent-2); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; }
 
+/* Download page: one card per system, the visitor's own outlined */
+.downloads .card { display: flex; flex-direction: column; gap: 8px; }
+.downloads .card .badge { align-self: flex-start; }
+.downloads .card h3 { margin: 2px 0 0; }
+.downloads .card .button { margin-top: auto; justify-content: center; text-align: center; }
+.downloads .card.mine { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.downloads .size { font-size: 12px; color: var(--faint); min-height: 1em; overflow-wrap: anywhere; }
+.release-line { color: var(--muted); margin: -12px 0 8px; }
+
 /* Steps */
 .steps { counter-reset: step; list-style: none; padding: 0; margin: 18px 0; }
 .steps > li { position: relative; padding: 2px 0 18px 48px; margin: 0; }

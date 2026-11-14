@@ -20,6 +20,7 @@ const REPO = "https://github.com/dev-henen/videditbridge";
 
 const icon = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const ICONS = {
+  download: icon('<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>'),
   home: icon('<path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/>'),
   key: icon('<circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2"/><path d="m16 7 3 3"/>'),
   plug: icon('<path d="M9 7V3"/><path d="M15 7V3"/><path d="M6 7h12v4a6 6 0 0 1-12 0Z"/><path d="M12 17v4"/>'),
@@ -34,6 +35,7 @@ const ICONS = {
 /** The pages, in reading order, with the side menu's sections. */
 const PAGES = [
   { file: "index.html", title: "Getting started", icon: "home", section: "Start here" },
+  { file: "download.html", title: "Download", icon: "download", section: "Start here" },
   { file: "api-keys.html", title: "API keys", icon: "key", section: "Start here" },
   { file: "claude-app.html", title: "Use the Claude app", icon: "plug", section: "Start here" },
   { file: "asking.html", title: "Editing by asking", icon: "chat", section: "Using the app" },
@@ -75,6 +77,7 @@ function layout(page, body, description) {
   <button class="icon-btn menu-btn" type="button" data-action="menu" aria-label="Menu">${ICONS.menu}</button>
   <a class="brand" href="index.html"><img src="assets/icon-64.png" alt="">VideditBridge</a>
   <span class="spacer"></span>
+  <a class="link" href="download.html">Download</a>
   <a class="link hide-sm" href="api-keys.html">API keys</a>
   <a class="link hide-sm" href="tools.html">Tools</a>
   <a class="link" href="${REPO}" aria-label="GitHub">${ICONS.github.replace("<svg", '<svg width="18" height="18" style="vertical-align:-4px"')}</a>

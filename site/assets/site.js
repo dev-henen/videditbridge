@@ -42,6 +42,31 @@
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") box.classList.remove("open"); });
 
+  // Download page: the newest release's installers (prereleases too), straight from GitHub. Without an
+  // answer the buttons keep pointing at the releases page.
+  const releaseLine = document.getElementById("release-line");
+  if (releaseLine) {
+    const repo = "dev-henen/videditbridge";
+    const match = { windows: /windows.*\.exe$/i, macos: /macos.*\.dmg$/i, linux: /\.AppImage$/i };
+    const mine = /Win/.test(navigator.platform) ? "windows" : /Mac/.test(navigator.platform) ? "macos" : /Linux/.test(navigator.platform) ? "linux" : null;
+    if (mine) document.querySelector(`.card[data-os="${mine}"]`)?.classList.add("mine");
+    fetch(`https://api.github.com/repos/${repo}/releases?per_page=10`, { headers: { Accept: "application/vnd.github+json" } })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((releases) => {
+        const release = releases.find((r) => !r.draft && r.assets.length);
+        if (!release) return;
+        const date = new Date(release.published_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+        releaseLine.innerHTML = `Version <strong>${release.tag_name.replace(/^v/, "")}</strong>${release.prerelease ? " (test build)" : ""}, released ${date}. <a href="${release.html_url}">What is new</a>.`;
+        for (const [os, re] of Object.entries(match)) {
+          const asset = release.assets.find((a) => re.test(a.name));
+          if (!asset) continue;
+          document.querySelector(`[data-asset="${os}"]`).href = asset.browser_download_url;
+          document.querySelector(`[data-size="${os}"]`).textContent = `${asset.name}, ${(asset.size / 1e9).toFixed(2)} GB`;
+        }
+      })
+      .catch(() => { /* the links to the releases page stay */ });
+  }
+
   // Close the phone menu after picking a page.
   document.querySelectorAll(".side a").forEach((a) => a.addEventListener("click", () => document.body.classList.remove("nav-open")));
 

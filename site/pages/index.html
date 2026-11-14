@@ -3,7 +3,8 @@
   <h1>Edit videos by asking.</h1>
   <p>VideditBridge is a video editor for Windows, macOS and Linux that you use by talking to an AI. Say what you want, like "cut this into a 30 second trailer", and watch Claude, ChatGPT or Gemini make the edits in front of you.</p>
   <div class="buttons">
-    <a class="button primary" href="api-keys.html">Set up an API key</a>
+    <a class="button primary" href="download.html">Download for free</a>
+    <a class="button" href="api-keys.html">Set up an API key</a>
     <a class="button" href="claude-app.html">Use the Claude app instead</a>
   </div>
   <img class="shot" src="assets/screens/editor.png" alt="The VideditBridge editor: activity on the left, the preview and timeline in the middle, the chat on the right">
@@ -23,8 +24,9 @@
   </a>
 </div>
 
-<h2>Your first edit</h2>
+<h2 id="your-first-edit">Your first edit</h2>
 <ol class="steps">
+  <li><strong>Install VideditBridge.</strong> Get the installer for Windows, macOS or Linux from <a href="download.html">Download</a>; the page shows what to do the first time you open it.</li>
   <li><strong>Open VideditBridge and make a project.</strong> On the Projects page, type a name, pick a shape (16:9 for YouTube, 9:16 for Reels, Shorts and TikTok, 1:1 for square) and press <em>Create</em>. Every project is saved as you go.</li>
   <li><strong>Add an API key.</strong> Until there is one, the chat shows <em>Add an API key to start editing</em>. Press <em>Open Settings</em> and follow <a href="api-keys.html">API keys</a>; it takes about two minutes.</li>
   <li><strong>Bring in your footage.</strong> Drag video, photo or music files onto the chat, or press <kbd>+</kbd> under the chat box. They are copied into the project.</li>
@@ -46,8 +48,8 @@
   <tr><td>Right</td><td>The chat: your requests, the AI's replies, and the model picker under the box.</td></tr>
 </table>
 
-<h2>Building it yourself</h2>
-<p>Ready-made installers are on the way. Until then, you can run VideditBridge from its source code: you need <a href="https://nodejs.org">Node.js 20</a> or newer, the <a href="https://dotnet.microsoft.com/download">.NET 10 SDK</a> and <a href="https://rustup.rs">Rust</a> (for the fast parts of the editor; on Windows, with the Visual Studio C++ build tools).</p>
+<h2 id="building-it-yourself">Building it yourself</h2>
+<p>Most people should use the installers on the <a href="download.html">Download</a> page. To run VideditBridge from its source code instead (to contribute, for example), you need <a href="https://nodejs.org">Node.js 20</a> or newer, the <a href="https://dotnet.microsoft.com/download">.NET 10 SDK</a> and <a href="https://rustup.rs">Rust</a> (for the fast parts of the editor; on Windows, with the Visual Studio C++ build tools).</p>
 <pre><code>git clone https://github.com/dev-henen/videditbridge
 cd videditbridge
 npm install
