@@ -78,6 +78,13 @@ export interface ModelProvider {
   turn(request: TurnRequest): Promise<Turn>;
 }
 
+/**
+ * How long a provider keeps the conversation cached after the last step read or wrote it: Claude 5 minutes,
+ * renewed by each step; OpenAI at least 5 minutes of inactivity. Gemini's implicit cache has no stated
+ * lifetime, so it gets no countdown.
+ */
+export const CACHE_TTL_MS: Partial<Record<ProviderId, number>> = { anthropic: 5 * 60_000, openai: 5 * 60_000 };
+
 const MAX_TOKENS = 64000;
 
 const blocksOf = (m: AgentMessage): ContentBlock[] => (typeof m.content === "string" ? [{ type: "text", text: m.content }] : (m.content as ContentBlock[]));

@@ -85,6 +85,14 @@
 
       <chat:ChatComposer x:Name="Composer" DockPanel.Dock="Bottom" Margin="6"/>
 
+      <!-- The provider's cache of the conversation: while warm, the next request reads it at a fraction of the price -->
+      <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="6" Margin="10,4,8,0" IsVisible="{Binding ShowCache}"
+                  ToolTip.Tip="{Binding CacheTip}" Background="Transparent">
+        <Ellipse Width="6" Height="6" VerticalAlignment="Center" Fill="{StaticResource Accent}" IsVisible="{Binding CacheWarm}"/>
+        <Ellipse Width="6" Height="6" VerticalAlignment="Center" Stroke="{StaticResource Muted}" StrokeThickness="1" IsVisible="{Binding !CacheWarm}"/>
+        <TextBlock Text="{Binding CacheText}" FontSize="11" Foreground="{StaticResource Muted}"/>
+      </StackPanel>
+
       <!-- How full the conversation is: shows from half the limit; summarizing keeps requests small -->
       <Border DockPanel.Dock="Bottom" Margin="8,6,8,0" IsVisible="{Binding ShowContext}" ToolTip.Tip="{Binding ContextTip}">
         <DockPanel>

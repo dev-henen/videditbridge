@@ -82,17 +82,18 @@
           </Border>
         </WrapPanel>
 
-        <!-- Files going with the request -->
+        <!-- Files going with the request: one row, scrolled sideways (the mouse wheel scrolls it too) -->
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" PointerWheelChanged="OnFilesWheel">
         <ItemsControl x:Name="Files" IsVisible="False">
           <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+            <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate>
-              <Border Background="{StaticResource Hover}" CornerRadius="6" Padding="6,2,2,2" Margin="0,0,4,3" MaxWidth="200" ToolTip.Tip="{Binding Path}">
+              <Border Background="{StaticResource Hover}" CornerRadius="6" Padding="6,2,2,2" Margin="0,0,4,3" ToolTip.Tip="{Binding Path}">
                 <StackPanel Orientation="Horizontal">
                   <TextBlock Classes="icon" Text="{Binding Glyph}" FontSize="12" Foreground="{StaticResource Muted}" Margin="0,0,5,0"/>
-                  <TextBlock Text="{Binding Name}" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="140"/>
+                  <TextBlock Text="{Binding Name}" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="90"/>
                   <Button Click="OnRemoveFile" Tag="{Binding}" ToolTip.Tip="Remove" AutomationProperties.Name="Remove this file" MinHeight="18" MinWidth="18" Padding="0" Margin="3,0,0,0">
                     <TextBlock Classes="icon" Text="{x:Static shared:Icons.DismissSmall}" FontSize="10"/>
                   </Button>
@@ -101,6 +102,7 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
+        </ScrollViewer>
 
         <TextBox x:Name="PromptBox" Classes="bare" IsEnabled="{Binding ModelAvailable}" Padding="2,3" MinHeight="24" MaxHeight="120"
                  AcceptsReturn="True" TextWrapping="Wrap" Watermark="{Binding AskHint}" VerticalContentAlignment="Top"

@@ -188,6 +188,15 @@ public partial class ChatComposer : UserControl
         if ((sender as Control)?.Tag is Attachment a) _files.Remove(a);
     }
 
+    /// <summary>The files row scrolls sideways: the mouse wheel moves it left and right.</summary>
+    private void OnFilesWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer sv || sv.Extent.Width <= sv.Viewport.Width) return;
+        var step = (e.Delta.Y != 0 ? -e.Delta.Y : e.Delta.X) * 40;
+        sv.Offset = sv.Offset.WithX(Math.Clamp(sv.Offset.X + step, 0, sv.Extent.Width - sv.Viewport.Width));
+        e.Handled = true;
+    }
+
     private void OnDragOver(object? sender, DragEventArgs e)
     {
         var files = e.DataTransfer.Contains(DataFormat.File) && _vm.ModelAvailable;

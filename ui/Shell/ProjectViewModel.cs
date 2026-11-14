@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Text.Json.Nodes;
+using Avalonia.Threading;
 using VideoEditor.Chat;
 using VideoEditor.Engine;
 using VideoEditor.Preview;
@@ -111,7 +112,7 @@ public sealed class ProjectViewModel : Observable
     public string Summary { get => _summary; private set => Set(ref _summary, value); }
 
     private bool _agentRunning;
-    public bool AgentRunning { get => _agentRunning; private set => Set(ref _agentRunning, value, nameof(AgentRunning), nameof(CanAsk), nameof(SendTip)); }
+    public bool AgentRunning { get => _agentRunning; private set => Set(ref _agentRunning, value, nameof(AgentRunning), nameof(CanAsk), nameof(SendTip), nameof(ShowCache)); }
     /// <summary>What Send does now: send, or (while the AI works) queue.</summary>
     public string SendTip => AgentRunning ? "Send: the AI reads it at its next step and goes on with it (Enter)" : "Send (Enter; Shift+Enter for a new line)";
 
@@ -170,7 +171,7 @@ public sealed class ProjectViewModel : Observable
         {
             // The picker lists only models with a key and sends null for one it does not list: keep the model.
             if (value is null) return;
-            Set(ref _model, value, nameof(Model), nameof(ModelAvailable), nameof(CanAsk), nameof(AskHint), nameof(Assistant), nameof(EmptyTitle));
+            Set(ref _model, value, nameof(Model), nameof(ModelAvailable), nameof(CanAsk), nameof(AskHint), nameof(Assistant), nameof(EmptyTitle), nameof(ShowCache), nameof(CacheTip));
         }
     }
 
@@ -261,11 +262,59 @@ public sealed class ProjectViewModel : Observable
         _contextUsed = u["used"]?.GetValue<int>() ?? _contextUsed;
         _contextLimit = u["limit"]?.GetValue<int>() ?? _contextLimit;
         _autoCompact = u["autoCompact"]?.GetValue<bool>() ?? _autoCompact;
+        if (u is JsonObject o && o.ContainsKey("cache")) ApplyCache(u["cache"]);
         Raise(nameof(ContextFraction));
         Raise(nameof(ShowContext));
         Raise(nameof(ContextSweep));
         Raise(nameof(ContextText));
         Raise(nameof(ContextTip));
+    }
+
+    // ---------------------------------------------------------------- prompt cache
+
+    private DateTimeOffset? _cacheUntil;
+    private string? _cacheModel;
+    private DispatcherTimer? _cacheTimer;
+    /// <summary>The provider keeps the conversation cached until this time; shown while idle and for the model that made it.</summary>
+    public bool ShowCache => _cacheUntil is not null && !AgentRunning && _cacheModel == Model.Id;
+    public bool CacheWarm => _cacheUntil is { } until && until > DateTimeOffset.Now;
+    public string CacheText
+    {
+        get
+        {
+            if (_cacheUntil is not { } until || until <= DateTimeOffset.Now) return "Cache expired";
+            var left = until - DateTimeOffset.Now;
+            return $"Cached for {(int)left.TotalMinutes}:{left.Seconds:00}";
+        }
+    }
+    public string CacheTip => CacheWarm
+        ? $"{Assistant}'s provider keeps this conversation cached, so the next request reads it at a fraction of the price. Each request renews the cache."
+        : "The cache ran out. The next request reads the whole conversation at full price, then caches it again.";
+
+    private void ApplyCache(JsonNode? c)
+    {
+        _cacheUntil = c?["until"]?.GetValue<double>() is double ms ? DateTimeOffset.FromUnixTimeMilliseconds((long)ms) : null;
+        _cacheModel = c?["model"]?.GetValue<string>();
+        if (_cacheUntil is not null && _cacheTimer is null)
+        {
+            _cacheTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _cacheTimer.Tick += (_, _) =>
+            {
+                RaiseCache();
+                // Expired: the text stays as it is until the next request.
+                if (!CacheWarm) _cacheTimer?.Stop();
+            };
+        }
+        if (_cacheUntil is not null) _cacheTimer!.Start(); else _cacheTimer?.Stop();
+        RaiseCache();
+    }
+
+    private void RaiseCache()
+    {
+        Raise(nameof(ShowCache));
+        Raise(nameof(CacheWarm));
+        Raise(nameof(CacheText));
+        Raise(nameof(CacheTip));
     }
 
     /// <summary>Summarize the conversation now, so the next requests read a short one.</summary>

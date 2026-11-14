@@ -100,7 +100,9 @@ const DEFAULT_CONTEXT_LIMIT = 100_000;
 /** How full this conversation's context is, against the limit (for the meter above the chat box). */
 function usageOf(o: OpenProject) {
   const used = o.agent?.contextSize ?? o.conversation.usage?.used ?? (o.conversation.messages.length ? estimateTokens(o.conversation.messages) : 0);
-  return { used, limit: contextLimit(), autoCompact: settings.autoCompact !== false };
+  // When the provider's cache of the conversation runs out, for the countdown above the chat box.
+  const cache = o.agent?.cacheState ?? null;
+  return { used, limit: contextLimit(), autoCompact: settings.autoCompact !== false, cache };
 }
 
 function reportUsage(o: OpenProject, used: number) {

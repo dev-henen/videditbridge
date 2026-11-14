@@ -132,3 +132,28 @@ describe("the editing agent's turn", () => {
     expect(estimateTokens([{ role: "user", content: "x".repeat(400) }])).toBe(100);
   });
 });
+
+describe("the prompt cache countdown", () => {
+  const usage = { inputTokens: 30_000, outputTokens: 200, cachedTokens: 28_000 };
+  const reply = (id: "anthropic" | "google"): ModelProvider => ({ id, turn: async () => ({ content: [{ type: "text", text: "ok" }], usage, stopReason: "end_turn" }) });
+
+  it("keeps Claude's cache for five minutes from the last step, for that model", async () => {
+    const agent = new EditorAgent(new EditorSession(), { providers: { anthropic: reply("anthropic") } });
+    expect(agent.cacheState).toBeUndefined();
+    const before = Date.now();
+    await agent.run("hello");
+    const cache = agent.cacheState!;
+    expect(cache.model).toBe("claude-opus-5-5");
+    expect(cache.until).toBeGreaterThanOrEqual(before + 5 * 60_000);
+    expect(cache.until).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
+    // Summarizing replaces the conversation: nothing cached matches it.
+    await agent.compact();
+    expect(agent.cacheState).toBeUndefined();
+  });
+
+  it("shows no countdown for Gemini, whose cache has no stated lifetime", async () => {
+    const agent = new EditorAgent(new EditorSession(), { model: "gemini-4-carbon", providers: { google: reply("google") } });
+    await agent.run("hello");
+    expect(agent.cacheState).toBeUndefined();
+  });
+});

@@ -4,7 +4,7 @@ import { extname } from "node:path";
 import type { EditorSession } from "../claude/session.js";
 import { TOOLS, executeTool, toAnthropicTools, toToolResultContent } from "../claude/tools.js";
 import { DEFAULT_MODEL, assistantOf, providerOf, type ProviderId } from "./models.js";
-import { AnthropicProvider, providerFor, type AgentMessage, type ContentBlock, type ModelProvider } from "./providers.js";
+import { AnthropicProvider, CACHE_TTL_MS, providerFor, type AgentMessage, type ContentBlock, type ModelProvider } from "./providers.js";
 
 export const EDITOR_SYSTEM_PROMPT = `You are a professional video editor working through editing tools inside a desktop video editor. The user watches every step live.
 
@@ -172,6 +172,13 @@ export class EditorAgent {
   /** How many tokens the context held at the last step the provider measured, and how many messages that covered. */
   private contextTokens = 0;
   private measured = 0;
+  /** When the provider's cache of this conversation runs out (ms since epoch), and for which model. */
+  private cache: { until: number; model: string } | undefined;
+
+  /** The conversation's cache, while the provider is known to keep it: the next step reads it at a fraction of the price. */
+  get cacheState(): { until: number; model: string } | undefined {
+    return this.cache;
+  }
 
   /** How full the context is now: the last measure plus an estimate of what came after it. */
   get contextSize(): number {
@@ -191,6 +198,8 @@ export class EditorAgent {
     this.messages.splice(0, this.messages.length, { role: "user", content: this.summaryText(summary) }, { role: "assistant", content: "Understood. I have the summary of our conversation and will go on from there." });
     this.contextTokens = estimateTokens(this.messages);
     this.measured = this.messages.length;
+    // The summary is new text: nothing cached matches it.
+    this.cache = undefined;
     callbacks.onCompact?.(summary);
     callbacks.onUsage?.(this.contextTokens);
     return summary;
@@ -202,6 +211,8 @@ export class EditorAgent {
     this.messages.splice(0, this.messages.length, { role: "user", content: `${this.summaryText(summary)}\n\nGo on with the task under way.` });
     this.contextTokens = estimateTokens(this.messages);
     this.measured = this.messages.length;
+    // The summary is new text: nothing cached matches it.
+    this.cache = undefined;
     callbacks.onCompact?.(summary);
     callbacks.onUsage?.(this.contextTokens);
   }
@@ -309,6 +320,9 @@ export class EditorAgent {
           // Exact from here: what the model read and wrote is the context now.
           this.contextTokens = reply.usage.inputTokens + reply.usage.outputTokens;
           this.measured = this.messages.length + 1;
+          // The step read (or wrote) the cache, which keeps it for the provider's lifetime from now.
+          const ttl = CACHE_TTL_MS[id];
+          this.cache = ttl ? { until: Date.now() + ttl, model: this.model } : undefined;
           callbacks.onUsage?.(this.contextTokens);
         }
 
