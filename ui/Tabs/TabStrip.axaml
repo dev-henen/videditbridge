@@ -38,6 +38,9 @@
     <Style Selector="Button.tabSearch">
       <Setter Property="Background" Value="#1AFFFFFF"/>
     </Style>
+    <Style Selector="Button.tabSearch:pointerover /template/ Border#b">
+      <Setter Property="Background" Value="#26FFFFFF"/>
+    </Style>
   </UserControl.Styles>
 
   <!-- Empty space lets clicks through to the title bar, so it still moves the window -->

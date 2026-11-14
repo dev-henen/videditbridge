@@ -90,8 +90,10 @@
           </Border>
         </ControlTemplate>
       </Setter>
+      <!-- A soft hover: see-through white, so the fade from Transparent (which is clear white) only changes
+           the opacity. A solid grey here faded through a lighter grey on the way, which read as a blink. -->
       <Style Selector="^:pointerover /template/ Border#b">
-        <Setter Property="Background" Value="{StaticResource Hover}"/>
+        <Setter Property="Background" Value="#14FFFFFF"/>
       </Style>
       <Style Selector="^:pressed /template/ Border#b">
         <Setter Property="RenderTransform" Value="scale(0.96)"/>
@@ -119,7 +121,8 @@
       <Setter Property="Padding" Value="8,5"/>
       <Setter Property="Template">
         <ControlTemplate>
-          <Border Name="b" Padding="{TemplateBinding Padding}" Margin="0,0,2,0" CornerRadius="5" Background="Transparent">
+          <!-- Starts as a clear Panel2, so selecting fades only its opacity (no light flash on the way) -->
+          <Border Name="b" Padding="{TemplateBinding Padding}" Margin="0,0,2,0" CornerRadius="5" Background="#00222222">
             <Border.Transitions>
               <Transitions><BrushTransition Property="Background" Duration="0:0:0.14"/></Transitions>
             </Border.Transitions>
