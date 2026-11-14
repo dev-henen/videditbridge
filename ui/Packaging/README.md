@@ -1,6 +1,22 @@
-# Packaging metadata
+# Packaging
 
-Per-system files for the desktop app. Building installers (MSIX or MSI, a signed DMG, an AppImage) is a later step; these are the pieces each one uses.
+## Making the installers
+
+Push a version tag that matches `package.json` (`git tag v0.1.0`, `git push origin v0.1.0`). The Release workflow (`.github/workflows/release.yml`) then builds, on GitHub's runners:
+
+- Windows: `VideditBridge-<version>-windows-x64-setup.exe` (Inno Setup; installs for the user, no admin prompt)
+- macOS: `VideditBridge-<version>-macos-arm64.dmg` (signed ad hoc, not notarized)
+- Linux: `VideditBridge-<version>-linux-x86_64.AppImage` (needs the system's VLC)
+
+and attaches them to a draft, prerelease GitHub release with the notes in `.github/release-notes.md`. Check it and press Publish. "Run workflow" on the Actions page builds the installers without a release (they are in the run's artifacts).
+
+Each runner runs `scripts/package-app.ts`, which also works on a computer of that system after `npm ci` and `npm run native` (Windows needs Inno Setup 6). It publishes the app self-contained (`dotnet publish`, no .NET needed), stages the engine beside it as the repository lays it out (`dist`, `native`, `assets/fonts`, runtime `node_modules`, a Node runtime, `models`), checks that the staged engine starts on its own Node (FFmpeg, the native kernels, the render engine) and makes the installer in `release/`.
+
+Not signed yet: Windows shows SmartScreen's warning on first run and macOS needs right-click, Open. Signing needs a Windows code signing certificate and an Apple Developer ID; the release notes tell testers what to do until then.
+
+## Metadata
+
+Per-system files for the desktop app; these are the pieces each installer uses.
 
 The developer is Moses Henen, and the app's home is [github.com/dev-henen/videditbridge](https://github.com/dev-henen/videditbridge) (user guide at [dev-henen.github.io/videditbridge](https://dev-henen.github.io/videditbridge/), problems at its issues page). Every package says so:
 

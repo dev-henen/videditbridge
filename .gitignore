@@ -13,3 +13,7 @@ native/ave-render/ave-render.*
 
 # The user guide as built (scripts/build-site.mjs); GitHub Pages builds its own
 site/_site/
+
+# Installers and their staging (scripts/package-app.ts), and the models cache in CI
+release/
+release-models/

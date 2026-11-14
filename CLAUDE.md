@@ -17,6 +17,7 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
 - `npm run native` builds the Rust addon (`native/ave-native`) and the GPU render engine (`native/ave-render`) for this machine; tests need them. `cd native && cargo test --release` runs the Rust tests (on Windows add `--target x86_64-pc-windows-msvc` inside the Visual Studio environment; `npm run native` does that itself).
 - Scratch renders go in `test/.output/` (gitignored).
 - `npm run docs` regenerates `docs/reference/*` (except `api.md` and `cli.md`, which are hand-written) from the catalogs and tools. Run it after changing any tool, effect, transition, animation, caption style, component or template. `test/repo/docs.test.ts` fails when these files are stale. Keep `docs/guides/*` accurate by hand.
+- Installers: a `v<version>` tag runs `.github/workflows/release.yml` (`scripts/package-app.ts` on each system) and drafts a GitHub release; see `ui/Packaging/README.md`. Every model ships with the app: a new model goes on the list in `engine/tools/bundled-models.ts` (`test/repo/bundled-models.test.ts` checks), with its license in `ui/THIRD-PARTY-NOTICES.md`. The project is under its own source-available license (`LICENSE`), not MIT.
 
 ## Rust (native/)
 - Move code to Rust only when it is on a hot path (per pixel, sample or frame, and a measured share of the time) and ports easily behind the same function; see section 3.5 of `docs/design/cinematic-grade-and-vfx.md`.

@@ -1,0 +1,106 @@
+name: Release
+
+# Builds the installers on Windows, macOS and Linux (scripts/package-app.ts) and attaches them to a
+# draft GitHub release, to check and publish by hand. Push a version tag to make one:
+#   git tag v0.1.0 && git push origin v0.1.0
+# The tag must match the version in package.json. "Run workflow" on the Actions page builds the
+# installers without a release; they are then in the run's artifacts.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  installer:
+    name: Installer (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "Windows x64", os: windows-latest }
+          - { name: "macOS arm64", os: macos-latest }
+          # The oldest Ubuntu runner, so the native parts need only glibc 2.35 and run on most systems.
+          - { name: "Linux x64", os: ubuntu-22.04 }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          v=$(node -p "require('./package.json').version")
+          [ "v$v" = "${GITHUB_REF_NAME}" ] || { echo "Tag ${GITHUB_REF_NAME} does not match package.json version $v"; exit 1; }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+
+      - run: npm ci
+      - name: Native kernels and render engine
+        run: npm run native
+
+      # Every model the app ships (about 1 GB), kept between runs; the same files on every system.
+      - name: Models from the cache
+        uses: actions/cache@v4
+        with:
+          path: release-models
+          key: models-${{ hashFiles('engine/tools/bundled-models.ts', 'package-lock.json') }}
+          enableCrossOsArchive: true
+      - name: Models
+        run: npx tsx scripts/bundle-models.ts release-models
+
+      - name: Inno Setup
+        if: runner.os == 'Windows'
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      - name: Build the installer
+        run: npx tsx scripts/package-app.ts --models release-models
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ runner.os }}
+          path: |
+            release/VideditBridge-*.exe
+            release/VideditBridge-*.dmg
+            release/VideditBridge-*.AppImage
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    name: Draft release
+    needs: installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sed "s/{version}/${GITHUB_REF_NAME#v}/g" .github/release-notes.md > notes.md
+          gh release create "$GITHUB_REF_NAME" installers/* --draft --prerelease --title "VideditBridge ${GITHUB_REF_NAME#v}" --notes-file notes.md

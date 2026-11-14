@@ -199,9 +199,11 @@ Done:
 - **Who makes it:** Moses Henen, home at [github.com/dev-henen/videditbridge](https://github.com/dev-henen/videditbridge), in every package's metadata: the Windows executable's properties (`ui/VideditBridge.csproj`), the macOS bundle (`io.github.dev-henen.videditbridge`, the copyright), Linux AppStream metadata for software centers and Flathub (`io.github.dev_henen.videditbridge`, with the desktop file and icons renamed to match), the engine's `package.json`, and the app's About page.
 - **Every model comes with the app** (about 1 GB, twelve models; the list is `engine/tools/bundled-models.ts`, their licenses in `ui/THIRD-PARTY-NOTICES.md`, all MIT or Apache-2.0). An installed app keeps them in `engine/models` and reads them in place (`bundledModelsDir`), so nothing downloads on first use. `scripts/bundle-models.ts` fills the folder; `test/repo/bundled-models.test.ts` fails when the engine loads a model that is not on the list. The models folder in the app cache stays for downloads that are not bundled (another Whisper size through the library).
 
+- **Installers built on GitHub** (`.github/workflows/release.yml`, `scripts/package-app.ts`): a version tag builds a Windows setup (Inno Setup, per user), a macOS arm64 DMG (signed ad hoc) and a Linux AppImage, each with the engine on its own Node, FFmpeg, the native kernels, the render engine, the fonts and every model, and attaches them to a draft release. The staged Windows app was run from its folder: it started its own engine and created and opened a project.
+
 Left:
 
 - Prebuilt npm packages of `ave-native` per target (`@videditbridge/native-<target>`, which the loader already tries first) with `ave-render`; macOS x64 and glibc 2.31 builds.
-- The bundled host per target (Node and `dist`, or a single `ave-host`), with FFmpeg, the fonts and `engine/models`.
-- Installers: MSIX or MSI, a notarized DMG, AppImage then Flatpak.
+- Signing: a Windows code signing certificate, and an Apple Developer ID to notarize the DMG.
+- Intel macOS, MSIX, and Flatpak after the AppImage.
 - The whole test suite, once, before the first installer (section 10).
