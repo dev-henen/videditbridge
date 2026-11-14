@@ -34,6 +34,10 @@
       <Setter Property="Padding" Value="0"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
+    <!-- The tab search button: a chevron on a faint square, lit on hover -->
+    <Style Selector="Button.tabSearch">
+      <Setter Property="Background" Value="#1AFFFFFF"/>
+    </Style>
   </UserControl.Styles>
 
   <!-- Empty space lets clicks through to the title bar, so it still moves the window -->
@@ -41,9 +45,9 @@
     <!-- The app's logo, as in any desktop app's corner -->
     <Image DockPanel.Dock="Left" Source="/Assets/AppIcon.png" Width="20" Height="20" Margin="0,2,8,0" VerticalAlignment="Center"
            RenderOptions.BitmapInterpolationMode="HighQuality" IsHitTestVisible="False" AutomationProperties.Name="VideditBridge"/>
-    <!-- The side panel: open tabs, recently closed projects, settings -->
-    <Button x:Name="MenuButton" DockPanel.Dock="Left" Classes="chrome" Click="OnMenu" ToolTip.Tip="Menu: tabs, recently closed, settings" AutomationProperties.Name="Menu" Margin="0,2,6,0">
-      <TextBlock Classes="icon" Text="{x:Static shared:Icons.PanelLeft}" FontSize="14"/>
+    <!-- Tab search, as in a browser: open tabs, recently closed projects, settings -->
+    <Button x:Name="MenuButton" DockPanel.Dock="Left" Classes="chrome tabSearch" Click="OnMenu" ToolTip.Tip="Search tabs (Ctrl+Shift+A)" AutomationProperties.Name="Search tabs" Margin="0,2,6,0">
+      <TextBlock Classes="icon" Text="{x:Static shared:Icons.ChevronDown}" FontSize="14"/>
     </Button>
 
     <!-- Tabs share the row: each as wide as fits, from 232 px down to a minimum, then the row scrolls -->

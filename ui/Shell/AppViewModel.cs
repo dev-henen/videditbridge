@@ -33,11 +33,49 @@ public sealed class AppTab : Observable
     public string Label => Project?.ProjectName ?? (IsSettings ? "Settings" : "New tab");
 
     private bool _isSelected;
-    public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            // Leaving or coming to the tab both count as its last use.
+            if (Set(ref _isSelected, value)) LastActive = DateTimeOffset.Now;
+        }
+    }
+
+    /// <summary>When the tab was last in front, for the tab search ("5 mins ago").</summary>
+    public DateTimeOffset LastActive { get; private set; } = DateTimeOffset.Now;
+
+    /// <summary>The second line in the tab search: the project's folder and when it was last in front.</summary>
+    public string Subtitle => Project is { } p
+        ? $"{TimeText.Folder(p.Dir)} · {(IsSelected ? "current tab" : TimeText.Ago(LastActive))}"
+        : IsSettings ? "App settings" : "Projects page";
 }
 
-/// <summary>A project closed in this or an earlier session, to reopen from the side panel.</summary>
-public sealed record ClosedProject(string Dir, string Name);
+/// <summary>A project closed in this or an earlier session, to reopen from the tab search.</summary>
+public sealed record ClosedProject(string Dir, string Name, DateTimeOffset? ClosedAt = null)
+{
+    /// <summary>The second line in the tab search: the project's folder and when it was closed.</summary>
+    public string Subtitle => ClosedAt is { } t ? $"{TimeText.Folder(Dir)} · closed {TimeText.Ago(t)}" : TimeText.Folder(Dir);
+}
+
+/// <summary>How long ago, the way a browser's tab search says it.</summary>
+public static class TimeText
+{
+    public static string Ago(DateTimeOffset t)
+    {
+        var d = DateTimeOffset.Now - t;
+        if (d.TotalMinutes < 1) return "just now";
+        if (d.TotalHours < 1) return Plural((int)d.TotalMinutes, "min");
+        if (d.TotalDays < 1) return Plural((int)d.TotalHours, "hour");
+        return d.TotalDays < 30 ? Plural((int)d.TotalDays, "day") : t.LocalDateTime.ToString("d", System.Globalization.CultureInfo.CurrentCulture);
+    }
+
+    /// <summary>A project's folder name, from its path.</summary>
+    public static string Folder(string dir) => Path.GetFileName(Path.TrimEndingDirectorySeparator(dir));
+
+    private static string Plural(int n, string unit) => $"{n} {unit}{(n == 1 ? "" : "s")} ago";
+}
 
 /// <summary>
 /// The app: the engine host, the tabs (each project runs on its own, side by side), the projects
@@ -117,7 +155,7 @@ public sealed class AppViewModel : Observable, IDisposable
     private void Remember(ProjectViewModel p)
     {
         foreach (var same in RecentlyClosed.Where(c => SamePath(c.Dir, p.Dir)).ToList()) RecentlyClosed.Remove(same);
-        RecentlyClosed.Insert(0, new ClosedProject(p.Dir, p.ProjectName));
+        RecentlyClosed.Insert(0, new ClosedProject(p.Dir, p.ProjectName, DateTimeOffset.Now));
         while (RecentlyClosed.Count > RecentlyClosedKept) RecentlyClosed.RemoveAt(RecentlyClosed.Count - 1);
     }
 
@@ -324,7 +362,7 @@ public sealed class AppViewModel : Observable, IDisposable
         try
         {
             var open = Tabs.Where(t => t.Project is not null).Select(t => t.Project!.Dir).ToArray();
-            var closed = RecentlyClosed.Select(c => new { dir = c.Dir, name = c.Name }).ToArray();
+            var closed = RecentlyClosed.Select(c => new { dir = c.Dir, name = c.Name, closedAt = c.ClosedAt?.ToUnixTimeMilliseconds() }).ToArray();
             File.WriteAllText(file, JsonSerializer.Serialize(new { open, selected = SelectedProject?.Dir, closed }));
         }
         catch { /* only a convenience */ }
@@ -344,7 +382,8 @@ public sealed class AppViewModel : Observable, IDisposable
                 RecentlyClosed.Clear();
                 foreach (var c in saved?["closed"]?.AsArray() ?? [])
                     if (c?["dir"]?.GetValue<string>() is { } d && File.Exists(Path.Combine(d, "project.json")))
-                        RecentlyClosed.Add(new ClosedProject(d, c["name"]?.GetValue<string>() ?? Path.GetFileName(d)));
+                        RecentlyClosed.Add(new ClosedProject(d, c["name"]?.GetValue<string>() ?? Path.GetFileName(d),
+                            c["closedAt"]?.GetValue<long>() is long ms ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : null));
             }
         }
         catch { /* a damaged file just means no tabs to restore */ }

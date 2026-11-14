@@ -38,9 +38,9 @@ public partial class MainWindow : Window
         DataContext = _vm;
         Tabs.Attach(_vm);
         Tabs.MenuRequested += () => ShowSidePanel(!_sideOpen);
-        SideTabs.ItemsSource = _vm.Tabs;
-        SideClosed.ItemsSource = _vm.RecentlyClosed;
-        _vm.RecentlyClosed.CollectionChanged += (_, _) => SideNoneClosed.IsVisible = _vm.RecentlyClosed.Count == 0;
+        // While the tab search is open, the lists follow tabs opening and closing.
+        _vm.Tabs.CollectionChanged += (_, _) => { if (_sideOpen) FilterSide(); };
+        _vm.RecentlyClosed.CollectionChanged += (_, _) => { if (_sideOpen) FilterSide(); };
         _vm.ErrorRaised += message => _ = ShowMessage(message);
         _vm.ConfirmClose = Confirm;
         _vm.TabOpened += OnTabOpened;
@@ -153,41 +153,63 @@ public partial class MainWindow : Window
 
     // ------------------------------------------------------------- side panel
 
-    private int _sideRun;
-    /// <summary>Open, or opening (the panel stays visible while it slides away).</summary>
     private bool _sideOpen;
-    private static readonly TransformOperations SideIn = TransformOperations.Parse("translateX(0px)");
-    private static readonly TransformOperations SideOut = TransformOperations.Parse("translateX(-18px)");
 
-    /// <summary>The side panel slides in over the page, which blurs and dims behind it; closing runs it backwards.</summary>
-    private async void ShowSidePanel(bool show)
+    /// <summary>The tab search drops down over the page at once, with no animation; the page stays as it is behind it.</summary>
+    private void ShowSidePanel(bool show)
     {
-        SideNoneClosed.IsVisible = _vm.RecentlyClosed.Count == 0;
-        var run = ++_sideRun;
         _sideOpen = show;
         if (show)
         {
-            SidePanel.IsVisible = true;
-            Pages.Effect ??= new BlurEffect { Radius = 0 };
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (run != _sideRun) return;
-                SideBackdrop.Opacity = 1;
-                SideSheet.Opacity = 1;
-                SideSheet.RenderTransform = SideIn;
-                Pages.Effect = new BlurEffect { Radius = 8 };
-            }, DispatcherPriority.Render);
-            return;
+            SideSearch.Text = "";
+            FilterSide();
         }
-        SideBackdrop.Opacity = 0;
-        SideSheet.Opacity = 0;
-        SideSheet.RenderTransform = SideOut;
-        if (Pages.Effect is not null) Pages.Effect = new BlurEffect { Radius = 0 };
-        await Task.Delay(220);
-        if (run != _sideRun) return;
-        SidePanel.IsVisible = false;
-        // No effect at rest: the page draws as it is (a blur of 0 still costs a pass).
-        Pages.Effect = null;
+        SidePanel.IsVisible = show;
+        if (show) Dispatcher.UIThread.Post(() => SideSearch.Focus(), DispatcherPriority.Input);
+    }
+
+    /// <summary>The open tabs and recently closed projects whose name or folder has the search text.</summary>
+    private void FilterSide()
+    {
+        var q = SideSearch.Text?.Trim() ?? "";
+        bool Has(string? text) => text?.Contains(q, StringComparison.CurrentCultureIgnoreCase) == true;
+        var tabs = _vm.Tabs.Where(t => q.Length == 0 || Has(t.Label) || Has(t.Project?.Dir)).ToList();
+        var closed = _vm.RecentlyClosed.Where(c => q.Length == 0 || Has(c.Name) || Has(c.Dir)).ToList();
+        // New lists each time, so the "5 mins ago" lines are read afresh.
+        SideTabs.ItemsSource = tabs;
+        SideClosed.ItemsSource = closed;
+        SideNoTabs.IsVisible = tabs.Count == 0;
+        SideNoneClosed.Text = q.Length == 0 ? "Projects you close show here, to reopen." : "No closed project matches.";
+        SideNoneClosed.IsVisible = closed.Count == 0;
+    }
+
+    private void OnSideSearch(object? sender, TextChangedEventArgs e)
+    {
+        if (_sideOpen) FilterSide();
+    }
+
+    /// <summary>Enter goes to the first match: an open tab, else a closed project to reopen.</summary>
+    private async void OnSideSearchKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+        if ((SideTabs.ItemsSource as IList<AppTab>)?.FirstOrDefault() is { } tab)
+        {
+            _vm.SelectedTab = tab;
+            ShowSidePanel(false);
+        }
+        else if ((SideClosed.ItemsSource as IList<ClosedProject>)?.FirstOrDefault() is { } c)
+        {
+            ShowSidePanel(false);
+            await _vm.ReopenAsync(c);
+        }
+    }
+
+    /// <summary>The close button on a tab's row: closes that tab and keeps the search open.</summary>
+    private async void OnSideCloseTab(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if ((sender as Control)?.Tag is AppTab tab) await _vm.CloseTabAsync(tab);
     }
 
     private void OnSideBackdrop(object? sender, PointerPressedEventArgs e) => ShowSidePanel(false);
@@ -222,12 +244,18 @@ public partial class MainWindow : Window
         _vm.OpenSettings();
     }
 
-    // Ctrl+T new tab, Ctrl+W close it, Ctrl+Tab and Ctrl+Shift+Tab move between tabs, Ctrl+, settings; Escape closes the side panel.
+    // Ctrl+T new tab, Ctrl+W close it, Ctrl+Tab and Ctrl+Shift+Tab move between tabs, Ctrl+, settings, Ctrl+Shift+A the tab search; Escape closes it.
     private async void OnKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape && _sideOpen)
         {
             ShowSidePanel(false);
+            e.Handled = true;
+            return;
+        }
+        if (e.Key == Key.A && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift))
+        {
+            ShowSidePanel(!_sideOpen);
             e.Handled = true;
             return;
         }
