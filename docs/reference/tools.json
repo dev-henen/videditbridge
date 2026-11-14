@@ -1,5 +1,5 @@
 {
-  "count": 115,
+  "count": 121,
   "groups": [
     {
       "group": "Inspect & project",
@@ -43,6 +43,41 @@
           "name": "offer_choices",
           "edits": false,
           "summary": "Let the user choose when taste decides, instead of deciding for them: a narration voice (play the files preview_voice made), a music track, a sound..."
+        }
+      ]
+    },
+    {
+      "group": "Your files, memory & plans",
+      "tools": [
+        {
+          "name": "search_files",
+          "edits": false,
+          "summary": "Find the user's own media and documents on this computer by name: videos, music, photos, and text documents (scripts, notes, subtitles)."
+        },
+        {
+          "name": "read_document",
+          "edits": false,
+          "summary": "Read a text document the user keeps (a script, notes, a shot list, subtitles), from the folders they allow or from the project, to follow it in the..."
+        },
+        {
+          "name": "copy_to_project",
+          "edits": true,
+          "summary": "Copy media the user keeps on this computer (from search_files) into the project, and add it as an asset ready for add_clip, add_audio or..."
+        },
+        {
+          "name": "remember",
+          "edits": false,
+          "summary": "Remember something for later requests: about the user in general (a style they like, their brand colors, their channel, how they want captions) or..."
+        },
+        {
+          "name": "forget",
+          "edits": false,
+          "summary": "Forget something you remembered, by its id (shown in brackets in what you remember), when it is wrong or the user asks."
+        },
+        {
+          "name": "propose_plan",
+          "edits": false,
+          "summary": "Propose an edit plan for the user to approve before you change anything: for big or open requests (a full edit from raw footage, a restyle), or..."
         }
       ]
     },

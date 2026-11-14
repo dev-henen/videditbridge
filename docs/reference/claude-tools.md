@@ -2,13 +2,14 @@
 
 # Claude tools
 
-115 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+121 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
 ## Contents
 
 - **Inspect & project**: [get_project](#get_project), [new_project](#new_project), [set_project_settings](#set_project_settings), [undo](#undo), [redo](#redo), [clean_up_media](#clean_up_media), [review_edit](#review_edit), [offer_choices](#offer_choices)
+- **Your files, memory & plans**: [search_files](#search_files), [read_document](#read_document), [copy_to_project](#copy_to_project), [remember](#remember), [forget](#forget), [propose_plan](#propose_plan)
 - **Library**: [list_templates](#list_templates), [get_template](#get_template), [apply_template](#apply_template), [list_effects](#list_effects), [list_audio_effects](#list_audio_effects), [list_transitions](#list_transitions), [list_animations](#list_animations), [list_caption_styles](#list_caption_styles), [list_components](#list_components)
 - **Media & primary track**: [import_media](#import_media), [add_clip](#add_clip), [update_clip](#update_clip), [remove_clip](#remove_clip), [move_clip](#move_clip), [split_clip](#split_clip), [trim_clip](#trim_clip), [split_edit](#split_edit), [freeze_frame](#freeze_frame), [set_speed](#set_speed), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [set_transition](#set_transition), [add_effect](#add_effect), [remove_effect](#remove_effect), [create_effect](#create_effect), [animate_effect](#animate_effect)
 - **People & faces**: [retouch](#retouch), [detect_faces](#detect_faces), [reframe](#reframe), [follow_face](#follow_face)
@@ -97,6 +98,65 @@ _No parameters._
 |---|---|---|---|---|
 | `question` | string | yes |  | What to choose, e.g. 'Which voice should narrate?' |
 | `options` | { label, description, audio, image }[] | yes |  |  |
+
+## Your files, memory & plans
+
+### search_files
+
+**read-only**. Find the user's own media and documents on this computer by name: videos, music, photos, and text documents (scripts, notes, subtitles). Searches only the folders the user allows (by default Videos, Pictures, Music, Downloads, Desktop and Documents), newest first. Read-only: it changes nothing. Use copy_to_project to bring media into the project and read_document to read a document.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string |  |  | Words that must all be in the file's name or folder, e.g. 'beach 2024' or 'interview'. Leave out to list the newest files. |
+| `kind` | "video" \| "audio" \| "image" \| "document" \| "media" \| "any" |  | `"media"` | media: video, audio and pictures |
+| `folder` | string |  |  | Search only this folder (it must be inside an allowed folder) |
+| `limit` | integer |  | `30` | (≥ 1, ≤ 100) |
+
+### read_document
+
+**read-only**. Read a text document the user keeps (a script, notes, a shot list, subtitles), from the folders they allow or from the project, to follow it in the edit. Text formats only (.txt, .md, .srt, .vtt, .csv, .json, .html, .rtf and similar); PDF and Word files cannot be read yet. Read-only.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `path` | string | yes |  |  |
+| `maxChars` | integer |  | `20000` | (≥ 200, ≤ 60000) |
+
+### copy_to_project
+
+**edits**. Copy media the user keeps on this computer (from search_files) into the project, and add it as an asset ready for add_clip, add_audio or add_media_overlay. Only video, audio and pictures, only from the folders the user allows; the original is never changed or moved. A file already in the project is not copied again.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `path` | string | yes |  | The file, as search_files listed it |
+| `id` | string |  |  | Asset id to give it |
+| `label` | string |  |  |  |
+
+### remember
+
+**read-only**. Remember something for later requests: about the user in general (a style they like, their brand colors, their channel, how they want captions) or about this project (who the people are, what the video is for, decisions made). Save lasting preferences and facts, not one-off steps. Keep each item short. The user sees and can remove what you remember.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `text` | string | yes |  |  |
+| `scope` | "general" \| "project" | yes |  | general: every project; project: this one |
+
+### forget
+
+**read-only**. Forget something you remembered, by its id (shown in brackets in what you remember), when it is wrong or the user asks.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `id` | string | yes |  |  |
+
+### propose_plan
+
+**read-only**. Propose an edit plan for the user to approve before you change anything: for big or open requests (a full edit from raw footage, a restyle), or whenever the user asks for a plan. Look first (get_project, render_contact_sheet, analyze_audio, search_files) so the plan is concrete. The app shows it as a card with Approve and Change it. End your turn right after calling it; the user's answer arrives as their next message.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `title` | string | yes |  | What the plan makes, e.g. '30 second vertical teaser' |
+| `steps` | string[] | yes |  | The edits in order, each one line |
+| `notes` | string |  |  | Assumptions or questions, briefly |
 
 ## Library
 

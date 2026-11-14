@@ -9,7 +9,10 @@ public sealed class ChatMessage(bool isUser, string text, IReadOnlyList<string>?
     private bool _isStreaming;
 
     public bool IsUser { get; } = isUser;
-    public bool IsAssistant => !IsUser;
+    public bool IsAssistant => !IsUser && !IsNote;
+    /// <summary>A note from the app (the conversation was summarized), shown as a quiet line, not a message.</summary>
+    public string? Note { get; init; }
+    public bool IsNote => Note is not null;
     public IReadOnlyList<string> Attachments { get; } = attachments ?? [];
     public bool HasAttachments => Attachments.Count > 0;
     /// <summary>What the request was about (a picked clip, a spot in the frame).</summary>
@@ -24,13 +27,25 @@ public sealed class ChatMessage(bool isUser, string text, IReadOnlyList<string>?
     /// <summary>Claude is working but has not written anything yet.</summary>
     public bool IsThinking => IsStreaming && !HasText;
 
-    public void Append(string delta) => Text += delta;
+    /// <summary>Streamed text; a bubble does not start with the blank line that separates steps.</summary>
+    public void Append(string delta) => Text = Text.Length == 0 ? delta.TrimStart('\n') : Text + delta;
 
     private string? _error;
     /// <summary>The request failed: what went wrong, in a sentence; the chat shows it in an error box under the reply.</summary>
     public string? Error { get => _error; set => Set(ref _error, value, nameof(Error), nameof(HasError)); }
     public bool HasError => !string.IsNullOrEmpty(Error);
 }
+
+/// <summary>An edit plan the AI proposed (propose_plan), to approve or change.</summary>
+public sealed record PlanCard(string Id, string Title, IReadOnlyList<PlanStep> Steps, string? Notes)
+{
+    public bool HasNotes => !string.IsNullOrWhiteSpace(Notes);
+}
+
+public sealed record PlanStep(int Number, string Text);
+
+/// <summary>Something the AI remembers (Settings for the user, Summary for a project).</summary>
+public sealed record MemoryEntry(string Id, string Text);
 
 /// <summary>A saved conversation in the history list.</summary>
 public sealed record ConversationEntry(string Id, string Title, string Updated, bool IsCurrent);

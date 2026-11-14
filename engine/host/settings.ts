@@ -26,6 +26,14 @@ export interface AppSettings {
   hardwareEncoding: boolean;
   /** The MCP connector address for ChatGPT and other apps that connect to one: on or off, and its port. */
   mcpHttp?: { enabled: boolean; port?: number; public?: boolean };
+  /** The user's standing instructions for the AI, sent with every request. */
+  instructions?: string;
+  /** The most tokens a conversation may hold before it is summarized (default 100,000). */
+  contextLimit?: number;
+  /** Summarize a conversation by itself at the limit (default on). */
+  autoCompact?: boolean;
+  /** Folders the AI may search for media and documents, besides the user's usual ones. */
+  searchFolders?: string[];
 }
 
 const DEFAULTS: AppSettings = { renderer: "auto", hardwareEncoding: true };
@@ -135,6 +143,8 @@ export function publicSettings(s: AppSettings) {
   return {
     renderer: s.renderer,
     hardwareEncoding: s.hardwareEncoding,
+    contextLimit: s.contextLimit ?? 100_000,
+    autoCompact: s.autoCompact !== false,
     defaultModel: s.defaultModel ?? null,
     /** Anthropic's key (as before). */
     apiKey: shownKey("anthropic"),

@@ -26,11 +26,40 @@
   <li><strong>Choose when it asks.</strong> For a narration voice, music or a look, the AI may offer a few options with a play button or a picture. Pick one, or just type what you prefer.</li>
 </ul>
 
+<h2>Your own files</h2>
+<p>Mention footage, music, photos or a script you have, and the AI finds them: "use my beach videos from last summer", "add the song in Downloads", "follow the script in my Documents".</p>
+<ul>
+  <li>It searches your usual Videos, Pictures, Music, Downloads, Desktop and Documents folders, and any folders you add in <em>Settings</em>, <em>Memory</em>.</li>
+  <li>It can read text documents there (scripts, notes, subtitles) and copy media into the project. Nothing outside the project is ever changed, moved or deleted.</li>
+  <li>PDF and Word files cannot be read yet; save a script as text (.txt or .md) to use it.</li>
+</ul>
+
+<h2>Plans first</h2>
+<p>Turn on <em>Plan</em> next to the model picker (or ask "plan it first") and the AI looks at your project, then proposes a plan instead of editing. Nothing changes until you press <em>Approve</em>. Press <em>Change it</em> to say what to do differently. For big requests the AI may propose a plan on its own.</p>
+
+<h2>Keep talking while it works</h2>
+<p>You do not have to wait. Send a message while the AI is working ("also add captions", "make it shorter") and it shows in the chat as usual. The AI reads it as soon as it finishes the step it is on and goes on with it in mind; its reply continues under your message. If you stop the AI first, your message goes with your next request.</p>
+
+<h2>Long conversations and your credit</h2>
+<p>Every request reads the whole conversation, so a long one costs more each time. VideditBridge keeps that in check:</p>
+<ul>
+  <li><strong>Caching:</strong> the parts that repeat from step to step are read from the provider's cache, which costs a fraction of the normal price.</li>
+  <li><strong>A limit you choose:</strong> <em>Settings</em>, <em>AI models</em>, <em>Context limit</em> (100k tokens unless you change it). From half of it, a line above the chat box shows how much is left.</li>
+  <li><strong>Summaries:</strong> at the limit, older messages are summarized by the provider's cheapest model and the conversation goes on from the summary. A line in the chat marks where. Press <em>Summarize now</em> to do it earlier, or turn off <em>Summarize automatically</em> to decide yourself. Your project is never affected.</li>
+</ul>
+
+<h2>Memory and instructions</h2>
+<ul>
+  <li><strong>Instructions</strong> (<em>Settings</em>, <em>Memory</em>): what the AI should always do, for example "keep videos under 60 seconds" or "my brand colors are navy and orange". They go with every request, with every model.</li>
+  <li><strong>What it remembers about you:</strong> as you work, the AI saves lasting preferences, like a caption style you like. They show in <em>Settings</em>, <em>Memory</em>, where you can remove any.</li>
+  <li><strong>What it remembers about a project:</strong> what the video is for, who is in it, decisions made. They show at the top of the project's <em>Summary</em> tab.</li>
+</ul>
+
 <h2>Point at things</h2>
 <ul>
   <li><strong>A clip, text or sound:</strong> click it on the timeline strip under the preview, then ask "make this shorter". The request is about what you picked.</li>
   <li><strong>A spot in the picture:</strong> click in the preview, then ask "put the title here" or "remove this".</li>
-  <li><strong>Files:</strong> drag them onto the chat or press <kbd>+</kbd>. Pictures you attach are shown to the AI as well.</li>
+  <li><strong>Files:</strong> drag them onto the chat, press <kbd>+</kbd>, or paste them with <kbd>Ctrl</kbd> + <kbd>V</kbd>: a copied file, a copied picture or a screenshot becomes an attachment. Pictures you attach are shown to the AI as well.</li>
 </ul>
 
 <h2>Undo, history and export</h2>
@@ -51,7 +80,7 @@
 <h2>Keyboard shortcuts</h2>
 <table>
   <tr><th>Keys</th><th>Does</th></tr>
-  <tr><td><kbd>Enter</kbd></td><td>Send the message in the chat box</td></tr>
+  <tr><td><kbd>Enter</kbd></td><td>Send the message in the chat box (while the AI works, it reads it at its next step)</td></tr>
   <tr><td><kbd>Shift</kbd> + <kbd>Enter</kbd></td><td>New line in the chat box</td></tr>
   <tr><td><kbd>Ctrl</kbd> + <kbd>T</kbd></td><td>New tab</td></tr>
   <tr><td><kbd>Ctrl</kbd> + <kbd>W</kbd></td><td>Close the tab</td></tr>

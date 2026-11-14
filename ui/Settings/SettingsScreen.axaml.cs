@@ -27,6 +27,8 @@ public partial class SettingsScreen : UserControl
     private bool _loading;
     private JsonNode? _settings;
     private JsonNode? _connect;
+    private JsonNode? _memory;
+    private string? _instructionsDraft;
     private string _page = "ai";
     /// <summary>The provider whose key is being typed, if any.</summary>
     private string? _editingKey;
@@ -36,6 +38,7 @@ public partial class SettingsScreen : UserControl
     private static readonly Section[] Sections =
     [
         new("ai", "AI models", Icons.Sparkle),
+        new("memory", "Memory", Icons.Bot),
         new("connections", "Connections", Icons.PlugConnected),
         new("rendering", "Rendering", Icons.Video),
         new("folders", "Folders", Icons.Folder),
@@ -65,6 +68,7 @@ public partial class SettingsScreen : UserControl
         {
             _settings = await _vm.GetSettingsAsync();
             _connect = await _vm.CallHostAsync("connect.get").ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : null);
+            _memory = await _vm.CallHostAsync("memory.get").ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : null);
             Build();
         }
         catch (Exception e)
@@ -258,6 +262,7 @@ public partial class SettingsScreen : UserControl
             _views.Clear();
             Pages.Children.Clear();
             BuildModels(NewPage("ai", "Claude is the default. Add an OpenAI or Google key to edit with ChatGPT or Gemini too, and pick the model in the chat."));
+            BuildMemory(NewPage("memory", "What the AI is told with every request: your instructions, and what it remembers about you. It saves lasting preferences as you work; remove anything here."));
             BuildConnections(NewPage("connections", "Edit from the Claude app with your own Claude account; it shows the previews in its chat. Gemini CLI and Claude Code open the project here to show it."));
             BuildRendering(NewPage("rendering"));
             BuildFolders(NewPage("folders"));
@@ -279,6 +284,24 @@ public partial class SettingsScreen : UserControl
             if (!_loading && model.SelectedItem is ModelOption m) await Change(new { defaultModel = m.Id });
         };
         Card(page, null, Row("Default model", "New conversations start with it. Each conversation keeps its own, and you can switch in the chat.", model));
+
+        // Conversation size: every request reads the whole conversation, so a long one costs more each time.
+        var limit = _settings?["contextLimit"]?.GetValue<int>() ?? 100_000;
+        var sizes = new[] { 32_000, 64_000, 100_000, 150_000, 200_000, 500_000, 1_000_000 };
+        var limitBox = new ComboBox { Width = 220 };
+        foreach (var n in sizes)
+            limitBox.Items.Add(new ComboBoxItem { Tag = n, Content = n >= 1_000_000 ? $"{n / 1_000_000}M tokens" : $"{n / 1000}k tokens{(n == 100_000 ? " (default)" : "")}" });
+        limitBox.SelectedItem = limitBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag! == limit) ?? limitBox.Items[2];
+        AutomationProperties.SetName(limitBox, "Context limit");
+        limitBox.SelectionChanged += async (_, _) =>
+        {
+            if (!_loading && limitBox.SelectedItem is ComboBoxItem { Tag: int n }) await Change(new { contextLimit = n });
+        };
+        var auto = _settings?["autoCompact"]?.GetValue<bool>() ?? true;
+        Card(page, "Conversation size",
+            Row("Context limit", "Every request reads the whole conversation, so a long one costs more with each request. At this size, older messages are summarized (by the cheapest model) and the conversation goes on from the summary. Lower saves more credit.", limitBox),
+            Row("Summarize automatically", "On: done for you at the limit. Off: the chat shows how full it is, and you choose when to summarize.",
+                Toggle(auto, "Summarize automatically", on => Change(new { autoCompact = on }))));
 
         var keychain = _settings?["keychain"]?.GetValue<bool>() == true;
         var store = OperatingSystem.IsWindows() ? "Windows Credential Manager" : OperatingSystem.IsMacOS() ? "the macOS Keychain" : "the system keyring";
@@ -446,6 +469,91 @@ public partial class SettingsScreen : UserControl
             }
         }
         Card(page, "Gemini and ChatGPT", [.. web]);
+    }
+
+    private void BuildMemory(PageView page)
+    {
+        // Instructions: written by the user, sent with every request.
+        var box = new TextBox
+        {
+            Text = _instructionsDraft ?? _memory?["instructions"]?.GetValue<string>() ?? "",
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            MinHeight = 96,
+            MaxHeight = 220,
+            Padding = new Thickness(10, 8),
+            Watermark = "For example: Keep videos under 60 seconds. Use bold yellow captions. My brand colors are navy and orange.",
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Top,
+        };
+        box.Classes.Add("field");
+        AutomationProperties.SetName(box, "Instructions for the AI");
+        box.TextChanged += (_, _) => _instructionsDraft = box.Text;
+        async Task SaveInstructions()
+        {
+            await Change(new { instructions = box.Text ?? "" });
+            _instructionsDraft = null;
+            _memory = await _vm.CallHostAsync("memory.get");
+            Build();
+        }
+        // A form row: title, a full-width box, Save under it on the right.
+        var save = Btn("Save", SaveInstructions, primary: true, name: "Save the instructions");
+        save.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right;
+        var form = new StackPanel { Spacing = 8, Children = { Text("Instructions", "rowTitle"), Text("Followed in every project, with every model. Write them as you would to an editor you work with.", "rowSub"), box, save } };
+        var formRow = new Border { Child = form, Tag = "Instructions preferences" };
+        formRow.Classes.Add("row");
+        Card(page, null, formRow);
+
+        // What the AI remembers about the user (every project).
+        var rows = new List<Border>();
+        foreach (var m in _memory?["general"]?.AsArray() ?? [])
+        {
+            if (m is null) continue;
+            var id = m["id"]!.GetValue<string>();
+            rows.Add(Row(m["text"]?.GetValue<string>() ?? "", (DateTime.TryParse(m["at"]?.GetValue<string>(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var d) ? $"Saved {d.ToLocalTime():d}" : null),
+                Btn("Forget", () => Forget(id), name: "Forget this")));
+        }
+        if (rows.Count == 0) rows.Add(Row("Nothing yet", "As you work, the AI saves lasting preferences here (a style you like, your channel, your brand). What it remembers about one project shows in that project's Summary."));
+        Card(page, "What the AI remembers about you", [.. rows]);
+
+        // Folders it may search for the user's media and documents.
+        var added = (_memory?["addedFolders"]?.AsArray() ?? []).Select(x => x!.GetValue<string>()).ToList();
+        var folders = new List<Border>();
+        foreach (var f in _memory?["searchFolders"]?.AsArray() ?? [])
+        {
+            var dir = f!.GetValue<string>();
+            var mine = added.Contains(dir);
+            folders.Add(Row(Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar)) is { Length: > 0 } n ? n : dir, dir,
+                mine ? Btn("Remove", () => SetFolders(added.Where(a => a != dir).ToList()), name: $"Stop searching {dir}") : null, chip: mine ? null : "Usual", selectable: true));
+        }
+        folders.Add(Row("Add a folder", "The AI can search it for media and documents, read documents, and copy media into a project. It never changes anything there.",
+            Btn("Add folder", async () =>
+            {
+                if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } sp) return;
+                var picked = await sp.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions { Title = "A folder the AI can search", AllowMultiple = false });
+                if (picked.FirstOrDefault()?.TryGetLocalPath() is { } p) await SetFolders([.. added, p]);
+            }, icon: Icons.FolderOpen)));
+        Card(page, "Folders the AI can search", [.. folders]);
+    }
+
+    private async Task Forget(string id)
+    {
+        try
+        {
+            await _vm.CallHostAsync("memory.forget", new { id });
+            _memory = await _vm.CallHostAsync("memory.get");
+        }
+        catch (Exception e)
+        {
+            _vm.ShowError($"Could not forget it: {e.Message}");
+        }
+        Build();
+    }
+
+    private async Task SetFolders(List<string> folders)
+    {
+        await Change(new { searchFolders = folders });
+        _memory = await _vm.CallHostAsync("memory.get");
+        Build();
     }
 
     private void BuildRendering(PageView page)

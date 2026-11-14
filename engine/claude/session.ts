@@ -22,6 +22,10 @@ export interface SessionOptions {
   historyLimit?: number;
   /** Render cache folder (default <outputDir>/cache); false renders everything from the sources every time. */
   cacheDir?: string | false;
+  /** Folders the AI may search for the user's media and documents (default: their usual Videos, Pictures, Music, Downloads, Desktop and Documents). */
+  searchRoots?: string[];
+  /** Where what the AI remembers about the user is kept (default memory.json in the app's data folder). */
+  memoryFile?: string;
 }
 
 export interface HistoryEntry {
@@ -73,6 +77,15 @@ export interface ChoiceOption {
   image?: string;
 }
 
+/** An edit plan the AI proposes (propose_plan); the user approves or asks for changes in their next message. */
+export interface PlanProposal {
+  id: string;
+  title: string;
+  steps: string[];
+  notes?: string;
+  at: string;
+}
+
 /** Options waiting for the user to pick one; the pick arrives as their next message. */
 export interface ChoiceRequest {
   id: string;
@@ -88,6 +101,10 @@ export interface SessionEvents {
   activity: [Activity];
   /** Options were offered (or cleared, with null). */
   choices: [ChoiceRequest | null];
+  /** A plan was proposed (or cleared, with null). */
+  plan: [PlanProposal | null];
+  /** What the AI remembers changed. */
+  memory: [{ scope: string }];
 }
 
 /**
@@ -144,6 +161,24 @@ export class EditorSession extends EventEmitter<SessionEvents> {
     this.pendingChoices = { id: `choice${++this.choiceCount}`, question, options, at: new Date().toISOString() };
     this.emit("choices", this.pendingChoices);
     return this.pendingChoices;
+  }
+
+  private planCount = 0;
+  /** The plan waiting for the user to approve or change. */
+  pendingPlan?: PlanProposal;
+
+  /** Show the user an edit plan to approve (propose_plan). Replaces any still waiting. */
+  proposePlan(title: string, steps: string[], notes?: string): PlanProposal {
+    this.pendingPlan = { id: `plan${++this.planCount}`, title, steps, ...(notes ? { notes } : {}), at: new Date().toISOString() };
+    this.emit("plan", this.pendingPlan);
+    return this.pendingPlan;
+  }
+
+  /** The user answered the plan (or moved on). */
+  clearPlan(): void {
+    if (!this.pendingPlan) return;
+    this.pendingPlan = undefined;
+    this.emit("plan", null);
   }
 
   /** The user picked, typed something else, or dismissed the options. */

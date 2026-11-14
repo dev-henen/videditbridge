@@ -17,6 +17,8 @@ export interface ChatLine {
   attachments?: string[];
   /** The request failed: what went wrong, in a sentence (the chat shows it apart from the reply). */
   error?: string;
+  /** A note from the app, not from the user or the AI (the conversation was summarized). */
+  note?: string;
   at: string;
 }
 
@@ -28,6 +30,8 @@ export interface Conversation {
   updatedAt: string;
   transcript: ChatLine[];
   messages: AgentMessage[];
+  /** How full the context was at the last step (tokens). */
+  usage?: { used: number };
 }
 
 export interface ConversationEntry {

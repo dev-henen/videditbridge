@@ -45,6 +45,32 @@ export interface Turn {
   native?: NativeTurn;
   /** end_turn, tool_use, pause_turn, max_tokens or refusal. */
   stopReason: string;
+  /** What the step used: the whole prompt read (cached part included) and the reply written. */
+  usage?: TurnUsage;
+}
+
+export interface TurnUsage {
+  /** Tokens the model read: system prompt, tools and conversation (how full the context is). */
+  inputTokens: number;
+  outputTokens: number;
+  /** Of the input, read from the provider's cache (cheaper). */
+  cachedTokens: number;
+}
+
+/**
+ * The conversation with a cache mark on its last block, so the next step reads everything up to here
+ * from the cache. The mark moves forward each step (the API allows four; system and tools use two).
+ */
+function withCacheMark(history: Anthropic.Beta.BetaMessageParam[]): Anthropic.Beta.BetaMessageParam[] {
+  const last = history[history.length - 1];
+  if (!last || (last.role !== "user" && last.role !== "assistant") || !last.content) return history;
+  const content = last.content as string | Anthropic.Beta.BetaContentBlockParam[];
+  const blocks: Anthropic.Beta.BetaContentBlockParam[] = typeof content === "string" ? [{ type: "text", text: content }] : [...content];
+  const end = blocks[blocks.length - 1];
+  // Thinking blocks cannot carry a mark; nothing to mark then.
+  if (!end || end.type === "thinking" || end.type === "redacted_thinking") return history;
+  blocks[blocks.length - 1] = { ...end, cache_control: { type: "ephemeral" } } as Anthropic.Beta.BetaContentBlockParam;
+  return [...history.slice(0, -1), { ...last, content: blocks } as Anthropic.Beta.BetaMessageParam];
 }
 
 export interface ModelProvider {
@@ -94,6 +120,10 @@ export class AnthropicProvider implements ModelProvider {
     this.client ??= new Anthropic();
     // `native` is ours, not the API's.
     const history = messages.map(({ native: _native, ...m }) => m as Anthropic.Beta.BetaMessageParam);
+    // Prompt caching: the system prompt, the tools and the conversation so far are the same from one
+    // step to the next, so they are read from the cache (about a tenth of the price) instead of paid again.
+    const cache = { type: "ephemeral" as const };
+    const cachedTools = (tools as Anthropic.Beta.BetaTool[]).map((t, i, all) => (i === all.length - 1 ? { ...t, cache_control: cache } : t));
     const stream = this.client.beta.messages.stream(
       {
         model,
@@ -101,15 +131,21 @@ export class AnthropicProvider implements ModelProvider {
         output_config: { effort: "high" },
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
-        system,
-        tools: tools as Anthropic.Beta.BetaTool[],
-        messages: history,
+        system: [{ type: "text", text: system, cache_control: cache }],
+        tools: cachedTools,
+        messages: withCacheMark(history),
       },
       { signal },
     );
     stream.on("text", (delta) => onText?.(delta));
     const message = await stream.finalMessage();
-    return { content: message.content as ContentBlock[], stopReason: message.stop_reason ?? "end_turn" };
+    const u = message.usage as Anthropic.Beta.BetaUsage | undefined;
+    const cached = (u?.cache_read_input_tokens ?? 0) + (u?.cache_creation_input_tokens ?? 0);
+    return {
+      content: message.content as ContentBlock[],
+      stopReason: message.stop_reason ?? "end_turn",
+      ...(u ? { usage: { inputTokens: u.input_tokens + cached, outputTokens: u.output_tokens, cachedTokens: u.cache_read_input_tokens ?? 0 } } : {}),
+    };
   }
 }
 
@@ -204,10 +240,13 @@ export class OpenAIProvider implements ModelProvider {
     const response = await stream.finalResponse();
     const { content, refused } = fromOpenAIOutput(response.output);
     const native: NativeTurn = { provider: "openai", data: response.output };
-    if (refused && !content.length) return { content, native, stopReason: "refusal" };
-    if (content.some((b) => b.type === "tool_use")) return { content, native, stopReason: "tool_use" };
-    if (response.status === "incomplete") return { content, native, stopReason: response.incomplete_details?.reason === "content_filter" ? "refusal" : "max_tokens" };
-    return { content, native, stopReason: "end_turn" };
+    // OpenAI caches a repeated prompt start by itself; the cached part is reported here.
+    const u = response.usage;
+    const usage: TurnUsage | undefined = u ? { inputTokens: u.input_tokens, outputTokens: u.output_tokens, cachedTokens: u.input_tokens_details?.cached_tokens ?? 0 } : undefined;
+    if (refused && !content.length) return { content, native, usage, stopReason: "refusal" };
+    if (content.some((b) => b.type === "tool_use")) return { content, native, usage, stopReason: "tool_use" };
+    if (response.status === "incomplete") return { content, native, usage, stopReason: response.incomplete_details?.reason === "content_filter" ? "refusal" : "max_tokens" };
+    return { content, native, usage, stopReason: "end_turn" };
   }
 }
 
@@ -305,6 +344,7 @@ export class GeminiProvider implements ModelProvider {
     const parts: Part[] = [];
     let finish: string | undefined;
     let blocked = false;
+    let usage: TurnUsage | undefined;
     for await (const chunk of stream) {
       if (chunk.promptFeedback?.blockReason) blocked = true;
       const candidate = chunk.candidates?.[0];
@@ -313,13 +353,16 @@ export class GeminiProvider implements ModelProvider {
         if (p.text && !p.thought) onText?.(p.text);
       }
       if (candidate?.finishReason) finish = String(candidate.finishReason);
+      // Gemini caches repeated prompt starts by itself and reports the totals as it streams.
+      const m = chunk.usageMetadata;
+      if (m?.promptTokenCount) usage = { inputTokens: m.promptTokenCount, outputTokens: m.candidatesTokenCount ?? 0, cachedTokens: m.cachedContentTokenCount ?? 0 };
     }
     const content = fromGeminiParts(parts);
     const native: NativeTurn = { provider: "google", data: parts };
-    if (blocked || (finish && GEMINI_REFUSALS.has(finish) && !content.length)) return { content, native, stopReason: "refusal" };
-    if (content.some((b) => b.type === "tool_use")) return { content, native, stopReason: "tool_use" };
-    if (finish === "MAX_TOKENS") return { content, native, stopReason: "max_tokens" };
-    return { content, native, stopReason: "end_turn" };
+    if (blocked || (finish && GEMINI_REFUSALS.has(finish) && !content.length)) return { content, native, usage, stopReason: "refusal" };
+    if (content.some((b) => b.type === "tool_use")) return { content, native, usage, stopReason: "tool_use" };
+    if (finish === "MAX_TOKENS") return { content, native, usage, stopReason: "max_tokens" };
+    return { content, native, usage, stopReason: "end_turn" };
   }
 }
 

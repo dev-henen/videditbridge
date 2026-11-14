@@ -74,4 +74,9 @@ public partial class SessionPanel : UserControl
             ScopesPanel.IsVisible = false;
         }
     }
+
+    private async void OnForgetMemory(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as Control)?.Tag is string id) await _vm.ForgetMemoryAsync(id);
+    }
 }

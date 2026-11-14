@@ -91,6 +91,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9 _-]/g, "").replace
 function toolGroups(): [string, string[]][] {
   const groups: [string, string[]][] = [
     ["Inspect & project", ["get_project", "new_project", "set_project_settings", "undo", "redo", "clean_up_media", "review_edit", "offer_choices"]],
+    ["Your files, memory & plans", ["search_files", "read_document", "copy_to_project", "remember", "forget", "propose_plan"]],
     ["Library", ["list_templates", "get_template", "apply_template", "list_effects", "list_audio_effects", "list_transitions", "list_animations", "list_caption_styles", "list_components"]],
     ["Media & primary track", ["import_media", "add_clip", "update_clip", "remove_clip", "move_clip", "split_clip", "trim_clip", "split_edit", "freeze_frame", "set_speed", "speed_ramp", "interpolate", "set_transition", "add_effect", "remove_effect", "create_effect", "animate_effect"]],
     ["People & faces", ["retouch", "detect_faces", "reframe", "follow_face"]],

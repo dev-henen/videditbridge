@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
@@ -92,18 +93,74 @@ public partial class ChatComposer : UserControl
 
     private void OnAsk(object? sender, RoutedEventArgs e) => Submit();
 
-    // Enter sends; Shift+Enter starts a new line.
-    private void OnPromptKeyDown(object? sender, KeyEventArgs e)
+    // Enter sends; Shift+Enter starts a new line; Ctrl+V (Cmd+V) also pastes copied files and screenshots.
+    private async void OnPromptKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.V && (e.KeyModifiers == KeyModifiers.Control || e.KeyModifiers == KeyModifiers.Meta))
+        {
+            // Decided before the text box pastes: files and pictures become attachments, text pastes as text.
+            e.Handled = true;
+            if (!await PasteAttachmentsAsync()) PromptBox.Paste();
+            return;
+        }
         if (e.Key != Key.Enter || e.KeyModifiers != KeyModifiers.None) return;
         e.Handled = true;
         Submit();
     }
 
+    /// <summary>
+    /// Attach what the clipboard holds when it is files (copied in the file manager) or a picture (a
+    /// screenshot, a copied image): files as they are, a picture saved as a PNG first. False when it
+    /// holds neither, so the text paste goes ahead.
+    /// </summary>
+    private async Task<bool> PasteAttachmentsAsync()
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard || !_vm.ModelAvailable) return false;
+        try
+        {
+            // Files copied in the file manager, as they are.
+            if (await clipboard.TryGetFilesAsync() is { } items)
+            {
+                var paths = items.Select(i => i.TryGetLocalPath()).OfType<string>().Where(File.Exists).ToList();
+                if (paths.Count > 0)
+                {
+                    AddFiles(paths);
+                    return true;
+                }
+            }
+            // A picture (a screenshot, a copied image), saved as a PNG to attach.
+            if (await clipboard.TryGetBitmapAsync() is { } bitmap)
+            {
+                using (bitmap)
+                {
+                    var dir = Path.Combine(Path.GetTempPath(), "VideditBridge", "pasted");
+                    Directory.CreateDirectory(dir);
+                    var file = Path.Combine(dir, $"pasted-{DateTime.Now:yyyyMMdd-HHmmss}.png");
+                    bitmap.Save(file);
+                    AddFiles([file]);
+                }
+                return true;
+            }
+        }
+        catch
+        {
+            // The clipboard said no: paste as text, if there is any.
+        }
+        return false;
+    }
+
+    /// <summary>Put text in the box, ready to finish (Change the plan: ...), and focus it.</summary>
+    public void StartWith(string text)
+    {
+        PromptBox.Text = text;
+        PromptBox.CaretIndex = text.Length;
+        PromptBox.Focus();
+    }
+
     private void Submit()
     {
         var prompt = PromptBox.Text;
-        if (string.IsNullOrWhiteSpace(prompt) || !_vm.CanAsk) return;
+        if (string.IsNullOrWhiteSpace(prompt) || !_vm.ModelAvailable) return;
         PromptBox.Text = "";
         var files = _files.Select(f => f.Path).ToList();
         _files.Clear();
@@ -133,7 +190,7 @@ public partial class ChatComposer : UserControl
 
     private void OnDragOver(object? sender, DragEventArgs e)
     {
-        var files = e.DataTransfer.Contains(DataFormat.File) && _vm.CanAsk;
+        var files = e.DataTransfer.Contains(DataFormat.File) && _vm.ModelAvailable;
         e.DragEffects = files ? DragDropEffects.Copy : DragDropEffects.None;
         Box.Classes.Set("dropping", files);
     }
@@ -141,11 +198,14 @@ public partial class ChatComposer : UserControl
     private void OnDrop(object? sender, DragEventArgs e)
     {
         Box.Classes.Set("dropping", false);
-        if (!_vm.CanAsk) return;
+        if (!_vm.ModelAvailable) return;
         AddFiles(e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).OfType<string>() ?? []);
     }
 
     private void OnClearPick(object? sender, RoutedEventArgs e) => PickCleared?.Invoke();
     private void OnClearSpot(object? sender, RoutedEventArgs e) => SpotCleared?.Invoke();
-    private async void OnStopClaude(object? sender, RoutedEventArgs e) => await _vm.CancelClaudeAsync();
+    private async void OnStopClaude(object? sender, RoutedEventArgs e)
+    {
+        await _vm.CancelClaudeAsync();
+    }
 }

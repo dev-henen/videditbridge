@@ -32,6 +32,30 @@
     <Style Selector="ComboBox.model:pointerover /template/ Border#Background">
       <Setter Property="Background" Value="{StaticResource Hover}"/>
     </Style>
+    <!-- The Plan switch: quiet when off, blue when on -->
+    <Style Selector="ToggleButton.plan">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="Padding" Value="7,3"/>
+      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+    </Style>
+    <Style Selector="ToggleButton.plan TextBlock">
+      <Setter Property="Foreground" Value="{Binding $parent[ToggleButton].Foreground}"/>
+    </Style>
+    <Style Selector="ToggleButton.plan:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource Hover}"/>
+      <Setter Property="Foreground" Value="{StaticResource Text}"/>
+    </Style>
+    <Style Selector="ToggleButton.plan:checked /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource AccentSoft}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Accent}"/>
+    </Style>
+    <Style Selector="ToggleButton.plan:checked">
+      <Setter Property="Foreground" Value="{StaticResource AccentHover}"/>
+    </Style>
   </UserControl.Styles>
 
   <Grid>
@@ -78,13 +102,13 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <TextBox x:Name="PromptBox" Classes="bare" IsEnabled="{Binding CanAsk}" Padding="2,3" MinHeight="24" MaxHeight="120"
+        <TextBox x:Name="PromptBox" Classes="bare" IsEnabled="{Binding ModelAvailable}" Padding="2,3" MinHeight="24" MaxHeight="120"
                  AcceptsReturn="True" TextWrapping="Wrap" Watermark="{Binding AskHint}" VerticalContentAlignment="Top"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"/>
 
         <!-- Add files and pick the model on the left; send (or stop) on the right -->
         <DockPanel>
-          <Button DockPanel.Dock="Left" Click="OnAttach" IsEnabled="{Binding CanAsk}" ToolTip.Tip="Add files (media for the edit, or pictures for the assistant to look at)"
+          <Button DockPanel.Dock="Left" Click="OnAttach" IsEnabled="{Binding ModelAvailable}" ToolTip.Tip="Add files (media for the edit, or pictures for the assistant to look at)"
                   AutomationProperties.Name="Add files" MinHeight="24" MinWidth="24" Padding="3">
             <TextBlock Classes="icon" Text="{x:Static shared:Icons.Add}" FontSize="15"/>
           </Button>
@@ -98,13 +122,21 @@
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
-          <Button DockPanel.Dock="Right" Classes="primary" Click="OnStopClaude" ToolTip.Tip="Stop" AutomationProperties.Name="Stop the assistant"
-                  Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" IsVisible="{Binding AgentRunning}" HorizontalAlignment="Right">
-            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Stop}" FontSize="12" Foreground="{StaticResource OnAccent}"/>
-          </Button>
-          <Button DockPanel.Dock="Right" Classes="primary" Click="OnAsk" IsEnabled="{Binding CanAsk}" ToolTip.Tip="Send (Enter; Shift+Enter for a new line)" AutomationProperties.Name="Send"
-                  Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" IsVisible="{Binding !AgentRunning}" HorizontalAlignment="Right">
+          <!-- Plan first: the AI looks and proposes a plan, and changes nothing until it is approved -->
+          <ToggleButton DockPanel.Dock="Left" Classes="plan" IsChecked="{Binding PlanFirst}" IsEnabled="{Binding ModelAvailable}" Margin="4,0,0,0"
+                        ToolTip.Tip="Plan first: the AI proposes a plan for you to approve before it changes anything" AutomationProperties.Name="Plan first">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Document}" FontSize="12"/>
+              <TextBlock Text="Plan" FontSize="11" VerticalAlignment="Center" IsVisible="{Binding !AgentRunning}"/>
+            </StackPanel>
+          </ToggleButton>
+          <Button DockPanel.Dock="Right" Classes="primary" Click="OnAsk" IsEnabled="{Binding ModelAvailable}" ToolTip.Tip="{Binding SendTip}" AutomationProperties.Name="Send"
+                  Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" HorizontalAlignment="Right" Margin="4,0,0,0">
             <TextBlock Classes="icon" Text="{x:Static shared:Icons.Send}" FontSize="13" Foreground="{StaticResource OnAccent}"/>
+          </Button>
+          <Button DockPanel.Dock="Right" Click="OnStopClaude" ToolTip.Tip="Stop" AutomationProperties.Name="Stop the assistant"
+                  Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" IsVisible="{Binding AgentRunning}" HorizontalAlignment="Right">
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Stop}" FontSize="12"/>
           </Button>
           <Panel/>
         </DockPanel>

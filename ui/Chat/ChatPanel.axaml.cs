@@ -57,6 +57,15 @@ public partial class ChatPanel : UserControl
 
     private void OnOpenSettings(object? sender, RoutedEventArgs e) => _vm.OpenSettings();
 
+    private async void OnCompact(object? sender, RoutedEventArgs e) => await _vm.CompactAsync();
+
+    private async void OnApprovePlan(object? sender, RoutedEventArgs e) => await _vm.ApprovePlanAsync();
+
+    private async void OnDismissPlan(object? sender, RoutedEventArgs e) => await _vm.DismissPlanAsync();
+
+    /// <summary>Change it: the user types what to change; the plan stays on screen until they send it.</summary>
+    private void OnChangePlan(object? sender, RoutedEventArgs e) => Composer.StartWith("Change the plan: ");
+
     private async void OnKeyGuide(object? sender, RoutedEventArgs e) => await VideoEditor.Shared.Docs.Open(this, VideoEditor.Shared.Docs.ApiKeys());
 
     private async void OnNewConversation(object? sender, RoutedEventArgs e)

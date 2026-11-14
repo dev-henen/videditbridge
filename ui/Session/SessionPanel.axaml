@@ -119,8 +119,32 @@
           </DockPanel>
         </TabItem>
         <TabItem Header="Summary">
-          <TextBox Text="{Binding Summary, Mode=OneWay}" IsReadOnly="True" FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="10.5"
-                   Classes="bare" TextWrapping="Wrap" Padding="6" VerticalContentAlignment="Top" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+          <DockPanel>
+            <!-- What the AI remembers about this project (remember, scope project); removable -->
+            <Border DockPanel.Dock="Top" Margin="2,6,2,4" Padding="8,6" CornerRadius="8" Background="{StaticResource Panel2}" IsVisible="{Binding HasProjectMemory}">
+              <StackPanel Spacing="3">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Classes="icon" Text="{x:Static shared:Icons.Bot}" FontSize="12" Foreground="{StaticResource AccentHover}"/>
+                  <TextBlock Text="Remembered for this project" FontSize="11" FontWeight="SemiBold"/>
+                </StackPanel>
+                <ItemsControl ItemsSource="{Binding ProjectMemory}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <DockPanel Margin="0,2,0,0">
+                        <Button DockPanel.Dock="Right" Click="OnForgetMemory" Tag="{Binding Id}" Width="18" Height="18" MinWidth="0" MinHeight="0" Padding="0"
+                                ToolTip.Tip="Forget this" AutomationProperties.Name="Forget this" VerticalAlignment="Top">
+                          <TextBlock Classes="icon" Text="{x:Static shared:Icons.DismissSmall}" FontSize="9"/>
+                        </Button>
+                        <TextBlock Text="{Binding Text}" FontSize="11" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
+                      </DockPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </Border>
+            <TextBox Text="{Binding Summary, Mode=OneWay}" IsReadOnly="True" FontFamily="Cascadia Mono, Consolas, Menlo, DejaVu Sans Mono, monospace" FontSize="10.5"
+                     Classes="bare" TextWrapping="Wrap" Padding="6" VerticalContentAlignment="Top" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+          </DockPanel>
         </TabItem>
         <TabItem Header="History">
           <ListBox ItemsSource="{Binding History}" Margin="0,4,0,0">

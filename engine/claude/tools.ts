@@ -72,6 +72,7 @@ import { existsSync } from "node:fs";
 import { fileHash, listFiles } from "../tools/media/files.js";
 import { FONT_PACKS, ICON_FONT, closestIcons, ensureBundledFonts, iconGlyphs, installGoogleFont, installGoogleFonts, listFontFamilies, searchIcons, type FontPack } from "../tools/fonts/index.js";
 import type { ActivityHandle, EditorSession } from "./session.js";
+import { WORKSPACE_TOOLS } from "./workspace.js";
 
 export interface ToolResult {
   text: string;
@@ -4353,6 +4354,8 @@ export const TOOLS: ToolDefinition[] = [
       return ok(`Rendered ${r.duration}s video to ${out}`);
     },
   }),
+  // Beyond the project: the user's files (search, read, copy in), memory and edit plans.
+  ...WORKSPACE_TOOLS,
 ];
 
 const byName = new Map(TOOLS.map((t) => [t.name, t]));

@@ -17,11 +17,12 @@
  * Without `project`: performance.progress ({ stage, step, stageProgress, progress, adapter }) while the performance test runs.
  */
 import { randomBytes } from "node:crypto";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { EditorSession } from "../claude/session.js";
+import { defaultSearchRoots, forgetMemory, generalMemory, memoryContext, projectMemory } from "../claude/workspace.js";
 import { TOOLS, executeTool } from "../claude/tools.js";
 import { sessionState } from "../claude/state.js";
 import { clipAtTime, computeTimeline } from "../core/timeline.js";
@@ -34,7 +35,7 @@ import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
 import type { Project } from "../core/schema.js";
 import type { AspectRatio } from "../core/util.js";
-import { EditorAgent } from "./agent.js";
+import { EditorAgent, estimateTokens } from "./agent.js";
 import { describeAgentError } from "./errors.js";
 import { AGENT_MODELS, DEFAULT_MODEL, PROVIDERS, assistantOf, isProviderId } from "./models.js";
 import { deleteConversation, listConversations, loadConversation, newConversation, saveConversation, titleFrom, type Conversation } from "./conversations.js";
@@ -66,6 +67,8 @@ interface OpenProject {
   coverTimer?: NodeJS.Timeout;
   /** The edit as it was when the latest request to Claude started: the "before" of the viewer's A/B. */
   before?: { project: Project; revision: number };
+  /** The reply of the request under way, so far (a message sent mid-turn closes it in the transcript). */
+  live?: { reply: string };
   /** The MCP app editing this project when it cannot show previews itself (Gemini CLI, say): the tab shows the edit, without its chat. */
   mcpClient?: string;
   /** Live playback in progress (`render.play`). */
@@ -88,7 +91,34 @@ function target(p: Record<string, unknown>): OpenProject {
   return o;
 }
 
-const conversationInfo = (o: OpenProject) => ({ id: o.conversation.id, title: o.conversation.title, model: o.conversation.model, transcript: o.conversation.transcript });
+const conversationInfo = (o: OpenProject) => ({ id: o.conversation.id, title: o.conversation.title, model: o.conversation.model, transcript: o.conversation.transcript, usage: usageOf(o) });
+
+/** The context limit the user set (Settings, AI models), in tokens. */
+const contextLimit = () => (settings.contextLimit && settings.contextLimit >= 8000 ? settings.contextLimit : DEFAULT_CONTEXT_LIMIT);
+const DEFAULT_CONTEXT_LIMIT = 100_000;
+
+/** How full this conversation's context is, against the limit (for the meter above the chat box). */
+function usageOf(o: OpenProject) {
+  const used = o.agent?.contextSize ?? o.conversation.usage?.used ?? (o.conversation.messages.length ? estimateTokens(o.conversation.messages) : 0);
+  return { used, limit: contextLimit(), autoCompact: settings.autoCompact !== false };
+}
+
+function reportUsage(o: OpenProject, used: number) {
+  o.conversation.usage = { used };
+  rpc.notify("agent.usage", { project: o.dir, ...usageOf(o), used });
+}
+
+/** The conversation was summarized: a note in the chat, at the point it happened. */
+function noteCompacted(o: OpenProject, live?: { reply: string }) {
+  const c = o.conversation;
+  const now = new Date().toISOString();
+  if (live?.reply.trim()) {
+    c.transcript.push({ role: "assistant", text: live.reply.trim(), at: now });
+    live.reply = "";
+  }
+  c.transcript.push({ role: "assistant", text: "", note: "Earlier messages were summarized to keep requests small. The project is not affected.", at: now });
+  rpc.notify("agent.compacted", { project: o.dir });
+}
 
 /** Who is working in a project's conversation ("Claude", "ChatGPT", "Gemini"), for messages. */
 const assistant = (o: OpenProject) => assistantOf(o.conversation.model);
@@ -177,6 +207,34 @@ const handlers: Record<string, Handler> = {
     pushState(o);
     return true;
   },
+  /**
+   * What the AI is told and remembers: the user's standing instructions, what it remembers about
+   * them (every project) and about this project (`project`, optional), and the folders it may search.
+   */
+  "memory.get": async (p) => {
+    const o = p.project !== undefined || focused ? target(p) : undefined;
+    const probe = o?.session ?? new EditorSession(undefined, { baseDir: store.root });
+    return {
+      instructions: settings.instructions ?? "",
+      general: await generalMemory(probe),
+      project: o ? await projectMemory(o.session) : [],
+      searchFolders: searchFolders(),
+      addedFolders: settings.searchFolders ?? [],
+    };
+  },
+  /** Forget one remembered item by id (general or this project's). */
+  "memory.forget": async (p) => {
+    const o = p.project !== undefined || focused ? target(p) : undefined;
+    const probe = o?.session ?? new EditorSession(undefined, { baseDir: store.root });
+    const done = await forgetMemory(probe, String(p.id));
+    if (o) rpc.notify("memory", { project: o.dir });
+    return done;
+  },
+  /** The plan card was closed without an answer. */
+  "plan.dismiss": (p) => {
+    target(p).session.clearPlan();
+    return true;
+  },
   "choices.dismiss": (p) => {
     target(p).session.clearChoices();
     return null;
@@ -236,6 +294,8 @@ const handlers: Record<string, Handler> = {
     o.before = { project: s.project, revision: s.revision };
     // A new request answers (or moves past) any options still on screen.
     s.clearChoices();
+    // A new request answers the plan on screen (approved, or what to change).
+    s.clearPlan();
     const c = o.conversation;
     if (MODELS.includes(String(p.model))) c.model = String(p.model);
     const display = String(p.display ?? p.prompt ?? "").trim();
@@ -252,7 +312,8 @@ const handlers: Record<string, Handler> = {
     c.transcript.push({ role: "user", text: display, ...(attached.length ? { attachments: attached } : {}), at: new Date().toISOString() });
     if (c.title === "New conversation") c.title = titleFrom(display);
     pushState(o);
-    let reply = "";
+    const live = { reply: "" };
+    o.live = live;
     let result: { stopReason: string } = { stopReason: "error" };
     let failure: string | undefined;
     let agent: EditorAgent | undefined;
@@ -262,11 +323,22 @@ const handlers: Record<string, Handler> = {
         `${note}${String(p.prompt ?? display)}`,
         {
           onText: (delta) => {
-            reply += delta;
+            live.reply += delta;
             rpc.notify("agent.text", { project: o.dir, delta });
           },
+          onUsage: (used) => reportUsage(o, used),
+          onCompact: () => noteCompacted(o, live),
         },
-        { model: c.model, images },
+        // Standing instructions and memory with every request; plan mode when the user asked for a plan
+        // first; the context limit the user set, so a long conversation does not burn credit.
+        {
+          model: c.model,
+          images,
+          context: await memoryContext(s, settings.instructions),
+          planMode: p.plan === true,
+          contextLimit: contextLimit(),
+          autoCompact: settings.autoCompact !== false,
+        },
       );
       return result;
     } catch (e) {
@@ -276,13 +348,60 @@ const handlers: Record<string, Handler> = {
       throw new RpcError(1, failure);
     } finally {
       const end = result.stopReason === "cancelled" ? "(stopped)" : result.stopReason === "refusal" ? `(${assistantOf(c.model)} declined this request)` : "";
-      c.transcript.push({ role: "assistant", text: [reply.trim(), end].filter(Boolean).join("\n"), ...(failure ? { error: failure } : {}), at: new Date().toISOString() });
+      o.live = undefined;
+      c.transcript.push({ role: "assistant", text: [live.reply.trim(), end].filter(Boolean).join("\n"), ...(failure ? { error: failure } : {}), at: new Date().toISOString() });
       if (agent) c.messages = [...agent.history];
       c.updatedAt = new Date().toISOString();
       await saveConversation(o.dir, c).catch((e) => rpc.notify("log", { project: o.dir, level: "error", message: `Could not save the conversation: ${(e as Error).message}` }));
       rpc.notify("agent.end", { project: o.dir, ...result });
       pushState(o);
     }
+  },
+  /**
+   * The user wrote while a request runs (as in Claude Code): the model reads it at its next step and
+   * goes on with it in mind. The chat shows it as a normal message, with the reply going on under it.
+   * Returns { delivered: false } when nothing runs any more; then send it with agent.run.
+   */
+  "agent.say": async (p) => {
+    const o = target(p);
+    const c = o.conversation;
+    if (!o.agent?.running || !o.live) return { delivered: false };
+    const display = String(p.display ?? p.prompt ?? "").trim();
+    if (!display) return { delivered: false };
+    let note = "";
+    let attached: string[] = [];
+    const sources = ((p.attachments as string[] | undefined) ?? []).filter(Boolean);
+    if (sources.length) {
+      attached = await store.importMedia(o.dir, sources);
+      const lines: string[] = [];
+      for (const src of attached) lines.push((await executeTool(o.session, "import_media", { src })).text.split("\n")[0]!);
+      note = `[The user attached ${attached.length === 1 ? "a file" : `${attached.length} files`}, now in the project: ${lines.join(" ")}] `;
+    }
+    if (!o.agent.say(`${note}${String(p.prompt ?? display)}`)) return { delivered: false };
+    // The transcript keeps the order the chat shows: the reply so far, this message, then the rest.
+    const now = new Date().toISOString();
+    if (o.live.reply.trim()) c.transcript.push({ role: "assistant", text: o.live.reply.trim(), at: now });
+    o.live.reply = "";
+    c.transcript.push({ role: "user", text: display, ...(attached.length ? { attachments: attached } : {}), at: now });
+    pushState(o);
+    return { delivered: true };
+  },
+  /** Summarize the conversation now (the meter's "Summarize now"), to make the next requests cheaper. */
+  "agent.compact": async (p) => {
+    const o = target(p);
+    const c = o.conversation;
+    if (o.agent?.running) throw new RpcError(1, `${assistant(o)} is working; summarize when it is done`);
+    if (c.messages.length < 2) return usageOf(o);
+    const agent = (o.agent ??= new EditorAgent(o.session, { model: c.model, messages: c.messages }));
+    try {
+      await agent.compact({ onUsage: (used) => reportUsage(o, used), onCompact: () => noteCompacted(o) });
+    } catch (e) {
+      throw new RpcError(1, describeAgentError(e, c.model));
+    }
+    c.messages = [...agent.history];
+    c.updatedAt = new Date().toISOString();
+    await saveConversation(o.dir, c);
+    return usageOf(o);
   },
   "agent.cancel": (p) => {
     target(p).agent?.cancel();
@@ -306,9 +425,15 @@ const handlers: Record<string, Handler> = {
     if (typeof p.defaultModel === "string" && MODELS.includes(p.defaultModel)) next.defaultModel = p.defaultModel;
     if (p.renderer === "auto" || p.renderer === "engine" || p.renderer === "ffmpeg") next.renderer = p.renderer;
     if (typeof p.hardwareEncoding === "boolean") next.hardwareEncoding = p.hardwareEncoding;
+    if (typeof p.instructions === "string") next.instructions = p.instructions.slice(0, 4000);
+    if (typeof p.contextLimit === "number" && p.contextLimit >= 8000 && p.contextLimit <= 2_000_000) next.contextLimit = Math.round(p.contextLimit);
+    if (typeof p.autoCompact === "boolean") next.autoCompact = p.autoCompact;
+    if (Array.isArray(p.searchFolders)) next.searchFolders = [...new Set(p.searchFolders.map(String).filter((f) => path.isAbsolute(f)))];
     settings = next;
     await saveSettings(settings);
     await applySettings(settings);
+    // Open projects search the new folders from their next request.
+    for (const o of open.values()) o.session.options.searchRoots = searchFolders();
     // A new key: the agents' clients are made again on the next request (conversations carry on).
     if (keyChanged) for (const o of open.values()) if (!o.agent?.running) o.agent = undefined;
     return { ...publicSettings(settings), ...availability() };
@@ -470,7 +595,14 @@ function sessionOptions(dir: string) {
     outputDir: path.join(dir, ".render"),
     transcriber: new LocalWhisperTranscriber(),
     tts: new LocalTTS(),
+    searchRoots: searchFolders(),
   };
+}
+
+/** The folders the AI may search for the user's files: their usual ones, and the ones they added in Settings. */
+function searchFolders(): string[] {
+  const extra = (settings.searchFolders ?? []).filter((f) => existsSync(f));
+  return [...new Set([...defaultSearchRoots(), ...extra])];
 }
 
 function snapshot(o: OpenProject) {
@@ -481,6 +613,7 @@ function snapshot(o: OpenProject) {
     projectDir: o.dir,
     agentRunning: !!o.agent?.running,
     choices: o.session.pendingChoices ?? null,
+    plan: o.session.pendingPlan ?? null,
     // The viewer can show the edit as it was before the latest request (`render.scrub` with `before`).
     canCompare: !!o.before && o.before.revision !== o.session.revision,
     conversation: { id: o.conversation.id, title: o.conversation.title, model: o.conversation.model },
@@ -524,7 +657,13 @@ async function attach(s: EditorSession, dirIn: string): Promise<OpenProject> {
   s.on("activity", onActivity);
   s.on("log", onLog);
   s.on("choices", onState);
+  s.on("plan", onState);
+  // What the AI remembers changed: the app shows it (Settings, and the project's Summary).
+  const onMemory = () => rpc.notify("memory", { project: dir });
+  s.on("memory", onMemory);
   o.detach = () => {
+    s.off("plan", onState);
+    s.off("memory", onMemory);
     s.off("change", onChange);
     s.off("render", onState);
     s.off("activity", onActivity);

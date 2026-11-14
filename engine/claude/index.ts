@@ -2,3 +2,4 @@
 export * from "./session.js";
 export * from "./tools.js";
 export * from "./state.js";
+export * from "./workspace.js";

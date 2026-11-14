@@ -69,6 +69,7 @@ public sealed class ProjectViewModel : Observable
         _engine = engine;
         Dir = state["projectDir"]!.GetValue<string>();
         _model = app.DefaultModel;
+        _ = RefreshMemoryAsync();
         UseAvailableModel();
         ApplyState(state);
         ProjectChanged?.Invoke();
@@ -110,7 +111,9 @@ public sealed class ProjectViewModel : Observable
     public string Summary { get => _summary; private set => Set(ref _summary, value); }
 
     private bool _agentRunning;
-    public bool AgentRunning { get => _agentRunning; private set => Set(ref _agentRunning, value, nameof(AgentRunning), nameof(CanAsk)); }
+    public bool AgentRunning { get => _agentRunning; private set => Set(ref _agentRunning, value, nameof(AgentRunning), nameof(CanAsk), nameof(SendTip)); }
+    /// <summary>What Send does now: send, or (while the AI works) queue.</summary>
+    public string SendTip => AgentRunning ? "Send: the AI reads it at its next step and goes on with it (Enter)" : "Send (Enter; Shift+Enter for a new line)";
 
     private string? _mcpClient;
     /// <summary>
@@ -176,6 +179,32 @@ public sealed class ProjectViewModel : Observable
         _app.IsAvailable(m.Provider) || !HasAnyKey ? m : _app.IsAvailable(_app.DefaultModel.Provider) ? _app.DefaultModel : AvailableModels[0];
 
     /// <summary>Refresh the list of this project's conversations (newest first).</summary>
+    /// <summary>What the AI remembers about this project (shown in Summary, each removable).</summary>
+    public ObservableCollection<MemoryEntry> ProjectMemory { get; } = [];
+    public bool HasProjectMemory => ProjectMemory.Count > 0;
+
+    public async Task RefreshMemoryAsync()
+    {
+        try
+        {
+            var r = await Call("memory.get");
+            ProjectMemory.Clear();
+            foreach (var m in r?["project"]?.AsArray() ?? [])
+                if (m is not null) ProjectMemory.Add(new MemoryEntry(m["id"]!.GetValue<string>(), m["text"]?.GetValue<string>() ?? ""));
+            Raise(nameof(HasProjectMemory));
+        }
+        catch
+        {
+            // an older host without memory: nothing to show
+        }
+    }
+
+    public Task ForgetMemoryAsync(string id) => Guard(async () =>
+    {
+        await Call("memory.forget", new { id });
+        await RefreshMemoryAsync();
+    });
+
     public Task RefreshConversationsAsync() => Guard(async () =>
     {
         var r = await Call("chat.list");
@@ -205,11 +234,69 @@ public sealed class ProjectViewModel : Observable
         await RefreshConversationsAsync();
     });
 
+    // ---------------------------------------------------------------- context (tokens)
+
+    private int _contextUsed;
+    private int _contextLimit = 100_000;
+    private bool _autoCompact = true;
+    /// <summary>How full the conversation's context is (0..1 of the limit set in Settings).</summary>
+    public double ContextFraction => _contextLimit > 0 ? Math.Min(1, (double)_contextUsed / _contextLimit) : 0;
+    /// <summary>The meter shows once half the limit is used.</summary>
+    public bool ShowContext => ContextFraction >= 0.5;
+    public double ContextSweep => 360 * ContextFraction;
+    public string ContextText
+    {
+        get
+        {
+            var left = (int)Math.Round(100 * (1 - ContextFraction));
+            if (!_autoCompact && ContextFraction >= 1) return "This conversation is at its context limit; each request now costs more.";
+            return _autoCompact ? $"{left}% of context left until older messages are summarized." : $"{left}% of the context limit left.";
+        }
+    }
+    public string ContextTip => $"About {_contextUsed / 1000}k of {_contextLimit / 1000}k tokens. Every request reads the whole conversation, so summarizing keeps requests small. The limit is in Settings, AI models.";
+
+    private void ApplyUsage(JsonNode? u)
+    {
+        if (u is null) return;
+        _contextUsed = u["used"]?.GetValue<int>() ?? _contextUsed;
+        _contextLimit = u["limit"]?.GetValue<int>() ?? _contextLimit;
+        _autoCompact = u["autoCompact"]?.GetValue<bool>() ?? _autoCompact;
+        Raise(nameof(ContextFraction));
+        Raise(nameof(ShowContext));
+        Raise(nameof(ContextSweep));
+        Raise(nameof(ContextText));
+        Raise(nameof(ContextTip));
+    }
+
+    /// <summary>Summarize the conversation now, so the next requests read a short one.</summary>
+    public Task CompactAsync() => Guard(async () =>
+    {
+        if (AgentRunning) return;
+        ApplyUsage(await Call("agent.compact"));
+    });
+
+    /// <summary>The conversation was summarized: a quiet line in the chat (the reply under way goes on below it).</summary>
+    private void NoteCompacted()
+    {
+        var note = new ChatMessage(false, "") { Note = "Earlier messages were summarized to keep requests small. The project is not affected." };
+        if (AgentRunning && _reply is { } before)
+        {
+            before.IsStreaming = false;
+            if (!before.HasText && !before.HasError) Messages.Remove(before);
+            Messages.Add(note);
+            _reply = new ChatMessage(false, "") { IsStreaming = true };
+            Messages.Add(_reply);
+        }
+        else Messages.Add(note);
+        ChatChanged?.Invoke();
+    }
+
     private void ShowConversation(JsonNode? c)
     {
         if (c is null) return;
         _conversationId = c["id"]!.GetValue<string>();
         ConversationTitle = c["title"]!.GetValue<string>();
+        ApplyUsage(c["usage"]);
         // A conversation kept with a model whose key is gone carries on with one that has a key (set once,
         // so the picker never gets a model it does not list).
         if (Models.FirstOrDefault(m => m.Id == c["model"]?.GetValue<string>()) is { } model) Model = Usable(model);
@@ -218,7 +305,7 @@ public sealed class ProjectViewModel : Observable
         foreach (var line in c["transcript"]?.AsArray() ?? [])
             if (line is not null)
                 Messages.Add(new ChatMessage(line["role"]!.GetValue<string>() == "user", line["text"]?.GetValue<string>() ?? "",
-                    line["attachments"]?.AsArray().Select(a => Path.GetFileName(a!.GetValue<string>())).ToList() ?? []) { Error = line["error"]?.GetValue<string>() });
+                    line["attachments"]?.AsArray().Select(a => Path.GetFileName(a!.GetValue<string>())).ToList() ?? []) { Error = line["error"]?.GetValue<string>(), Note = line["note"]?.GetValue<string>() });
         Raise(nameof(HasMessages));
         ChatChanged?.Invoke();
     }
@@ -360,16 +447,42 @@ public sealed class ProjectViewModel : Observable
     /// down" and "put the title here" know what "this" and "here" are. Attached files are brought
     /// into the project first, and pictures among them are shown to Claude.
     /// </summary>
-    public async Task AskClaudeAsync(string prompt, TimelineItem? about = null, Spot? spot = null, string? note = null, IReadOnlyList<string>? attachments = null)
+    // ---------------------------------------------------------------- plans
+
+    private bool _planFirst;
+    /// <summary>Plan first: the AI looks and proposes a plan, and changes nothing until it is approved.</summary>
+    public bool PlanFirst { get => _planFirst; set => Set(ref _planFirst, value); }
+
+    private PlanCard? _plan;
+    /// <summary>The plan the AI proposed, waiting for Approve or Change it.</summary>
+    public PlanCard? Plan { get => _plan; private set => Set(ref _plan, value, nameof(Plan), nameof(HasPlan)); }
+    public bool HasPlan => Plan is not null;
+
+    private void ApplyPlan(JsonNode? p)
     {
-        if (string.IsNullOrWhiteSpace(prompt) || !CanAsk) return;
-        AgentRunning = true;
-        var files = attachments ?? [];
-        Messages.Add(new ChatMessage(true, prompt.Trim(), files.Select(Path.GetFileName).OfType<string>().ToList(), AboutText(about, spot)));
-        var reply = new ChatMessage(false, "") { IsStreaming = true };
-        Messages.Add(reply);
-        Raise(nameof(HasMessages));
+        var id = p?["id"]?.GetValue<string>();
+        if (id == Plan?.Id) return;
+        if (id is null)
+        {
+            Plan = null;
+            return;
+        }
+        var steps = (p!["steps"]?.AsArray() ?? []).Select((x, i) => new PlanStep(i + 1, x?.GetValue<string>() ?? "")).ToList();
+        Plan = new PlanCard(id, p["title"]?.GetValue<string>() ?? "Plan", steps, p["notes"]?.GetValue<string>());
         ChatChanged?.Invoke();
+    }
+
+    /// <summary>Go ahead with the plan: the AI makes the edits (plan mode off for this request).</summary>
+    public Task ApprovePlanAsync() => Plan is { } p ? AskClaudeAsync($"[Plan approved] Go ahead with the plan: {p.Title}.", plan: false) : Task.CompletedTask;
+
+    /// <summary>Close the plan without an answer.</summary>
+    public Task DismissPlanAsync() => Guard(async () => await Call("plan.dismiss"));
+
+    public async Task AskClaudeAsync(string prompt, TimelineItem? about = null, Spot? spot = null, string? note = null, IReadOnlyList<string>? attachments = null, bool? plan = null)
+    {
+        if (string.IsNullOrWhiteSpace(prompt) || !ModelAvailable) return;
+        var planMode = plan ?? PlanFirst;
+        var files = attachments ?? [];
         var notes = new List<string>();
         if (note is not null) notes.Add(note);
         if (about is not null)
@@ -377,23 +490,68 @@ public sealed class ProjectViewModel : Observable
         if (spot is not null)
             notes.Add(string.Create(CultureInfo.InvariantCulture, $"[Spot picked in the frame: x {spot.X:0.###}, y {spot.Y:0.###} (frame fractions, 0,0 is the top left) at {spot.Time:0.0#}s on the timeline]"));
         var message = notes.Count == 0 ? prompt : $"{string.Join(" ", notes)} {prompt}";
+        var asked = new ChatMessage(true, prompt.Trim(), files.Select(Path.GetFileName).OfType<string>().ToList(), AboutText(about, spot));
+
+        // While the AI works, the message goes in as a normal one: the AI reads it at its next step
+        // and goes on with it (as in Claude Code). The reply carries on under it.
+        if (AgentRunning && _running is { } running)
+        {
+            Messages.Add(asked);
+            var more = new ChatMessage(false, "") { IsStreaming = true };
+            if (_reply is { } before) before.IsStreaming = false;
+            Messages.Add(more);
+            _reply = more;
+            ChatChanged?.Invoke();
+            try
+            {
+                var r = await Call("agent.say", new { prompt = message, display = prompt.Trim(), attachments = files.ToArray() });
+                if (r?["delivered"]?.GetValue<bool>() == true) return;
+            }
+            catch (Exception e)
+            {
+                more.Error = e.Message;
+                more.IsStreaming = false;
+                return;
+            }
+            // The request ended just now: send it as a request of its own once that is done.
+            Messages.Remove(asked);
+            Messages.Remove(more);
+            await running;
+            await AskClaudeAsync(prompt, about, spot, note, attachments, plan);
+            return;
+        }
+
+        AgentRunning = true;
+        var done = new TaskCompletionSource();
+        _running = done.Task;
+        Messages.Add(asked);
+        _reply = new ChatMessage(false, "") { IsStreaming = true };
+        Messages.Add(_reply);
+        Raise(nameof(HasMessages));
+        ChatChanged?.Invoke();
         try
         {
-            await Call("agent.run", new { prompt = message, display = prompt.Trim(), model = Model.Id, attachments = files.ToArray() });
+            await Call("agent.run", new { prompt = message, display = prompt.Trim(), model = Model.Id, attachments = files.ToArray(), plan = planMode });
         }
         catch (Exception e)
         {
             // The host words it already (engine/host/errors.ts): one sentence, shown in its own box.
-            reply.Error = e.Message;
+            _reply.Error = e.Message;
         }
         finally
         {
-            reply.IsStreaming = false;
+            _reply.IsStreaming = false;
             AgentRunning = false;
+            _running = null;
+            done.TrySetResult();
             ChatChanged?.Invoke();
             await RefreshConversationsAsync();
         }
     }
+
+    /// <summary>The request under way (done when it ends), and the reply bubble its text goes into now.</summary>
+    private Task? _running;
+    private ChatMessage? _reply;
 
     private static string? AboutText(TimelineItem? about, Spot? spot)
     {
@@ -483,6 +641,15 @@ public sealed class ProjectViewModel : Observable
                 if (Messages.LastOrDefault() is { IsUser: false } last) last.Append(p?["delta"]?.GetValue<string>() ?? "");
                 ChatChanged?.Invoke();
                 break;
+            case "agent.usage":
+                ApplyUsage(p);
+                break;
+            case "agent.compacted":
+                NoteCompacted();
+                break;
+            case "memory":
+                _ = RefreshMemoryAsync();
+                break;
             case "agent.end":
                 var reason = p?["stopReason"]?.GetValue<string>();
                 if (Messages.LastOrDefault() is { IsUser: false } end)
@@ -548,6 +715,7 @@ public sealed class ProjectViewModel : Observable
         Summary = s["summary"]?.GetValue<string>() ?? "";
         HasObjects = (s["objects"]?.AsArray().Count ?? 0) > 0;
         McpClient = s["mcpClient"]?.GetValue<string>();
+        ApplyPlan(s["plan"]);
         if (s["conversation"]?["title"]?.GetValue<string>() is { } title && s["conversation"]?["id"]?.GetValue<string>() == _conversationId) ConversationTitle = title;
         ApplyChoices(s["choices"]);
         if (_reviewedRevision is not null && s["revision"]?.ToString() != _reviewedRevision && !ReviewSummary.EndsWith("check again"))

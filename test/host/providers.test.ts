@@ -137,7 +137,8 @@ describe("AI providers", () => {
     expect(await agent.run("look", { onText: (d) => (text += d) })).toEqual({ stopReason: "end_turn" });
     expect(await agent.run("and again", {}, { model: "gemini-4-carbon" })).toEqual({ stopReason: "end_turn" });
     expect(seen.map((s) => s.provider)).toEqual(["openai", "openai", "google", "google"]);
-    expect(text).toBe("openai openai ");
+    // Each step's text starts a new paragraph.
+    expect(text).toBe("openai \n\nopenai ");
     const h = agent.history;
     // user, assistant tool call, tool result, reply; then the same for the second request.
     expect(h.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant", "user", "assistant", "user", "assistant"]);
