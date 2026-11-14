@@ -79,7 +79,10 @@ export const SceneSpecSchema = z.object({
   id: z.string(),
   name: z.string(),
   purpose: z.string().describe("What this scene must achieve, guidance for the AI"),
-  repeat: z.string().optional().describe("Repeat this scene once per item of the given list/media slot"),
+  repeat: z
+    .string()
+    .optional()
+    .describe("Repeat this scene once per item of the given list/media slot. Scenes in a row that repeat over the same slot take turns per item (a word card, then its shot)"),
   optional: z.boolean().default(false).describe("Skip when the slots it references are empty"),
   duration: z.number().positive().default(3),
   fitMedia: z.boolean().default(false).describe("Use the background media's natural length (capped by maxDuration)"),

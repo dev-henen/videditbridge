@@ -13,6 +13,12 @@ export interface SampleMedia {
 /** Fill every slot of a template with plausible sample inputs. */
 export function sampleInputs(t: TemplateSpec, m: SampleMedia, listLength = 3): TemplateInputs {
   const video = () => ({ src: m.video, duration: m.videoDuration, hasAudio: true, ...(m.transcript ? { transcript: m.transcript } : {}) });
+  // List item fields the scenes show as pictures ({{item.performance}}, {{item.left}}), not only "media".
+  const shown = new Set(["media"]);
+  for (const s of t.scenes) {
+    const refs = [s.background && "media" in s.background ? s.background.media : "", ...s.overlays.map((o) => o.media)];
+    for (const r of refs) for (const [, f] of r.matchAll(/\{\{item\.(\w+)\}\}/g)) shown.add(f!);
+  }
   const inputs: TemplateInputs = {};
   for (const slot of t.slots) {
     switch (slot.kind) {
@@ -34,7 +40,7 @@ export function sampleInputs(t: TemplateSpec, m: SampleMedia, listLength = 3): T
           Object.fromEntries(
             Object.keys(slot.fields ?? { media: "" }).map((f) => [
               f,
-              f === "media" ? (i % 2 ? m.image : video()) : f === "seconds" ? 2 : f === "speed" ? 1 : `${f} ${i + 1}`,
+              shown.has(f) ? (i % 2 ? m.image : video()) : f === "seconds" ? 2 : f === "speed" ? 1 : `${f} ${i + 1}`,
             ]),
           ),
         );

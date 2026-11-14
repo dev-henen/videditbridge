@@ -223,6 +223,19 @@ describe("templates", () => {
     expect(project.clips.map((c) => c.duration)).toEqual([3, 2, 1.6]);
   });
 
+  it("lets scenes in a row over the same list take turns per item", () => {
+    const t = TEMPLATES.find((x) => x.id === "glow-word-teaser")!;
+    const { project } = buildFromTemplate(t, { words: [{ word: "ONE", media: "a.png" }, { word: "TWO", media: "b.png" }] });
+    // Word card, its shot, the next word card, its shot.
+    expect(project.clips.map((c) => c.label)).toEqual(["Word card", "Close-up", "Word card", "Close-up"]);
+    const words = project.layers.filter((l) => l.type === "text").map((l) => (l as { text: string }).text);
+    expect(words).toEqual(["ONE", "TWO"]);
+    // An optional scene in the group is left out for an item without its media.
+    const ensemble = TEMPLATES.find((x) => x.id === "jewel-tone-ensemble")!;
+    const built = buildFromTemplate(ensemble, { song: { src: "s.mp3", duration: 60 }, sections: [{ performance: { src: "p1.mp4", duration: 10 }, inserts: { src: "i1.mp4", duration: 2 } }, { performance: { src: "p2.mp4", duration: 10 } }] });
+    expect(built.project.clips.map((c) => c.label)).toEqual(["Performance", "Insert", "Performance"]);
+  });
+
   it("automation in every template points at real slots and fields", () => {
     for (const t of TEMPLATES) {
       const a = t.automation;

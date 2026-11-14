@@ -36,7 +36,7 @@ For people using the app: the [user guide](https://dev-henen.github.io/videditbr
 | Reference | |
 |---|---|
 | [Claude tools](reference/claude-tools.md) | All Claude tools with their parameters |
-| [Templates](reference/templates.md) | All 33 templates: inputs, scenes, look and editing guidance |
+| [Templates](reference/templates.md) | All 54 templates: inputs, scenes, look and editing guidance |
 | [Effects](reference/effects.md) | Color controls, grades, retouch, bokeh and blur, light, zooms, shakes and stylize effects with parameters |
 | [Audio effects](reference/audio-effects.md) | Noise reduction, voice enhancement, dynamics, EQ and creative sound effects |
 | [Sound effects](reference/sound-effects.md) | Synthesized whooshes, impacts, pops, risers and other sounds to place on the timeline |

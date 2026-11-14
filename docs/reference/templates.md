@@ -2,7 +2,7 @@
 
 # Templates
 
-33 built-in templates. Each one is a JSON spec with inputs (slots), a look (theme, captions, grade, transitions) and an ordered list of scenes, plus guidance on how to edit footage to match it. See the [templates guide](../guides/templates.md) to write your own.
+54 built-in templates. Each one is a JSON spec with inputs (slots), a look (theme, captions, grade, transitions) and an ordered list of scenes, plus guidance on how to edit footage to match it. See the [templates guide](../guides/templates.md) to write your own.
 
 ```ts
 const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.mp4", title: "Why most startups fail" }, { probe });
@@ -45,6 +45,27 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 | [`wedding-memories`](#wedding-memories) | Wedding / Memories Film | 16:9 | 60-240s | personal |
 | [`travel-vlog`](#travel-vlog) | Travel Vlog Opener | 16:9 | 20-90s | personal |
 | [`birthday-greeting`](#birthday-greeting) | Birthday Greeting | 9:16 | 10-40s | personal |
+| [`hot-pink-pop`](#hot-pink-pop) | Hot Pink Pop Video | 16:9 | 60-240s | entertainment |
+| [`teal-amber-story`](#teal-amber-story) | Teal and Amber Story Video | 16:9 | 120-330s | entertainment |
+| [`jewel-tone-ensemble`](#jewel-tone-ensemble) | Jewel Tone Ensemble Video | 16:9 | 150-240s | entertainment |
+| [`gel-lit-studio`](#gel-lit-studio) | Gel-Lit Studio Rap Video | 16:9 | 90-200s | entertainment |
+| [`sunlit-lyric-video`](#sunlit-lyric-video) | Sunlit Lyric Video | 16:9 | 90-210s | entertainment |
+| [`mono-to-warm-ballad`](#mono-to-warm-ballad) | Monochrome to Warm Ballad | 16:9 | 150-260s | entertainment |
+| [`warm-room-dance`](#warm-room-dance) | Warm Room Dance Film | 16:9 | 120-200s | entertainment |
+| [`bright-studio-tips`](#bright-studio-tips) | Bright Studio Tech Tips | 16:9 | 300-900s | youtube |
+| [`violet-gadget-review`](#violet-gadget-review) | Violet Gadget Review | 16:9 | 480-1500s | youtube |
+| [`versus-comparison`](#versus-comparison) | Versus Comparison | 16:9 | 480-1300s | youtube |
+| [`neon-studio-qna`](#neon-studio-qna) | Neon Studio Q&A | 16:9 | 300-900s | youtube |
+| [`commentary-podcast`](#commentary-podcast) | Commentary Podcast Cut | 16:9 | 60-900s | youtube |
+| [`vertical-sketch`](#vertical-sketch) | Vertical Sketch Comedy | 9:16 | 20-180s | social |
+| [`white-studio-challenge`](#white-studio-challenge) | White Studio Challenge | 9:16 | 25-60s | social |
+| [`fact-card-podcast-short`](#fact-card-podcast-short) | Fact Card Podcast Short | 9:16 | 45-150s | social |
+| [`meme-cutaway-explainer`](#meme-cutaway-explainer) | Meme Cutaway Explainer | 9:16 | 40-90s | social |
+| [`keyword-pop-tech-short`](#keyword-pop-tech-short) | Keyword Pop Tech Short | 9:16 | 30-60s | social |
+| [`question-card-interview`](#question-card-interview) | Question Card Interview | 9:16 | 40-90s | social |
+| [`step-transformation`](#step-transformation) | Step-by-Step Transformation | 9:16 | 30-75s | social |
+| [`one-take-unboxing`](#one-take-unboxing) | One-Take Unboxing | 9:16 | 45-110s | social |
+| [`glow-word-teaser`](#glow-word-teaser) | Glow Word Teaser | 9:16 | 10-25s | promo |
 
 ## Social
 
@@ -250,6 +271,208 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 **Scenes**
 
 1. **Audiogram**: Show the cover while audio plays. Length: from {{audio}}, else 30s.
+
+### vertical-sketch
+
+**Vertical Sketch Comedy**: Scripted comedy short: shot-reverse-shot dialogue, reaction close-ups, small clean subtitles, a twist ending.
+
+- **Format:** 9:16 at 30fps, ideally 20-180s
+- **Platforms:** TikTok, Instagram Reels, YouTube Shorts, Facebook
+- **Look:** captions `classic`, transition `fade`, grade none, fonts Archivo Black / Arimo
+- **Tags:** comedy, skit, sketch, short drama, dialogue, reactions
+
+**Editing guidance:** Median shot about 1.4s: cut on every line of dialogue, back and forth between speakers, and hold a beat longer on reaction faces (the joke lands on the reaction, not the line). Natural light, real locations, eye-level medium close-ups. Subtitles are small, white, sentence case and low in the frame. Set up the premise in the first 3 seconds and land the twist in the last 3; no music under dialogue except for the button.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `lines` | list | yes | Shots in order Fields: `media` (Shot of a line or reaction). |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Line** (repeats for each `lines`): One line or reaction. Length: follows media (max 6s).
+
+### white-studio-challenge
+
+**White Studio Challenge**: Big-stakes challenge short in a bright white infinity studio: glowing neon value labels, wide-to-close reaction cuts.
+
+- **Format:** 9:16 at 30fps, ideally 25-60s
+- **Platforms:** YouTube Shorts, TikTok, Instagram Reels
+- **Look:** captions `bold-pop`, transition `fade`, grade `bright` + `vibrant`, fonts Archivo Black / Arimo
+- **Tags:** challenge, stakes, reaction, white studio, neon text
+- **Automatic in apply_template:** adds a sound to each transition
+
+**Editing guidance:** Median shot about 1.4s. A bright, white, seamless set makes the props pop. Open on the stakes: the prize with its value in glowing neon text floating above it. Alternate a wide shot that shows the whole setup with close-ups of faces and hands at every decision. Each option gets its own glowing label in a different neon color. Peak on the reveal with a flash.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `stakes` | text | yes | The stakes, e.g. a prize value |
+| `beats` | list | yes | Story beats Fields: `media` (Shot), `label` (Glowing label (optional)). |
+| `reveal` | video |  | The reveal shot |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Stakes**: The prize and its glowing value. Length: 2s.
+2. **Beat** (repeats for each `beats`): Wide or close, one decision. Length: follows media (max 5s).
+3. **Reveal** _(optional)_: The payoff. Length: 4s.
+
+### fact-card-podcast-short
+
+**Fact Card Podcast Short**: Podcast clip turned into a news explainer: tiny uppercase captions two to four words at a time, numbered fact cards on grid paper, news inserts.
+
+- **Format:** 9:16 at 30fps, ideally 45-150s
+- **Platforms:** Instagram Reels, TikTok, YouTube Shorts
+- **Look:** captions `classic`, transition `fade`, grade none, fonts Anton / Arimo
+- **Tags:** podcast, news, explainer, finance, facts, captions
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.4s from main
+
+**Editing guidance:** One seated speaker at a desk mic, median shot about 3s. Captions are small, white, bold uppercase, two to four words, sitting low over the desk. Every few points, cut to a full-screen numbered fact card: the number, then the fact in condensed uppercase on white grid paper with a curled corner. Open on a news photo framed as a tilted card over the speaker. Cut away to the person or place mentioned for a beat.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `main` | video | yes | The podcast clip (transcribed for captions) |
+| `opener` | image |  | News photo for the opening card |
+| `facts` | list |  | Key facts Fields: `text` (The fact, short), `seconds` (How long to show it). |
+
+**Scenes**
+
+1. **Opener** _(optional)_: The news photo as a tilted card over the speaker. Length: 3s.
+2. **Talk**: The speaker. Length: follows media (max 40s).
+3. **Fact card** (repeats for each `facts`) _(optional)_: One numbered fact on grid paper. Length: from {{item.seconds}}, else 3.5s.
+4. **Rest** _(optional)_: The rest of the clip. Length: follows media.
+
+### meme-cutaway-explainer
+
+**Meme Cutaway Explainer**: Loud, fast tech explainer: one bold phrase at a time in the middle, constant cutaways to cut-out images and memes on a dark slate background.
+
+- **Format:** 9:16 at 30fps, ideally 40-90s
+- **Platforms:** YouTube Shorts, TikTok, Instagram Reels
+- **Look:** captions `word-by-word`, transition `fade`, grade none, fonts Archivo Black / Arimo
+- **Tags:** explainer, tech, meme, cutaways, fast, opinion
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.3s from main; adds a sound to each transition
+
+**Editing guidance:** Median shot about 2.5s with constant cutaways: every noun gets a picture. Cutaways are cut-out product shots, screenshots, archive photos and reaction memes, centered on a near-black slate background, sometimes with a big cross or a sticker on top. The host is framed chest-up in front of a dark set with one neon sign. Captions are one short phrase at a time, bold white, centered in the frame. Mix loud: voice forward, punchy sound effects on cutaways.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `main` | video | yes | Host talking (transcribed for captions) |
+| `cutaways` | list | yes | Cutaways in order Fields: `media` (Image or clip), `at` (Second in the talk it illustrates). |
+
+**Scenes**
+
+1. **Host**: The host talking. Length: follows media (max 6s).
+2. **Cutaway** (repeats for each `cutaways`): A picture of what was just said, on the slate. Length: 2.5s.
+3. **Rest** _(optional)_: The rest of the talk. Length: follows media.
+
+### keyword-pop-tech-short
+
+**Keyword Pop Tech Short**: Tech opinion short: small uppercase captions with colored keywords, big serif emphasis words, red-cross lists of what is missing, numbered points.
+
+- **Format:** 9:16 at 30fps, ideally 30-60s
+- **Platforms:** YouTube Shorts, TikTok, Instagram Reels
+- **Look:** captions `subtle-highlight`, transition `fade`, grade `bright`, fonts Gelasio / Arimo
+- **Tags:** tech, review, opinion, captions, keywords, list
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.4s from main
+
+**Editing guidance:** Median shot about 3.8s: host on a light, cozy set holding the products, then close product shots on a bright desk. Captions are small bold uppercase with the key word in teal. On the biggest words, swap the caption for one large white serif word (Gelasio) in the middle of the frame. Missing features stack as a short list with red crosses. Number each point with a big bold numeral in the upper left.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `main` | video | yes | Host talking (transcribed for captions) |
+| `points` | list |  | Points Fields: `media` (Product shot for the point), `missing` (Missing features, one per line (optional)). |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Host**: The host's take. Length: follows media (max 8s).
+2. **Point** (repeats for each `points`): One point: number, product, what is missing. Length: 4s.
+3. **Rest** _(optional)_: The rest of the take. Length: follows media.
+
+### question-card-interview
+
+**Question Card Interview**: Single-take press interview: each question pops up as a white card with red question marks, clean centered subtitles, show title in the corner.
+
+- **Format:** 9:16 at 30fps, ideally 40-90s
+- **Platforms:** Instagram Reels, TikTok, YouTube Shorts
+- **Look:** captions `classic`, transition `fade`, grade none, fonts Archivo Black / Arimo
+- **Tags:** interview, press junket, questions, subtitles, one take
+- **Automatic in apply_template:** transcribes main
+
+**Editing guidance:** One continuous take of the guest, often no cuts at all; any cut is a jump between answers. Dark, moody backdrop. Open with an intro card: the guest framed in a white outline cut-out with a name plate. Each question appears as a white box with black text in the middle of the frame, with red question marks scattered around it, for 2 to 3s before the answer. Subtitles are white, sentence case, centered just below the face. Show title small in the top corner throughout.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `main` | video | yes | The interview take (transcribed for subtitles) |
+| `guest` | text | yes | Guest name or intro line |
+| `show` | text |  | Show title for the corner |
+| `questions` | list | yes | Questions, in order Fields: `text` (The question). |
+
+**Scenes**
+
+1. **Intro card**: Who the guest is. Length: 3s.
+2. **Question and answer** (repeats for each `questions`): The question card, then the answer. Length: follows media (max 30s).
+
+### step-transformation
+
+**Step-by-Step Transformation**: Locked-frame transformation short: the same framing at every step, quick match cuts through the stages, a held final reveal.
+
+- **Format:** 9:16 at 30fps, ideally 30-75s
+- **Platforms:** TikTok, Instagram Reels, YouTube Shorts
+- **Look:** captions none, transition `fade`, grade `vibrant`, fonts Anton / Arimo
+- **Tags:** transformation, makeup, costume, glow up, steps, reveal
+- **Automatic in apply_template:** puts cuts on the beat
+
+**Editing guidance:** Keep the camera and framing identical for every step so each cut reads as a change, not a new shot. Steps are 1.5 to 3s each and speed up toward the end; the final look holds for 4s or more. A themed costume opener, then the plain start, then the steps, then the reveal in full styling with a dramatic background. Music carries it; cuts land on beats.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `steps` | list | yes | Steps in order, same framing Fields: `media` (Clip of the step). |
+| `reveal` | video | yes | The final look |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Step** (repeats for each `steps`): One stage of the change. Length: 2s.
+2. **Reveal**: The finished look, held. Length: 5s.
+
+### one-take-unboxing
+
+**One-Take Unboxing**: Energetic unboxing in one continuous handheld take: products thrust at the lens, warm home light, no cuts.
+
+- **Format:** 9:16 at 30fps, ideally 45-110s
+- **Platforms:** YouTube Shorts, TikTok, Instagram Reels
+- **Look:** captions `subtle-highlight`, transition hard cut, grade `warm`, fonts Archivo Black / Arimo
+- **Tags:** unboxing, tech, one take, accessories, handheld, energetic
+- **Automatic in apply_template:** transcribes main; removes pauses over 1.2s from main
+
+**Editing guidance:** Leave the take whole: the energy comes from the host moving products toward and away from the lens, not from cuts. Only trim dead air and fumbles at the start and end. Warm, soft window light in a home office, host centered in a cap. If it runs long, cut once to the best moment rather than many times. Short captions help it play muted.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `main` | video | yes | The unboxing take |
+| `hook` | text |  | Optional hook for the first 2s |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Take**: The whole unboxing. Length: follows media.
 
 ## Personal
 
@@ -490,6 +713,30 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 1. **Announcement**: Deliver the news. Length: 8s.
 
+### glow-word-teaser
+
+**Glow Word Teaser**: Vertical film teaser: one glowing metallic word at a time on black with a light streak, alternating with dramatic close-ups and small italic subtitles.
+
+- **Format:** 9:16 at 30fps, ideally 10-25s
+- **Platforms:** Instagram Reels, TikTok, YouTube Shorts
+- **Look:** captions `cinematic`, transition `fade`, grade `moody` + `vignette`, fonts Archivo Black / Arimo
+- **Tags:** teaser, trailer, tickets, release, promo, cinematic
+- **Automatic in apply_template:** puts cuts on the downbeats
+
+**Editing guidance:** Alternate: a word card (one word of the message, metallic and glowing in the accent color, with a horizontal light streak through it) and a dark, dramatic close-up of 0.8 to 1.2s. Spell the message across the cards, one word each. Subtitles of the dialogue are small, white and italic, low-center. Logo small at the top throughout. Hit each card on a downbeat.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `words` | list | yes | The message, one word per card, with the shot that follows it Fields: `word` (One word), `media` (Close-up that follows the word). |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Word card** (repeats for each `words`): One glowing word. Length: 0.9s.
+2. **Close-up** (repeats for each `words`): The dramatic beat after the word. Length: 1s.
+
 ## Entertainment
 
 ### reaction-split
@@ -562,6 +809,181 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 
 1. **Title** _(optional)_: Hype intro. Length: 1.8s.
 2. **Clip** (repeats for each `clips`): One highlight. Length: follows media (max 8s).
+
+### hot-pink-pop
+
+**Hot Pink Pop Video**: Maximal pop music video: one saturated pink-magenta world, flash-fast cuts on every beat, glitter title card, confetti and glow.
+
+- **Format:** 16:9 at 24fps, ideally 60-240s
+- **Platforms:** YouTube, Instagram, TikTok
+- **Look:** captions none, transition `fadewhite`, grade `vibrant` + `tint` + `glow` + `grain`, fonts Anton / Arimo
+- **Tags:** music video, pop, pink, glam, fast cuts, performance
+- **Automatic in apply_template:** puts cuts on the beat
+
+**Editing guidance:** Median shot about 1.1s, with bursts of 0.2s flash cuts on drum fills and holds of up to 3.5s for a dance phrase. Everything lives in one color world: push pinks and magentas, keep skin warm. Alternate wide room shots with very close faces and hair in motion. Open with a full-frame title card (the song name in huge glittering uppercase, wrapped in quote marks) and bring it back once at the drop. Flash on the strongest beats, never on every cut. Cuts move onto the beat automatically.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `song` | audio | yes | The song; the edit is cut to it |
+| `title` | text | yes | Song title for the title card |
+| `shots` | list | yes | Performance and story shots, in the order they should mostly appear Fields: `media` (Clip or photo). |
+
+**Scenes**
+
+1. **Title card**: The song name, huge and glittering, before the first shot. Length: 2s.
+2. **Shot** (repeats for each `shots`): One beat of performance or story. Length: 1.1s.
+
+### teal-amber-story
+
+**Teal and Amber Story Video**: Cinematic narrative music video: teal night exteriors against amber interiors, slow wide holds, letterboxed film look.
+
+- **Format:** 16:9 at 24fps, ideally 120-330s
+- **Platforms:** YouTube
+- **Look:** captions none, transition `fadeblack`, grade `tealOrange` + `halation` + `filmGrain` + `vignette` + `letterbox`, fonts Gelasio / Gelasio
+- **Tags:** music video, cinematic, narrative, film look, teal and orange, letterbox
+- **Automatic in apply_template:** puts cuts on the downbeats (every 2)
+
+**Editing guidance:** Tell a story, not a performance: median shot about 3.2s, with wide establishing holds of 8 to 18s and quick inserts only at turning points. Exteriors and night scenes go cold teal; interiors glow amber from practical lamps. Frame wide and let the subject be small in the landscape before going close. Use fire, headlights and lamps as the warm accents. No on-screen text beyond an optional title. Fade to black between story chapters.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `song` | audio | yes | The song; the edit is cut to it |
+| `shots` | list | yes | Story shots in story order Fields: `media` (Clip or photo). |
+| `title` | text |  | Optional title shown over the first shot |
+
+**Scenes**
+
+1. **Title** _(optional)_: Small serif title over a slow opening shot. Length: 4s.
+2. **Shot** (repeats for each `shots`): One story beat, held long. Length: 4s.
+
+### jewel-tone-ensemble
+
+**Jewel Tone Ensemble Video**: Luxurious ensemble music video: emerald, gold and violet scenes, long one-take dance performances broken by quick inserts, a fiery finale.
+
+- **Format:** 16:9 at 25fps, ideally 150-240s
+- **Platforms:** YouTube
+- **Look:** captions none, transition `dissolve`, grade `cinematic` + `bloom` + `grain` + `vignette`, fonts Anton / Arimo
+- **Tags:** music video, afrobeats, luxury, ensemble, choreography, gold
+- **Automatic in apply_template:** puts cuts on the downbeats
+
+**Editing guidance:** Two speeds: long single-take ensemble performances (20 to 35s, the camera moving through the group) and fast inserts around them (median 1.3s, down to 0.2s). Give every section its own jewel color: deep emerald, warm gold, violet dusk. Dress the frame with chandeliers, gold light and silhouettes against a big sky. Build to a finale with fire and the biggest wide shot. Cuts move onto bar starts automatically.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `song` | audio | yes | The song; the edit is cut to it |
+| `sections` | list | yes | Sections of the video, each one setup Fields: `performance` (The long performance take), `inserts` (Quick insert clip (detail, reaction, prop)). |
+| `finale` | video |  | The big closing shot |
+
+**Scenes**
+
+1. **Performance** (repeats for each `sections`): A long one-take group performance. Length: follows media (max 30s).
+2. **Insert** (repeats for each `sections`) _(optional)_: A quick detail that resets the eye. Length: 1.3s.
+3. **Finale** _(optional)_: Fire and the widest shot. Length: 6s.
+
+### gel-lit-studio
+
+**Gel-Lit Studio Rap Video**: Rap video in red and blue gel light: fisheye close-ups, booth and mic shots, letterboxed widescreen, punch-ins on the beat.
+
+- **Format:** 16:9 at 24fps, ideally 90-200s
+- **Platforms:** YouTube, TikTok
+- **Look:** captions none, transition `fade`, grade `adjust` + `tint` + `chromaticAberration` + `letterbox`, fonts Anton / Arimo
+- **Tags:** music video, rap, hip hop, studio, fisheye, red light
+- **Automatic in apply_template:** zoomPunch on the beat (every 2)
+
+**Editing guidance:** Median shot about 2.2s, with 0.15s stutter cuts on ad-libs and holds up to 8s on the verse. Light is the style: deep red rooms against icy blue and teal accents, faces in hard color. Mix extreme close-ups (lips, eyes, jewelry), fisheye shots pushed into the lens, the artist at the mic in the booth, and a night car shot. Punch in on the snare. Keep the letterbox on the whole video.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `song` | audio | yes | The song; the edit is cut to it |
+| `shots` | list | yes | Performance, booth and close-up shots Fields: `media` (Clip or photo). |
+
+**Scenes**
+
+1. **Shot** (repeats for each `shots`): One bar of the verse. Length: 2.2s.
+
+### sunlit-lyric-video
+
+**Sunlit Lyric Video**: Bright daylight performance by the water: pastel colors, small lowercase lyrics low in frame, a huge outlined title at the end.
+
+- **Format:** 16:9 at 24fps, ideally 90-210s
+- **Platforms:** YouTube, Instagram
+- **Look:** captions `minimal`, transition `dissolve`, grade `bright` + `vibrant` + `handheld`, fonts Anton / Arimo
+- **Tags:** music video, lyric video, summer, pastel, daylight, singer
+- **Automatic in apply_template:** transcribes song; puts cuts on the downbeats
+
+**Editing guidance:** Relaxed pace: median shot about 3.4s, never shorter than 1.8s. Bright blue sky and big clouds fill much of the frame; the singer often sits low in it, sometimes framed from below against the sky. Lyrics are small, lowercase, in the accent pastel, low and centered, one line at a time, timed to the vocal. Gentle handheld drift. End on a wide shot with the title in huge pastel letters across the frame.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `song` | audio | yes | The song; the edit is cut to it |
+| `shots` | list | yes | Daylight performance shots Fields: `media` (Clip or photo). |
+| `title` | text | yes | Title for the end card |
+
+**Scenes**
+
+1. **Shot** (repeats for each `shots`): One lyric line. Length: 3.4s.
+2. **End title**: The title across the frame. Length: 4s.
+
+### mono-to-warm-ballad
+
+**Monochrome to Warm Ballad**: Slow, intimate ballad video: soft black-and-white for the verses, opening into warm sand tones, with slow dissolves and soft focus.
+
+- **Format:** 16:9 at 24fps, ideally 150-260s
+- **Platforms:** YouTube
+- **Look:** captions none, transition `dissolve`, grade none, fonts Gelasio / Gelasio
+- **Tags:** music video, ballad, black and white, soft, r&b, intimate
+- **Automatic in apply_template:** puts cuts on the downbeats (every 2)
+
+**Editing guidance:** Slow: median shot about 3.2s, holds up to 9s, long dissolves. The first half is soft monochrome: close profiles in shadow, a lone figure in a dark set. At the chorus or bridge the world turns warm cream and sand, with flowing fabric, hair in the wind and pale drapes. Let focus breathe in and out; leave negative space. No text.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `song` | audio | yes | The song; the edit is cut to it |
+| `mono` | list | yes | Shots for the black-and-white half Fields: `media` (Clip). |
+| `warm` | list | yes | Shots for the warm half Fields: `media` (Clip). |
+
+**Scenes**
+
+1. **Monochrome** (repeats for each `mono`): Intimate verse shots in black and white. Length: 3.5s.
+2. **Warm** (repeats for each `warm`): The opening-up in warm sand tones. Length: 3.5s.
+
+### warm-room-dance
+
+**Warm Room Dance Film**: Choreography music video in warm, moody rooms: wide locked frames for the dance, details in practical light, a party crowd finale.
+
+- **Format:** 16:9 at 24fps, ideally 120-200s
+- **Platforms:** YouTube, TikTok
+- **Look:** captions none, transition `fade`, grade `moody` + `warm` + `filmGrain` + `vignette`, fonts Anton / Arimo
+- **Tags:** music video, dance, choreography, moody, film grain, amapiano
+- **Automatic in apply_template:** puts cuts on the downbeats
+
+**Editing guidance:** Median shot about 1.25s in the busy parts, but dance phrases stay whole in wide, locked frames of 4 to 7s so the choreography reads. Rooms are lived-in and warmly lit: practical lamps, sunlight through windows, saturated red and green walls. Cut to body-detail shots (hands, hips, boots) between phrases, and open a wall of lights for the climax. End in a dense crowd with handheld camera.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `song` | audio | yes | The song; the edit is cut to it |
+| `phrases` | list | yes | Dance phrases Fields: `wide` (Wide locked take of the phrase), `detail` (Detail shot to cut to (optional)). |
+| `crowd` | video |  | Crowd or party shot for the ending |
+
+**Scenes**
+
+1. **Dance phrase** (repeats for each `phrases`): The whole phrase, wide and locked. Length: 5s.
+2. **Detail** (repeats for each `phrases`) _(optional)_: A body detail between phrases. Length: 1.25s.
+3. **Crowd** _(optional)_: The party finale. Length: 6s.
 
 ## Education
 
@@ -771,6 +1193,141 @@ const { project, warnings } = await applyTemplate("podcast-clip", { main: "ep12.
 **Scenes**
 
 1. **Interview**: The conversation. Length: follows media.
+
+### bright-studio-tips
+
+**Bright Studio Tech Tips**: Long-form tech tips video in a bright, colorful set: numbered tips with a corner badge, hero product shots, huge words behind the product.
+
+- **Format:** 16:9 at 30fps, ideally 300-900s
+- **Platforms:** YouTube
+- **Look:** captions `subtle-highlight`, transition `smoothleft`, grade `bright` + `vibrant`, fonts Archivo Black / Arimo
+- **Tags:** tech, tips, review, numbered, product, colorful
+- **Automatic in apply_template:** transcribes intro, outro; adds a sound to each transition
+
+**Editing guidance:** Median shot about 5s, rarely under 2.5s: host to camera in a bright, colorful set (saturated wall colors, neon sign glow, plants), then close hands-on shots of the screen and product. Each tip gets a corner number badge for its whole length and a short uppercase label. For a key feature, set its name in giant letters behind the product. Hero shots on a seamless white table. Keep it upbeat and clean; no heavy grade.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `intro` | video | yes | Host's opening to camera |
+| `tips` | list | yes | The tips Fields: `media` (Clip showing the tip), `label` (Short tip name, uppercase), `host` (Host explaining it (optional)). |
+| `outro` | video |  | Closing to camera |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Intro**: Promise the number of tips. Length: follows media.
+2. **Tip** (repeats for each `tips`): One tip with its number in the corner. Length: follows media (max 45s).
+3. **Outro** _(optional)_: Wrap up and ask for a subscription. Length: follows media.
+
+### violet-gadget-review
+
+**Violet Gadget Review**: Premium gadget roundup on a dark violet set: each product gets a glowing price pill, rim-lit hands-on shots and a sponsor-safe pace.
+
+- **Format:** 16:9 at 30fps, ideally 480-1500s
+- **Platforms:** YouTube
+- **Look:** captions `classic`, transition `fade`, grade `moody` + `tint` + `bloom`, fonts Archivo Black / Arimo
+- **Tags:** tech, gadgets, review, roundup, price, purple
+- **Automatic in apply_template:** transcribes intro, outro
+
+**Editing guidance:** Median shot about 4s: host seated or standing in a dark set lit violet and blue with rim lights, then tight hands-on shots of each product. When a product appears, show its price and name together in one glowing magenta-to-violet pill, italic uppercase, low and centered, for about 3s. Unboxing from above, product details close with shallow depth. Moody but clean; blacks stay deep.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `intro` | video | yes | Cold open and intro to camera |
+| `products` | list | yes | Products Fields: `media` (Hands-on clip), `price` (Price, e.g. $249), `name` (Product name, uppercase). |
+| `outro` | video |  | Verdict to camera |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Intro**: Hook with the most surprising product. Length: follows media.
+2. **Product** (repeats for each `products`): One product, its price pill as it appears. Length: follows media (max 120s).
+3. **Verdict** _(optional)_: Which one to buy. Length: follows media.
+
+### versus-comparison
+
+**Versus Comparison**: Head-to-head review: side-by-side panels with labeled pills, a running score in the corners, test-by-test chapters.
+
+- **Format:** 16:9 at 30fps, ideally 480-1300s
+- **Platforms:** YouTube
+- **Look:** captions `classic`, transition `slideleft`, grade `vibrant`, fonts Archivo Black / Arimo
+- **Tags:** comparison, versus, vs, review, tech, side by side, test
+- **Automatic in apply_template:** transcribes intro, verdict; adds a sound to each transition
+
+**Editing guidance:** Median shot about 4.5s. Each test is a chapter: its name in bold uppercase over a top-down shot, then both results side by side in two rounded panels, each labeled with a pill underneath (product name, bold italic). Keep the score as round number badges in the bottom corners and update it after every test. Host reactions to camera between tests; thermal, timer and chart shots fill the frame.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `a` | text | yes | First product's name |
+| `b` | text | yes | Second product's name |
+| `intro` | video | yes | Host's opening |
+| `tests` | list | yes | The tests Fields: `name` (Test name, uppercase), `left` (Result from the first product), `right` (Result from the second product), `host` (Host's reaction (optional)). |
+| `verdict` | video |  | Final verdict to camera |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Intro**: Which two, and what is at stake. Length: follows media.
+2. **Test** (repeats for each `tests`): One test: both results side by side. Length: 8s.
+3. **Reaction** (repeats for each `tests`) _(optional)_: Host reacts to the result. Length: 4s.
+4. **Verdict** _(optional)_: The winner. Length: follows media.
+
+### neon-studio-qna
+
+**Neon Studio Q&A**: Maker channel Q&A: host on a dark set with neon shapes, each viewer question popping up as a comment card, cutaways to the builds.
+
+- **Format:** 16:9 at 30fps, ideally 300-900s
+- **Platforms:** YouTube
+- **Look:** captions `subtle-highlight`, transition `fade`, grade `moody` + `glow`, fonts Archivo Black / Arimo
+- **Tags:** q&a, questions, maker, engineering, neon, comments
+- **Automatic in apply_template:** transcribes questions
+
+**Editing guidance:** Median shot about 1.9s, but the host's answers run in 5 to 11s takes. The set is dark with neon signs and glowing shapes in blue, magenta and orange, and the host faces camera in plain dark clothes. Each question appears as a white comment card in the lower half while the host reads it from a phone. Answer with cutaways: build footage, workshop machines, clean renders on white. Pin the hook with the most surprising build in the first 5 seconds.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `hook` | video | yes | Most surprising build, for the first seconds |
+| `questions` | list | yes | Questions answered Fields: `question` (The viewer's question), `answer` (Host answering to camera), `broll` (Cutaway that shows the answer (optional)). |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Hook**: The wildest build, no explanation. Length: 4s.
+2. **Question** (repeats for each `questions`): The question as a comment card. Length: 4s.
+3. **Answer** (repeats for each `questions`): The answer, with its cutaway. Length: follows media (max 60s).
+
+### commentary-podcast
+
+**Commentary Podcast Cut**: Sit-down podcast edit with receipts: warm two-chair studio, reaction comments and screenshots stacked on a bold orange board between answers.
+
+- **Format:** 16:9 at 30fps, ideally 60-900s
+- **Platforms:** YouTube, Instagram
+- **Look:** captions `boxed`, transition `fade`, grade `warm`, fonts Archivo Black / Arimo
+- **Tags:** podcast, interview, commentary, comments, screenshots, studio
+- **Automatic in apply_template:** transcribes main; removes retakes, fillers, pauses over 0.5s from main
+
+**Editing guidance:** Median shot about 1.5s across camera angles: wide two-shot, each speaker's medium, and close hands. Warm beige studio, soft key light, plants and white chairs. Whenever a claim needs proof or public reaction, cut to a bold orange board and stack screenshots or comments on it one after another, slightly overlapping and tilted. Small comment cards can also float beside the speaker. Keep the speaker's best line uncut.
+
+**Inputs**
+
+| Slot | Kind | Required | Description |
+|---|---|---|---|
+| `main` | video | yes | The conversation (transcribed for captions and cleanup) |
+| `receipts` | list |  | Screenshots or comments to show on the board Fields: `media` (Screenshot image), `seconds` (How long to show it). |
+| `music` | audio |  | Background music (optional) |
+
+**Scenes**
+
+1. **Conversation**: The answer, cut across angles. Length: follows media.
+2. **Receipt** (repeats for each `receipts`) _(optional)_: Proof stacked on the orange board. Length: from {{item.seconds}}, else 3s.
 
 ## Business
 

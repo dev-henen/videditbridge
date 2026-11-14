@@ -2,7 +2,7 @@
 
 An AI-native video editing library. The edit is a plain JSON document that Claude (or any model) can read and change through ~46 tools. Rendering goes through FFmpeg.
 
-- **33 templates** that describe a style of video in JSON (viral talking head, podcast clip, listicle, documentary, real-estate tour, wedding film…). Claude can read them, follow their editing guidance, and write new ones.
+- **54 templates** that describe a style of video in JSON (viral talking head, podcast clip, listicle, documentary, wedding film, music videos from glam pop to teal-and-amber story films, gadget reviews, versus comparisons, sketch comedy…). Claude can read them, follow their editing guidance, and write new ones.
 - **Transcription on your machine**: a local Whisper model gives word-timed transcripts with no account or key. Also reads Whisper, Deepgram, AssemblyAI, SRT and VTT files. Search speech, find fillers, stutters, retakes and repeats, and cut them. Captions stay in sync after every edit.
 - **14 caption styles** (bold-pop/Hormozi, karaoke, word-by-word, boxed, neon, cinematic…), exportable as SRT, VTT or ASS.
 - **38 effects** (color grades, Ken Burns, punch-in zooms, shake, glitch, letterbox…), **46 transitions**, and **14 text animations**.

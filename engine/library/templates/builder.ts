@@ -144,19 +144,33 @@ export function buildFromTemplate(specInput: TemplateSpec, inputs: TemplateInput
   const clips: Clip[] = [];
   const pending: Pending[] = [];
 
+  // Scenes in a row that repeat over the same slot take turns per item (word card, then its shot; the
+  // next word card, then its shot) instead of running all of one scene and then all of the next.
+  const groups: SceneSpec[][] = [];
   for (const scene of spec.scenes) {
+    const last = groups[groups.length - 1];
+    if (scene.repeat && last?.[0]?.repeat === scene.repeat) last.push(scene);
+    else groups.push([scene]);
+  }
+  const runs: { scene: SceneSpec; item: unknown; i: number }[] = [];
+  for (const group of groups) {
+    const head = group[0]!;
     let items: unknown[] = [undefined];
-    if (scene.repeat) {
-      const v = inputs[scene.repeat];
+    if (head.repeat) {
+      const v = inputs[head.repeat];
       items = Array.isArray(v) ? v : isEmpty(v) ? [] : [v];
       if (!items.length) {
-        if (!scene.optional) warnings.push(`Scene "${scene.id}" repeats over empty slot "${scene.repeat}" and was skipped`);
+        for (const scene of group) if (!scene.optional) warnings.push(`Scene "${scene.id}" repeats over empty slot "${scene.repeat}" and was skipped`);
         continue;
       }
     }
-    items.forEach((item, i) => {
+    items.forEach((item, i) => group.forEach((scene) => runs.push({ scene, item, i })));
+  }
+
+  for (const { scene, item, i } of runs) {
+    {
       const scope: Scope = { inputs, theme, item, index: i + 1 };
-      if (scene.optional && scenePlaceholders(scene).some((p) => isEmpty(lookup(p, scope)))) return;
+      if (scene.optional && scenePlaceholders(scene).some((p) => isEmpty(lookup(p, scope)))) continue;
 
       const bg = scene.background;
       let clip: Clip;
@@ -188,7 +202,7 @@ export function buildFromTemplate(specInput: TemplateSpec, inputs: TemplateInput
             if (available !== undefined) srcDur = Math.min(srcDur, available);
             if (srcDur <= 0.05) {
               warnings.push(`Scene "${scene.id}": media "${media.src}" has no footage left; scene skipped`);
-              return;
+              continue;
             }
             if (known === undefined && scene.fitMedia) warnings.push(`Scene "${scene.id}": duration of "${media.src}" unknown; using ${round3(srcDur)}s (use applyTemplate to probe)`);
             if (bg.consume) cursors.set(asset.id, start + srcDur);
@@ -206,7 +220,7 @@ export function buildFromTemplate(specInput: TemplateSpec, inputs: TemplateInput
       }
       clips.push(clip);
       pending.push({ clipId: clip.id, scene, scope });
-    });
+    }
   }
 
   if (!clips.length) throw new Error(`Template "${spec.id}" produced no scenes from the given inputs`);

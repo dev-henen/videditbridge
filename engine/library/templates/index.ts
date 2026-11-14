@@ -4,11 +4,12 @@ import { SOCIAL_TEMPLATES } from "./catalog/social.js";
 import { YOUTUBE_TEMPLATES } from "./catalog/youtube.js";
 import { BUSINESS_TEMPLATES } from "./catalog/business.js";
 import { PERSONAL_TEMPLATES } from "./catalog/personal.js";
+import { STYLE_TEMPLATES } from "./catalog/styles.js";
 
 export * from "./types.js";
 export { buildFromTemplate, collectMediaInputs, type BuildOptions, type BuildResult } from "./builder.js";
 
-export const TEMPLATES: TemplateSpec[] = [...SOCIAL_TEMPLATES, ...YOUTUBE_TEMPLATES, ...BUSINESS_TEMPLATES, ...PERSONAL_TEMPLATES].map((t) =>
+export const TEMPLATES: TemplateSpec[] = [...SOCIAL_TEMPLATES, ...YOUTUBE_TEMPLATES, ...BUSINESS_TEMPLATES, ...PERSONAL_TEMPLATES, ...STYLE_TEMPLATES].map((t) =>
   TemplateSpecSchema.parse(t),
 );
 
