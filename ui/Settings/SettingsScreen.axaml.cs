@@ -287,7 +287,7 @@ public partial class SettingsScreen : UserControl
 
         // Conversation size: every request reads the whole conversation, so a long one costs more each time.
         var limit = _settings?["contextLimit"]?.GetValue<int>() ?? 100_000;
-        var sizes = new[] { 32_000, 64_000, 100_000, 150_000, 200_000, 500_000, 1_000_000 };
+        var sizes = new[] { 32_000, 64_000, 100_000, 150_000, 200_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 4_000_000, 5_000_000 };
         var limitBox = new ComboBox { Width = 220 };
         foreach (var n in sizes)
             limitBox.Items.Add(new ComboBoxItem { Tag = n, Content = n >= 1_000_000 ? $"{n / 1_000_000}M tokens" : $"{n / 1000}k tokens{(n == 100_000 ? " (default)" : "")}" });

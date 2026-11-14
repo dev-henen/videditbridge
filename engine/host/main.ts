@@ -426,7 +426,7 @@ const handlers: Record<string, Handler> = {
     if (p.renderer === "auto" || p.renderer === "engine" || p.renderer === "ffmpeg") next.renderer = p.renderer;
     if (typeof p.hardwareEncoding === "boolean") next.hardwareEncoding = p.hardwareEncoding;
     if (typeof p.instructions === "string") next.instructions = p.instructions.slice(0, 4000);
-    if (typeof p.contextLimit === "number" && p.contextLimit >= 8000 && p.contextLimit <= 2_000_000) next.contextLimit = Math.round(p.contextLimit);
+    if (typeof p.contextLimit === "number" && p.contextLimit >= 8000 && p.contextLimit <= 5_000_000) next.contextLimit = Math.round(p.contextLimit);
     if (typeof p.autoCompact === "boolean") next.autoCompact = p.autoCompact;
     if (Array.isArray(p.searchFolders)) next.searchFolders = [...new Set(p.searchFolders.map(String).filter((f) => path.isAbsolute(f)))];
     settings = next;
