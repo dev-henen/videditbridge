@@ -1,0 +1,129 @@
+VideditBridge License 1.0
+
+Copyright (c) 2026 Moses Henen. All rights reserved except as granted below.
+
+This is a source-available license: the source code is public so that people can read it, use the
+software for free and contribute to it. It is not an open source license, because it does not allow
+changing the software or passing on changed versions.
+
+
+1. Definitions
+
+"Licensor" means Moses Henen, the author and owner of the Software.
+
+"Software" means VideditBridge as published by the Licensor at
+https://github.com/dev-henen/videditbridge and in the Licensor's releases: the desktop app, the
+editing engine and its library (including the npm package "videditbridge"), their source code,
+documentation and other files, in every version released under this license.
+
+"You" means the person or organization using the Software under this license.
+
+"Unmodified" means exactly as the Licensor released it, with no file added, removed or changed.
+
+"Contribution" means any change, code, documentation or other material that you submit to the
+Licensor for inclusion in the Software, for example as a pull request, a patch or an issue.
+
+
+2. What you may do
+
+Free of charge, worldwide and without time limit, you may:
+
+a. Use the Software for any purpose, personal or commercial. For example, you may edit videos with
+   it for yourself, for your employer or for paying clients, and you own the videos you make.
+
+b. Use the engine library in your own software by calling it as it is, including in commercial
+   software, as long as the library's files stay Unmodified and the product you offer is not
+   substantially the Software itself (see section 3).
+
+c. Make and give away Unmodified copies of the Software, for example by passing the installer to
+   someone or offering it on an internal software list, as long as you charge nothing for them and
+   each copy includes this license and the Software's copyright notices.
+
+d. Read and study the source code.
+
+e. Fork the repository on GitHub and change your fork only in order to prepare, test and submit
+   Contributions to the Licensor's repository. A changed version may not be used for any other
+   purpose or passed to anyone except through a Contribution.
+
+
+3. What you may not do
+
+a. Sell, rent, lease or sublicense the Software, or charge any fee for copies of it, for access to
+   it or for permission to use it. This includes offering the Software, or a product that is
+   substantially the Software, as a paid app, download, subscription or hosted service.
+
+b. Change the Software, or make, use or distribute a modified version or a work derived from it,
+   except as section 2(e) allows for Contributions.
+
+c. Remove or change the copyright notices, this license or the notices of third-party components.
+
+d. Claim to be the author or owner of the Software or of the project, or present the Software or
+   any part of it as your own work.
+
+e. Use the names "VideditBridge" or "Moses Henen", or the VideditBridge logo, to name or promote
+   your own products, or in a way that suggests the Licensor endorses you, except to say truthfully
+   that you use the Software or that you contributed to it.
+
+
+4. Contributions
+
+Contributions are welcome through the GitHub repository and are made on these terms, which you
+accept by submitting one:
+
+a. You grant the Licensor a perpetual, worldwide, free, irrevocable license to use, copy, change,
+   publish, sublicense and relicense your Contribution, as part of the Software or otherwise, under
+   this license or any other license the Licensor chooses.
+
+b. You confirm that the Contribution is your own work, or that you have the right to submit it on
+   these terms, and that it does not knowingly infringe anyone's rights.
+
+c. Submitting a Contribution gives you no ownership of the Software or the project, and no right to
+   be paid. The Licensor decides whether to include it. You may be credited as a contributor.
+
+
+5. Third-party components
+
+The Software includes or uses components by others, such as libraries, fonts and machine learning
+models, listed with their licenses in ui/THIRD-PARTY-NOTICES.md. Each of those components is under
+its own license, which applies to it in place of this one. Nothing in this license limits the rights
+those licenses give you, for example the right to replace an LGPL library with another version.
+
+
+6. Ownership
+
+The Licensor keeps all rights in the Software that this license does not expressly grant. The
+Software is licensed, not sold.
+
+
+7. Ending the license
+
+If you break this license, your rights under it end automatically. If it is your first breach and
+you stop it and put right what you did within 30 days of learning about it, your rights continue.
+Sections 3, 4, 6, 8 and 9 stay in effect after the license ends.
+
+
+8. No warranty
+
+The Software is provided "as is", without warranty of any kind, express or implied, including
+warranties of merchantability, fitness for a particular purpose and non-infringement.
+
+
+9. Limit of liability
+
+To the extent the law allows, the Licensor is not liable for any damages or losses of any kind
+arising from the Software or its use, even if told they were possible.
+
+
+10. Changes to this license
+
+The Licensor may release later versions of the Software under different terms. A copy of the
+Software you received under this license stays under this license, for as long as you follow it,
+even if later versions use different terms; the Licensor cannot take back or narrow the rights this
+license gave you for that copy. If a later version of the VideditBridge License gives more rights,
+you may choose to use your copy under it instead.
+
+
+11. Questions
+
+To ask for permission beyond this license, for example to sell or change the Software, open an
+issue at https://github.com/dev-henen/videditbridge/issues.

@@ -13,6 +13,7 @@ public static class Docs
     public const string Issues = "https://github.com/dev-henen/videditbridge/issues";
     /// <summary>The app's source, by its developer, Moses Henen.</summary>
     public const string Repo = "https://github.com/dev-henen/videditbridge";
+    public const string License = Repo + "/blob/main/LICENSE";
 
     public static string Home => Site;
     /// <summary>Getting an API key; `provider` jumps to Anthropic's, OpenAI's or Google's steps.</summary>

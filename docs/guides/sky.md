@@ -59,7 +59,7 @@ Optional, downloaded once into the models folder on first use, run with ONNX Run
 | CLIPSeg ("the sky", quantized) | Apache-2.0 | 0.7 s | Too coarse for an edge |
 | OWLv2 box for "the sky", then SAM 2.1 tiny | Apache-2.0 | 16.7 s | Sharp where it works, but finds nothing in the sea and dusk shots |
 
-MaskFormer (CC BY-NC) and SegFormer (NVIDIA source code license, non-commercial) were not considered, because their licenses do not allow use in this MIT-licensed library.
+MaskFormer (CC BY-NC) and SegFormer (NVIDIA source code license, non-commercial) were not considered, because their licenses do not allow commercial use, and the app is free for commercial use and ships its models.
 
 ## Measured
 

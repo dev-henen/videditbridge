@@ -182,3 +182,7 @@ ave probe <media>   ave tools
 - Rendering a single frame decodes the timeline up to that point, so frames late in long videos are slower.
 - Shapes are rectangles only. Media layers support fade and slide animations; the other animations apply to text and shapes.
 - Fonts come from the system. Pass `fontsDir` to use bundled `.ttf`/`.otf` files.
+
+## License
+
+VideditBridge is made and owned by Moses Henen, and is free to use, for personal and commercial work alike. The source is public so that anyone can read it and contribute on GitHub, but it is not open source: it may not be sold, changed or passed on in a changed form, and nobody may claim it as their own. Unchanged copies may be shared for free. A copy keeps the license it came with, even if later versions change their terms. See [LICENSE](LICENSE) for the terms, [CONTRIBUTING.md](CONTRIBUTING.md) for how contributions work, and [ui/THIRD-PARTY-NOTICES.md](ui/THIRD-PARTY-NOTICES.md) for the components and models it includes, which keep their own licenses.

@@ -601,6 +601,7 @@ public partial class SettingsScreen : UserControl
         Card(page, null,
             Row($"VideditBridge {AppVersion}", "Edit video by asking Claude, ChatGPT or Gemini here, or from the Claude app."),
             Row("Made by Moses Henen", "The app's source and releases are on GitHub.", Btn("Open", () => Docs.Open(this, Docs.Repo), icon: Icons.Open, name: "Open VideditBridge on GitHub")),
+            Row("License", "Free to use, for work too. It may not be sold or changed; anyone can contribute on GitHub.", Btn("Open", () => Docs.Open(this, Docs.License), icon: Icons.Open, name: "Read the license")),
             Row("User guide", "Getting started, API keys, the Claude app, what you can ask.", Btn("Open", () => Docs.Open(this, Docs.Home), icon: Icons.Open, name: "Open the user guide")),
             Row("All tools", "Everything the AI can do in the editor, by topic.", Btn("Open", () => Docs.Open(this, Docs.Tools), icon: Icons.Open, name: "Open the tools list")),
             Row("Troubleshooting", "When a key, a connection or a render does not work.", Btn("Open", () => Docs.Open(this, Docs.Troubleshooting), icon: Icons.Open, name: "Open troubleshooting")),

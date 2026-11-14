@@ -151,7 +151,7 @@ Built: a click in the viewer marks a spot that goes to Claude for `select_object
 
 ## 10. Testing
 
-While building, run only the tests of the code that changed (the matching `test/<area>/` file, filtered with `-t`) and its engine parity cases. The whole suite (`npm test`, `FULL_RENDER=1` for every template) runs once after the checklist is done. Models are optional, downloaded on first use, and need a license that allows use in an MIT library.
+While building, run only the tests of the code that changed (the matching `test/<area>/` file, filtered with `-t`) and its engine parity cases. The whole suite (`npm test`, `FULL_RENDER=1` for every template) runs once after the checklist is done. Models are optional, downloaded on first use, and need a license that allows commercial use and shipping them with the app (MIT or Apache-2.0 so far).
 
 ### 10.1 The real-clip pass (instructions from the user, 2026-11-10)
 

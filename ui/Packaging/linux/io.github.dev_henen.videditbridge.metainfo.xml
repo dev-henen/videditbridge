@@ -10,7 +10,7 @@
     <name>Moses Henen</name>
   </developer>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
+  <project_license>LicenseRef-proprietary=https://github.com/dev-henen/videditbridge/blob/main/LICENSE</project_license>
   <description>
     <p>VideditBridge is a video editor you use by asking. Describe the video you want, point at a clip or a spot in the frame, and the AI cuts, captions, grades and renders it while you watch the preview.</p>
     <p>It works with Claude, ChatGPT or Gemini using your own API key, and other AI apps can edit through it over MCP.</p>

@@ -55,7 +55,7 @@ Optional, downloaded once into the models folder on first use, run with ONNX Run
 | Depth Anything V1 Small (364 px) | Apache-2.0 | 99 MB | 1.3 s | 1.5%, 2.4% | Right ordering, but soft, blobby edges |
 | DPT-Hybrid MiDaS (384 px) | MIT | 533 MB | 2.9 s | 4.3%, 2.9% | Blurry and bleeding edges; 5 times the size and twice as slow |
 
-DepthPro was not considered: its license (Apple's research license) does not allow use in this MIT-licensed library. On the reference laptop's integrated graphics, DirectML runs the chosen model in 1.7 s a frame against 1.2 s on the CPU, so the provider check (see the faces guide) keeps the CPU there.
+DepthPro was not considered: its license (Apple's research license) does not allow commercial use, and the app is free for commercial use and ships its models. On the reference laptop's integrated graphics, DirectML runs the chosen model in 1.7 s a frame against 1.2 s on the CPU, so the provider check (see the faces guide) keeps the CPU there.
 
 ## Measured
 
