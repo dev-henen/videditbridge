@@ -9,7 +9,7 @@
     <RootNamespace>VideoEditor</RootNamespace>
     <Product>VideditBridge</Product>
     <!-- Shown in the executable's properties (Windows), the About page and the packages -->
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Authors>Moses Henen</Authors>
     <Company>Moses Henen</Company>
     <Copyright>Copyright (c) 2026 Moses Henen</Copyright>
