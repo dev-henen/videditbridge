@@ -187,4 +187,4 @@ ave probe <media>   ave tools
 
 ## License
 
-VideditBridge is made and owned by Moses Henen, and is free to use, for personal and commercial work alike. The source is public so that anyone can read it and contribute on GitHub, but it is not open source: it may not be sold, changed or passed on in a changed form, and nobody may claim it as their own. Unchanged copies may be shared for free. A copy keeps the license it came with, even if later versions change their terms. See [LICENSE](LICENSE) for the terms, [CONTRIBUTING.md](CONTRIBUTING.md) for how contributions work, and [ui/THIRD-PARTY-NOTICES.md](ui/THIRD-PARTY-NOTICES.md) for the components and models it includes, which keep their own licenses.
+VideditBridge is free and open source under the [MIT License](LICENSE). You can use it for personal and commercial work, change it, and share it. It is created and maintained by Moses Henen. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, and [ui/THIRD-PARTY-NOTICES.md](ui/THIRD-PARTY-NOTICES.md) for the components and models it includes, which keep their own licenses.
