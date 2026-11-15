@@ -1,6 +1,6 @@
 # Contributing to VideditBridge
 
-Thank you for helping. VideditBridge is free to use, for work too, and its source is public so that anyone can read it and contribute to it. It is made and owned by Moses Henen.
+Thank you for helping. VideditBridge is free and open source under the [MIT License](LICENSE). Anyone can use it, including for work, and anyone is welcome to read it, change it and contribute to it. It is created and maintained by Moses Henen.
 
 ## How to contribute
 
@@ -10,10 +10,12 @@ Thank you for helping. VideditBridge is free to use, for work too, and its sourc
 
 ## The terms of a contribution
 
-The project's [license](LICENSE) allows changing the code only to prepare and test a contribution. A fork with changes may not be used for anything else, or given to anyone except through a pull request.
+VideditBridge is released under the MIT License, and contributions are accepted under the same license.
 
-By opening a pull request or otherwise submitting a contribution, you agree to section 4 of the license:
+By opening a pull request or otherwise submitting a contribution, you agree that:
 
-- You give Moses Henen a permanent, free license to use, change, publish and relicense your contribution, as part of VideditBridge or otherwise.
-- The contribution is your own work, or you have the right to submit it on these terms.
-- A contribution gives no ownership of VideditBridge or the project, and no right to payment. Whether it is included is up to the maintainer. Contributors are credited.
+- Your contribution is licensed under the [MIT License](LICENSE), the same as the rest of the project.
+- The contribution is your own work, or you have the right to submit it under the MIT License.
+- You keep the copyright to your contribution. It gives no right to payment, and whether it is included is up to the maintainer. Contributors are credited.
+
+You are free to fork the project and use your fork however the MIT License allows.
