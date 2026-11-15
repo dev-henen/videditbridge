@@ -2,6 +2,8 @@
 
 An AI-native video editing library. The edit is a plain JSON document that Claude (or any model) can read and change through ~46 tools. Rendering goes through FFmpeg.
 
+<p align="center"><img src="docs/media/promo.svg" alt="videditbridge: three requests typed into the app's chat turn a folder of clips into a finished film, cut to the music, graded, titled and narrated" width="800"></p>
+
 - **54 templates** that describe a style of video in JSON (viral talking head, podcast clip, listicle, documentary, wedding film, music videos from glam pop to teal-and-amber story films, gadget reviews, versus comparisons, sketch comedy…). Claude can read them, follow their editing guidance, and write new ones.
 - **Transcription on your machine**: a local Whisper model gives word-timed transcripts with no account or key. Also reads Whisper, Deepgram, AssemblyAI, SRT and VTT files. Search speech, find fillers, stutters, retakes and repeats, and cut them. Captions stay in sync after every edit.
 - **14 caption styles** (bold-pop/Hormozi, karaoke, word-by-word, boxed, neon, cinematic…), exportable as SRT, VTT or ASS.
