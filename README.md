@@ -1,6 +1,8 @@
-# videditbridge
+<p align="center"><img src="ui/Packaging/icons/AppIcon-128.png" alt="videditbridge icon" width="96" height="96"></p>
 
-An AI-native video editing library. The edit is a plain JSON document that Claude (or any model) can read and change through ~46 tools. Rendering goes through FFmpeg.
+<h1 align="center">videditbridge</h1>
+
+<p align="center">An AI-native video editing library. The edit is a plain JSON document that Claude (or any model) can read and change through ~46 tools. Rendering goes through FFmpeg.</p>
 
 <p align="center"><img src="docs/media/promo.svg" alt="videditbridge: three requests typed into the app's chat turn a folder of clips into a finished film, cut to the music, graded, titled and narrated" width="800"></p>
 
