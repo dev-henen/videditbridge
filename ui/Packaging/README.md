@@ -35,7 +35,7 @@ The ids follow Flathub's rule for GitHub projects: `io.github.<user>.<app>`, wit
 | macOS | `macOS/Info.plist`; `AppIcon.icns` made from `icons/` with `iconutil` |
 | Linux | `linux/io.github.dev_henen.videditbridge.desktop` and `.metainfo.xml` (to `/usr/share/applications` and `/usr/share/metainfo`); icons from `icons/` installed as `hicolor/<size>x<size>/apps/io.github.dev_henen.videditbridge.png` |
 
-`logo.jpg` is the source of every icon (the VideditBridge logo). After changing it, run `npx tsx scripts/make-icons.ts`: it cuts the light background away (keeping the white inside the logo), crops it square and writes `AppIcon.png` (1024, the master), `icons/AppIcon-<size>.png` (16 to 1024), `../Assets/AppIcon.png` (256, the window icon) and `../Assets/AppIcon.ico` (16 to 256).
+`logo.png` is the source of every icon (the VideditBridge logo, a blue rounded tile with transparent corners). After changing it, run `npx tsx scripts/make-icons.ts`: it keeps a logo that already has a transparent background as it is (a logo on a plain light background has that background cut away, keeping the white inside the logo), crops it square and writes `AppIcon.png` (1024, the master), `icons/AppIcon-<size>.png` (16 to 1024), `../Assets/AppIcon.png` (256, the window icon) and `../Assets/AppIcon.ico` (16 to 256).
 
 ## Where things go in an installed app
 

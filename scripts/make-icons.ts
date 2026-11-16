@@ -1,9 +1,10 @@
 /**
  * Every app icon from the logo.
  *
- *   npx tsx scripts/make-icons.ts [logo image]     (default: ui/Packaging/logo.jpg)
+ *   npx tsx scripts/make-icons.ts [logo image]     (default: ui/Packaging/logo.png)
  *
- * The logo can sit on a plain light background: the background is cut away by filling in from the
+ * A logo with a transparent background (like a rounded tile) is used as it is, its background kept.
+ * Otherwise the logo can sit on a plain light background: the background is cut away by filling in from the
  * edges (so white inside the logo, like film holes, stays), and the soft edge is taken back out of
  * the white so it looks clean on dark taskbars. Then the logo is cropped square and written as:
  * - ui/Packaging/AppIcon.png (1024, the master)
@@ -16,7 +17,7 @@ import path from "node:path";
 import sharp from "sharp";
 
 const root = path.resolve(import.meta.dirname, "..");
-const source = path.resolve(process.argv[2] ?? path.join(root, "ui", "Packaging", "logo.jpg"));
+const source = path.resolve(process.argv[2] ?? path.join(root, "ui", "Packaging", "logo.png"));
 const PNG_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
 /** Space around the logo, as a share of the icon. */
@@ -107,12 +108,28 @@ function ico(images: { size: number; png: Buffer }[]): Buffer {
   return Buffer.concat([header, ...images.map((i) => i.png)]);
 }
 
-const { data, width, height } = await cutOut(source);
+/** The logo as RGBA pixels, as it is: for a logo that already has a transparent background. */
+async function asIs(file: string): Promise<{ data: Buffer; width: number; height: number }> {
+  const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  return { data, width: info.width, height: info.height };
+}
+
+/** True when any corner of the picture is transparent: the background is already gone. */
+async function transparent(file: string): Promise<boolean> {
+  const { data, width, height } = await asIs(file);
+  return [0, width - 1, (height - 1) * width, height * width - 1].some((i) => data[i * 4 + 3]! < 16);
+}
+
+const { data, width, height } = (await transparent(source)) ? await asIs(source) : await cutOut(source);
 const { left, top, size } = square(data, width, height);
 // The square may reach past the picture: the canvas is extended with transparency first.
 const pad = Math.max(0, -left, -top, left + size - width, top + size - height);
-const master = await sharp(data, { raw: { width, height, channels: 4 } })
+// Two steps: in one pipeline sharp would extract before it extends.
+const padded = await sharp(data, { raw: { width, height, channels: 4 } })
   .extend({ top: pad, bottom: pad, left: pad, right: pad, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+  .png()
+  .toBuffer();
+const master = await sharp(padded)
   .extract({ left: left + pad, top: top + pad, width: size, height: size })
   .resize(1024, 1024, { kernel: "lanczos3" })
   .png()
