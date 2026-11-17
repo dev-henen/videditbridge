@@ -70,6 +70,7 @@ public sealed class ProjectViewModel : Observable
         _engine = engine;
         Dir = state["projectDir"]!.GetValue<string>();
         _model = app.DefaultModel;
+        _effort = app.DefaultEffort;
         _ = RefreshMemoryAsync();
         UseAvailableModel();
         ApplyState(state);
@@ -172,6 +173,20 @@ public sealed class ProjectViewModel : Observable
             // The picker lists only models with a key and sends null for one it does not list: keep the model.
             if (value is null) return;
             Set(ref _model, value, nameof(Model), nameof(ModelAvailable), nameof(CanAsk), nameof(AskHint), nameof(Assistant), nameof(EmptyTitle), nameof(ShowCache), nameof(CacheTip));
+        }
+    }
+
+    public IReadOnlyList<EffortOption> Efforts => EffortOption.All;
+    private EffortOption _effort;
+    /// <summary>How much the AI thinks before acting, for the next request; new tabs start with the last one picked.</summary>
+    public EffortOption Effort
+    {
+        get => _effort;
+        set
+        {
+            if (value is null) return;
+            Set(ref _effort, value);
+            _app.DefaultEffort = value;
         }
     }
 
@@ -580,7 +595,7 @@ public sealed class ProjectViewModel : Observable
         ChatChanged?.Invoke();
         try
         {
-            await Call("agent.run", new { prompt = message, display = prompt.Trim(), model = Model.Id, attachments = files.ToArray(), plan = planMode });
+            await Call("agent.run", new { prompt = message, display = prompt.Trim(), model = Model.Id, effort = Effort.Id, attachments = files.ToArray(), plan = planMode });
         }
         catch (Exception e)
         {
@@ -790,6 +805,9 @@ public sealed class ProjectViewModel : Observable
         UpdateStatus();
         StateUpdated?.Invoke(s);
     }
+
+    /// <summary>The project is being deleted (the host closes it): quiet from here on, as after CloseAsync.</summary>
+    public void MarkDeleted() => _closed = true;
 
     /// <summary>
     /// Close the project in the host (it saves and leaves a cover). Claude's request, if one runs, is

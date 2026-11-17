@@ -55,8 +55,12 @@ export function sentences(t: Transcript, opts: { maxGap?: number } = {}): Senten
 }
 
 /** Transcript as readable lines with timestamps, for an AI to read. */
-export function formatTranscript(t: Transcript, opts: { maxGap?: number } = {}): string {
+export function formatTranscript(t: Transcript, opts: { maxGap?: number; from?: number; to?: number } = {}): string {
+  const from = opts.from ?? 0;
+  const to = opts.to ?? Infinity;
   return sentences(t, opts)
+    // Sentences that overlap the range, whole.
+    .filter((s) => s.end > from && s.start < to)
     .map((s) => `[${formatTime(s.start)}-${formatTime(s.end)}]${s.speaker ? ` ${s.speaker}:` : ""} ${s.text}`)
     .join("\n");
 }

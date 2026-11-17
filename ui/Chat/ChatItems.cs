@@ -56,6 +56,22 @@ public sealed record ModelOption(string Id, string Label, string Description, st
     public override string ToString() => Label;
 }
 
+/// <summary>How much the AI thinks before it acts (the host's effort: low, medium or high).</summary>
+public sealed record EffortOption(string Id, string Label, string Description)
+{
+    public static readonly IReadOnlyList<EffortOption> All =
+    [
+        new("low", "Low", "Fastest and uses the fewest tokens: for small, clear changes"),
+        new("medium", "Medium", "Thinks some before acting: for most edits"),
+        new("high", "High", "Thinks the most: for full edits from raw footage and restyles"),
+    ];
+
+    /// <summary>The option for an id from the host, high for anything else.</summary>
+    public static EffortOption Of(string? id) => All.FirstOrDefault(e => e.Id == id) ?? All[2];
+
+    public override string ToString() => Label;
+}
+
 /// <summary>An AI provider the app can edit with, and whether it has a key.</summary>
 public sealed record ProviderOption(string Id, string Label, string Assistant, string KeyUrl, string KeyHint, bool Available);
 

@@ -4,6 +4,8 @@ import { EditorAgent } from "../../engine/host/agent.js";
 import { AGENT_MODELS, DEFAULT_MODEL, assistantOf, providerOf } from "../../engine/host/models.js";
 import {
   AnthropicProvider,
+  GeminiProvider,
+  OpenAIProvider,
   fromGeminiParts,
   fromOpenAIOutput,
   toGeminiContents,
@@ -147,5 +149,43 @@ describe("AI providers", () => {
     expect(h[7]!.content).toEqual([{ type: "text", text: "google done" }]);
     // The thinking activity names the assistant.
     expect(session.activities.some((a) => a.label === "Gemini is thinking")).toBe(true);
+  });
+});
+
+describe("effort", () => {
+  const request = (effort?: "low" | "medium" | "high"): TurnRequest => ({ model: "m", system: "s", tools: [], messages: [{ role: "user", content: "hi" }], signal: new AbortController().signal, ...(effort ? { effort } : {}) });
+
+  it("reaches each provider as its own setting: Claude's effort, OpenAI's reasoning effort, Gemini's thinking level", async () => {
+    const sent: Record<string, Record<string, unknown>> = {};
+    const claude = { beta: { messages: { stream: (b: Record<string, unknown>) => ((sent.claude = b), { on: () => undefined, finalMessage: async () => ({ content: [], stop_reason: "end_turn" }) }) } } };
+    const openai = { responses: { stream: (b: Record<string, unknown>) => ((sent.openai = b), { on: () => undefined, finalResponse: async () => ({ output: [], status: "completed" }) }) } };
+    const gemini = { models: { generateContentStream: async (b: Record<string, unknown>) => ((sent.gemini = b), (async function* () {})()) } };
+    await new AnthropicProvider(claude as never).turn(request("low"));
+    await new OpenAIProvider(openai as never).turn(request("medium"));
+    await new GeminiProvider(gemini as never).turn(request("low"));
+    expect(sent.claude!.output_config).toEqual({ effort: "low" });
+    expect(sent.openai!.reasoning).toEqual({ effort: "medium" });
+    expect((sent.gemini!.config as { thinkingConfig: unknown }).thinkingConfig).toEqual({ thinkingLevel: "LOW" });
+    // Left out, it is high.
+    await new OpenAIProvider(openai as never).turn(request());
+    expect(sent.openai!.reasoning).toEqual({ effort: "high" });
+  });
+
+  it("goes from the agent's request to every step, and each request's usage is counted", async () => {
+    const seen: TurnRequest[] = [];
+    let step = 0;
+    const provider: ModelProvider = {
+      id: "anthropic",
+      async turn(r) {
+        seen.push(r);
+        step++;
+        const usage = { inputTokens: 1000, outputTokens: 50, cachedTokens: 800 };
+        return step === 1 ? { content: [{ type: "tool_use", id: "t1", name: "get_project", input: {} }], stopReason: "tool_use", usage } : { content: [{ type: "text", text: "Done." }], stopReason: "end_turn", usage };
+      },
+    };
+    const agent = new EditorAgent(new EditorSession(), { providers: { anthropic: provider } });
+    await agent.run("look", {}, { effort: "low" });
+    expect(seen.map((r) => r.effort)).toEqual(["low", "low"]);
+    expect(agent.lastUsage).toEqual({ steps: 2, inputTokens: 2000, cachedTokens: 1600, outputTokens: 100, tools: { get_project: 1 } });
   });
 });

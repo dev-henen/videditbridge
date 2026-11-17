@@ -91,6 +91,14 @@ describe("analysis", () => {
     expect(formatTranscript(talk)).toContain("[00:00.5-00:02.6] So um today");
   });
 
+  it("formats only the sentences in a time range, whole", () => {
+    // From inside the first sentence: it comes whole; to before the second: it stays out.
+    expect(formatTranscript(talk, { from: 1, to: 3 }).split("\n")).toEqual(["[00:00.5-00:02.6] So um today I I want to talk."]);
+    expect(formatTranscript(talk, { from: 3 })).not.toContain("today");
+    expect(formatTranscript(talk, { from: 3 })).toContain("video editing is fun");
+    expect(formatTranscript(talk, { from: 100 })).toBe("");
+  });
+
   it("searches phrases ignoring case and punctuation", () => {
     const m = searchTranscript(talk, "VIDEO editing");
     expect(m).toHaveLength(1);

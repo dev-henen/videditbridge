@@ -131,6 +131,23 @@ export class ProjectStore {
   }
 
   /**
+   * Delete a project for good: its folder with the edit, its copies of the media, its renders and
+   * exports, and its conversations. Only a project folder directly inside the projects folder, so a
+   * wrong path can never take anything else with it. The caller closes the project first.
+   */
+  async remove(dir: string): Promise<void> {
+    const full = path.resolve(dir);
+    const root = path.resolve(this.root);
+    const same = (a: string, b: string) => (process.platform === "win32" || process.platform === "darwin" ? a.toLowerCase() === b.toLowerCase() : a === b);
+    if (!same(path.dirname(full), root) || same(full, root)) throw new Error(`Only projects in the projects folder (${root}) can be deleted.`);
+    if (!existsSync(path.join(full, PROJECT_FILE))) throw new Error(`There is no project in ${full}.`);
+    // A save still under way would write into the folder after it is gone.
+    await this.saving.get(full)?.catch(() => undefined);
+    // Files can be held for a moment (a preview that just closed), so a few tries.
+    await rm(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+
+  /**
    * Copy files into the project's media folder. A file whose content is already there is not
    * copied again; its existing copy is used. Returns paths relative to the project.
    */

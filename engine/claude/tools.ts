@@ -667,6 +667,14 @@ function clipFaces(s: EditorSession, clipId: string, activity?: ActivityHandle):
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const fmtBox = (b: { x0: number; y0: number; x1: number; y1: number }) => `x ${b.x0.toFixed(2)}-${b.x1.toFixed(2)}, y ${b.y0.toFixed(2)}-${b.y1.toFixed(2)}`;
 
+/**
+ * Pictures the model looks at cost tokens by their size (about width x height / 750), and every later
+ * step of a request reads them again. These defaults keep a frame at about 450 tokens and a contact
+ * sheet at under 1,400, which is enough to check layout, text and pacing.
+ */
+const FRAME_LONG_SIDE = 768;
+const SHEET_LONG_SIDE = 1000;
+
 /** Sound that matches a moment effect, for add_moment_effect with sound: true. */
 const MOMENT_SOUNDS: Record<string, string> = { zoomPunch: "hit", impactShake: "impact", flashHits: "hit", smoothZoom: "whoosh" };
 
@@ -3328,14 +3336,23 @@ export const TOOLS: ToolDefinition[] = [
   }),
   tool({
     name: "get_transcript",
-    description: "Read an asset's transcript as timestamped sentences (source time) with speaking stats.",
-    input: z.object({ assetId: z.string() }),
+    description:
+      "Read an asset's transcript as timestamped sentences (source time) with speaking stats. A long recording's transcript is long (16 minutes is about 2,400 words): to work on one part, give from and to and read only that part; search_transcript finds where a phrase is.",
+    input: z.object({
+      assetId: z.string(),
+      from: z.number().min(0).optional().describe("Source seconds: read only the sentences from here on"),
+      to: z.number().positive().optional().describe("Source seconds: read only the sentences up to here"),
+    }),
     mutates: false,
     run: async (s, i) => {
       const t = s.project.transcripts[i.assetId];
       if (!t) return { text: `No transcript for "${i.assetId}".`, isError: true };
+      if (i.from !== undefined && i.to !== undefined && i.to <= i.from) return { text: "to must be after from.", isError: true };
       const st = transcriptStats(t);
-      return ok(`${st.words} words, ${st.wordsPerMinute} wpm, ${st.fillerCount} fillers${st.speakers.length ? `, speakers ${st.speakers.join("/")}` : ""}\n${formatTranscript(t)}`);
+      const part = i.from !== undefined || i.to !== undefined;
+      const lines = formatTranscript(t, { from: i.from, to: i.to });
+      const range = part ? `\nSentences from ${formatTime(i.from ?? 0)} to ${i.to !== undefined ? formatTime(i.to) : "the end"}${lines ? "" : ": none"}` : "";
+      return ok(`${st.words} words, ${st.wordsPerMinute} wpm, ${st.fillerCount} fillers${st.speakers.length ? `, speakers ${st.speakers.join("/")}` : ""}${range}\n${lines}`);
     },
   }),
   tool({
@@ -4289,11 +4306,21 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "render_frame",
     description: "Render one frame of the edit at a timeline time and look at it. Use to check layout, text, captions and effects.",
-    input: z.object({ time: z.number().min(0), scale: z.number().min(0.1).max(1).default(0.5) }),
+    input: z.object({
+      time: z.number().min(0),
+      scale: z
+        .number()
+        .min(0.1)
+        .max(1)
+        .optional()
+        .describe(`Fraction of the project size. Default: ${FRAME_LONG_SIDE} pixels on the long side, enough for layout and captions; more only to inspect fine detail, since a bigger picture costs more to look at`),
+    }),
     mutates: false,
     run: async (s, i) => {
       const out = await s.outputPath(`frame-${i.time.toFixed(2)}.png`);
-      await renderFrame(s.project, i.time, { output: out, scale: i.scale, proxies: true, ...s.renderOptions });
+      const { width, height } = s.project.settings;
+      const scale = i.scale ?? Math.min(1, FRAME_LONG_SIDE / Math.max(width, height));
+      await renderFrame(s.project, i.time, { output: out, scale, proxies: true, ...s.renderOptions });
       s.recordRender({ kind: "frame", path: out, time: i.time });
       return { text: `Frame at ${i.time}s: ${out}`, images: [{ path: out, mediaType: "image/png" }] };
     },
@@ -4301,11 +4328,18 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "render_contact_sheet",
     description: "Render a grid of frames sampled across the whole video, a one-image overview of the edit's pacing and look.",
-    input: z.object({ columns: z.number().int().min(1).max(8).default(4), rows: z.number().int().min(1).max(8).default(3), thumbWidth: z.number().int().default(320) }),
+    input: z.object({
+      columns: z.number().int().min(1).max(8).default(4),
+      rows: z.number().int().min(1).max(8).default(3),
+      thumbWidth: z.number().int().min(32).optional().describe(`Width of each frame in pixels. Default: the sheet fits in ${SHEET_LONG_SIDE} pixels, enough to judge pacing and look`),
+    }),
     mutates: false,
     run: async (s, i) => {
       const out = await s.outputPath("contact-sheet.png");
-      await renderContactSheet(s.project, { output: out, ...i, proxies: true, ...s.renderOptions });
+      const { width, height } = s.project.settings;
+      // The whole sheet within SHEET_LONG_SIDE both ways: a tall project gets narrower frames.
+      const thumbWidth = i.thumbWidth ?? Math.max(32, Math.floor(Math.min(SHEET_LONG_SIDE / i.columns, (SHEET_LONG_SIDE / i.rows) * (width / height))));
+      await renderContactSheet(s.project, { output: out, ...i, thumbWidth, proxies: true, ...s.renderOptions });
       s.recordRender({ kind: "contact-sheet", path: out });
       return { text: `Contact sheet (${i.columns}x${i.rows}, read left to right, top to bottom): ${out}`, images: [{ path: out, mediaType: "image/png" }] };
     },

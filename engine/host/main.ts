@@ -8,7 +8,7 @@
  * conversation and renders. Requests name their project with `project` (its folder); without it they
  * go to the focused project (the app's current tab), which keeps scripts and remote control simple.
  *
- * Requests: host.info, project.list, project.create, project.open, project.close, project.focus,
+ * Requests: host.info, project.list, project.create, project.open, project.close, project.delete, project.focus,
  *           project.importMedia, state.get, tools.list, tools.execute, session.undo, session.redo,
  *           render.scrub, render.play, render.stop, render.matte, render.scopes, settings.get, settings.set, choices.dismiss, chat.list, chat.current, chat.open, chat.new, chat.rename, chat.delete,
  *           agent.run, agent.cancel, performance.get, performance.run
@@ -37,8 +37,8 @@ import type { Project } from "../core/schema.js";
 import type { AspectRatio } from "../core/util.js";
 import { EditorAgent, estimateTokens } from "./agent.js";
 import { describeAgentError } from "./errors.js";
-import { AGENT_MODELS, DEFAULT_MODEL, PROVIDERS, assistantOf, isProviderId } from "./models.js";
-import { deleteConversation, listConversations, loadConversation, newConversation, saveConversation, titleFrom, type Conversation } from "./conversations.js";
+import { AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, PROVIDERS, assistantOf, isEffort, isProviderId } from "./models.js";
+import { deleteConversation, listConversations, loadConversation, newConversation, recordRequest, saveConversation, titleFrom, type Conversation } from "./conversations.js";
 import { COVER_FILE, ProjectStore } from "./projects.js";
 import { RpcError, StdioRpc, serveLocal, type Handler } from "./rpc.js";
 import { HOST_INFO_FILE } from "./remote.js";
@@ -145,6 +145,7 @@ const handlers: Record<string, Handler> = {
     projectsDir: store.root,
     ...availability(),
     defaultModel: settings.defaultModel && MODELS.includes(settings.defaultModel) ? settings.defaultModel : DEFAULT_MODEL,
+    effort: settings.effort ?? DEFAULT_EFFORT,
     // Transcription and narration run on this machine; no service or key is involved.
     transcriptionAvailable: true,
     voiceAvailable: true,
@@ -177,6 +178,27 @@ const handlers: Record<string, Handler> = {
     // Its preview sessions hold its media open.
     await closeFrameSessions();
     return true;
+  },
+  /**
+   * Delete a project for good (the app asks first): its folder in the projects folder, with its media
+   * copies, renders, exports and conversations. Closes it first when it is open. Returns the project list.
+   */
+  "project.delete": async (p) => {
+    const dir = keyOf(String(p.path ?? ""));
+    const o = open.get(dir);
+    if (o) {
+      stopPlayback(o);
+      clearTimeout(o.coverTimer);
+      close(o);
+    }
+    // Preview sessions hold its media open, which would stop the folder from going on Windows.
+    await closeFrameSessions();
+    try {
+      await store.remove(dir);
+    } catch (e) {
+      throw new RpcError(1, (e as Error).message);
+    }
+    return store.list();
   },
   "project.focus": (p) => {
     focused = target(p).dir;
@@ -319,8 +341,16 @@ const handlers: Record<string, Handler> = {
     let result: { stopReason: string } = { stopReason: "error" };
     let failure: string | undefined;
     let agent: EditorAgent | undefined;
+    // The chat's effort for this request, remembered as the effort for the next ones.
+    const effort = isEffort(p.effort) ? p.effort : (settings.effort ?? DEFAULT_EFFORT);
+    if (effort !== (settings.effort ?? DEFAULT_EFFORT)) {
+      settings = { ...settings, effort };
+      await saveSettings(settings).catch((e) => console.error(`Could not save the effort: ${(e as Error).message}`));
+    }
+    let earlier: unknown;
     try {
       agent = o.agent ??= new EditorAgent(s, { model: c.model, messages: c.messages });
+      earlier = agent.lastUsage;
       result = await agent.run(
         `${note}${String(p.prompt ?? display)}`,
         {
@@ -340,6 +370,7 @@ const handlers: Record<string, Handler> = {
           planMode: p.plan === true,
           contextLimit: contextLimit(),
           autoCompact: settings.autoCompact !== false,
+          effort,
         },
       );
       return result;
@@ -353,6 +384,9 @@ const handlers: Record<string, Handler> = {
       o.live = undefined;
       c.transcript.push({ role: "assistant", text: [live.reply.trim(), end].filter(Boolean).join("\n"), ...(failure ? { error: failure } : {}), at: new Date().toISOString() });
       if (agent) c.messages = [...agent.history];
+      // What this request used (also when it failed or was stopped), kept with the conversation.
+      const used = agent?.lastUsage;
+      if (used && used !== earlier) recordRequest(c, { at: new Date().toISOString(), model: c.model, effort, stopReason: failure ? "error" : result.stopReason, ...used });
       c.updatedAt = new Date().toISOString();
       await saveConversation(o.dir, c).catch((e) => rpc.notify("log", { project: o.dir, level: "error", message: `Could not save the conversation: ${(e as Error).message}` }));
       rpc.notify("agent.end", { project: o.dir, ...result });
@@ -425,6 +459,7 @@ const handlers: Record<string, Handler> = {
     // The key goes to the system keychain (the settings file only where there is none).
     const keyChanged = typeof p.apiKey === "string" && (await storeKey(next, p.apiKey.trim() || undefined, provider));
     if (typeof p.defaultModel === "string" && MODELS.includes(p.defaultModel)) next.defaultModel = p.defaultModel;
+    if (isEffort(p.effort)) next.effort = p.effort;
     if (p.renderer === "auto" || p.renderer === "engine" || p.renderer === "ffmpeg") next.renderer = p.renderer;
     if (typeof p.hardwareEncoding === "boolean") next.hardwareEncoding = p.hardwareEncoding;
     if (typeof p.instructions === "string") next.instructions = p.instructions.slice(0, 4000);

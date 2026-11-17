@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import type { EditorSession } from "../claude/session.js";
 import { TOOLS, executeTool, toToolResultContent } from "../claude/tools.js";
-import { DEFAULT_MODEL, assistantOf, providerOf, type ProviderId } from "./models.js";
+import { DEFAULT_MODEL, assistantOf, providerOf, type Effort, type ProviderId } from "./models.js";
 import { AnthropicProvider, CACHE_TTL_MS, providerFor, type AgentMessage, type ContentBlock, type ModelProvider } from "./providers.js";
 import { LOAD_TOOLS, ToolSet, moreToolsList } from "./toolset.js";
 
@@ -61,6 +61,20 @@ export interface AgentRequest {
   contextLimit?: number;
   /** Summarize by itself at the limit (default true); otherwise only when asked (compact). */
   autoCompact?: boolean;
+  /** How much the model thinks before acting (the chat's effort setting; models.ts). */
+  effort?: Effort;
+}
+
+/** What one request used, over all its steps: for the conversation file, to see what edits cost. */
+export interface RequestUsage {
+  steps: number;
+  /** Tokens read, all steps together (the cached part included). */
+  inputTokens: number;
+  /** Of those, read from the provider's cache. */
+  cachedTokens: number;
+  outputTokens: number;
+  /** How many times each tool ran. */
+  tools: Record<string, number>;
 }
 
 /** The provider's cheapest model, which writes the summaries. */
@@ -208,6 +222,12 @@ export class EditorAgent {
   /** The tools offered: the core, and the ones this conversation loaded (toolset.ts). */
   private readonly toolset: ToolSet;
 
+  private usage: RequestUsage | undefined;
+  /** What the request under way (or the last one) used so far; also after it failed or was stopped. */
+  get lastUsage(): RequestUsage | undefined {
+    return this.usage;
+  }
+
   get running(): boolean {
     return this.busy;
   }
@@ -343,6 +363,7 @@ export class EditorAgent {
     if (this.busy) throw new Error(`${assistantOf(this.model)} is already working on a request`);
     this.busy = true;
     if (request.model) this.model = request.model;
+    const usage: RequestUsage = (this.usage = { steps: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, tools: {} });
     this.controller = new AbortController();
     const signal = this.controller.signal;
     // The list of more tools follows the fixed prompt, so the prompt start stays the same (and cached).
@@ -375,8 +396,12 @@ export class EditorAgent {
         };
         // Plan mode offers only tools that change nothing (propose_plan among them).
         const tools = this.toolset.specs(request.planMode);
-        const reply = await provider.turn({ model: this.model, system, tools, messages: this.messages, signal, onText });
+        const reply = await provider.turn({ model: this.model, system, tools, messages: this.messages, signal, onText, effort: request.effort });
+        usage.steps++;
         if (reply.usage) {
+          usage.inputTokens += reply.usage.inputTokens;
+          usage.cachedTokens += reply.usage.cachedTokens;
+          usage.outputTokens += reply.usage.outputTokens;
           // Exact from here: what the model read and wrote is the context now.
           this.contextTokens = reply.usage.inputTokens + reply.usage.outputTokens;
           this.measured = this.messages.length + 1;
@@ -406,6 +431,7 @@ export class EditorAgent {
           // A model can still ask for a tool it was not offered: in plan mode, editing waits for approval.
           // A tool from the list of more tools called without loading it still runs, and stays loaded.
           if (use.name !== LOAD_TOOLS) this.toolset.add(use.name);
+          usage.tools[use.name] = (usage.tools[use.name] ?? 0) + 1;
           const result =
             use.name === LOAD_TOOLS
               ? this.toolset.load(use.input)

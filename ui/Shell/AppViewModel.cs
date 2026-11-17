@@ -148,6 +148,12 @@ public sealed class AppViewModel : Observable, IDisposable
     /// <summary>The model new conversations start with (the settings' choice, else the first).</summary>
     public ModelOption DefaultModel => Models.FirstOrDefault(m => m.Id == _defaultModelId) ?? Models[0];
 
+    /// <summary>
+    /// The effort a newly opened project's chat starts with: the last one picked in any chat (the
+    /// host remembers it with the next request).
+    /// </summary>
+    public EffortOption DefaultEffort { get; set; } = EffortOption.Of(null);
+
     /// <summary>Projects closed lately, newest first, to reopen from the side panel (kept with the open tabs).</summary>
     public ObservableCollection<ClosedProject> RecentlyClosed { get; } = [];
     private const int RecentlyClosedKept = 10;
@@ -242,6 +248,7 @@ public sealed class AppViewModel : Observable, IDisposable
                 .ToList();
             if (models is { Count: > 0 }) Models = models;
             _defaultModelId = info?["defaultModel"]?.GetValue<string>();
+            DefaultEffort = EffortOption.Of(info?["effort"]?.GetValue<string>());
             Raise(nameof(Models));
             await RefreshProjectsAsync();
             await RestoreTabsAsync(openDir);
@@ -324,6 +331,34 @@ public sealed class AppViewModel : Observable, IDisposable
 
     /// <summary>Ask whether to close a project anyway (the message says what would stop); the window shows the question.</summary>
     public Func<string, Task<bool>>? ConfirmClose { get; set; }
+
+    /// <summary>Ask whether to delete a project (given its name) for good; the window shows the question.</summary>
+    public Func<string, Task<bool>>? ConfirmDelete { get; set; }
+
+    /// <summary>
+    /// Delete a project for good, after asking: its tab closes (without asking about work under way,
+    /// which goes with it), it leaves recently closed, and its folder is removed by the host.
+    /// </summary>
+    public Task DeleteProjectAsync(string dir, string name) => Guard(async () =>
+    {
+        if (ConfirmDelete is not { } confirm || !await confirm(name)) return;
+        if (TabOf(dir) is { } tab)
+        {
+            tab.Project?.MarkDeleted();
+            Remove(tab);
+            if (Tabs.Count == 0) NewTab();
+        }
+        foreach (var c in RecentlyClosed.Where(c => SamePath(c.Dir, dir)).ToList()) RecentlyClosed.Remove(c);
+        SaveTabs();
+        try
+        {
+            await Engine.CallAsync("project.delete", new { path = dir });
+        }
+        finally
+        {
+            await RefreshProjectsAsync();
+        }
+    });
 
     /// <summary>Close a tab; a project is saved, left with a cover and remembered under recently closed. The last tab becomes the projects page.</summary>
     public async Task CloseTabAsync(AppTab tab)

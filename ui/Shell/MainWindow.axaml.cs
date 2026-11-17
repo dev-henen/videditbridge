@@ -43,6 +43,9 @@ public partial class MainWindow : Window
         _vm.RecentlyClosed.CollectionChanged += (_, _) => { if (_sideOpen) FilterSide(); };
         _vm.ErrorRaised += message => _ = ShowMessage(message);
         _vm.ConfirmClose = Confirm;
+        _vm.ConfirmDelete = name => Confirm("Delete project?",
+            $"Delete \"{name}\" for good? Its edit, conversations, renders and exports are removed, along with the project's copies of your media. Your original files stay where they are. This cannot be undone.",
+            "Delete", "Keep");
         _vm.TabOpened += OnTabOpened;
         _vm.TabClosed += OnTabClosed;
         _vm.PropertyChanged += OnViewModelChanged;
@@ -104,6 +107,7 @@ public partial class MainWindow : Window
             var start = new ProjectsScreen { DataContext = _vm };
             start.OpenRequested += async dir => await _vm.OpenProjectAsync(dir, tab);
             start.CreateRequested += async () => await _vm.CreateProjectAsync(tab);
+            start.DeleteRequested += async (dir, name) => await _vm.DeleteProjectAsync(dir, name);
             page = start;
         }
         page.IsVisible = false;
@@ -284,15 +288,17 @@ public partial class MainWindow : Window
     }
 
     /// <summary>A small message window in the app's style (Avalonia has no system message box).</summary>
-    /// <summary>A yes or no question; "Keep open" is the default, so Enter or closing the dialog keeps the project.</summary>
-    private async Task<bool> Confirm(string message)
+    /// <summary>A yes or no question; the "no" answer is the default, so Enter or closing the dialog changes nothing.</summary>
+    private Task<bool> Confirm(string message) => Confirm("Close project?", message, "Close anyway", "Keep open");
+
+    private async Task<bool> Confirm(string title, string message, string yes, string no)
     {
-        var close = new Button { Content = "Close anyway", Classes = { "primary" } };
-        var keep = new Button { Content = "Keep open", IsDefault = true, IsCancel = true };
+        var close = new Button { Content = yes, Classes = { "primary" } };
+        var keep = new Button { Content = no, IsDefault = true, IsCancel = true };
         var answer = false;
         var dialog = new Window
         {
-            Title = "Close project?",
+            Title = title,
             Width = 400,
             SizeToContent = SizeToContent.Height,
             CanResize = false,

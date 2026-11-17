@@ -124,6 +124,17 @@
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
+          <!-- Effort: how much the AI thinks before acting; low is faster and uses fewer tokens -->
+          <ComboBox DockPanel.Dock="Left" Classes="model" ItemsSource="{Binding Efforts}" SelectedItem="{Binding Effort}" IsEnabled="{Binding ModelAvailable}" Margin="2,0,0,0"
+                    ToolTip.Tip="Effort: how much the AI thinks before acting. Low is faster and uses fewer tokens; high is the most careful" AutomationProperties.Name="Effort">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel ToolTip.Tip="{Binding Description}">
+                  <TextBlock Text="{Binding Label}" FontSize="11"/>
+                </StackPanel>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
           <!-- Plan first: the AI looks and proposes a plan, and changes nothing until it is approved -->
           <ToggleButton DockPanel.Dock="Left" Classes="plan" IsChecked="{Binding PlanFirst}" IsEnabled="{Binding ModelAvailable}" Margin="4,0,0,0"
                         ToolTip.Tip="Plan first: the AI proposes a plan for you to approve before it changes anything" AutomationProperties.Name="Plan first">

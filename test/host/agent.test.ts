@@ -124,9 +124,11 @@ describe("the editing agent's turn", () => {
       messages: [{ role: "user", content: "hi" }],
       signal: new AbortController().signal,
     });
-    expect(body.system).toEqual([{ type: "text", text: "You edit video.", cache_control: { type: "ephemeral" } }]);
+    expect(body.system).toEqual([{ type: "text", text: "You edit video.", cache_control: { type: "ephemeral", ttl: "1h" } }]);
     expect((body.tools as { cache_control?: unknown }[]).map((t) => !!t.cache_control)).toEqual([false, true]);
-    expect(JSON.stringify(body.messages)).toContain('"cache_control":{"type":"ephemeral"}');
+    expect(JSON.stringify(body.messages)).toContain('"cache_control":{"type":"ephemeral","ttl":"1h"}');
+    // High effort unless the chat says otherwise.
+    expect(body.output_config).toEqual({ effort: "high" });
     // The context counts what was read from the cache too.
     expect(turn.usage).toEqual({ inputTokens: 910, outputTokens: 5, cachedTokens: 900 });
     expect(estimateTokens([{ role: "user", content: "x".repeat(400) }])).toBe(100);
@@ -137,15 +139,15 @@ describe("the prompt cache countdown", () => {
   const usage = { inputTokens: 30_000, outputTokens: 200, cachedTokens: 28_000 };
   const reply = (id: "anthropic" | "google"): ModelProvider => ({ id, turn: async () => ({ content: [{ type: "text", text: "ok" }], usage, stopReason: "end_turn" }) });
 
-  it("keeps Claude's cache for five minutes from the last step, for that model", async () => {
+  it("keeps Claude's cache for an hour from the last step, for that model", async () => {
     const agent = new EditorAgent(new EditorSession(), { providers: { anthropic: reply("anthropic") } });
     expect(agent.cacheState).toBeUndefined();
     const before = Date.now();
     await agent.run("hello");
     const cache = agent.cacheState!;
     expect(cache.model).toBe("claude-opus-5-5");
-    expect(cache.until).toBeGreaterThanOrEqual(before + 5 * 60_000);
-    expect(cache.until).toBeLessThanOrEqual(Date.now() + 5 * 60_000);
+    expect(cache.until).toBeGreaterThanOrEqual(before + 60 * 60_000);
+    expect(cache.until).toBeLessThanOrEqual(Date.now() + 60 * 60_000);
     // Summarizing replaces the conversation: nothing cached matches it.
     await agent.compact();
     expect(agent.cacheState).toBeUndefined();

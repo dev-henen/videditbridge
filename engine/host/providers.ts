@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { GoogleGenAI, type Content, type Part } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel, type Content, type Part } from "@google/genai";
 import OpenAI from "openai";
 import type { ResponseInputItem, ResponseInputMessageContentList, ResponseOutputItem } from "openai/resources/responses/responses";
-import { envKeyOf, providerOf, type ProviderId } from "./models.js";
+import { DEFAULT_EFFORT, envKeyOf, providerOf, type Effort, type ProviderId } from "./models.js";
 
 /**
  * One model turn for each AI provider. The conversation is kept in one format for all of them,
@@ -37,6 +37,8 @@ export interface TurnRequest {
   messages: readonly AgentMessage[];
   signal: AbortSignal;
   onText?: (delta: string) => void;
+  /** How much the model thinks (DEFAULT_EFFORT when left out). */
+  effort?: Effort;
 }
 
 export interface Turn {
@@ -69,7 +71,7 @@ function withCacheMark(history: Anthropic.Beta.BetaMessageParam[]): Anthropic.Be
   const end = blocks[blocks.length - 1];
   // Thinking blocks cannot carry a mark; nothing to mark then.
   if (!end || end.type === "thinking" || end.type === "redacted_thinking") return history;
-  blocks[blocks.length - 1] = { ...end, cache_control: { type: "ephemeral" } } as Anthropic.Beta.BetaContentBlockParam;
+  blocks[blocks.length - 1] = { ...end, cache_control: CLAUDE_CACHE } as Anthropic.Beta.BetaContentBlockParam;
   return [...history.slice(0, -1), { ...last, content: blocks } as Anthropic.Beta.BetaMessageParam];
 }
 
@@ -79,11 +81,22 @@ export interface ModelProvider {
 }
 
 /**
- * How long a provider keeps the conversation cached after the last step read or wrote it: Claude 5 minutes,
- * renewed by each step; OpenAI at least 5 minutes of inactivity. Gemini's implicit cache has no stated
- * lifetime, so it gets no countdown.
+ * Claude's cache marks keep the prompt for an hour, not the default 5 minutes: people often watch a
+ * preview or think for longer than 5 minutes between requests, and the next request then pays the
+ * whole conversation again at full price. Writing an hour's cache costs 2x the input price (5 minutes:
+ * 1.25x), but a step only writes what is new, and every later read costs a tenth.
  */
-export const CACHE_TTL_MS: Partial<Record<ProviderId, number>> = { anthropic: 5 * 60_000, openai: 5 * 60_000 };
+const CLAUDE_CACHE = { type: "ephemeral" as const, ttl: "1h" as const };
+
+/**
+ * How long a provider keeps the conversation cached after the last step read or wrote it: Claude an hour
+ * (CLAUDE_CACHE), renewed by each step; OpenAI at least 5 minutes of inactivity. Gemini's implicit cache
+ * has no stated lifetime, so it gets no countdown.
+ */
+export const CACHE_TTL_MS: Partial<Record<ProviderId, number>> = { anthropic: 60 * 60_000, openai: 5 * 60_000 };
+
+/** Gemini's thinking level for each effort. */
+const GEMINI_THINKING: Record<Effort, ThinkingLevel> = { low: ThinkingLevel.LOW, medium: ThinkingLevel.MEDIUM, high: ThinkingLevel.HIGH };
 
 const MAX_TOKENS = 64000;
 
@@ -123,19 +136,19 @@ export class AnthropicProvider implements ModelProvider {
     this.client = client;
   }
 
-  async turn({ model, system, tools, messages, signal, onText }: TurnRequest): Promise<Turn> {
+  async turn({ model, system, tools, messages, signal, onText, effort = DEFAULT_EFFORT }: TurnRequest): Promise<Turn> {
     this.client ??= new Anthropic();
     // `native` is ours, not the API's.
     const history = messages.map(({ native: _native, ...m }) => m as Anthropic.Beta.BetaMessageParam);
     // Prompt caching: the system prompt, the tools and the conversation so far are the same from one
     // step to the next, so they are read from the cache (about a tenth of the price) instead of paid again.
-    const cache = { type: "ephemeral" as const };
+    const cache = CLAUDE_CACHE;
     const cachedTools = (tools as Anthropic.Beta.BetaTool[]).map((t, i, all) => (i === all.length - 1 ? { ...t, cache_control: cache } : t));
     const stream = this.client.beta.messages.stream(
       {
         model,
         max_tokens: MAX_TOKENS,
-        output_config: { effort: "high" },
+        output_config: { effort },
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
         system: [{ type: "text", text: system, cache_control: cache }],
@@ -228,11 +241,12 @@ export class OpenAIProvider implements ModelProvider {
     this.client = client;
   }
 
-  async turn({ model, system, tools, messages, signal, onText }: TurnRequest): Promise<Turn> {
+  async turn({ model, system, tools, messages, signal, onText, effort = DEFAULT_EFFORT }: TurnRequest): Promise<Turn> {
     this.client ??= new OpenAI({ apiKey: envKeyOf("openai") });
     const stream = this.client.responses.stream(
       {
         model,
+        reasoning: { effort },
         instructions: system,
         input: toOpenAIInput(messages),
         tools: tools.map((t) => ({ type: "function" as const, name: t.name, description: t.description, parameters: t.input_schema, strict: false })),
@@ -336,12 +350,13 @@ export class GeminiProvider implements ModelProvider {
     this.client = client;
   }
 
-  async turn({ model, system, tools, messages, signal, onText }: TurnRequest): Promise<Turn> {
+  async turn({ model, system, tools, messages, signal, onText, effort = DEFAULT_EFFORT }: TurnRequest): Promise<Turn> {
     this.client ??= new GoogleGenAI({ apiKey: envKeyOf("google") });
     const stream = await this.client.models.generateContentStream({
       model,
       contents: toGeminiContents(messages),
       config: {
+        thinkingConfig: { thinkingLevel: GEMINI_THINKING[effort] },
         systemInstruction: system,
         tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.input_schema })) }],
         maxOutputTokens: MAX_TOKENS,

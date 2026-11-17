@@ -75,6 +75,17 @@
         <ItemsControl.ItemTemplate>
           <DataTemplate>
             <Button Classes="card" Click="OnOpenProject" Tag="{Binding Dir}" ToolTip.Tip="{Binding Dir}" AutomationProperties.Name="{Binding Name}">
+              <!-- Right-click (or the menu key): open or delete the project -->
+              <Button.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Open" Click="OnOpenProject" Tag="{Binding Dir}">
+                    <MenuItem.Icon><TextBlock Classes="icon" Text="{x:Static shared:Icons.Open}" FontSize="14"/></MenuItem.Icon>
+                  </MenuItem>
+                  <MenuItem Header="Delete project..." Click="OnDeleteProject" Tag="{Binding}" AutomationProperties.Name="Delete this project">
+                    <MenuItem.Icon><TextBlock Classes="icon" Text="{x:Static shared:Icons.Delete}" FontSize="14"/></MenuItem.Icon>
+                  </MenuItem>
+                </ContextMenu>
+              </Button.ContextMenu>
               <StackPanel>
                 <projects:ProjectCover Source="{Binding Cover}" Height="88"/>
                 <TextBlock Text="{Binding Name}" Margin="2,6,2,0" TextTrimming="CharacterEllipsis"/>

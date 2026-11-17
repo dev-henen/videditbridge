@@ -53,6 +53,16 @@ export const AGENT_MODELS: readonly AgentModel[] = [
 export const DEFAULT_MODEL = AGENT_MODELS[0]!.id;
 
 /**
+ * How much the model thinks before it acts, picked in the chat: low is faster and spends fewer
+ * tokens (small changes), high is the most careful (full edits). Each provider gets its own setting
+ * of the same name (Claude's effort, OpenAI's reasoning effort, Gemini's thinking level).
+ */
+export type Effort = "low" | "medium" | "high";
+export const EFFORTS: readonly Effort[] = ["low", "medium", "high"];
+export const DEFAULT_EFFORT: Effort = "high";
+export const isEffort = (v: unknown): v is Effort => typeof v === "string" && (EFFORTS as readonly string[]).includes(v);
+
+/**
  * The provider of a model id: a listed model's, else by its name (so a newer model id from the same
  * family still works), else Anthropic.
  */

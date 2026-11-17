@@ -924,11 +924,13 @@ _No parameters._
 
 ### get_transcript
 
-**read-only**. Read an asset's transcript as timestamped sentences (source time) with speaking stats.
+**read-only**. Read an asset's transcript as timestamped sentences (source time) with speaking stats. A long recording's transcript is long (16 minutes is about 2,400 words): to work on one part, give from and to and read only that part; search_transcript finds where a phrase is.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `assetId` | string | yes |  |  |
+| `from` | number |  |  | Source seconds: read only the sentences from here on (≥ 0) |
+| `to` | number |  |  | Source seconds: read only the sentences up to here (> 0) |
 
 ### fix_transcript
 
@@ -1700,7 +1702,7 @@ _No parameters._
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `time` | number | yes |  | (≥ 0) |
-| `scale` | number |  | `0.5` | (≥ 0.1, ≤ 1) |
+| `scale` | number |  |  | Fraction of the project size. Default: 768 pixels on the long side, enough for layout and captions; more only to inspect fine detail, since a bigger picture costs more to look at (≥ 0.1, ≤ 1) |
 
 ### render_contact_sheet
 
@@ -1710,7 +1712,7 @@ _No parameters._
 |---|---|---|---|---|
 | `columns` | integer |  | `4` | (≥ 1, ≤ 8) |
 | `rows` | integer |  | `3` | (≥ 1, ≤ 8) |
-| `thumbWidth` | integer |  | `320` | (≥ -9007199254740991) |
+| `thumbWidth` | integer |  |  | Width of each frame in pixels. Default: the sheet fits in 1000 pixels, enough to judge pacing and look (≥ 32) |
 
 ### render_preview
 

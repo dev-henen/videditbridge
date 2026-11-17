@@ -142,3 +142,15 @@ describe("shortening earlier results", () => {
     expect(resultLength(seen[2]!)).toBeLessThan(1500);
   });
 });
+
+describe("what requests used", () => {
+  it("is kept with the conversation, request by request, and requests that made no step are left out", async () => {
+    const { newConversation, recordRequest } = await import("../../engine/host/conversations.js");
+    const c = newConversation("claude-opus-5-5");
+    const base = { at: "2026-11-17T00:00:00Z", model: "claude-opus-5-5", effort: "low" as const, stopReason: "end_turn", inputTokens: 900, cachedTokens: 600, outputTokens: 40, tools: { get_project: 1 } };
+    recordRequest(c, { ...base, steps: 2 });
+    recordRequest(c, { ...base, steps: 0 });
+    expect(c.requests).toHaveLength(1);
+    expect(c.requests![0]).toMatchObject({ steps: 2, effort: "low", inputTokens: 900 });
+  });
+});

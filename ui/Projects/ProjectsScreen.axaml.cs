@@ -13,7 +13,15 @@ public partial class ProjectsScreen : UserControl
     /// <summary>The user asked for a new project (named and shaped in the view model).</summary>
     public event Action? CreateRequested;
 
+    /// <summary>The user asked to delete a project (its folder and name); the app asks before it does.</summary>
+    public event Action<string, string>? DeleteRequested;
+
     public ProjectsScreen() => InitializeComponent();
+
+    private void OnDeleteProject(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { Tag: ProjectEntry p }) DeleteRequested?.Invoke(p.Dir, p.Name);
+    }
 
     private void OnCreateProject(object? sender, RoutedEventArgs e) => CreateRequested?.Invoke();
 

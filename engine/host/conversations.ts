@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { withoutImages, type AgentMessage } from "./agent.js";
+import { withoutImages, type AgentMessage, type RequestUsage } from "./agent.js";
+import type { Effort } from "./models.js";
 import { describeAgentError } from "./errors.js";
 
 /**
@@ -32,6 +33,25 @@ export interface Conversation {
   messages: AgentMessage[];
   /** How full the context was at the last step (tokens). */
   usage?: { used: number };
+  /** What each request used (tokens over all its steps), to see what edits cost. */
+  requests?: RequestRecord[];
+}
+
+export interface RequestRecord extends RequestUsage {
+  at: string;
+  model: string;
+  effort: Effort;
+  /** end_turn, cancelled, error, ... */
+  stopReason: string;
+}
+
+/** Requests kept per conversation: enough to see a pattern, not a log without end. */
+const MAX_REQUEST_RECORDS = 500;
+
+/** Add a request's usage to the conversation (nothing when it made no step). */
+export function recordRequest(c: Conversation, record: RequestRecord): void {
+  if (!record.steps) return;
+  c.requests = [...(c.requests ?? []), record].slice(-MAX_REQUEST_RECORDS);
 }
 
 export interface ConversationEntry {

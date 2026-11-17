@@ -295,4 +295,15 @@ describe.skipIf(!hasFfmpeg)("engine host (JSON-RPC over stdio)", () => {
   it("reports errors as JSON-RPC errors", async () => {
     await expect(host.call("nope.method")).rejects.toThrow(/Unknown method/);
   });
+
+  it("deletes a project, open or not, and only projects", async () => {
+    const p = await host.call<{ projectDir: string }>("project.create", { name: "To delete" });
+    await host.call("project.importMedia", { project: p.projectDir, paths: [fx.talk] });
+    // Open while it is deleted: the host closes it first.
+    const list = await host.call<{ dir: string }[]>("project.delete", { path: p.projectDir });
+    expect(list.map((x) => x.dir)).not.toContain(p.projectDir);
+    expect(existsSync(p.projectDir)).toBe(false);
+    await expect(host.call("state.get", { project: p.projectDir })).rejects.toThrow();
+    await expect(host.call("project.delete", { path: path.dirname(p.projectDir) })).rejects.toThrow(/Only projects in the projects folder/);
+  });
 });
