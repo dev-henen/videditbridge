@@ -36,7 +36,14 @@ jobs:
           node-version: 22
           cache: npm
       # Optional dependencies (ffmpeg-static, onnxruntime-node, resvg) must install on every target.
+      # On Linux x64, onnxruntime-node's install script downloads its CUDA binaries from a GitHub
+      # release that is gone (404); npm then quietly drops it with transformers and kokoro-js. The app
+      # runs its models on the CPU (faces fall back from CUDA), so skip the download.
       - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+      - name: Optional dependencies installed
+        run: node scripts/check-optional-deps.mjs
       # The Rust kernels (native/ave-native): built here for every target, never on a user's machine.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2

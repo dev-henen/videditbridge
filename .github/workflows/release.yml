@@ -53,7 +53,13 @@ jobs:
         with:
           workspaces: native
 
+      # No CUDA download for onnxruntime-node on Linux (its GitHub release is gone, which would drop the
+      # models' packages without an error); and an installer never ships without its optional packages.
       - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+      - name: Optional dependencies installed
+        run: node scripts/check-optional-deps.mjs
       - name: Native kernels and render engine
         run: npm run native
 
