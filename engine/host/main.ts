@@ -141,7 +141,7 @@ function availability() {
 
 const handlers: Record<string, Handler> = {
   "host.info": () => ({
-    version: "0.2.0",
+    version: "0.1.2",
     projectsDir: store.root,
     ...availability(),
     defaultModel: settings.defaultModel && MODELS.includes(settings.defaultModel) ? settings.defaultModel : DEFAULT_MODEL,
