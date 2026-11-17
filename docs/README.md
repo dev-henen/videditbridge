@@ -7,6 +7,7 @@ For people using the app: the [user guide](https://dev-henen.github.io/videditbr
 | Guide | Covers |
 |---|---|
 | [Getting started](guides/getting-started.md) | Install, render your first video, build from a template |
+| [Building from source](guides/development.md) | Build and test the engine, the native code and the desktop app; the repository layout; extending |
 | [The project document](guides/project-format.md) | The JSON edit format: assets, clips, layers, audio, captions, timing rules |
 | [Claude integration](guides/claude-integration.md) | Sessions, tool execution, the agent loop with Claude (default), ChatGPT or Gemini, letting the model see its work |
 | [Using it from other AI apps (MCP)](guides/mcp.md) | The editor as an MCP server for the Claude, ChatGPT and Gemini apps, Gemini CLI and Claude Code, with or without the desktop app |
