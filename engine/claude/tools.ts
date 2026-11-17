@@ -4518,13 +4518,55 @@ export function describeToolCall(name: string, input: unknown): string {
   }
 }
 
+/**
+ * Large shapes many tools share, spelled out in full only in the tools that are about them. Elsewhere
+ * the model sees a short pointer to that tool, which saves thousands of tokens on every request (the
+ * mask alone is about 3,000 tokens and sits in every effect). Inputs are still checked against the full
+ * schema, so a wrong mask gets a clear error.
+ */
+const SHARED_SHAPES: { schema: z.ZodType; home: readonly string[]; pointer: string }[] = [
+  {
+    schema: MaskSchema,
+    home: ["grade_region", "render_mask"],
+    pointer:
+      "A mask, the same object as grade_region's mask (its full fields are there): kind is person, face, object, sky, depth, key, luma or shape, e.g. {kind: 'sky'}, {kind: 'face'}, {kind: 'luma', luma: [0.7, 1]}, {kind: 'shape', shape: {type: 'ellipse', x: 0.5, y: 0.4, width: 0.5, height: 0.5}}",
+  },
+];
+
 /** Tool definitions in the Claude Messages API format (`tools` parameter). */
 export function toAnthropicTools(tools: ToolDefinition[] = TOOLS): { name: string; description: string; input_schema: Record<string, unknown> }[] {
   return tools.map((t) => {
-    const schema = z.toJSONSchema(t.input, { io: "input", unrepresentable: "any" }) as Record<string, unknown>;
+    const schema = z.toJSONSchema(t.input, {
+      io: "input",
+      unrepresentable: "any",
+      override: (ctx) => {
+        const shared = SHARED_SHAPES.find((s) => (s.schema as unknown) === ctx.zodSchema && !s.home.includes(t.name));
+        if (!shared) return;
+        const json = ctx.jsonSchema as Record<string, unknown>;
+        for (const k of Object.keys(json)) delete json[k];
+        // The field's own description (what the tool uses the mask for) lands on this node afterwards;
+        // the pointer joins it in withPointers.
+        Object.assign(json, { type: "object", additionalProperties: true, [POINTER]: shared.pointer });
+      },
+    }) as Record<string, unknown>;
     delete schema.$schema;
-    return { name: t.name, description: t.description, input_schema: schema };
+    return { name: t.name, description: t.description, input_schema: withPointers(schema) as Record<string, unknown> };
   });
+}
+
+const POINTER = "x-pointer";
+
+/** Each shortened shape's pointer, after the field's own description. */
+function withPointers(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(withPointers);
+  if (!v || typeof v !== "object") return v;
+  const o = Object.fromEntries(Object.entries(v).map(([k, x]) => [k, withPointers(x)])) as Record<string, unknown>;
+  const pointer = o[POINTER];
+  if (typeof pointer === "string") {
+    delete o[POINTER];
+    o.description = typeof o.description === "string" ? `${o.description}. ${pointer}` : pointer;
+  }
+  return o;
 }
 
 /** Convert a ToolResult into Claude `tool_result` content blocks (text + base64 images). */

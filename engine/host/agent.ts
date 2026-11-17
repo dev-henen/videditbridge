@@ -2,9 +2,10 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import type { EditorSession } from "../claude/session.js";
-import { TOOLS, executeTool, toAnthropicTools, toToolResultContent } from "../claude/tools.js";
+import { TOOLS, executeTool, toToolResultContent } from "../claude/tools.js";
 import { DEFAULT_MODEL, assistantOf, providerOf, type ProviderId } from "./models.js";
 import { AnthropicProvider, CACHE_TTL_MS, providerFor, type AgentMessage, type ContentBlock, type ModelProvider } from "./providers.js";
+import { LOAD_TOOLS, ToolSet, moreToolsList } from "./toolset.js";
 
 export const EDITOR_SYSTEM_PROMPT = `You are a professional video editor working through editing tools inside a desktop video editor. The user watches every step live.
 
@@ -26,6 +27,7 @@ How to work:
 - The user's own files: when they mention footage, music, photos or a script they have ("my beach videos", "the song in Downloads", "follow my script"), find it with search_files, read documents with read_document, and bring media in with copy_to_project. You can only read their folders and copy media into the project; never suggest that you changed anything else.
 - Memory: you are told the user's standing instructions and what you remember about them and this project; follow them. When you learn something lasting (a preference, their brand, who is in the video, what it is for), save it with remember (general for every project, project for this one). Do not save one-off steps.
 - Plans: for big or open requests (a full edit from raw footage, a restyle) or when asked, look first, then propose_plan and end your turn; edit once the user approves (their message starts with "[Plan approved"). For small, clear changes, just make them.
+- Every step is a request that costs time and money: when calls do not depend on each other's results (several layers, loading tools, a few looks to compare), make them in the same step, and prefer one call that does many things (cut_ranges with all the ranges) over many calls.
 - Keep replies short and plain; the user sees each step in the activity feed.`;
 
 /** Added to the system prompt in plan mode: look, then propose, change nothing. */
@@ -128,6 +130,52 @@ export function withoutImages(messages: AgentMessage[]): AgentMessage[] {
   return messages.map((m) => ({ ...m, content: strip(m.content) }) as AgentMessage);
 }
 
+/** A tool result longer than this (characters) is shortened once its request is over. */
+const KEEP_RESULT_CHARS = 2000;
+/** How much of a shortened result stays: its start usually says what it found. */
+const RESULT_HEAD_CHARS = 500;
+
+/**
+ * Tool results of earlier requests, shortened: a transcript, a project summary or a rendered frame
+ * served the step that asked for it, but every later step would read it again (a 16-minute transcript
+ * is about 5,000 tokens, a picture about 1,600). Long texts keep their start and pictures become a
+ * note, both saying how to get them back. Results already short are left as they are, so running
+ * this again changes nothing and the providers' caches of the earlier history stay valid.
+ * Returns how many tokens (estimated) it saved.
+ */
+export function shortenOldResults(messages: AgentMessage[]): number {
+  const names = new Map<string, string>();
+  let saved = 0;
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!;
+    if (typeof m.content === "string") continue;
+    const blocks = m.content as ContentBlock[];
+    if (m.role === "assistant") {
+      for (const b of blocks) if (b.type === "tool_use") names.set(b.id, b.name);
+      continue;
+    }
+    let changed = false;
+    const next = blocks.map((b) => {
+      if (b.type !== "tool_result" || typeof b.content === "string" || !b.content?.length) return b;
+      const parts = b.content as ContentBlock[];
+      const text = parts.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("\n");
+      const pictures = parts.filter((c) => c.type === "image").length;
+      if (text.length <= KEEP_RESULT_CHARS && !pictures) return b;
+      const again = `call ${names.get(b.tool_use_id) ?? "the tool"} again for all of it`;
+      const kept =
+        text.length > KEEP_RESULT_CHARS
+          ? `${text.slice(0, RESULT_HEAD_CHARS)}\n[... shortened after use: ${text.length - RESULT_HEAD_CHARS} more characters; ${again}]`
+          : text;
+      const note = pictures ? `\n[${pictures === 1 ? "a picture" : `${pictures} pictures`} not kept after use; render again to look]` : "";
+      saved += estimateTokens([{ role: "user", content: [b] }]) - estimateTokens([{ role: "user", content: kept + note }]);
+      changed = true;
+      return { ...b, content: [{ type: "text" as const, text: kept + note }] } as ContentBlock;
+    });
+    if (changed) messages[i] = { ...m, content: next } as AgentMessage;
+  }
+  return Math.max(0, saved);
+}
+
 /**
  * The editing agent bound to one session: Claude by default, or ChatGPT or Gemini (the model id
  * picks the provider, see models.ts). Keeps the conversation so follow-up instructions ("make the
@@ -154,7 +202,11 @@ export class EditorAgent {
     this.providers = { ...(opts.client ? { anthropic: new AnthropicProvider(opts.client) } : {}), ...opts.providers };
     this.model = opts.model ?? DEFAULT_MODEL;
     this.messages = [...(opts.messages ?? [])];
+    this.toolset = new ToolSet(this.messages);
   }
+
+  /** The tools offered: the core, and the ones this conversation loaded (toolset.ts). */
+  private readonly toolset: ToolSet;
 
   get running(): boolean {
     return this.busy;
@@ -269,6 +321,12 @@ export class EditorAgent {
     this.messages.push({ role: "user", content: calls.map((c) => ({ type: "tool_result" as const, tool_use_id: c.id, is_error: true, content: "Stopped by the user before this ran." })) });
   }
 
+  /** Before a new request: shorten the earlier requests' long results (shortenOldResults). */
+  private shortenOldResults(): void {
+    const saved = shortenOldResults(this.messages);
+    if (saved) this.contextTokens = Math.max(0, this.contextTokens - saved);
+  }
+
   private async userContent(prompt: string, images: string[] = []): Promise<string | ContentBlock[]> {
     if (!images.length) return prompt;
     const blocks: ContentBlock[] = [];
@@ -287,10 +345,10 @@ export class EditorAgent {
     if (request.model) this.model = request.model;
     this.controller = new AbortController();
     const signal = this.controller.signal;
-    // Plan mode offers only tools that change nothing (propose_plan among them).
-    const tools = toAnthropicTools(request.planMode ? TOOLS.filter((t) => !t.mutates) : TOOLS);
-    const system = [EDITOR_SYSTEM_PROMPT, request.planMode ? PLAN_MODE : "", request.context ?? ""].filter(Boolean).join("\n\n");
+    // The list of more tools follows the fixed prompt, so the prompt start stays the same (and cached).
+    const system = [EDITOR_SYSTEM_PROMPT, moreToolsList(), request.planMode ? PLAN_MODE : "", request.context ?? ""].filter(Boolean).join("\n\n");
     this.closeOpenToolCalls();
+    this.shortenOldResults();
     // Messages left from a stopped request come first, so they are not lost.
     const left = this.takeInbox();
     const first = left ? [left, prompt].join("\n\n") : prompt;
@@ -315,6 +373,8 @@ export class EditorAgent {
           spoke = true;
           callbacks.onText?.(delta);
         };
+        // Plan mode offers only tools that change nothing (propose_plan among them).
+        const tools = this.toolset.specs(request.planMode);
         const reply = await provider.turn({ model: this.model, system, tools, messages: this.messages, signal, onText });
         if (reply.usage) {
           // Exact from here: what the model read and wrote is the context now.
@@ -344,10 +404,14 @@ export class EditorAgent {
         const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
         for (const use of toolUses) {
           // A model can still ask for a tool it was not offered: in plan mode, editing waits for approval.
+          // A tool from the list of more tools called without loading it still runs, and stays loaded.
+          if (use.name !== LOAD_TOOLS) this.toolset.add(use.name);
           const result =
-            request.planMode && TOOLS.find((t) => t.name === use.name)?.mutates
-              ? { text: "Plan mode is on: nothing can change until the user approves a plan. Call propose_plan.", isError: true }
-              : await executeTool(this.session, use.name, use.input);
+            use.name === LOAD_TOOLS
+              ? this.toolset.load(use.input)
+              : request.planMode && TOOLS.find((t) => t.name === use.name)?.mutates
+                ? { text: "Plan mode is on: nothing can change until the user approves a plan. Call propose_plan.", isError: true }
+                : await executeTool(this.session, use.name, use.input);
           results.push({
             type: "tool_result",
             tool_use_id: use.id,

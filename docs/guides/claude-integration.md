@@ -72,6 +72,15 @@ The conversation is kept in one format, the Messages format, which is what saved
 
 Each key is stored in the system keychain under its own entry (`settings.set` with `provider` and `apiKey`). `host.info` and `settings.set` report `providers` and `models` with `available`, plus `aiAvailable` (any provider) and `claudeAvailable`.
 
+### Keeping requests small
+
+Every step of the loop sends the whole prompt again, so the agent keeps it small:
+
+- **Core tools, the rest on request.** A request carries the tools for everyday edits (`CORE_TOOLS` in [engine/host/toolset.ts](../../engine/host/toolset.ts)) and `load_tools`. Every other tool is listed in the system prompt with its first sentence. The model loads tools by name, and they stay loaded for the conversation (also when it is opened again, from the tools its history used). A listed tool called without loading still runs and gets loaded. The list only grows at its end, so the providers' prompt caches stay valid. MCP clients still get every tool. This takes a request from about 45,000 tokens of tools to about 9,000.
+- **Shared shapes once.** `toAnthropicTools` spells the mask out only in `grade_region` and `render_mask`. Elsewhere (effects in `add_clip`, overlays, particles, light) the schema points to `grade_region`'s mask with a few examples. Inputs are still validated against the full schema. A new large shape shared by many tools goes in `SHARED_SHAPES` in [engine/claude/tools.ts](../../engine/claude/tools.ts).
+- **Earlier results shortened.** Before each new request, tool results of earlier requests that are longer than 2,000 characters keep their first 500 and a note to call the tool again, and their pictures become a note (`shortenOldResults`). During a request nothing changes, so its steps read from the cache.
+- **Fewer steps.** The system prompt asks the model to make independent calls in one step and to prefer tools that do many things at once (`cut_ranges` with every range).
+
 ## Providers
 
 ```ts
