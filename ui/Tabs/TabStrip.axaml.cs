@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using VideoEditor.Shared;
 using VideoEditor.Shell;
 
 namespace VideoEditor.Tabs;
@@ -30,6 +31,7 @@ public partial class TabStrip : UserControl
     public void Attach(AppViewModel vm)
     {
         _vm = vm;
+        UpdateButton.DataContext = vm;
         TabList.ItemsSource = vm.Tabs;
         vm.Tabs.CollectionChanged += (_, _) => FitTabs();
         FitTabs();
@@ -67,4 +69,6 @@ public partial class TabStrip : UserControl
     }
 
     private void OnNewTab(object? sender, RoutedEventArgs e) => _vm.NewTab();
+
+    private async void OnUpdate(object? sender, RoutedEventArgs e) => await Docs.Open(this, Docs.Download);
 }

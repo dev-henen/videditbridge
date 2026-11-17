@@ -203,7 +203,27 @@ public sealed class AppViewModel : Observable, IDisposable
             _defaultModelId = model;
             Raise(nameof(DefaultModel));
         }
+        // Checking turned off: the notice goes; turned on: look now.
+        if (r?["checkUpdates"]?.GetValue<bool>() is { } check)
+        {
+            if (!check) Update = null;
+            else if (Update is null) _ = CheckForUpdateAsync();
+        }
         return r;
+    }
+
+    // ---------------------------------------------------------------- updates
+
+    private UpdateInfo? _update;
+    /// <summary>A newer published version, found when the app started (Settings, About, can turn the check off).</summary>
+    public UpdateInfo? Update { get => _update; private set => Set(ref _update, value, nameof(Update), nameof(HasUpdate), nameof(UpdateTip)); }
+    public bool HasUpdate => Update is not null;
+    public string UpdateTip => Update is { } u ? $"VideditBridge {u.Version} is available (you have {Updates.Current}). Download it and install it over this one; your projects and settings stay." : "";
+
+    private async Task CheckForUpdateAsync()
+    {
+        var found = await Updates.CheckAsync();
+        Dispatcher.UIThread.Post(() => Update = found);
     }
 
     /// <summary>Run the performance test again (the renderer on "Automatic" follows it).</summary>
@@ -252,6 +272,7 @@ public sealed class AppViewModel : Observable, IDisposable
             Raise(nameof(Models));
             await RefreshProjectsAsync();
             await RestoreTabsAsync(openDir);
+            if (info?["checkUpdates"]?.GetValue<bool>() != false) _ = CheckForUpdateAsync();
         }
         catch (Exception e)
         {

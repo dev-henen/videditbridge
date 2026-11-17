@@ -21,6 +21,7 @@ import type { AspectRatio } from "../core/util.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LocalTTS } from "../tools/voiceover/local.js";
 import { PREVIEW_VIEW_HTML } from "./view.js";
+import { VERSION } from "../version.js";
 
 /**
  * The editor as an MCP server, so other AI apps (the Claude, ChatGPT and Gemini apps, Gemini CLI,
@@ -354,7 +355,7 @@ export interface McpServerOptions {
 /** An MCP server over a backend. Make one per connection; the backend can be shared. */
 export function createMcpServer(opts: McpServerOptions): Server {
   const server = new Server(
-    { name: "videditbridge", title: "VideditBridge", version: opts.version ?? "0.2.0" },
+    { name: "videditbridge", title: "VideditBridge", version: opts.version ?? VERSION },
     { capabilities: { tools: {}, resources: {} }, instructions: INSTRUCTIONS },
   );
   const client = (): McpClientInfo => ({

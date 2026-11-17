@@ -26,6 +26,8 @@ export interface AppSettings {
   /** "auto": what the performance test found (the GPU engine, FFmpeg where it fails); or one renderer always. */
   renderer: "auto" | "engine" | "ffmpeg";
   hardwareEncoding: boolean;
+  /** Look for a newer version on GitHub when the app starts (default on; the app does the check). */
+  checkUpdates?: boolean;
   /** The MCP connector address for ChatGPT and other apps that connect to one: on or off, and its port. */
   mcpHttp?: { enabled: boolean; port?: number; public?: boolean };
   /** The user's standing instructions for the AI, sent with every request. */
@@ -145,6 +147,7 @@ export function publicSettings(s: AppSettings) {
   return {
     renderer: s.renderer,
     hardwareEncoding: s.hardwareEncoding,
+    checkUpdates: s.checkUpdates !== false,
     contextLimit: s.contextLimit ?? 100_000,
     autoCompact: s.autoCompact !== false,
     defaultModel: s.defaultModel ?? null,

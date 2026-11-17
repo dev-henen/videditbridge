@@ -14,6 +14,10 @@ public static class Docs
     /// <summary>The app's source, by its developer, Moses Henen.</summary>
     public const string Repo = "https://github.com/dev-henen/videditbridge";
     public const string License = Repo + "/blob/main/LICENSE";
+    public const string Releases = Repo + "/releases";
+
+    /// <summary>The download page: its buttons get the newest installer for each system.</summary>
+    public static string Download => Site + "download.html";
 
     public static string Home => Site;
     /// <summary>Getting an API key; `provider` jumps to Anthropic's, OpenAI's or Google's steps.</summary>

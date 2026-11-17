@@ -47,6 +47,7 @@ import { CLIENT_IDS, MCP_NAME, clientInfo, commandLine, isClientId, mcpLaunch, r
 import { DEFAULT_MCP_PORT, mcpToken, startMcpHttp, type McpHttpServer } from "../mcp/http.js";
 import { AppBackend, appLaunchFile } from "../mcp/server.js";
 import { startTunnel, type Tunnel } from "../mcp/tunnel.js";
+import { VERSION } from "../version.js";
 import { appDir, defaultFontsDir, defaultModelsDir } from "../tools/appdirs.js";
 
 // stdout is the protocol channel: route stray console output to stderr.
@@ -141,11 +142,12 @@ function availability() {
 
 const handlers: Record<string, Handler> = {
   "host.info": () => ({
-    version: "0.1.2",
+    version: VERSION,
     projectsDir: store.root,
     ...availability(),
     defaultModel: settings.defaultModel && MODELS.includes(settings.defaultModel) ? settings.defaultModel : DEFAULT_MODEL,
     effort: settings.effort ?? DEFAULT_EFFORT,
+    checkUpdates: settings.checkUpdates !== false,
     // Transcription and narration run on this machine; no service or key is involved.
     transcriptionAvailable: true,
     voiceAvailable: true,
@@ -462,6 +464,7 @@ const handlers: Record<string, Handler> = {
     if (isEffort(p.effort)) next.effort = p.effort;
     if (p.renderer === "auto" || p.renderer === "engine" || p.renderer === "ffmpeg") next.renderer = p.renderer;
     if (typeof p.hardwareEncoding === "boolean") next.hardwareEncoding = p.hardwareEncoding;
+    if (typeof p.checkUpdates === "boolean") next.checkUpdates = p.checkUpdates;
     if (typeof p.instructions === "string") next.instructions = p.instructions.slice(0, 4000);
     if (typeof p.contextLimit === "number" && p.contextLimit >= 8000 && p.contextLimit <= 5_000_000) next.contextLimit = Math.round(p.contextLimit);
     if (typeof p.autoCompact === "boolean") next.autoCompact = p.autoCompact;

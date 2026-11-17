@@ -186,8 +186,10 @@ public partial class SettingsScreen : UserControl
     }
 
     /// <summary>Add a card of rows (with an optional heading above it) to a page.</summary>
-    private static void Card(PageView page, string? heading, params Border[] rows)
+    /// <summary>A card of rows; a null row (one that applies only sometimes) is left out.</summary>
+    private static void Card(PageView page, string? heading, params Border?[] given)
     {
+        var rows = given.OfType<Border>().ToArray();
         if (rows.Length == 0) return;
         rows[^1].Classes.Add("last");
         var list = new StackPanel();
@@ -594,14 +596,20 @@ public partial class SettingsScreen : UserControl
     }
 
     /// <summary>The app's version (Version in VideditBridge.csproj), as 0.1.0.</summary>
-    private static string AppVersion => typeof(SettingsScreen).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "";
+    private static string AppVersion => Updates.Current;
 
     private void BuildAbout(PageView page)
     {
+        var checkUpdates = _settings?["checkUpdates"]?.GetValue<bool>() ?? true;
         Card(page, null,
             Row($"VideditBridge {AppVersion}", "Edit video by asking Claude, ChatGPT or Gemini here, or from the Claude app."),
+            _vm.Update is { } update
+                ? Row($"Version {update.Version} is available", "Download it and install it over this one; your projects, settings and keys stay.", Btn("Download", () => Docs.Open(this, Docs.Download), icon: Icons.Open, name: "Download the new version"))
+                : null,
+            Row("Look for updates", "When the app starts, ask GitHub whether a newer version is out, and show Update at the top right. Nothing about you is sent.",
+                Toggle(checkUpdates, "Look for updates", on => Change(new { checkUpdates = on }))),
             Row("Made by Moses Henen", "The app's source and releases are on GitHub.", Btn("Open", () => Docs.Open(this, Docs.Repo), icon: Icons.Open, name: "Open VideditBridge on GitHub")),
-            Row("License", "Free to use, for work too. It may not be sold or changed; anyone can contribute on GitHub.", Btn("Open", () => Docs.Open(this, Docs.License), icon: Icons.Open, name: "Read the license")),
+            Row("License", "Free and open source under the MIT License: use it for work too, change it and share it.", Btn("Open", () => Docs.Open(this, Docs.License), icon: Icons.Open, name: "Read the license")),
             Row("User guide", "Getting started, API keys, the Claude app, what you can ask.", Btn("Open", () => Docs.Open(this, Docs.Home), icon: Icons.Open, name: "Open the user guide")),
             Row("All tools", "Everything the AI can do in the editor, by topic.", Btn("Open", () => Docs.Open(this, Docs.Tools), icon: Icons.Open, name: "Open the tools list")),
             Row("Troubleshooting", "When a key, a connection or a render does not work.", Btn("Open", () => Docs.Open(this, Docs.Troubleshooting), icon: Icons.Open, name: "Open troubleshooting")),

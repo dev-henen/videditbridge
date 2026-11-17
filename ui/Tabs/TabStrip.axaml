@@ -53,6 +53,12 @@
       <TextBlock Classes="icon" Text="{x:Static shared:Icons.ChevronDown}" FontSize="14"/>
     </Button>
 
+    <!-- A newer version is out, as in a browser: opens the download page (hidden otherwise) -->
+    <Button x:Name="UpdateButton" DockPanel.Dock="Right" Classes="primary" Click="OnUpdate" IsVisible="{Binding HasUpdate}" ToolTip.Tip="{Binding UpdateTip}"
+            AutomationProperties.Name="Update available" MinHeight="24" Height="24" Padding="10,0" Margin="8,2,8,0" VerticalAlignment="Center">
+      <TextBlock Text="Update" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource OnAccent}" VerticalAlignment="Center"/>
+    </Button>
+
     <!-- Tabs share the row: each as wide as fits, from 232 px down to a minimum, then the row scrolls -->
     <ScrollViewer x:Name="TabScroller" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" SizeChanged="OnRowResized">
       <StackPanel Orientation="Horizontal">
