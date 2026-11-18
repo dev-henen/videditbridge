@@ -59,7 +59,7 @@ export const DEFAULT_MODEL = AGENT_MODELS[0]!.id;
  */
 export type Effort = "low" | "medium" | "high";
 export const EFFORTS: readonly Effort[] = ["low", "medium", "high"];
-export const DEFAULT_EFFORT: Effort = "high";
+export const DEFAULT_EFFORT: Effort = "medium";
 export const isEffort = (v: unknown): v is Effort => typeof v === "string" && (EFFORTS as readonly string[]).includes(v);
 
 /**

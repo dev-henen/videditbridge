@@ -166,9 +166,9 @@ describe("effort", () => {
     expect(sent.claude!.output_config).toEqual({ effort: "low" });
     expect(sent.openai!.reasoning).toEqual({ effort: "medium" });
     expect((sent.gemini!.config as { thinkingConfig: unknown }).thinkingConfig).toEqual({ thinkingLevel: "LOW" });
-    // Left out, it is high.
+    // Left out, it is medium.
     await new OpenAIProvider(openai as never).turn(request());
-    expect(sent.openai!.reasoning).toEqual({ effort: "high" });
+    expect(sent.openai!.reasoning).toEqual({ effort: "medium" });
   });
 
   it("goes from the agent's request to every step, and each request's usage is counted", async () => {

@@ -82,7 +82,7 @@ Every step of the loop sends the whole prompt again, so the agent keeps it small
 - **Fewer steps.** The system prompt asks the model to make independent calls in one step and to prefer tools that do many things at once (`cut_ranges` with every range).
 - **Parts of transcripts.** `get_transcript` takes `from` and `to` (source seconds) and returns only the sentences in that range, so work on one part of a long recording does not read all of it.
 - **Small pictures.** `render_frame` defaults to 768 pixels on the long side and `render_contact_sheet` fits the whole sheet in 1,000 pixels (about 450 and 1,400 tokens). The model can still ask for a bigger `scale` or `thumbWidth`.
-- **Effort.** The chat's effort picker (Low, Medium, High; the last pick is kept in settings as `effort`) goes with each `agent.run` and reaches each provider as its own setting: Claude's `output_config.effort`, OpenAI's `reasoning.effort`, Gemini's `thinkingLevel`. Low suits small changes and spends far fewer output tokens.
+- **Effort.** The chat's effort picker (Low, Medium, High; Medium by default, and the last pick is kept in settings as `effort`) goes with each `agent.run` and reaches each provider as its own setting: Claude's `output_config.effort`, OpenAI's `reasoning.effort`, Gemini's `thinkingLevel`. Low suits small changes and spends far fewer output tokens.
 - **An hour of cache on Claude.** Claude's cache marks use `ttl: "1h"`, since people often take more than 5 minutes between requests. Writing it costs 2x the input price (5 minutes: 1.25x), but each step writes only what is new and reads the rest at a tenth.
 
 ### What requests use

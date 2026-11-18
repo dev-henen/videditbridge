@@ -4,7 +4,7 @@ import { appDir } from "../tools/appdirs.js";
 import { setDefaultBackend, type RenderBackend } from "../tools/render/render.js";
 import { setHardwareEncoding } from "../tools/render/hardware.js";
 import { applyPerformance, loadPerformance } from "../tools/render/benchmark.js";
-import { PROVIDERS, PROVIDER_IDS, envKeyOf, providerAvailable, providerInfo, type Effort, type ProviderId } from "./models.js";
+import { DEFAULT_EFFORT, PROVIDERS, PROVIDER_IDS, envKeyOf, providerAvailable, providerInfo, type Effort, type ProviderId } from "./models.js";
 import { hasKeychain, readKeychainKey, writeKeychainKey } from "./secrets.js";
 
 /**
@@ -21,7 +21,7 @@ export interface AppSettings {
   apiKeys?: Partial<Record<Exclude<ProviderId, "anthropic">, string>>;
   /** The model new conversations start with (an id from host.info's models). */
   defaultModel?: string;
-  /** How much the AI thinks before acting, as last picked in the chat (default high). */
+  /** How much the AI thinks before acting, as last picked in the chat (default medium). */
   effort?: Effort;
   /** "auto": what the performance test found (the GPU engine, FFmpeg where it fails); or one renderer always. */
   renderer: "auto" | "engine" | "ffmpeg";
@@ -153,7 +153,7 @@ export function publicSettings(s: AppSettings) {
     contextLimit: s.contextLimit ?? 100_000,
     autoCompact: s.autoCompact !== false,
     defaultModel: s.defaultModel ?? null,
-    effort: s.effort ?? "high",
+    effort: s.effort ?? DEFAULT_EFFORT,
     timelineExpanded: s.timelineExpanded !== false,
     /** Anthropic's key (as before). */
     apiKey: shownKey("anthropic"),

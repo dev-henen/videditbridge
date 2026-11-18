@@ -66,8 +66,11 @@ public sealed record EffortOption(string Id, string Label, string Description)
         new("high", "High", "Thinks the most: for full edits from raw footage and restyles"),
     ];
 
-    /// <summary>The option for an id from the host, high for anything else.</summary>
-    public static EffortOption Of(string? id) => All.FirstOrDefault(e => e.Id == id) ?? All[2];
+    /// <summary>The option for an id from the host, medium (the default) for anything else.</summary>
+    public static EffortOption Of(string? id) => All.FirstOrDefault(e => e.Id == id) ?? All[1];
+
+    /// <summary>The name in the closed picker, where the chat is narrow.</summary>
+    public string Short => Id == "medium" ? "Med" : Label;
 
     public override string ToString() => Label;
 }

@@ -177,7 +177,7 @@
             <ListBox ItemsSource="{Binding Media}" SelectionChanged="OnMediaSelected">
               <ListBox.ItemTemplate>
                 <DataTemplate>
-                  <DockPanel Margin="4,4" ToolTip.Tip="{Binding Tip}">
+                  <DockPanel Margin="4,4,14,4" ToolTip.Tip="{Binding Tip}">
                     <Button DockPanel.Dock="Right" Click="OnRemoveMedia" Tag="{Binding}" VerticalAlignment="Top" Margin="4,0,0,0" MinHeight="22" MinWidth="22" Padding="3"
                             ToolTip.Tip="Remove from the project" AutomationProperties.Name="Remove from the project">
                       <TextBlock Classes="icon" Text="{x:Static shared:Icons.Delete}" FontSize="12" Foreground="{StaticResource Muted}"/>

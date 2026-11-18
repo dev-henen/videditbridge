@@ -127,8 +127,8 @@ describe("the editing agent's turn", () => {
     expect(body.system).toEqual([{ type: "text", text: "You edit video.", cache_control: { type: "ephemeral", ttl: "1h" } }]);
     expect((body.tools as { cache_control?: unknown }[]).map((t) => !!t.cache_control)).toEqual([false, true]);
     expect(JSON.stringify(body.messages)).toContain('"cache_control":{"type":"ephemeral","ttl":"1h"}');
-    // High effort unless the chat says otherwise.
-    expect(body.output_config).toEqual({ effort: "high" });
+    // Medium effort unless the chat says otherwise.
+    expect(body.output_config).toEqual({ effort: "medium" });
     // The context counts what was read from the cache too.
     expect(turn.usage).toEqual({ inputTokens: 910, outputTokens: 5, cachedTokens: 900 });
     expect(estimateTokens([{ role: "user", content: "x".repeat(400) }])).toBe(100);
