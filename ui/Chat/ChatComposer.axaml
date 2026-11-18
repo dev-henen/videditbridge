@@ -108,14 +108,15 @@
                  AcceptsReturn="True" TextWrapping="Wrap" Watermark="{Binding AskHint}" VerticalContentAlignment="Top"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"/>
 
-        <!-- Add files and pick the model on the left; send (or stop) on the right -->
-        <DockPanel>
-          <Button DockPanel.Dock="Left" Click="OnAttach" IsEnabled="{Binding ModelAvailable}" ToolTip.Tip="Add files (media for the edit, or pictures for the assistant to look at)"
+        <!-- Add files, model, effort and Plan on the left; stop and send on the right. Only the model
+             name gives way in a narrow chat (it trims), so the rest always shows whole. -->
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto">
+          <Button Grid.Column="0" Click="OnAttach" IsEnabled="{Binding ModelAvailable}" ToolTip.Tip="Add files (media for the edit, or pictures for the assistant to look at)"
                   AutomationProperties.Name="Add files" MinHeight="24" MinWidth="24" Padding="3">
             <TextBlock Classes="icon" Text="{x:Static shared:Icons.Add}" FontSize="15"/>
           </Button>
-          <ComboBox DockPanel.Dock="Left" Classes="model" ItemsSource="{Binding AvailableModels}" SelectedItem="{Binding Model}" IsEnabled="{Binding HasAnyKey}" Margin="2,0,0,0"
-                    MaxWidth="150" ToolTip.Tip="Model for the next request" AutomationProperties.Name="Model">
+          <ComboBox Grid.Column="1" Classes="model" ItemsSource="{Binding AvailableModels}" SelectedItem="{Binding Model}" IsEnabled="{Binding HasAnyKey}" Margin="2,0,0,0"
+                    HorizontalAlignment="Left" MaxWidth="160" ToolTip.Tip="Model for the next request" AutomationProperties.Name="Model">
             <!-- Closed, the name trims to leave room for effort and Plan in a narrow chat -->
             <ComboBox.SelectionBoxItemTemplate>
               <DataTemplate>
@@ -131,7 +132,7 @@
             </ComboBox.ItemTemplate>
           </ComboBox>
           <!-- Effort: how much the AI thinks before acting; low is faster and uses fewer tokens -->
-          <ComboBox DockPanel.Dock="Left" Classes="model" ItemsSource="{Binding Efforts}" SelectedItem="{Binding Effort}" IsEnabled="{Binding ModelAvailable}" Margin="2,0,0,0"
+          <ComboBox Grid.Column="2" Classes="model" ItemsSource="{Binding Efforts}" SelectedItem="{Binding Effort}" IsEnabled="{Binding ModelAvailable}" Margin="2,0,0,0"
                     ToolTip.Tip="Effort: how much the AI thinks before acting. Low is faster and uses fewer tokens; high is the most careful" AutomationProperties.Name="Effort">
             <!-- Closed, the short name (Low, Med, High); open, the full names -->
             <ComboBox.SelectionBoxItemTemplate>
@@ -148,23 +149,19 @@
             </ComboBox.ItemTemplate>
           </ComboBox>
           <!-- Plan first: the AI looks and proposes a plan, and changes nothing until it is approved -->
-          <ToggleButton DockPanel.Dock="Left" Classes="plan" IsChecked="{Binding PlanFirst}" IsEnabled="{Binding ModelAvailable}" Margin="4,0,0,0"
+          <ToggleButton Grid.Column="3" Classes="plan" IsChecked="{Binding PlanFirst}" IsEnabled="{Binding ModelAvailable}" Margin="2,0,0,0" Padding="5,3"
                         ToolTip.Tip="Plan first: the AI proposes a plan for you to approve before it changes anything" AutomationProperties.Name="Plan first">
-            <StackPanel Orientation="Horizontal" Spacing="4">
-              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Document}" FontSize="12"/>
-              <TextBlock Text="Plan" FontSize="11" VerticalAlignment="Center" IsVisible="{Binding !AgentRunning}"/>
-            </StackPanel>
+            <TextBlock Classes="icon" Text="{x:Static shared:Icons.Document}" FontSize="13"/>
           </ToggleButton>
-          <Button DockPanel.Dock="Right" Classes="primary" Click="OnAsk" IsEnabled="{Binding ModelAvailable}" ToolTip.Tip="{Binding SendTip}" AutomationProperties.Name="Send"
+          <Button Grid.Column="5" Classes="primary" Click="OnAsk" IsEnabled="{Binding ModelAvailable}" ToolTip.Tip="{Binding SendTip}" AutomationProperties.Name="Send"
                   Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" HorizontalAlignment="Right" Margin="4,0,0,0">
             <TextBlock Classes="icon" Text="{x:Static shared:Icons.Send}" FontSize="13" Foreground="{StaticResource OnAccent}"/>
           </Button>
-          <Button DockPanel.Dock="Right" Click="OnStopClaude" ToolTip.Tip="Stop" AutomationProperties.Name="Stop the assistant"
-                  Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" IsVisible="{Binding AgentRunning}" HorizontalAlignment="Right">
+          <Button Grid.Column="4" Click="OnStopClaude" ToolTip.Tip="Stop" AutomationProperties.Name="Stop the assistant"
+                  Width="26" Height="26" MinWidth="0" MinHeight="0" Padding="0" IsVisible="{Binding AgentRunning}" HorizontalAlignment="Right" Margin="4,0,0,0">
             <TextBlock Classes="icon" Text="{x:Static shared:Icons.Stop}" FontSize="12"/>
           </Button>
-          <Panel/>
-        </DockPanel>
+        </Grid>
       </StackPanel>
     </Border>
 
