@@ -236,13 +236,13 @@
                     <TextBlock Grid.Column="1" Text="{Binding Note}" FontSize="10.5" Foreground="{StaticResource Faint}" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="210" Margin="8,0"/>
                     <Rectangle Grid.Column="2" Height="1" Fill="{StaticResource Line}" VerticalAlignment="Center"/>
                   </Grid>
-                  <!-- Claude's reply: plain text on the left; a working line until it writes -->
+                  <!-- Claude's reply: on the left, its Markdown drawn as formatting (ChatMarkdown); a working line until it writes -->
                   <StackPanel IsVisible="{Binding IsAssistant}">
                     <StackPanel Orientation="Horizontal" IsVisible="{Binding IsThinking}" Spacing="6">
                       <TextBlock Classes="icon spin" Text="{x:Static shared:Icons.Sync}" FontSize="12" Foreground="{StaticResource Accent}"/>
                       <TextBlock Text="Working on it" FontSize="11" Foreground="{StaticResource Muted}"/>
                     </StackPanel>
-                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12" LineHeight="18" IsVisible="{Binding HasText}"/>
+                    <SelectableTextBlock chat:ChatMarkdown.Text="{Binding Text}" TextWrapping="Wrap" FontSize="12" LineHeight="18" IsVisible="{Binding HasText}"/>
                     <!-- The request failed: one plain sentence in its own box -->
                     <Border IsVisible="{Binding HasError}" Background="#1FEF4444" BorderBrush="#40EF4444" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,4,0,0">
                       <DockPanel>
