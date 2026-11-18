@@ -303,19 +303,16 @@ public sealed class ProjectViewModel : Observable
     }
 
     /// <summary>
-    /// Remove a media item from the project. When the edit uses it, the user is asked first, since
-    /// those parts go with it. The file stays where it is, and undo brings everything back.
+    /// Remove a media item from the project, after the user confirms (and is told which parts of the
+    /// edit go with it). The file stays where it is, and undo brings everything back.
     /// </summary>
     public Task RemoveMediaAsync(MediaItem item) => Guard(async () =>
     {
-        if (!item.IsUnused)
-        {
-            if (_app.Ask is not { } ask) return;
-            var ok = await ask("Remove media?",
-                $"\"{item.Name}\" is in the edit ({item.Usage.ToLowerInvariant()}). Removing it also takes out those parts of the edit. The file stays where it is, and Undo brings it back.",
-                "Remove", "Keep");
-            if (!ok) return;
-        }
+        if (_app.Ask is not { } ask) return;
+        var message = item.IsUnused
+            ? $"Remove \"{item.Name}\" from the project? It is not used in the edit. The file stays where it is, and Undo brings it back."
+            : $"Remove \"{item.Name}\" from the project? It is in the edit ({item.Usage.ToLowerInvariant()}), and those parts of the edit go with it. The file stays where it is, and Undo brings it back.";
+        if (!await ask("Remove media?", message, "Remove", "Keep")) return;
         await Call("media.remove", new { asset = item.Id });
     });
 

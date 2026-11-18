@@ -1026,6 +1026,13 @@ const remoteHandlers: Record<string, Handler> = {
     }
     return handlers["tools.execute"]!(p);
   },
+  // Deleting asks the user first, which only the app can do: other processes cannot delete.
+  "project.delete": () => {
+    throw new RpcError(1, "Projects are deleted in the app, which asks the user first.");
+  },
+  "media.remove": () => {
+    throw new RpcError(1, "Media is removed in the app, which asks the user first.");
+  },
   "project.close": async (p) => {
     const dir = target(p).dir;
     const r = await handlers["project.close"]!(p);
