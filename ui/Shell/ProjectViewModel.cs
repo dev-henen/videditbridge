@@ -25,7 +25,16 @@ public sealed class ProjectViewModel : Observable
 
     public ObservableCollection<ActivityItem> Activities { get; } = [];
     public ObservableCollection<IssueItem> Issues { get; } = [];
+    /// <summary>Everything that happened to the project, newest first, kept in the project folder (history.list).</summary>
     public ObservableCollection<HistoryItem> History { get; } = [];
+    public bool HasHistory => History.Count > 0;
+
+    /// <summary>The media imported into the project (Media tab).</summary>
+    public ObservableCollection<MediaItem> Media { get; } = [];
+    private string _mediaKey = "";
+    public bool HasMedia => Media.Count > 0;
+    private string _mediaSummary = "";
+    public string MediaSummary { get => _mediaSummary; private set => Set(ref _mediaSummary, value); }
     public ObservableCollection<FindingItem> Findings { get; } = [];
     public ObservableCollection<ChatMessage> Messages { get; } = [];
     public ObservableCollection<ConversationEntry> Conversations { get; } = [];
@@ -76,6 +85,7 @@ public sealed class ProjectViewModel : Observable
         _model = app.DefaultModel;
         _effort = app.DefaultEffort;
         _ = RefreshMemoryAsync();
+        _ = RefreshHistoryAsync();
         UseAvailableModel();
         ApplyState(state);
         ProjectChanged?.Invoke();
@@ -226,6 +236,84 @@ public sealed class ProjectViewModel : Observable
         catch
         {
             // an older host without memory: nothing to show
+        }
+    }
+
+    // ---------------------------------------------------------------- history
+
+    public async Task RefreshHistoryAsync()
+    {
+        try
+        {
+            var r = await Call("history.list");
+            History.Clear();
+            foreach (var e in r?.AsArray() ?? [])
+                if (e is not null && ReadHistory(e) is { } item) History.Add(item);
+            Raise(nameof(HasHistory));
+        }
+        catch
+        {
+            // an older host without a kept history: nothing to show
+        }
+    }
+
+    private static HistoryItem? ReadHistory(JsonNode e)
+    {
+        if (e["text"]?.GetValue<string>() is not { } text) return null;
+        var at = DateTime.TryParse(e["at"]?.GetValue<string>(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var d) ? d.ToLocalTime() : DateTime.Now;
+        return new HistoryItem(at, e["kind"]?.GetValue<string>() ?? "tool", text, e["detail"]?.GetValue<string>(), e["status"]?.GetValue<string>() == "error");
+    }
+
+    // ---------------------------------------------------------------- media
+
+    /// <summary>The media list from a state snapshot; rebuilt only when it changed, so thumbnails stay.</summary>
+    private void ApplyMedia(JsonNode? assets)
+    {
+        var key = assets?.ToJsonString() ?? "";
+        if (key == _mediaKey) return;
+        _mediaKey = key;
+        var old = Media.ToDictionary(m => $"{m.Id}|{m.Path}", m => m.Thumb);
+        Media.Clear();
+        foreach (var a in assets?.AsArray() ?? [])
+        {
+            if (a is null) continue;
+            var id = a["id"]!.GetValue<string>();
+            var type = a["type"]!.GetValue<string>();
+            var path = a["path"]?.GetValue<string>();
+            var label = a["label"]?.GetValue<string>();
+            var name = !string.IsNullOrWhiteSpace(label) ? label : path is not null ? System.IO.Path.GetFileName(path) : id;
+            var parts = new List<string> { type switch { "video" => "Video", "image" => "Picture", "audio" => "Sound", "color" => "Color", "gradient" => "Gradient", _ => type } };
+            if (a["duration"]?.GetValue<double>() is { } dur)
+                parts.Add(dur < 10 ? $"{dur.ToString("0.0#", CultureInfo.CurrentCulture)} s" : TimeSpan.FromSeconds(dur).ToString(dur >= 3600 ? @"h\:mm\:ss" : @"m\:ss"));
+            if (a["width"]?.GetValue<int>() is { } w && a["height"]?.GetValue<int>() is { } h) parts.Add($"{w}x{h}");
+            if (a["drawn"]?.GetValue<bool>() == true) parts.Add("made in the app");
+            var uses = a["uses"]?.GetValue<int>() ?? 0;
+            double? first = a["firstUse"] is JsonValue f ? f.GetValue<double>() : null;
+            var usage = uses == 0 ? "Not used in the edit" : $"Used {(uses == 1 ? "once" : $"{uses} times")}, first at {Ui.Time(first ?? 0)}";
+            Avalonia.Media.IBrush? swatch = null;
+            if (a["color"]?.GetValue<string>() is { } c && Avalonia.Media.Color.TryParse(c, out var color)) swatch = new Avalonia.Media.SolidColorBrush(color);
+            var item = new MediaItem(id, type, name, path, string.Join(", ", parts), usage, uses > 0 ? first : null, swatch);
+            if (old.TryGetValue($"{id}|{path}", out var thumb) && thumb is not null) item.Thumb = thumb;
+            else if (type is "video" or "image") _ = LoadThumbAsync(item);
+            Media.Add(item);
+        }
+        var used = Media.Count(m => !m.IsUnused);
+        MediaSummary = Media.Count == 0 ? "Nothing imported yet" : $"{Media.Count} item{(Media.Count == 1 ? "" : "s")}, {used} in the edit";
+        Raise(nameof(HasMedia));
+    }
+
+    private async Task LoadThumbAsync(MediaItem item)
+    {
+        try
+        {
+            var r = await Call("media.thumb", new { asset = item.Id });
+            if (r?["path"]?.GetValue<string>() is not { } file || !File.Exists(file)) return;
+            await using var stream = File.OpenRead(file);
+            item.Thumb = new Avalonia.Media.Imaging.Bitmap(stream);
+        }
+        catch
+        {
+            // no picture: the item keeps its icon
         }
     }
 
@@ -728,6 +816,13 @@ public sealed class ProjectViewModel : Observable
             case "memory":
                 _ = RefreshMemoryAsync();
                 break;
+            case "history":
+                if (p?["entry"] is { } entry && ReadHistory(entry) is { } item)
+                {
+                    History.Insert(0, item);
+                    Raise(nameof(HasHistory));
+                }
+                break;
             case "agent.end":
                 var reason = p?["stopReason"]?.GetValue<string>();
                 if (Messages.LastOrDefault() is { IsUser: false } end)
@@ -804,13 +899,7 @@ public sealed class ProjectViewModel : Observable
             if (i is not null) Issues.Add(new IssueItem(i["level"]!.GetValue<string>(), i["path"]!.GetValue<string>(), i["message"]!.GetValue<string>()));
         RebuildFindings();
 
-        History.Clear();
-        foreach (var h in s["history"]?.AsArray() ?? [])
-        {
-            if (h is null) continue;
-            var time = DateTime.TryParse(h["at"]?.GetValue<string>(), out var d) ? d.ToLocalTime().ToString("T", CultureInfo.CurrentCulture) : "";
-            History.Add(new HistoryItem(time, h["action"]!.GetValue<string>()));
-        }
+        ApplyMedia(s["assets"]);
 
         // Activities in the snapshot fill gaps (e.g. after opening a project).
         foreach (var a in (s["activities"]?.AsArray() ?? []).Reverse())

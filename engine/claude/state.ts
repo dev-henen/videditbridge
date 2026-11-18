@@ -1,3 +1,4 @@
+import path from "node:path";
 import { computeTimeline } from "../core/timeline.js";
 import { validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
@@ -47,6 +48,7 @@ export function sessionState(session: EditorSession) {
       group: l.label,
     })),
     audio: (timeline?.audio ?? []).map((a) => ({ id: a.clip.id, role: a.clip.role, assetId: a.clip.assetId, start: a.start, end: a.end })),
+    assets: mediaList(session, timeline),
     captions,
     summary: summarizeProject(project),
     issues: validateProject(project).issues,
@@ -62,3 +64,35 @@ export function sessionState(session: EditorSession) {
     canRedo: session.canRedo,
   };
 }
+
+/**
+ * Every media item in the project, for the app's Media tab: what it is, where the file is (an
+ * absolute path, which the app opens directly), its size and length, and where the edit uses it.
+ */
+function mediaList(session: EditorSession, timeline: ReturnType<typeof computeTimeline> | undefined) {
+  const project = session.project;
+  const uses = new Map<string, number>();
+  const first = new Map<string, number>();
+  const use = (assetId: string, at: number) => {
+    uses.set(assetId, (uses.get(assetId) ?? 0) + 1);
+    if (!first.has(assetId) || at < first.get(assetId)!) first.set(assetId, at);
+  };
+  for (const c of timeline?.clips ?? []) use(c.clip.assetId, c.start);
+  for (const a of timeline?.audio ?? []) use(a.clip.assetId, a.start);
+  for (const l of project.layers) if (l.type === "media") use(l.assetId, l.start);
+  return project.assets.map((a) => ({
+    id: a.id,
+    type: a.type,
+    label: a.label ?? null,
+    path: "src" in a ? (isUrl(a.src) ? a.src : path.resolve(session.options.baseDir, a.src)) : null,
+    duration: "duration" in a ? (a.duration ?? null) : null,
+    width: "width" in a ? (a.width ?? null) : null,
+    height: "height" in a ? (a.height ?? null) : null,
+    color: a.type === "color" ? a.color : a.type === "gradient" ? a.colors[0] : null,
+    drawn: ("svg" in a && !!a.svg) || ("particles" in a && !!a.particles),
+    uses: uses.get(a.id) ?? 0,
+    firstUse: first.get(a.id) ?? null,
+  }));
+}
+
+const isUrl = (src: string) => /^[a-z][a-z0-9+.-]+:\/\//i.test(src);

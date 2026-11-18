@@ -3,9 +3,9 @@
              xmlns:shared="using:VideoEditor.Shared"
              x:Class="VideoEditor.Session.SessionPanel">
   <UserControl.Styles>
-    <!-- Four tabs in a narrow panel: tight padding, labels centered in equal cells -->
+    <!-- Five tabs in a narrow panel: an icon each, and the name of the open one beside its icon -->
     <Style Selector="TabItem">
-      <Setter Property="Padding" Value="1,5"/>
+      <Setter Property="Padding" Value="6,5"/>
       <Setter Property="HorizontalContentAlignment" Value="Center"/>
     </Style>
     <!-- Status dot: grey when idle, a pulsing blue while anything runs -->
@@ -54,12 +54,18 @@
       </StackPanel>
       <Rectangle DockPanel.Dock="Top" Height="1" Fill="{StaticResource Line}"/>
 
-      <!-- The four tabs share one row evenly, so they fit the narrow panel -->
+      <!-- The tabs share one row, centered; only the open tab shows its name, so all five fit -->
       <TabControl x:Name="Tabs" Margin="4" Padding="0">
         <TabControl.ItemsPanel>
-          <ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate>
+          <ItemsPanelTemplate><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"/></ItemsPanelTemplate>
         </TabControl.ItemsPanel>
-        <TabItem Header="Activity">
+        <TabItem ToolTip.Tip="Activity" AutomationProperties.Name="Activity">
+          <TabItem.Header>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Sync}" FontSize="13" VerticalAlignment="Center"/>
+              <TextBlock Text="Activity" VerticalAlignment="Center" IsVisible="{Binding $parent[TabItem].IsSelected}"/>
+            </StackPanel>
+          </TabItem.Header>
           <ListBox ItemsSource="{Binding Activities}" Margin="0,4,0,0">
             <ListBox.ItemTemplate>
               <DataTemplate>
@@ -82,7 +88,13 @@
             </ListBox.ItemTemplate>
           </ListBox>
         </TabItem>
-        <TabItem x:Name="ReviewTab" Header="Review">
+        <TabItem x:Name="ReviewTab" ToolTip.Tip="Review" AutomationProperties.Name="Review">
+          <TabItem.Header>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Review}" FontSize="13" VerticalAlignment="Center"/>
+              <TextBlock Text="Review" VerticalAlignment="Center" IsVisible="{Binding $parent[TabItem].IsSelected}"/>
+            </StackPanel>
+          </TabItem.Header>
           <DockPanel>
             <DockPanel DockPanel.Dock="Top" Margin="6,6,2,4">
               <Button DockPanel.Dock="Right" Click="OnReview" IsEnabled="{Binding IsProjectOpen}" ToolTip.Tip="Check the edit for problems" AutomationProperties.Name="Check the edit for problems">
@@ -118,7 +130,13 @@
             </ListBox>
           </DockPanel>
         </TabItem>
-        <TabItem Header="Summary">
+        <TabItem ToolTip.Tip="Summary" AutomationProperties.Name="Summary">
+          <TabItem.Header>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Document}" FontSize="13" VerticalAlignment="Center"/>
+              <TextBlock Text="Summary" VerticalAlignment="Center" IsVisible="{Binding $parent[TabItem].IsSelected}"/>
+            </StackPanel>
+          </TabItem.Header>
           <DockPanel>
             <!-- What the AI remembers about this project (remember, scope project); removable -->
             <Border DockPanel.Dock="Top" Margin="2,6,2,4" Padding="8,6" CornerRadius="8" Background="{StaticResource Panel2}" IsVisible="{Binding HasProjectMemory}">
@@ -146,17 +164,66 @@
                      Classes="bare" TextWrapping="Wrap" Padding="6" VerticalContentAlignment="Top" ScrollViewer.VerticalScrollBarVisibility="Auto"/>
           </DockPanel>
         </TabItem>
-        <TabItem Header="History">
-          <ListBox ItemsSource="{Binding History}" Margin="0,4,0,0">
-            <ListBox.ItemTemplate>
-              <DataTemplate>
-                <DockPanel Margin="6,3">
-                  <TextBlock DockPanel.Dock="Left" Text="{Binding Time}" Width="64" Foreground="{StaticResource Faint}" FontSize="10"/>
-                  <TextBlock Text="{Binding Action}" FontSize="11" Foreground="{StaticResource Muted}"/>
-                </DockPanel>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
+        <TabItem ToolTip.Tip="Media" AutomationProperties.Name="Media">
+          <TabItem.Header>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <TextBlock Classes="icon" Text="{x:Static shared:Icons.Image}" FontSize="13" VerticalAlignment="Center"/>
+              <TextBlock Text="Media" VerticalAlignment="Center" IsVisible="{Binding $parent[TabItem].IsSelected}"/>
+            </StackPanel>
+          </TabItem.Header>
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="{Binding MediaSummary}" Foreground="{StaticResource Muted}" FontSize="11" Margin="6,6,6,4" TextWrapping="Wrap"/>
+            <!-- Every media item in the project; clicking one goes to where the edit first uses it -->
+            <ListBox ItemsSource="{Binding Media}" SelectionChanged="OnMediaSelected">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <DockPanel Margin="4,4" ToolTip.Tip="{Binding Tip}">
+                    <Border DockPanel.Dock="Left" Width="56" Height="36" CornerRadius="4" ClipToBounds="True" Background="{StaticResource Panel2}" Margin="0,0,8,0" VerticalAlignment="Top">
+                      <Panel>
+                        <Image Source="{Binding Thumb}" Stretch="UniformToFill" IsVisible="{Binding HasThumb}" RenderOptions.BitmapInterpolationMode="HighQuality"/>
+                        <Border Background="{Binding Swatch}" IsVisible="{Binding HasSwatch}"/>
+                        <TextBlock Classes="icon" Text="{Binding Glyph}" FontSize="16" Foreground="{StaticResource Muted}" IsVisible="{Binding ShowGlyph}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      </Panel>
+                    </Border>
+                    <StackPanel>
+                      <TextBlock Text="{Binding Name}" FontSize="11.5" TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Text="{Binding Info}" FontSize="10" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Text="{Binding Usage}" FontSize="10" Foreground="{StaticResource Faint}" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                  </DockPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
+        </TabItem>
+        <TabItem ToolTip.Tip="History" AutomationProperties.Name="History">
+          <TabItem.Header>
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <TextBlock Classes="icon" Text="{x:Static shared:Icons.History}" FontSize="13" VerticalAlignment="Center"/>
+              <TextBlock Text="History" VerticalAlignment="Center" IsVisible="{Binding $parent[TabItem].IsSelected}"/>
+            </StackPanel>
+          </TabItem.Header>
+          <Panel>
+            <TextBlock Text="Edits, renders and files show here as they happen, and stay with the project."
+                       IsVisible="{Binding !HasHistory}" Foreground="{StaticResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="8,10"/>
+            <!-- The project's whole history, kept in its folder (engine/host/journal.ts), newest first -->
+            <ListBox ItemsSource="{Binding History}" Margin="0,4,0,0">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid Margin="6,3" ColumnDefinitions="20,*">
+                    <TextBlock Classes="icon finding" Classes.problem="{Binding IsError}" Text="{Binding Glyph}" FontSize="12" VerticalAlignment="Top" Margin="0,1,0,0"/>
+                    <StackPanel Grid.Column="1">
+                      <TextBlock Text="{Binding Text}" FontSize="11" TextWrapping="Wrap"/>
+                      <TextBlock Text="{Binding When}" FontSize="10" Foreground="{StaticResource Faint}"/>
+                      <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}" FontSize="10" Foreground="{StaticResource Faint}" TextWrapping="Wrap"
+                                 MaxHeight="28" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Panel>
         </TabItem>
       </TabControl>
     </DockPanel>

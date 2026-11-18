@@ -8,7 +8,8 @@ namespace VideoEditor.Session;
 
 /// <summary>
 /// The left panel of a project: what is happening now, and tabs for the activity feed, the review's
-/// findings, the project summary and the edit history. (The chat with Claude is on the right.)
+/// findings, the project summary, the media in the project and the project's history. (The chat with
+/// Claude is on the right.)
 /// </summary>
 public partial class SessionPanel : UserControl
 {
@@ -73,6 +74,12 @@ public partial class SessionPanel : UserControl
         {
             ScopesPanel.IsVisible = false;
         }
+    }
+
+    /// <summary>A media item was clicked: go to where the edit first uses it.</summary>
+    private void OnMediaSelected(object? sender, SelectionChangedEventArgs e)
+    {
+        if (e.AddedItems.Count > 0 && e.AddedItems[0] is MediaItem { FirstUse: { } at }) SeekRequested?.Invoke(at);
     }
 
     private async void OnForgetMemory(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

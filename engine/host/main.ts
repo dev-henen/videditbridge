@@ -16,18 +16,20 @@
  * project.opened / project.closed when remote control opens or closes a project, so the app shows it.
  * Without `project`: performance.progress ({ stage, step, stageProgress, progress, adapter }) while the performance test runs.
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { EditorSession } from "../claude/session.js";
+import { EditorSession, type Activity } from "../claude/session.js";
 import { defaultSearchRoots, forgetMemory, generalMemory, memoryContext, projectMemory } from "../claude/workspace.js";
 import { TOOLS, executeTool } from "../claude/tools.js";
 import { sessionState } from "../claude/state.js";
 import { clipAtTime, computeTimeline } from "../core/timeline.js";
 import { MaskSchema } from "../core/schema.js";
+import * as ops from "../core/operations.js";
 import { renderScopes } from "../tools/render/color-analysis.js";
+import { runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { closeFrameSessions, frameBackend, framePlayer, renderFrame, renderFrameShared, renderSoundMix } from "../tools/render/render.js";
 import { applyPerformance, benchmarkBackends, loadPerformance, savePerformance, type PerformanceReport } from "../tools/render/benchmark.js";
 import { checkFfmpeg, describeFfmpegCheck } from "../tools/render/selftest.js";
@@ -40,6 +42,7 @@ import { describeAgentError } from "./errors.js";
 import { AGENT_MODELS, DEFAULT_EFFORT, DEFAULT_MODEL, PROVIDERS, assistantOf, isEffort, isProviderId } from "./models.js";
 import { deleteConversation, listConversations, loadConversation, newConversation, recordRequest, saveConversation, titleFrom, type Conversation } from "./conversations.js";
 import { COVER_FILE, ProjectStore } from "./projects.js";
+import { appendJournal, readJournal, type JournalEntry } from "./journal.js";
 import { RpcError, StdioRpc, serveLocal, type Handler } from "./rpc.js";
 import { HOST_INFO_FILE } from "./remote.js";
 import { applySettings, availableProviders, loadSettings, publicSettings, saveSettings, storeKey } from "./settings.js";
@@ -223,6 +226,15 @@ const handlers: Record<string, Handler> = {
   "render.play": (p) => play(target(p), Number(p.time ?? 0)),
   "render.matte": (p) => matte(target(p), Number(p.time ?? 0), typeof p.target === "string" ? p.target : undefined, p.object === true),
   "render.scopes": (p) => scopes(target(p), Number(p.time ?? 0)),
+  /** A small picture of a video or image in the project, for the Media tab (null for sound and colors). */
+  /** The project's whole history (kept in the project folder), newest first. */
+  "history.list": (p) => readJournal(target(p).dir),
+  /**
+   * Remove a media item from the project, with the clips, layers and sounds that use it (the app
+   * asks first when there are any). The file itself stays; undo brings it all back.
+   */
+  "media.remove": (p) => removeMedia(target(p), String(p.asset ?? "")),
+  "media.thumb": (p) => mediaThumb(target(p), String(p.asset ?? "")),
   "render.stop": (p) => {
     stopPlayback(target(p));
     return true;
@@ -680,13 +692,19 @@ async function attach(s: EditorSession, dirIn: string): Promise<OpenProject> {
   const o: OpenProject = { dir, session: s, conversation, detach: () => undefined, scrub: { cache: new Map(), token: 0, chain: Promise.resolve() } };
 
   // Every change is saved right away (saves to one folder run in order, each one flushed to disk).
-  const onChange = () => {
+  const onChange = (e?: { action?: string }) => {
+    // Undo and redo from the app (the AI's own show up as activities).
+    const action = e?.action ?? "";
+    const step = /^(undo|redo) (.+)$/.exec(action);
+    if (step) journal(o, { at: new Date().toISOString(), kind: step[1] as "undo" | "redo", text: `${step[1] === "undo" ? "Undo" : "Redo"}: ${step[2]!.replace(/_/g, " ")}`, status: "done" });
     pushState(o);
     scheduleCover(o, COVER_DELAY);
     store.save(dir, s.project).catch((e) => rpc.notify("log", { project: dir, level: "error", message: `Autosave failed: ${(e as Error).message}` }));
   };
-  const onActivity = (a: object) => {
+  const onActivity = (a: Activity) => {
     rpc.notify("activity", { ...a, project: dir });
+    // Finished work goes into the project's history for good.
+    if (a.status !== "running") journal(o, { at: a.endedAt ?? new Date().toISOString(), kind: a.kind, text: a.label, ...(a.detail ? { detail: a.detail } : {}), status: a.status });
     pushState(o);
   };
   const onLog = (entry: object) => {
@@ -720,6 +738,12 @@ async function attach(s: EditorSession, dirIn: string): Promise<OpenProject> {
   // A project with an edit but no cover gets one soon.
   if (!(await store.list()).find((e) => keyOf(e.dir) === dir)?.cover) scheduleCover(o, 4000);
   return o;
+}
+
+/** Add to a project's history (its file) and show it in the app's History tab. */
+function journal(o: OpenProject, entry: JournalEntry) {
+  void appendJournal(o.dir, entry);
+  rpc.notify("history", { project: o.dir, entry });
 }
 
 function close(o: OpenProject) {
@@ -859,6 +883,58 @@ async function scopes(o: OpenProject, time: number): Promise<{ path: string; tim
   const out = path.join(dir, `scopes-r${s.revision}-${t.toFixed(2)}.png`);
   await renderScopes(frame, out, undefined, { ffmpegPath: s.options.ffmpegPath, grid: true });
   return { path: out, time: t };
+}
+
+function removeMedia(o: OpenProject, assetId: string): { removed: string; parts: number } {
+  const s = o.session;
+  const asset = s.project.assets.find((a) => a.id === assetId);
+  if (!asset) throw new RpcError(1, `There is no media "${assetId}" in this project`);
+  const name = asset.label ?? ("src" in asset ? path.basename(asset.src) : asset.id);
+  const activity = s.startActivity("file", `Removing "${name}"`);
+  try {
+    let p = s.project;
+    let parts = 0;
+    for (const c of p.clips.filter((c) => c.assetId === assetId)) (p = ops.removeClip(p, c.id)), parts++;
+    for (const l of p.layers.filter((l) => l.type === "media" && l.assetId === assetId)) (p = ops.removeLayer(p, l.id)), parts++;
+    for (const a of p.audio.filter((a) => a.assetId === assetId)) (p = ops.removeAudio(p, a.id)), parts++;
+    p = ops.removeAsset(p, assetId);
+    s.commit(p, "remove_media", { asset: assetId });
+    activity.done(parts ? `Removed with the ${parts === 1 ? "part" : `${parts} parts`} of the edit that used it` : "It was not used in the edit");
+    return { removed: assetId, parts };
+  } catch (e) {
+    activity.fail((e as Error).message);
+    throw new RpcError(1, `Could not remove "${name}": ${(e as Error).message}`);
+  }
+}
+
+/**
+ * A thumbnail of a video (a frame a little way in) or an image, 160 pixels wide, made once per file
+ * version in the render folder. Null for sound, colors and files that are missing or unreadable.
+ */
+async function mediaThumb(o: OpenProject, assetId: string): Promise<{ path: string } | null> {
+  const s = o.session;
+  const asset = s.project.assets.find((a) => a.id === assetId);
+  if (!asset || (asset.type !== "video" && asset.type !== "image")) return null;
+  const src = path.resolve(s.options.baseDir, asset.src);
+  let info;
+  try {
+    info = await stat(src);
+  } catch {
+    return null;
+  }
+  const dir = path.join(s.options.outputDir, "thumbs");
+  const key = createHash("sha1").update(`${src}|${info.size}|${info.mtimeMs}`).digest("hex").slice(0, 12);
+  const out = path.join(dir, `${asset.id.replace(/[^\w-]/g, "_")}-${key}.jpg`);
+  if (existsSync(out)) return { path: out };
+  await mkdir(dir, { recursive: true });
+  const at = asset.type === "video" && asset.duration ? Math.min(1, asset.duration / 3) : 0;
+  const seek = at > 0 ? ["-ss", at.toFixed(2)] : [];
+  try {
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", ...seek, "-i", src, "-frames:v", "1", "-vf", "scale=160:-2", "-q:v", "4", out], { ffmpegPath: s.options.ffmpegPath });
+    return { path: out };
+  } catch {
+    return null;
+  }
 }
 
 /** Stop live playback of a project, if it plays. */
