@@ -379,6 +379,9 @@ public sealed class AppViewModel : Observable, IDisposable
     /// <summary>Ask whether to delete a project (given its name) for good; the window shows the question.</summary>
     public Func<string, Task<bool>>? ConfirmDelete { get; set; }
 
+    /// <summary>A yes or no question in the app's style (title, message, yes, no); the window sets it.</summary>
+    public Func<string, string, string, string, Task<bool>>? Ask { get; set; }
+
     /// <summary>
     /// Delete a project for good, after asking: its tab closes (without asking about work under way,
     /// which goes with it), it leaves recently closed, and its folder is removed by the host.

@@ -82,6 +82,11 @@ public partial class SessionPanel : UserControl
         if (e.AddedItems.Count > 0 && e.AddedItems[0] is MediaItem { FirstUse: { } at }) SeekRequested?.Invoke(at);
     }
 
+    private async void OnRemoveMedia(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.Tag is MediaItem m) await _vm.RemoveMediaAsync(m);
+    }
+
     private async void OnForgetMemory(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if ((sender as Control)?.Tag is string id) await _vm.ForgetMemoryAsync(id);

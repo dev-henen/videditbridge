@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         _vm.RecentlyClosed.CollectionChanged += (_, _) => { if (_sideOpen) FilterSide(); };
         _vm.ErrorRaised += message => _ = ShowMessage(message);
         _vm.ConfirmClose = Confirm;
+        _vm.Ask = Confirm;
         _vm.ConfirmDelete = name => Confirm("Delete project?",
             $"Delete \"{name}\" for good? Its edit, conversations, renders and exports are removed, along with the project's copies of your media. Your original files stay where they are. This cannot be undone.",
             "Delete", "Keep");

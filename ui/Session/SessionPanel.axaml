@@ -173,11 +173,15 @@
           </TabItem.Header>
           <DockPanel>
             <TextBlock DockPanel.Dock="Top" Text="{Binding MediaSummary}" Foreground="{StaticResource Muted}" FontSize="11" Margin="6,6,6,4" TextWrapping="Wrap"/>
-            <!-- Every media item in the project; clicking one goes to where the edit first uses it -->
+            <!-- Every media item in the project; clicking one goes to where the edit first uses it, the bin removes it -->
             <ListBox ItemsSource="{Binding Media}" SelectionChanged="OnMediaSelected">
               <ListBox.ItemTemplate>
                 <DataTemplate>
                   <DockPanel Margin="4,4" ToolTip.Tip="{Binding Tip}">
+                    <Button DockPanel.Dock="Right" Click="OnRemoveMedia" Tag="{Binding}" VerticalAlignment="Top" Margin="4,0,0,0" MinHeight="22" MinWidth="22" Padding="3"
+                            ToolTip.Tip="Remove from the project" AutomationProperties.Name="Remove from the project">
+                      <TextBlock Classes="icon" Text="{x:Static shared:Icons.Delete}" FontSize="12" Foreground="{StaticResource Muted}"/>
+                    </Button>
                     <Border DockPanel.Dock="Left" Width="56" Height="36" CornerRadius="4" ClipToBounds="True" Background="{StaticResource Panel2}" Margin="0,0,8,0" VerticalAlignment="Top">
                       <Panel>
                         <Image Source="{Binding Thumb}" Stretch="UniformToFill" IsVisible="{Binding HasThumb}" RenderOptions.BitmapInterpolationMode="HighQuality"/>

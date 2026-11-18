@@ -302,6 +302,23 @@ public sealed class ProjectViewModel : Observable
         Raise(nameof(HasMedia));
     }
 
+    /// <summary>
+    /// Remove a media item from the project. When the edit uses it, the user is asked first, since
+    /// those parts go with it. The file stays where it is, and undo brings everything back.
+    /// </summary>
+    public Task RemoveMediaAsync(MediaItem item) => Guard(async () =>
+    {
+        if (!item.IsUnused)
+        {
+            if (_app.Ask is not { } ask) return;
+            var ok = await ask("Remove media?",
+                $"\"{item.Name}\" is in the edit ({item.Usage.ToLowerInvariant()}). Removing it also takes out those parts of the edit. The file stays where it is, and Undo brings it back.",
+                "Remove", "Keep");
+            if (!ok) return;
+        }
+        await Call("media.remove", new { asset = item.Id });
+    });
+
     private async Task LoadThumbAsync(MediaItem item)
     {
         try
