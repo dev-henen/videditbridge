@@ -13,8 +13,8 @@ namespace VideoEditor.Timeline;
 public sealed record TimelineItem(string Kind, string Id, string Label, double Start, double End);
 
 /// <summary>
-/// The timeline. Compact (default): a slim strip of clips with hairline marks for overlays and
-/// audio, enough to see structure and scrub. Expanded: ruler plus one lane per track.
+/// The timeline. Expanded (default): ruler plus one lane per track. Compact: a slim strip of clips with hairline marks for overlays and
+/// audio, enough to see structure and scrub.
 /// The app is AI-first, so the timeline does not edit: click an item to point Claude at it (and
 /// seek there), click empty space or drag to seek, Escape to clear the pick.
 /// </summary>
@@ -32,7 +32,7 @@ public sealed class TimelineView : Control
     private readonly List<(Rect Rect, Block Block)> _hits = [];
     private double _duration;
     private double _playhead;
-    private bool _compact = true;
+    private bool _compact;
     private bool _dragging;
     private string? _selectedId;
     private Block? _hover;

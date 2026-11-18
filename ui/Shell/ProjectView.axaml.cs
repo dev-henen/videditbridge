@@ -28,6 +28,10 @@ public partial class ProjectView : UserControl
         // Commands that render something bring the preview back to live.
         Bar.FollowRequested += Screen.Follow;
         if (project.State is { } state) Strip.Update(state);
+        // The timeline opens as the user last left it (every lane by default), in every tab.
+        Strip.Expanded = project.TimelineExpanded;
+        Strip.ExpandedChanged += expanded => project.TimelineExpanded = expanded;
+        project.TimelineExpandedChanged += expanded => Strip.Expanded = expanded;
 
         // One playhead: the preview's scrubber and the timeline move together.
         Screen.PlayheadMoved += t => Strip.Playhead = t;

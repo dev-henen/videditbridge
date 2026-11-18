@@ -38,6 +38,8 @@ export interface AppSettings {
   autoCompact?: boolean;
   /** Folders the AI may search for media and documents, besides the user's usual ones. */
   searchFolders?: string[];
+  /** The timeline shows every lane (default), or only the compact strip; as the user last left it. */
+  timelineExpanded?: boolean;
 }
 
 const DEFAULTS: AppSettings = { renderer: "auto", hardwareEncoding: true };
@@ -152,6 +154,7 @@ export function publicSettings(s: AppSettings) {
     autoCompact: s.autoCompact !== false,
     defaultModel: s.defaultModel ?? null,
     effort: s.effort ?? "high",
+    timelineExpanded: s.timelineExpanded !== false,
     /** Anthropic's key (as before). */
     apiKey: shownKey("anthropic"),
     /** Every provider's key. */

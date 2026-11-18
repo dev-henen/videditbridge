@@ -154,6 +154,27 @@ public sealed class AppViewModel : Observable, IDisposable
     /// </summary>
     public EffortOption DefaultEffort { get; set; } = EffortOption.Of(null);
 
+    private bool _timelineExpanded = true;
+    /// <summary>
+    /// The timeline shows every lane (the default) or only the compact strip, in every tab; kept in the
+    /// settings so it stays as the user left it after a restart.
+    /// </summary>
+    public bool TimelineExpanded
+    {
+        get => _timelineExpanded;
+        set
+        {
+            if (!Set(ref _timelineExpanded, value)) return;
+            if (_engine is not null) _ = SaveTimelineExpandedAsync(value);
+        }
+    }
+
+    private async Task SaveTimelineExpandedAsync(bool expanded)
+    {
+        try { await Engine.CallAsync("settings.set", new { timelineExpanded = expanded }); }
+        catch { /* only a convenience */ }
+    }
+
     /// <summary>Projects closed lately, newest first, to reopen from the side panel (kept with the open tabs).</summary>
     public ObservableCollection<ClosedProject> RecentlyClosed { get; } = [];
     private const int RecentlyClosedKept = 10;
@@ -269,6 +290,8 @@ public sealed class AppViewModel : Observable, IDisposable
             if (models is { Count: > 0 }) Models = models;
             _defaultModelId = info?["defaultModel"]?.GetValue<string>();
             DefaultEffort = EffortOption.Of(info?["effort"]?.GetValue<string>());
+            // Read without saving it back.
+            if (info?["timelineExpanded"]?.GetValue<bool>() is { } expanded) Set(ref _timelineExpanded, expanded, nameof(TimelineExpanded));
             Raise(nameof(Models));
             await RefreshProjectsAsync();
             await RestoreTabsAsync(openDir);

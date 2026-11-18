@@ -67,6 +67,10 @@ public sealed class ProjectViewModel : Observable
     public ProjectViewModel(AppViewModel app, EngineClient engine, JsonNode state)
     {
         _app = app;
+        _app.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AppViewModel.TimelineExpanded)) TimelineExpandedChanged?.Invoke(_app.TimelineExpanded);
+        };
         _engine = engine;
         Dir = state["projectDir"]!.GetValue<string>();
         _model = app.DefaultModel;
@@ -147,6 +151,16 @@ public sealed class ProjectViewModel : Observable
 
     /// <summary>Go to Settings (to add an API key).</summary>
     public void OpenSettings() => _app.OpenSettings();
+
+    /// <summary>The timeline shows every lane or only the compact strip: the app's setting, the same in every tab.</summary>
+    public bool TimelineExpanded
+    {
+        get => _app.TimelineExpanded;
+        set => _app.TimelineExpanded = value;
+    }
+
+    /// <summary>The timeline setting changed (in this tab or another one).</summary>
+    public event Action<bool>? TimelineExpandedChanged;
 
     /// <summary>A model without a key gives way to one with: the default model if it has one, else the first that does.</summary>
     private void UseAvailableModel()

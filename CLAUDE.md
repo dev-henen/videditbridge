@@ -48,7 +48,7 @@ TypeScript (ESM, NodeNext: relative imports end in `.js`). Node ≥ 20. Renderin
   - dark neutral palette with blue as the primary color (buttons, selection, playhead, focus); no purple or other accents
   - icon glyphs from the bundled Fluent UI System Icons font (`Icons.cs` names them; `Assets/Fonts`), not Segoe (Windows-only)
   - no emoji, no em or en dashes in any text
-  - the timeline is a compact preview strip by default
+  - the timeline opens with every lane by default (since 2026-11-18); its toggle to the compact strip is kept in settings.json (`timelineExpanded`) across restarts
 - Nothing Windows-only: dialogs through `StorageProvider`, video and audio through LibVLC (`Playback/Player.cs`, frames drawn into a bitmap so overlays stay on top), UI font Segoe UI on Windows and bundled Inter elsewhere.
 - Build with `dotnet build ui` (add `-r linux-x64` or `-r osx-arm64` to check the other systems compile). Test the host with `test/host/host.integration.test.ts`.
 

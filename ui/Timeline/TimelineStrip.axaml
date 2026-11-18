@@ -3,7 +3,7 @@
              xmlns:shared="using:VideoEditor.Shared"
              xmlns:timeline="using:VideoEditor.Timeline"
              x:Class="VideoEditor.Timeline.TimelineStrip">
-  <!-- Compact preview of the timeline by default; expand for every lane -->
+  <!-- Every lane by default; the button folds it to a compact strip (kept in the settings) -->
   <Border Background="{StaticResource Panel}" CornerRadius="8" Padding="4,3">
     <DockPanel>
       <Button x:Name="ExpandTimeline" DockPanel.Dock="Right" Click="OnToggleTimeline" ToolTip.Tip="Show all timeline lanes" AutomationProperties.Name="Show all timeline lanes"

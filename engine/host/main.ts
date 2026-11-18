@@ -148,6 +148,7 @@ const handlers: Record<string, Handler> = {
     defaultModel: settings.defaultModel && MODELS.includes(settings.defaultModel) ? settings.defaultModel : DEFAULT_MODEL,
     effort: settings.effort ?? DEFAULT_EFFORT,
     checkUpdates: settings.checkUpdates !== false,
+    timelineExpanded: settings.timelineExpanded !== false,
     // Transcription and narration run on this machine; no service or key is involved.
     transcriptionAvailable: true,
     voiceAvailable: true,
@@ -468,6 +469,7 @@ const handlers: Record<string, Handler> = {
     if (typeof p.instructions === "string") next.instructions = p.instructions.slice(0, 4000);
     if (typeof p.contextLimit === "number" && p.contextLimit >= 8000 && p.contextLimit <= 5_000_000) next.contextLimit = Math.round(p.contextLimit);
     if (typeof p.autoCompact === "boolean") next.autoCompact = p.autoCompact;
+    if (typeof p.timelineExpanded === "boolean") next.timelineExpanded = p.timelineExpanded;
     if (Array.isArray(p.searchFolders)) next.searchFolders = [...new Set(p.searchFolders.map(String).filter((f) => path.isAbsolute(f)))];
     settings = next;
     await saveSettings(settings);
