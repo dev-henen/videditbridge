@@ -1,6 +1,6 @@
 {
   "name": "videditbridge",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "AI-native video editing library: JSON timeline, templates, transcripts, captions, effects, transitions, animations, voice-over, and Claude-ready tool definitions. Renders with FFmpeg.",
   "author": {
     "name": "Moses Henen",

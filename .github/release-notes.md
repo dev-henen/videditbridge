@@ -1,4 +1,4 @@
-A test build of VideditBridge {version}. Edit videos by asking Claude, ChatGPT or Gemini, with your own API key ([how to get one](https://dev-henen.github.io/videditbridge/api-keys.html)). Every model comes with the app, so the download is large (about 1.5 GB) and nothing more downloads on first use.
+A test build of VideditBridge {version}. Edit videos by asking Claude, ChatGPT or Gemini, with your own API key ([how to get one](https://dev-henen.github.io/videditbridge/api-keys.html)). Every model comes with the app, so the download is large (about 1 to 1.2 GB) and nothing more downloads on first use.
 
 ## Install
 
@@ -12,4 +12,4 @@ A test build of VideditBridge {version}. Edit videos by asking Claude, ChatGPT o
 
 Open an issue at [github.com/dev-henen/videditbridge/issues](https://github.com/dev-henen/videditbridge/issues) with your system, what you did and what happened.
 
-VideditBridge is free to use, including for work, under the [VideditBridge License](https://github.com/dev-henen/videditbridge/blob/main/LICENSE).
+VideditBridge is free to use, including for work, open source under the [MIT License](https://github.com/dev-henen/videditbridge/blob/main/LICENSE).
