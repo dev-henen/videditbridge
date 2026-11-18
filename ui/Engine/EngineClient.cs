@@ -93,16 +93,20 @@ public sealed class EngineClient : IDisposable
         return null;
     }
 
-    /// <summary>Development: the repository (AVE_ENGINE_DIR, or a folder above the app), run with the Node on this machine.</summary>
+    /// <summary>
+    /// Development: the repository (AVE_ENGINE_DIR, or a folder above the app), run with the Node on this machine.
+    /// It runs the source (engine/host/main.ts through tsx), so the app always has the engine as it is now;
+    /// a leftover dist/ from an older `npm run build` is used only when tsx is not installed.
+    /// </summary>
     private static HostCommand? DevelopmentHost()
     {
         var root = FindEngineRoot();
         if (root is null) return null;
         var node = FindNode() ?? throw new InvalidOperationException("Node.js was not found. Install Node 20 or newer, or set AVE_NODE to the node executable.");
+        var tsx = Path.Combine(root, "node_modules", "tsx", "dist", "cli.mjs");
+        var source = Path.Combine(root, "engine", "host", "main.ts");
         var built = Path.Combine(root, "dist", "host", "main.js");
-        List<string> args = File.Exists(built)
-            ? [built]
-            : [Path.Combine(root, "node_modules", "tsx", "dist", "cli.mjs"), Path.Combine(root, "engine", "host", "main.ts")];
+        List<string> args = File.Exists(tsx) && File.Exists(source) || !File.Exists(built) ? [tsx, source] : [built];
         return new HostCommand(node, args, root, Path.Combine(root, "projects"));
     }
 
