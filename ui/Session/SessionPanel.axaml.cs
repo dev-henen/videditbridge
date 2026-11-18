@@ -1,4 +1,6 @@
+using System.Collections.Specialized;
 using Avalonia.Controls;
+using Avalonia.Threading;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using VideoEditor.Shared;
@@ -20,7 +22,19 @@ public partial class SessionPanel : UserControl
 
     public SessionPanel() => InitializeComponent();
 
-    public void Attach(ProjectViewModel vm) => _vm = vm;
+    public void Attach(ProjectViewModel vm)
+    {
+        _vm = vm;
+        // A new activity goes on top of the list: bring the list back to the top so it shows.
+        vm.Activities.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == NotifyCollectionChangedAction.Add && e.NewStartingIndex == 0)
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (ActivityList.ItemCount > 0) ActivityList.ScrollIntoView(0);
+                }, DispatcherPriority.Background);
+        };
+    }
 
     // ------------------------------------------------------------- review
 
