@@ -3,4 +3,4 @@
  * project and the Linux metadata; test/repo/version.test.ts checks they agree). A constant rather
  * than a read of package.json, so the bundled host knows it wherever it runs.
  */
-export const VERSION = "0.1.3";
+export const VERSION = "0.1.4";
