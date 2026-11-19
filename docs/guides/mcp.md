@@ -46,6 +46,25 @@ These apps start the server themselves. Add it to their MCP settings: `claude_de
 
 From a source checkout, run it through tsx instead: `"command": "npx", "args": ["tsx", "/path/to/videditbridge/engine/mcp/main.ts", "--projects-dir", "/path/to/projects"]`. For Claude Code: `claude mcp add video-editor -- node /path/to/dist/mcp/main.js --projects-dir /path/to/projects`.
 
+## Editing from Claude Code
+
+Claude Code can make whole edits in the running app through the MCP server, the same way the Claude app does, with the app as the preview window. This is better than calling the app with `ave remote` from a shell: the tools come with their schemas (no hand-written JSON to escape, no project path on every call), rendered frames and grids come back as pictures Claude Code can see, and it is the path the other AI apps use, so it gets tested.
+
+From a source checkout, with the app's projects folder (the dev app uses `projects/` in the repository; an installed app uses `Documents/VideditBridge`, shown in Settings):
+
+```bash
+claude mcp add video-editor -- npx tsx /path/to/videditbridge/engine/mcp/main.ts --projects-dir /path/to/projects
+```
+
+Start the app first (or let the server start it), then ask in Claude Code. The project opens in a tab with a note ("Edited from Claude Code") and the preview where the chat would be. A music video or montage goes best in this order:
+
+1. `create_project` with the shape the post needs (4:5 for an Instagram feed post, 9:16 for Reels and TikTok), then `import_media`.
+2. `analyze_music` with `window` set to the video's length: the song's sections, the drop, and the best stretch to use.
+3. `look_at_media` on each clip: a grid with source times and how much moves each second, to pick the shots.
+4. `assemble_to_music` with the shot list in bars and beats; transitions on shots keep their cuts on the beat.
+5. Camera moves, effects and grades with `add_effect` (`targets` or `'all-clips'`), `update_clips`, `apply_look` and `color_adjust`; titles with `add_text` presets and `add_beat_text`.
+6. `render_preview`, then `review_edit`, then `render_video`. Renders are read back after they finish and report frozen or black stretches and a wrong length.
+
 ## ChatGPT, and Claude or Gemini custom connectors (HTTP)
 
 Apps that connect to a URL need the HTTP server:

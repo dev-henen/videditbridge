@@ -3,3 +3,4 @@ export * from "./analyze.js";
 export * from "./classify.js";
 export * from "./image.js";
 export * from "./sfx.js";
+export * from "./structure.js";

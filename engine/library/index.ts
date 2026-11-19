@@ -1,4 +1,4 @@
-/** Catalogs an AI browses and applies: effects, audio effects, sound effects, transitions, animations, caption styles, components, templates, and particle and lens flare presets. */
+/** Catalogs an AI browses and applies: effects, audio effects, sound effects, transitions, animations, caption styles, title styles, components, templates, and particle and lens flare presets. */
 export * from "./effects/index.js";
 export * from "./audio-effects/index.js";
 export * from "./transitions/index.js";
@@ -10,3 +10,4 @@ export * from "./sound-effects/index.js";
 export * from "./particles/index.js";
 export { LOOKS, getLook, lookEffects, type LookPreset } from "./looks/index.js";
 export { ACESCCT, COLOR_SPACES, GAMUTS, colorMatrixOf, colorSpace, colorSpaceFromTags, gamutMatrix, nitsToPq, pqToNits, rgbToXyz, type ColorSpace, type Curve, type Gamut } from "./color/index.js";
+export * from "./title-styles/index.js";

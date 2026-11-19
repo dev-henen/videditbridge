@@ -1,5 +1,5 @@
 {
-  "count": 121,
+  "count": 126,
   "groups": [
     {
       "group": "Inspect & project",
@@ -175,6 +175,11 @@
           "summary": "Make a J or L cut at the cut into a primary clip, so sound and picture change at different moments (standard in interviews and talking heads)."
         },
         {
+          "name": "update_clips",
+          "edits": true,
+          "summary": "Change many primary-track clips in one undo step: one patch for several clips (clipIds, or all of them), or a patch per clip (updates)."
+        },
+        {
           "name": "freeze_frame",
           "edits": true,
           "summary": "Hold one frame of the video still for a few seconds (a freeze-frame, e.g. for a 'that's me' title or a dramatic beat)."
@@ -202,7 +207,7 @@
         {
           "name": "add_effect",
           "edits": true,
-          "summary": "Add an effect to a clip, a media layer, or the whole video (target 'global')."
+          "summary": "Add an effect to a clip, a media layer, the whole video (target 'global'), every primary clip (target 'all-clips'), or a list of clips and layers..."
         },
         {
           "name": "remove_effect",
@@ -253,6 +258,11 @@
           "name": "add_text",
           "edits": true,
           "summary": "Add a text layer (titles, labels, callouts)."
+        },
+        {
+          "name": "add_beat_text",
+          "edits": true,
+          "summary": "Put words on screen one at a time on the beats of the music, each popping in on its beat and staying until the next (a hype intro, a countdown, a..."
         },
         {
           "name": "add_media_overlay",
@@ -395,6 +405,11 @@
           "summary": "Find shot changes (cuts between camera angles or scenes) in a video asset."
         },
         {
+          "name": "analyze_music",
+          "edits": false,
+          "summary": "Find the shape of a song: tempo and bar length, sections on its bar grid (intro, build, drop, chorus, verse, breakdown, outro, with how loud each..."
+        },
+        {
           "name": "detect_beats",
           "edits": false,
           "summary": "Find the tempo and beat times of music: an audio clip (times on the timeline) or an asset (source times)."
@@ -403,6 +418,11 @@
           "name": "beat_sync",
           "edits": true,
           "summary": "Edit to the music's beat."
+        },
+        {
+          "name": "assemble_to_music",
+          "edits": true,
+          "summary": "Cut a montage or music video to a song in one step: give the music (and where in it to start) and a shot list measured in bars or beats, and every..."
         },
         {
           "name": "add_moment_effect",
@@ -664,6 +684,11 @@
     {
       "group": "Preview & render",
       "tools": [
+        {
+          "name": "look_at_media",
+          "edits": false,
+          "summary": "Look at an imported video before cutting it: a grid of frames sampled across the file (or a part of it), each stamped with its source time, and how..."
+        },
         {
           "name": "render_frame",
           "edits": false,

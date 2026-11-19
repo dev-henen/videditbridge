@@ -44,6 +44,7 @@ For people using the app: the [user guide](https://dev-henen.github.io/videditbr
 | [Transitions](reference/transitions.md) | Transitions between clips |
 | [Animations](reference/animations.md) | Entrance and exit animations for layers |
 | [Caption styles](reference/caption-styles.md) | Caption presets and the fields you can override |
+| [Title styles](reference/title-styles.md) | Title presets for `add_text` and `add_beat_text` |
 | [Components](reference/components.md) | Lower-thirds, CTAs, title cards and other composite elements |
 | [Library API](reference/api.md) | What each module exports |
 | [CLI](reference/cli.md) | The `ave` command |

@@ -13,3 +13,4 @@ export * from "./export-lut.js";
 export * from "./color-space.js";
 export * from "./engine.js";
 export * from "./benchmark.js";
+export * from "./look.js";

@@ -21,7 +21,7 @@ import {
   type Transcript,
 } from "../core/schema.js";
 import * as ops from "../core/operations.js";
-import { computeTimeline, sourceToTimeline, timelineToSource, type TimedClip } from "../core/timeline.js";
+import { computeTimeline, sourceToTimeline, timelineToSource, type TimedClip, type Timeline } from "../core/timeline.js";
 import { isAnimated, layerStateAt, positionAt, simplifyKeys, simplifyKeysBy, smoothKeys } from "../core/keyframes.js";
 import { fileOnDisk, validateProject } from "../core/validate.js";
 import { summarizeProject } from "../core/summary.js";
@@ -33,6 +33,7 @@ import { getAudioEffect, listAudioEffects } from "../library/audio-effects/index
 import { getTransition, listTransitions } from "../library/transitions/index.js";
 import { listAnimations } from "../library/animations/index.js";
 import { listCaptionStyles } from "../library/caption-styles/index.js";
+import { TITLE_STYLES, getTitleStyle, titleStyleFor } from "../library/title-styles/index.js";
 import { addComponent, listComponents } from "../library/components/index.js";
 import { applyTemplate, describeTemplate, getTemplate, listTemplates, type TemplateSpec } from "../library/templates/index.js";
 import { formatTranscript, searchTranscript, transcriptStats } from "../tools/transcript/analyze.js";
@@ -41,7 +42,7 @@ import { cleanupSpeech } from "../tools/transcript/cleanup.js";
 import { findRetakes, sentenceCutRanges } from "../tools/transcript/takes.js";
 import { replaceWords, vocabularySuggestions } from "../tools/transcript/fix.js";
 import { REVIEW_CHECKS, reviewEdit, textLayerBox } from "../tools/review/index.js";
-import { FaceDetector, detectClipFaces, detectFacesCached, faceRegion, focusOn, frameToSource, personRegion, selectObject, trackFaces, writeMaskOverlay, writeTrackPreview, framePointToSource, levelsFilter, matchScreen, pinnedFrameCorners, quadCenter, quadOf, trackPointsInClips, trackSampler, writeCornersPreview, type ClipFaces } from "../tools/vision/index.js";
+import { FaceDetector, findPeople, detectClipFaces, detectFacesCached, faceRegion, focusOn, frameToSource, personRegion, selectObject, trackFaces, writeMaskOverlay, writeTrackPreview, framePointToSource, levelsFilter, matchScreen, pinnedFrameCorners, quadCenter, quadOf, trackPointsInClips, trackSampler, writeCornersPreview, type ClipFaces } from "../tools/vision/index.js";
 import { transcribeMedia } from "../tools/transcript/providers.js";
 import { LocalWhisperTranscriber } from "../tools/transcript/local.js";
 import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voiceover/local.js";
@@ -49,6 +50,7 @@ import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { depthInClips, interpolateInClips, removalInClips, render, renderContactSheet, renderForAnalysis, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
 import { checkRender } from "../tools/render/health.js";
+import { lookAtMedia } from "../tools/render/look.js";
 import { exportLut } from "../tools/render/export-lut.js";
 import { clipFrameTimes, framePlan } from "../tools/video/interpolate.js";
 import { depthInBox, readDepthFrames } from "../tools/vision/depth.js";
@@ -57,7 +59,8 @@ import { decodeFrames } from "../tools/vision/objects.js";
 import { effectsOf } from "../tools/render/compile.js";
 import { analyzeColor, renderScopes } from "../tools/render/color-analysis.js";
 import { matchShot, pixelsIn, readPixels, type MatchMethod } from "../tools/render/color-transfer.js";
-import { analyzeSamples, decodeAudio, detectBeats, formatSoundMap, frameFeatures, segmentLabel, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
+import { ANALYSIS_RATE, analyzeSamples, decodeAudio, detectBeats, formatSoundMap, frameFeatures, segmentLabel, soundRanges, type BeatAnalysis, type SoundKind, type SoundMap } from "../tools/audio/analyze.js";
+import { barLevels, bestWindow, musicStructure, placeOnBeats } from "../tools/audio/structure.js";
 import { SoundClassifier } from "../tools/audio/classify.js";
 import { GRAPHIC_EXPRESSIONS, renderGraphic } from "../tools/graphics/index.js";
 import { drawParticles, flareSpec, particleSpec, sourceBrightness } from "../tools/particles/index.js";
@@ -98,7 +101,16 @@ function tool<S extends z.ZodType>(def: ToolDefinition<S>): ToolDefinition {
 }
 
 const ok = (text: string, data?: unknown): ToolResult => ({ text, ...(data !== undefined ? { data } : {}) });
-const aspect = z.enum(Object.keys(ASPECT_RATIOS) as [AspectRatio, ...AspectRatio[]]);
+/**
+ * Text style fields a call sets, without the schema's defaults: `.partial()` still fills every
+ * default in, which would override a title preset's font and colors with Arimo and white.
+ */
+const TextStyleOverride = z.object(
+  Object.fromEntries(Object.entries(TextStyleSchema.shape).map(([k, v]) => [k, (v instanceof z.ZodDefault ? (v.unwrap() as z.ZodType) : v).optional()])) as {
+    [K in keyof typeof TextStyleSchema.shape]: z.ZodOptional<z.ZodType<z.output<(typeof TextStyleSchema.shape)[K]>>>;
+  },
+);
+const aspect =z.enum(Object.keys(ASPECT_RATIOS) as [AspectRatio, ...AspectRatio[]]);
 const empty = z.object({});
 const BEHIND_SUBJECT =
   "Put the layer behind the people in the video (smoke, light beams, props and set pieces behind a dancer or presenter), found frame by frame in the finished picture. The first render after changing the clips takes longer while it looks for them";
@@ -183,6 +195,38 @@ export function paramText(name: string, schema: z.ZodType): string {
   if (js.default !== undefined) values.push(`default ${JSON.stringify(js.default)}`);
   const about = schema.description ?? (js.description as string | undefined);
   return `${name}${about ? `: ${about}` : ""}${values.length ? ` (${values.join(", ")})` : ""}`;
+}
+
+/**
+ * After transitions changed on `ids`, grow the clips on both sides of each of those cuts by half the
+ * change in overlap, into footage they did not show (the outgoing clip at its end, the incoming one
+ * before its in point), so every cut stays at its time in `before` and the video keeps its length.
+ * Returns the project, or why a clip has no footage to spare.
+ */
+export function keepCutTiming(p: Project, before: Timeline, ids: string[]): Project | string {
+  let out = p;
+  const now = computeTimeline(p);
+  for (const id of ids) {
+    const k = p.clips.findIndex((c) => c.id === id);
+    if (k <= 0) continue;
+    const was = before.clips.find((c) => c.clip.id === id)?.transitionDuration ?? 0;
+    const half = (now.clips[k]!.transitionDuration - was) / 2;
+    if (Math.abs(half) < 1e-4) continue;
+    const [prev, cur] = [out.clips[k - 1]!, out.clips[k]!];
+    const [pa, ca] = [out.assets.find((a) => a.id === prev.assetId), out.assets.find((a) => a.id === cur.assetId)];
+    const prevSpeed = prev.speed ?? 1;
+    const curSpeed = cur.speed ?? 1;
+    const prevLen = now.clips[k - 1]!.sourceDuration;
+    const curLen = now.clips[k]!.sourceDuration;
+    const need = { prev: half * prevSpeed, cur: half * curSpeed };
+    // Video has a fixed length; stills and colors can grow.
+    const prevEnd = prev.in + prevLen + need.prev;
+    if (pa?.type === "video" && pa.duration !== undefined && prevEnd > pa.duration + 1e-3) return `clip ${prev.id} has no footage after ${round3(prev.in + prevLen)}s to run under the transition (it ends at ${pa.duration}s).`;
+    if (ca?.type === "video" && cur.in - need.cur < -1e-3) return `clip ${cur.id} has no footage before ${cur.in}s to run under the transition.`;
+    out = ops.updateClip(out, prev.id, { duration: round3(prevLen + need.prev) } as never);
+    out = ops.updateClip(out, cur.id, { in: round3(Math.max(0, cur.in - (ca?.type === "video" ? need.cur : 0))), duration: round3(curLen + need.cur) } as never);
+  }
+  return out;
 }
 
 function assetIdFromSrc(project: Project, src: string): string {
@@ -1030,6 +1074,28 @@ export const TOOLS: ToolDefinition[] = [
     run: async (s, i) => commit(s, ops.updateClip(s.project, i.clipId, i.patch as never), "update_clip", i, `Updated ${i.clipId}.`),
   }),
   tool({
+    name: "update_clips",
+    description:
+      "Change many primary-track clips in one undo step: one patch for several clips (clipIds, or all of them), or a patch per clip (updates). Patches take what update_clip takes. " +
+      "effects in a patch replace the clip's effects; to add an effect to many clips and keep what they have, use add_effect with targets or 'all-clips'.",
+    input: z.object({
+      updates: z.array(z.object({ clipId: z.string(), patch: z.record(z.string(), z.unknown()) })).min(1).optional(),
+      clipIds: z.array(z.string()).min(1).optional().describe("Clips that get `patch`"),
+      all: z.boolean().optional().describe("Every primary clip gets `patch`"),
+      patch: z.record(z.string(), z.unknown()).optional(),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const shared = i.all ? s.project.clips.map((c) => c.id) : (i.clipIds ?? []);
+      if (shared.length && !i.patch) return { text: "Give the patch the clips share.", isError: true };
+      const updates = [...(i.updates ?? []), ...shared.map((clipId) => ({ clipId, patch: i.patch! }))];
+      if (!updates.length) return { text: "Give updates, or clipIds (or all) with a patch.", isError: true };
+      let p = s.project;
+      for (const u of updates) p = ops.updateClip(p, u.clipId, u.patch as never);
+      return commit(s, p, "update_clips", i, `Updated ${updates.length} clip${updates.length === 1 ? "" : "s"}.`);
+    },
+  }),
+  tool({
     name: "freeze_frame",
     description:
       "Hold one frame of the video still for a few seconds (a freeze-frame, e.g. for a 'that's me' title or a dramatic beat). The frame at the given timeline time is held there and the rest of the clip continues after it, so the video gets longer by seconds. The still keeps the clip's fit, crop and effects. Add a title or effect on top afterwards.",
@@ -1130,13 +1196,23 @@ export const TOOLS: ToolDefinition[] = [
       duration: z.number().positive().max(5).default(0.5),
       origin: PositionSchema.optional().describe("Start point for circlereveal (frame fractions), e.g. the presenter's hand"),
       sound: z.union([z.boolean(), z.string()]).default(false).describe("true = the transition's matching sound, or a sound effect id"),
+      keepTiming: z
+        .boolean()
+        .default(false)
+        .describe("Keep every cut where it is (on the beat): the clips on both sides grow by half the transition into their footage, so the transition centers on the cut and the video keeps its length. Use it on edits cut to music."),
     }),
     mutates: true,
     run: async (s, i) => {
       const t = i.type === "none" ? null : { type: i.type, duration: i.duration, ...(i.origin ? { origin: i.origin } : {}) };
       if (!i.all && !i.clipId) return { text: "Provide clipId or all=true", isError: true };
+      const before = computeTimeline(s.project);
       let p = i.all ? ops.setAllTransitions(s.project, t) : ops.setTransition(s.project, i.clipId!, t);
       const ids = i.all ? p.clips.slice(1).map((c) => c.id) : [i.clipId!];
+      if (i.keepTiming) {
+        const r = keepCutTiming(p, before, ids);
+        if (typeof r === "string") return { text: `Not changed: ${r}`, isError: true };
+        p = r;
+      }
       let note = "";
       if (i.sound !== false || !t) {
         // Without a transition (type none), this just removes the old sounds.
@@ -1150,8 +1226,13 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "add_effect",
     description:
-      "Add an effect to a clip, a media layer, or the whole video (target 'global'). See list_effects. For an effect saved with create_effect, use type 'custom' with params { name }; or give type 'custom' with params { filter } for a one-off.",
-    input: z.object({ target: z.string().describe("Clip id, media layer id, or 'global'"), type: z.string(), params: z.record(z.string(), z.unknown()).optional() }),
+      "Add an effect to a clip, a media layer, the whole video (target 'global'), every primary clip (target 'all-clips'), or a list of clips and layers (targets). It joins the effects already there. See list_effects for each effect's params and their ranges. For an effect saved with create_effect, use type 'custom' with params { name }; or give type 'custom' with params { filter } for a one-off.",
+    input: z.object({
+      target: z.string().optional().describe("Clip id, media layer id, 'global' or 'all-clips'"),
+      targets: z.array(z.string()).min(1).optional().describe("Several clip and layer ids, one undo step"),
+      type: z.string(),
+      params: z.record(z.string(), z.unknown()).optional(),
+    }),
     mutates: true,
     run: async (s, i) => {
       let params = i.params;
@@ -1162,7 +1243,12 @@ export const TOOLS: ToolDefinition[] = [
         params = { ...params, ...(saved && !params?.filter ? { filter: saved.filter } : {}) };
         await testCustomFilter(s, String(params.filter ?? ""));
       }
-      return commit(s, ops.addEffect(s.project, i.target, { type: i.type, params }), "add_effect", i, `Added ${i.type}${i.type === "custom" && params?.name ? ` (${params.name})` : ""} to ${i.target}.`);
+      const targets = i.targets ?? (i.target === "all-clips" ? s.project.clips.map((c) => c.id) : i.target ? [i.target] : []);
+      if (!targets.length) return { text: i.target === "all-clips" ? "There are no clips yet." : "Give a target (or targets).", isError: true };
+      let p = s.project;
+      for (const t of targets) p = ops.addEffect(p, t, { type: i.type, params });
+      const where = i.target === "all-clips" ? `all ${targets.length} clips` : targets.join(", ");
+      return commit(s, p, "add_effect", i, `Added ${i.type}${i.type === "custom" && params?.name ? ` (${params.name})` : ""} to ${where}.`);
     },
   }),
   tool({
@@ -1356,11 +1442,17 @@ export const TOOLS: ToolDefinition[] = [
   tool({
     name: "reframe",
     description:
-      "Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip. " +
+      "Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip, and where there is no face (people seen from behind, silhouettes, small figures, game avatars) the people's whole bodies with the person cutout model. " +
       "By default the crop is fixed: it keeps the main face's whole path in frame, or its usual spot when it moves more than the crop can show. With follow, the crop pans with the person like a camera operator (focus keyframes, smoothed).",
     input: z.object({
       clipIds: z.array(z.string()).optional().describe("Clips to reframe (default: every cover-fit clip whose source shape differs)"),
       follow: z.boolean().default(false).describe("Pan the crop with the person over time instead of a fixed crop"),
+      certainty: z
+        .number()
+        .min(0.5)
+        .max(0.99)
+        .default(0.95)
+        .describe("Where there is no face: how sure the person model must be. Keep 0.95 for real people. Only for game, cartoon or 3D characters, which it is less sure of, lower it (0.65 to 0.8) and check the frames, since lower also lets in things that are not people."),
     }),
     mutates: true,
     run: async (s, i, activity) => {
@@ -1378,7 +1470,31 @@ export const TOOLS: ToolDefinition[] = [
         activity?.progress(0.2 + (0.8 * (k + 1)) / candidates.length);
         const main = r.tracks[0];
         if (!main) {
-          lines.push(`${id}: no face found, crop left as it was`);
+          // No face (seen from behind, a silhouette, a small figure, an avatar): the person cutout's box instead.
+          const tc = r.clip;
+          const people =
+            tc.asset.type === "video"
+              ? await findPeople(s.resolve(tc.asset.src), { start: tc.clip.in, end: tc.clip.in + tc.sourceDuration }, { ffmpegPath: s.options.ffmpegPath, samples: i.follow ? 16 : 8, aspect: r.source.width / r.source.height, sure: i.certainty }).catch(() => undefined)
+              : undefined;
+          if (!people?.extent || !people.box) {
+            lines.push(`${id}: no face found, and no person the model is sure of${people ? ` (certainty ${people.confidence}, needs ${i.certainty})` : ""}; crop left as it was`);
+            continue;
+          }
+          const k2 = Math.max(out.width / r.source.width, out.height / r.source.height);
+          const fits = (people.extent.x1 - people.extent.x0) * r.source.width * k2 <= out.width && (people.extent.y1 - people.extent.y0) * r.source.height * k2 <= out.height;
+          const focus = focusOn(fits ? people.extent : people.box, r.source, out);
+          const clip = p.clips.find((c) => c.id === id)!;
+          const { focus: _old, ...otherKeys } = clip.keyframes ?? {};
+          const seen = people.frames.filter((f) => f.box);
+          if (!i.follow || seen.length < 2) {
+            p = ops.updateClip(p, id, { focus, keyframes: Object.keys(otherKeys).length ? otherKeys : undefined });
+            lines.push(`${id}: no face; framed on the person's body, focus (${focus.x}, ${focus.y})${fits ? "" : ", on their usual spot (they move more than the crop can show)"}`);
+            continue;
+          }
+          const samples = seen.map((f) => ({ time: round3(Math.max(0, sourceToTimeline(tc, f.time) - tc.start)), value: focusOn(f.box!, r.source, out), easing: "linear" as const }));
+          const keys = simplifyKeys(smoothKeys(samples, 2), 0.02);
+          p = ops.updateClip(p, id, { focus, keyframes: { ...otherKeys, focus: keys } });
+          lines.push(`${id}: no face; the crop follows the person's body with ${keys.length} keyframes`);
           continue;
         }
         // Keep the whole path of the face in frame when the crop is wide enough, else its usual spot.
@@ -1571,20 +1687,70 @@ export const TOOLS: ToolDefinition[] = [
   // -------------------------------------------------------------------------
   tool({
     name: "add_text",
-    description: "Add a text layer (titles, labels, callouts). Position is the text center in 0-1 frame coordinates. Font size is in output pixels.",
+    description:
+      "Add a text layer (titles, labels, callouts). Position is the text center in 0-1 frame coordinates. Font size is in output pixels. " +
+      `preset gives a finished title look (font, colors, outline, glow, size for the frame, animations), which style and animations override: ${TITLE_STYLES.map((t) => `"${t.id}" (${t.description})`).join("; ")}.`,
     input: z.object({
       text: z.string(),
       start: z.number().min(0),
       duration: z.number().positive(),
       position: PositionSchema.optional(),
-      style: TextStyleSchema.partial().optional(),
+      preset: z.enum(TITLE_STYLES.map((t) => t.id) as [string, ...string[]]).optional(),
+      style: TextStyleOverride.optional(),
       animationIn: AnimationSchema.optional(),
       animationOut: AnimationSchema.optional(),
     }),
     mutates: true,
     run: async (s, i) => {
       const id = newId("text");
-      return commit(s, ops.addLayer(s.project, { type: "text", id, ...i } as ops.LayerInput), "add_text", i, `Added text layer ${id}.`);
+      const { preset, ...rest } = i;
+      const t = preset ? getTitleStyle(preset)! : undefined;
+      const { width, height } = s.project.settings;
+      const layer = t
+        ? { ...rest, style: titleStyleFor(t, width, height, i.style), animationIn: i.animationIn ?? t.animationIn, animationOut: i.animationOut ?? t.animationOut }
+        : rest;
+      return commit(s, ops.addLayer(s.project, { type: "text", id, ...layer } as ops.LayerInput), "add_text", i, `Added text layer ${id}${preset ? ` (${preset})` : ""}.`);
+    },
+  }),
+  tool({
+    name: "add_beat_text",
+    description:
+      "Put words on screen one at a time on the beats of the music, each popping in on its beat and staying until the next (a hype intro, a countdown, a chant). " +
+      "Separate the words with spaces, or with | to keep several words together on one beat ('NO LIMITS|NO BRAKES'). The first word lands on the first beat at or after start. One undo step.",
+    input: z.object({
+      text: z.string().min(1),
+      music: z.string().describe("Music audio clip id (its beats on the timeline)"),
+      start: z.number().min(0).describe("Timeline seconds; the first word lands on the next beat"),
+      every: z.number().int().min(1).max(16).default(1).describe("Beats per word"),
+      hold: z.number().int().min(1).max(16).default(2).describe("Beats the last word stays"),
+      preset: z.enum(TITLE_STYLES.map((t) => t.id) as [string, ...string[]]).default("impact"),
+      position: PositionSchema.default({ x: 0.5, y: 0.5 }),
+      style: TextStyleOverride.optional(),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const b = await timelineBeats(s, i.music);
+      if (!b.bpm) return { text: `No steady beat in ${i.music}.`, isError: true };
+      const words = (i.text.includes("|") ? i.text.split("|") : i.text.split(/\s+/)).map((w) => w.trim()).filter(Boolean);
+      const first = b.beats.findIndex((t) => t >= i.start - 0.02);
+      if (first < 0) return { text: `No beats after ${i.start}s in ${i.music}.`, isError: true };
+      const beat = 60 / b.bpm;
+      const at = (k: number) => b.beats[k] ?? b.beats.at(-1)! + (k - b.beats.length + 1) * beat;
+      const t = getTitleStyle(i.preset)!;
+      const { width, height } = s.project.settings;
+      const style = titleStyleFor(t, width, height, i.style);
+      // Each word in quickly on its beat; only the last one goes out with the style's animation.
+      const pop = { type: "pop", duration: Math.min(0.2, beat * 0.4) } as const;
+      let p = s.project;
+      const ids: string[] = [];
+      words.forEach((w, k) => {
+        const from = at(first + k * i.every);
+        const to = at(first + (k + 1) * i.every + (k === words.length - 1 ? i.hold - i.every : 0));
+        const id = newId("text");
+        ids.push(id);
+        p = ops.addLayer(p, { type: "text", id, text: w, start: round3(from), duration: round3(Math.max(0.1, to - from)), position: i.position, style, animationIn: pop, ...(k === words.length - 1 ? { animationOut: t.animationOut } : {}) } as ops.LayerInput);
+      });
+      return commit(s, p, "add_beat_text", i, `Added ${words.length} words on the beat from ${round3(at(first))}s (${ids.join(", ")}).`);
     },
   }),
   tool({
@@ -3140,6 +3306,106 @@ export const TOOLS: ToolDefinition[] = [
     },
   }),
   tool({
+    name: "analyze_music",
+    description:
+      "Find the shape of a song: tempo and bar length, sections on its bar grid (intro, build, drop, chorus, verse, breakdown, outro, with how loud each is), where the drop lands, and with window the best stretch of that many seconds to cut a video to (whole bars, starting on a phrase, loud, with the drop inside after a short build). " +
+      "Times are source seconds of the music file: use the window's start as add_audio `in` and its length as `duration`. Use it before cutting a music video or montage; detect_beats gives every beat.",
+    input: z.object({
+      source: z.string().describe("Music asset id, or an audio clip id (its file is analyzed)"),
+      window: z.number().positive().optional().describe("Seconds the video should last, e.g. 50"),
+    }),
+    mutates: false,
+    run: async (s, i) => {
+      const clip = s.project.audio.find((a) => a.id === i.source);
+      const asset = mediaAsset(s, clip?.assetId ?? i.source);
+      const { beats } = await analyzeSound(s, asset.src);
+      if (!beats.bpm || beats.downbeats.length < 4) return { text: `No steady beat in ${asset.id} (confidence ${beats.confidence}), so it has no bar grid to find sections on.`, isError: true };
+      const samples = await decodeAudio(s.resolve(asset.src), { ffmpegPath: s.options.ffmpegPath });
+      const duration = asset.duration ?? samples.length / ANALYSIS_RATE;
+      const structure = musicStructure(barLevels(samples, ANALYSIS_RATE, beats.downbeats, duration), beats.downbeats, duration);
+      const window = i.window ? bestWindow(structure, i.window) : undefined;
+      const lines = [
+        `${asset.id}: ${beats.bpm} BPM, a bar every ${structure.barLength}s, ${structure.bars.length} bars (source seconds; levels in dB below the loudest part).`,
+        `Sections: ${structure.sections.map((x) => `${x.kind} ${x.start}-${x.end}s (${x.bars} bars, ${x.level} dB)`).join("; ")}.`,
+        structure.drop !== undefined ? `Drop at ${structure.drop}s.` : "No clear drop (no jump of 2 dB or more between phrases).",
+        ...(i.window
+          ? [
+              window
+                ? `Best ${i.window}s: ${window.start}-${window.end}s, ${window.bars} bars (${round3(window.end - window.start)}s, ${window.level} dB)${window.drop !== undefined ? `, drop at ${window.drop}s (${round3(window.drop - window.start)}s in)` : ", no drop inside"}. Use in ${window.start}, duration ${round3(window.end - window.start)}.`
+                : `The song is shorter than ${i.window}s on its bar grid.`,
+            ]
+          : []),
+      ];
+      return ok(lines.join("\n"), { bpm: beats.bpm, ...structure, ...(window ? { window } : {}) });
+    },
+  }),
+  tool({
+    name: "assemble_to_music",
+    description:
+      "Cut a montage or music video to a song in one step: give the music (and where in it to start) and a shot list measured in bars or beats, and every shot is placed so each cut lands on the song's beat grid, " +
+      "the song goes on the music track for exactly as long as the shots, and the shots' own sound is muted. Shots are added after any clips already on the track, in one undo step. " +
+      "Find the start with analyze_music (window) and pick each shot's source moment with look_at_media. Vary sources and framings; 1 bar for calm parts, 2 beats or 1 beat after a drop.",
+    input: z.object({
+      music: z.string().describe("Music asset id"),
+      in: z.number().min(0).default(0).describe("Source second of the music the video starts at (put it on a downbeat)"),
+      shots: z
+        .array(
+          z.object({
+            assetId: z.string(),
+            in: z.number().min(0).default(0).describe("Source second of the shot"),
+            bars: z.number().positive().optional().describe("Length in bars (4 beats each)"),
+            beats: z.number().int().positive().optional().describe("Length in beats (instead of bars)"),
+            focus: PositionSchema.optional().describe("Crop focus for fit cover"),
+            effects: z.array(EffectSchema).optional(),
+            transition: TransitionSchema.optional().describe("Transition into this shot, centered on its cut so the cut stays on the beat"),
+          }),
+        )
+        .min(1),
+      muteClips: z.boolean().default(true).describe("Mute the shots' own sound (random sound under a song)"),
+      fadeOut: z.number().min(0).default(1).describe("Seconds the song fades out at the end"),
+      volume: z.number().min(0).max(4).optional(),
+    }),
+    mutates: true,
+    run: async (s, i) => {
+      const music = mediaAsset(s, i.music);
+      const { beats } = await analyzeSound(s, music.src);
+      if (!beats.bpm) return { text: `No steady beat in ${i.music} (confidence ${beats.confidence}), so there is no grid to cut on.`, isError: true };
+      const missing = i.shots.filter((x) => x.bars === undefined && x.beats === undefined).map((_, k) => k + 1);
+      if (missing.length) return { text: `Give each shot bars or beats (missing on shot ${missing.join(", ")}).`, isError: true };
+      const lengths = i.shots.map((x) => x.beats ?? x.bars! * 4);
+      const cuts = placeOnBeats(beats.beats, i.in, lengths, 60 / beats.bpm);
+      // Each shot's source range must exist, before anything changes.
+      const short: string[] = [];
+      i.shots.forEach((x, k) => {
+        const a = s.project.assets.find((y) => y.id === x.assetId);
+        if (!a) short.push(`shot ${k + 1}: no asset "${x.assetId}"`);
+        else if (a.type === "video" && a.duration !== undefined && x.in + (cuts[k]!.end - cuts[k]!.start) > a.duration + 0.01)
+          short.push(`shot ${k + 1}: ${x.assetId} ends at ${a.duration}s, before ${round3(x.in + cuts[k]!.end - cuts[k]!.start)}s`);
+      });
+      if (short.length) return { text: `Not changed:\n- ${short.join("\n- ")}`, isError: true };
+      const total = cuts.at(-1)!.end;
+      if (music.duration !== undefined && i.in + total > music.duration + 0.01) return { text: `The song ends at ${music.duration}s; these shots need it until ${round3(i.in + total)}s.`, isError: true };
+      const offset = computeTimeline(s.project).primaryDuration;
+      let p = s.project;
+      i.shots.forEach((x, k) => {
+        p = ops.addClip(p, { assetId: x.assetId, in: x.in, duration: round3(cuts[k]!.end - cuts[k]!.start), fit: "cover", ...(x.focus ? { focus: x.focus } : {}), ...(x.effects ? { effects: x.effects } : {}), ...(i.muteClips ? { muted: true } : {}) } as never);
+      });
+      // Transitions centered on their cuts, so every cut stays on its beat (keepCutTiming).
+      const added = p.clips.slice(-i.shots.length);
+      const withTransition = i.shots.flatMap((x, k) => (x.transition && (k > 0 || offset > 0) ? [{ id: added[k]!.id, t: x.transition }] : []));
+      if (withTransition.length) {
+        const before = computeTimeline(p);
+        for (const w of withTransition) p = ops.setTransition(p, w.id, w.t);
+        const r = keepCutTiming(p, before, withTransition.map((w) => w.id));
+        if (typeof r === "string") return { text: `Not changed: ${r} Pick a shot moment with more footage around it, or a shorter transition.`, isError: true };
+        p = r;
+      }
+      p = ops.addAudio(p, { assetId: i.music, role: "music", start: offset, in: i.in, duration: round3(total), fadeOut: i.fadeOut, duck: false, ...(i.volume !== undefined ? { volume: i.volume } : {}) } as never);
+      const grid = `${beats.bpm} BPM, a beat every ${round3(60 / beats.bpm)}s`;
+      return commit(s, p, "assemble_to_music", i, `Cut ${i.shots.length} shots to ${i.music} (${grid}): ${round3(total)}s from ${i.in}s of the song, cuts at ${cuts.map((c) => round3(c.end + offset)).slice(0, -1).join(", ")}s.`);
+    },
+  }),
+  tool({
     name: "detect_beats",
     description: "Find the tempo and beat times of music: an audio clip (times on the timeline) or an asset (source times). Use them to cut, punch, shake or flash on the beat (beat_sync does this for you).",
     input: z.object({ source: z.string().describe("Audio clip id (timeline times) or asset id (source times)") }),
@@ -4245,6 +4511,15 @@ export const TOOLS: ToolDefinition[] = [
         onProgress: (x) => activity?.progress(x),
       });
       const duration = computeTimeline(s.project).duration;
+      // The last exported video of this edit as it is now, read back: a render can go wrong in ways
+      // the sample frames above do not see (a filter that ended early freezes the rest of the file).
+      const last = [...s.renders].reverse().find((x) => x.kind === "video" && x.revision === s.revision);
+      if (last && (!i.checks || i.checks.includes("frames")) && (await stat(last.path).then(() => true, () => false))) {
+        const health = await checkRender(last.path, s.project, { ffmpegPath: s.options.ffmpegPath });
+        for (const f of health.frozen) r.issues.push({ check: "frames", severity: "problem", start: f.start, end: f.end, message: `The exported video ${path.basename(last.path)} does not move here although the edit does: render it again, and if it repeats, a clip's effects fail.` });
+        for (const b of health.black) r.issues.push({ check: "frames", severity: "problem", start: b.start, end: b.end, message: `The exported video ${path.basename(last.path)} is black here.` });
+        if (Math.abs(health.duration - health.expected) > 0.25) r.notes.push(`The exported video ${path.basename(last.path)} lasts ${health.duration}s; the edit lasts ${health.expected}s.`);
+      }
       const count = (sev: string) => r.issues.filter((x) => x.severity === sev).length;
       const when = (x: { start: number; end: number }) => (x.start <= 0 && x.end >= duration ? "whole video" : `${formatTime(x.start)}-${formatTime(x.end)}`);
       const lines = [
@@ -4364,6 +4639,36 @@ export const TOOLS: ToolDefinition[] = [
       await renderFrame(s.project, i.time, { output: out, scale, proxies: true, ...s.renderOptions });
       s.recordRender({ kind: "frame", path: out, time: i.time });
       return { text: `Frame at ${i.time}s: ${out}`, images: [{ path: out, mediaType: "image/png" }] };
+    },
+  }),
+  tool({
+    name: "look_at_media",
+    description:
+      "Look at an imported video before cutting it: a grid of frames sampled across the file (or a part of it), each stamped with its source time, and how much the picture moves each second. " +
+      "Use it to choose shots by what is on screen (where the action, dancing or a person is, where the camera holds still), then use those source times as add_clip `in` points. render_contact_sheet shows the edit; this shows the raw footage.",
+    input: z.object({
+      assetId: z.string(),
+      start: z.number().min(0).optional().describe("Source seconds to start at (default 0)"),
+      end: z.number().positive().optional().describe("Source seconds to stop at (default the end)"),
+      frames: z.number().int().min(1).max(48).default(20).describe("Frames in the grid"),
+      columns: z.number().int().min(1).max(8).default(5),
+    }),
+    mutates: false,
+    run: async (s, i) => {
+      const asset = mediaAsset(s, i.assetId);
+      if (asset.type !== "video" || !asset.duration) return { text: `${i.assetId} is not a video with a known length.`, isError: true };
+      const out = await s.outputPath(`look-${asset.id}.png`);
+      const r = await lookAtMedia(s.resolve(asset.src), { output: out, duration: asset.duration, start: i.start, end: i.end, frames: i.frames, columns: i.columns, ffmpegPath: s.options.ffmpegPath });
+      s.recordRender({ kind: "contact-sheet", path: out });
+      const values = r.motion.map((m) => m.value);
+      const top = [...r.motion].sort((a, b) => b.value - a.value).slice(0, 5).sort((a, b) => a.second - b.second);
+      const still = r.motion.filter((m) => m.value < Math.max(0.5, (values.reduce((a, b) => a + b, 0) / Math.max(1, values.length)) * 0.25));
+      const lines = [
+        `${asset.id}: ${r.times.length} frames from ${r.times[0]}s to ${r.times.at(-1)}s, every ${round3(r.times[1]! - r.times[0]! || 0)}s (source times on each frame): ${out}`,
+        `Motion per second (mean change between frames; 0 is still): ${r.motion.map((m) => `${m.second}s ${m.value}`).join(", ")}`,
+        `Most movement: ${top.map((m) => `${m.second}s`).join(", ")}.${still.length ? ` Nearly still: ${still.map((m) => `${m.second}s`).join(", ")}.` : ""}`,
+      ];
+      return { text: lines.join("\n"), images: [{ path: out, mediaType: "image/png" }], data: r };
     },
   }),
   tool({

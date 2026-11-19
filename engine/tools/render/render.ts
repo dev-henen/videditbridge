@@ -25,7 +25,7 @@ import { DepthEstimator, depthFile, writeDepth, type DepthTrack } from "../visio
 import { Inpainter, removalFile, removalMasks, writeRemoval, type RemovalTrack } from "../vision/removal.js";
 import { Interpolator, clipFrameTimes, framePlan, interpolatedFile, needsFrames, writeInterpolated, type InterpolateTrack } from "../video/interpolate.js";
 import { withProxies } from "./proxy.js";
-import { hasFilter, probe, resolveFfmpegPath, runFfmpegOrThrow, type FfmpegOptions, type ProbeResult } from "./ffmpeg.js";
+import { FfmpegError, hasFilter, isCrash, probe, resolveFfmpegPath, runFfmpegOrThrow, type FfmpegOptions, type ProbeResult } from "./ffmpeg.js";
 import { prepareFonts, prepareFontsRecent } from "../fonts/index.js";
 
 export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segments" | "segment" | "hardwareEncoder">, FfmpegOptions {
@@ -60,6 +60,8 @@ export interface RenderOptions extends Omit<CompileOptions, "frameAt" | "segment
   backend?: RenderBackend;
   /** Keep the work directory (graph + ASS files) for debugging. */
   keepWorkDir?: boolean;
+  /** When ffmpeg crashes, render the parts alone to name the one it crashes in (default true). */
+  blame?: boolean;
   /** Progress callback: 0..1 */
   onProgress?: (progress: number) => void;
   signal?: AbortSignal;
@@ -799,15 +801,55 @@ export async function render(project: Project, opts: RenderOptions): Promise<Ren
   let compiled = compileProject(q, { ...opts, ...fonts, segments, ...masks, rubberband, hardwareEncoder });
   let workDir: string | undefined;
   try {
-    ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
+    try {
+      ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
+    } catch (e) {
+      // A graphics driver can refuse a stream its test encode accepted (size limits, busy device).
+      if (!hardwareEncoder || opts.signal?.aborted) throw e;
+      compiled = compileProject(q, { ...opts, ...fonts, segments, ...masks, rubberband });
+      ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
+    }
   } catch (e) {
-    // A graphics driver can refuse a stream its test encode accepted (size limits, busy device).
-    if (!hardwareEncoder || opts.signal?.aborted) throw e;
-    compiled = compileProject(q, { ...opts, ...fonts, segments, ...masks, rubberband });
-    ({ workDir } = await execute(compiled, { ...opts, ...after(opts, share) }));
+    if (!(e instanceof FfmpegError) || !isCrash(e.code) || opts.signal?.aborted || opts.blame === false) throw e;
+    const culprit = await blameCrash(p, opts);
+    // The crash line without its "render the clips one at a time" advice, which this did.
+    const head = /^ffmpeg crashed \([^)]*\)/.exec(e.message)?.[0] ?? e.message.split("\n")[0];
+    throw culprit ? new FfmpegError(`${head}. It crashes in ${culprit}: change or remove those effects.`, e.code, e.stderr, e.args) : e;
   }
   opts.onProgress?.(1);
   return { output: path.resolve(opts.output), duration: compiled.duration, workDir, args: compiled.args };
+}
+
+/**
+ * After ffmpeg crashed on a whole edit, find the part it crashes in: each primary clip with effects
+ * rendered alone, then each media layer with effects, at the same size, until one crashes. Undefined
+ * when none does alone (the crash needs the parts together).
+ */
+async function blameCrash(p: Project, opts: RenderOptions): Promise<string | undefined> {
+  const dir = await mkdtemp(path.join(tmpdir(), "ave-blame-"));
+  const crashes = async (q: Project) => {
+    try {
+      await render(q, { ...opts, output: path.join(dir, "part.mp4"), range: undefined, onProgress: undefined, backend: "ffmpeg", hardware: false, preset: "ultrafast", blame: false, probe: false });
+      return false;
+    } catch (e) {
+      return e instanceof FfmpegError && isCrash(e.code);
+    }
+  };
+  const fx = (effects: { type: string }[]) => effects.map((x) => x.type).join(", ");
+  try {
+    for (const clip of p.clips.filter((c) => c.effects.length)) {
+      const alone: Project = { ...p, clips: [{ ...clip, transition: undefined }], layers: [], audio: [], effects: [], captions: undefined };
+      if (await crashes(alone)) return `clip "${clip.id}" (effects: ${fx(clip.effects)})`;
+    }
+    for (const layer of p.layers) {
+      if (layer.type !== "media" || !layer.effects.length) continue;
+      const alone: Project = { ...p, layers: [{ ...layer, start: 0 }], audio: [], captions: undefined, clips: p.clips.slice(0, 1).map((c) => ({ ...c, effects: [] })) };
+      if (await crashes(alone)) return `layer "${layer.id}" (effects: ${fx(layer.effects)})`;
+    }
+    return undefined;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 /** Render a single frame (PNG/JPG) at a timeline time, lets an AI "look" at its edit. */

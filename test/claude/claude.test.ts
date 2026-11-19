@@ -222,6 +222,57 @@ describe("session + tools", () => {
     expect((await executeTool(s, "update_clip", { clipId: id, patch: { effects: [{ type: "smoothZoom", params: { easing: "ease-in-out" } }] } })).isError).toBeFalsy();
   });
 
+  it("edits many clips in one undo step: add_effect on all clips keeps what they have, update_clips patches several", async () => {
+    const s = session();
+    for (const n of [0, 2, 4]) await executeTool(s, "add_clip", { assetId: "talk", in: n, duration: 2, effects: [{ type: "vignette" }] });
+    const ids = s.project.clips.map((c) => c.id);
+    expect((await executeTool(s, "add_effect", { target: "all-clips", type: "handheld", params: { amount: 30 } })).text).toMatch(/to all 3 clips/);
+    expect(s.project.clips.every((c) => c.effects.map((e) => e.type).join() === "vignette,handheld")).toBe(true);
+    await executeTool(s, "add_effect", { targets: [ids[0], ids[2]], type: "glow" });
+    expect(s.project.clips.map((c) => c.effects.length)).toEqual([3, 2, 3]);
+    await executeTool(s, "update_clips", { updates: [{ clipId: ids[0], patch: { muted: true } }], clipIds: [ids[1], ids[2]], patch: { volume: 0.5 } });
+    expect(s.project.clips.map((c) => [c.muted, c.volume])).toEqual([[true, 1], [false, 0.5], [false, 0.5]]);
+    // One undo takes back the whole batch.
+    await executeTool(s, "undo", {});
+    expect(s.project.clips.every((c) => !c.muted && c.volume === 1)).toBe(true);
+  });
+
+  it("styles titles from a preset, sized for the frame, with the call's own style and animations on top", async () => {
+    const s = session();
+    await executeTool(s, "add_clip", { assetId: "talk", duration: 2 });
+    await executeTool(s, "add_text", { text: "drop", start: 0, duration: 1, preset: "neon", style: { color: "#00FF00" } });
+    const t = s.project.layers.at(-1) as { style: { fontFamily: string; fontSize: number; color: string; uppercase: boolean }; animationIn?: { type: string } };
+    expect(t.style.fontFamily).toBe("Anton");
+    expect(t.style.uppercase).toBe(true);
+    expect(t.style.color).toBe("#00FF00");
+    // 11% of the 1080 px short side.
+    expect(t.style.fontSize).toBe(119);
+    expect(t.animationIn?.type).toBe("blur");
+  });
+
+  it("keeps cuts on their beats under a transition by growing both clips into their footage", async () => {
+    const s = session();
+    for (const n of [0, 3, 6]) await executeTool(s, "add_clip", { assetId: "talk", in: n + 0.5, duration: 2 });
+    const ids = s.project.clips.map((c) => c.id);
+    const cuts = () => computeTimeline(s.project).clips.map((c) => Math.round((c.start + c.transitionDuration / 2) * 1000) / 1000);
+    expect(cuts()).toEqual([0, 2, 4]);
+    const r = await executeTool(s, "set_transition", { clipId: ids[1], type: "fade", duration: 0.5, keepTiming: true });
+    expect(r.isError, r.text).toBeFalsy();
+    // The fade is centered on the cut at 2 s, the next cut and the length stay.
+    expect(cuts()).toEqual([0, 2, 4]);
+    expect(computeTimeline(s.project).duration).toBe(6);
+    expect(s.project.clips[1]!.in).toBe(3.25);
+    // Without keepTiming the next cut moves 0.5 s earlier.
+    await executeTool(s, "set_transition", { clipId: ids[2], type: "fade", duration: 0.5 });
+    expect(computeTimeline(s.project).duration).toBe(5.5);
+    // No footage before the first clip's in point: refused, nothing changes.
+    const s2 = session();
+    for (const n of [0, 0]) await executeTool(s2, "add_clip", { assetId: "talk", in: n, duration: 2 });
+    const before = s2.project;
+    expect((await executeTool(s2, "set_transition", { clipId: s2.project.clips[1]!.id, type: "fade", duration: 1, keepTiming: true })).text).toMatch(/^Not changed: clip .* no footage before 0s/);
+    expect(s2.project).toBe(before);
+  });
+
   it("counts errors the project already had as old, even after an insert moves them", async () => {
     const { newErrors } = await import("../../engine/claude/tools.js");
     expect(newErrors(["clips.3.effects.0.params: bad"], ["clips.4.effects.0.params: bad"])).toEqual([]);

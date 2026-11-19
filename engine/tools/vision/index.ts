@@ -9,3 +9,4 @@ export * from "./sky.js";
 export * from "./depth.js";
 export * from "./removal.js";
 export * from "./screen.js";
+export * from "./people.js";

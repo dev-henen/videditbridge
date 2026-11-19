@@ -2,7 +2,7 @@
 
 # Claude tools
 
-121 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
+126 tools that Claude calls to edit a video. They are defined in [engine/claude/tools.ts](../../engine/claude/tools.ts) and exposed with `toAnthropicTools()` in Messages API format. Run them with `executeTool(session, name, input)`. Inputs are validated against the schemas below, and errors come back as `isError` results instead of exceptions.
 
 Tools marked **edits** change the project, record an undo step and notify the live preview. Tools marked **read-only** only inspect or render.
 
@@ -11,19 +11,19 @@ Tools marked **edits** change the project, record an undo step and notify the li
 - **Inspect & project**: [get_project](#get_project), [new_project](#new_project), [set_project_settings](#set_project_settings), [undo](#undo), [redo](#redo), [clean_up_media](#clean_up_media), [review_edit](#review_edit), [offer_choices](#offer_choices)
 - **Your files, memory & plans**: [search_files](#search_files), [read_document](#read_document), [copy_to_project](#copy_to_project), [remember](#remember), [forget](#forget), [propose_plan](#propose_plan)
 - **Library**: [list_templates](#list_templates), [get_template](#get_template), [apply_template](#apply_template), [list_effects](#list_effects), [list_audio_effects](#list_audio_effects), [list_transitions](#list_transitions), [list_animations](#list_animations), [list_caption_styles](#list_caption_styles), [list_components](#list_components)
-- **Media & primary track**: [import_media](#import_media), [add_clip](#add_clip), [update_clip](#update_clip), [remove_clip](#remove_clip), [move_clip](#move_clip), [split_clip](#split_clip), [trim_clip](#trim_clip), [split_edit](#split_edit), [freeze_frame](#freeze_frame), [set_speed](#set_speed), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [set_transition](#set_transition), [add_effect](#add_effect), [remove_effect](#remove_effect), [create_effect](#create_effect), [animate_effect](#animate_effect)
+- **Media & primary track**: [import_media](#import_media), [add_clip](#add_clip), [update_clip](#update_clip), [remove_clip](#remove_clip), [move_clip](#move_clip), [split_clip](#split_clip), [trim_clip](#trim_clip), [split_edit](#split_edit), [update_clips](#update_clips), [freeze_frame](#freeze_frame), [set_speed](#set_speed), [speed_ramp](#speed_ramp), [interpolate](#interpolate), [set_transition](#set_transition), [add_effect](#add_effect), [remove_effect](#remove_effect), [create_effect](#create_effect), [animate_effect](#animate_effect)
 - **People & faces**: [retouch](#retouch), [detect_faces](#detect_faces), [reframe](#reframe), [follow_face](#follow_face)
-- **Layers**: [add_text](#add_text), [add_media_overlay](#add_media_overlay), [add_shape](#add_shape), [add_component](#add_component), [update_layer](#update_layer), [reorder_layer](#reorder_layer), [remove_layer](#remove_layer), [animate_layer](#animate_layer)
+- **Layers**: [add_text](#add_text), [add_beat_text](#add_beat_text), [add_media_overlay](#add_media_overlay), [add_shape](#add_shape), [add_component](#add_component), [update_layer](#update_layer), [reorder_layer](#reorder_layer), [remove_layer](#remove_layer), [animate_layer](#animate_layer)
 - **Graphics, icons & fonts**: [create_graphic](#create_graphic), [update_graphic](#update_graphic), [search_icons](#search_icons), [add_icon](#add_icon), [list_fonts](#list_fonts), [install_font](#install_font), [install_fonts](#install_fonts), [make_thumbnail](#make_thumbnail)
 - **Audio**: [add_audio](#add_audio), [update_audio](#update_audio), [remove_audio](#remove_audio), [set_volume](#set_volume), [enhance_audio](#enhance_audio), [add_audio_effect](#add_audio_effect), [remove_audio_effect](#remove_audio_effect)
-- **Sound map, beats & moments**: [analyze_audio](#analyze_audio), [remove_silences](#remove_silences), [detect_scenes](#detect_scenes), [detect_beats](#detect_beats), [beat_sync](#beat_sync), [add_moment_effect](#add_moment_effect), [list_sound_effects](#list_sound_effects), [add_sound_effect](#add_sound_effect)
+- **Sound map, beats & moments**: [analyze_audio](#analyze_audio), [remove_silences](#remove_silences), [detect_scenes](#detect_scenes), [analyze_music](#analyze_music), [detect_beats](#detect_beats), [beat_sync](#beat_sync), [assemble_to_music](#assemble_to_music), [add_moment_effect](#add_moment_effect), [list_sound_effects](#list_sound_effects), [add_sound_effect](#add_sound_effect)
 - **Transcript & captions**: [transcribe](#transcribe), [set_transcript](#set_transcript), [get_transcript](#get_transcript), [fix_transcript](#fix_transcript), [search_transcript](#search_transcript), [find_retakes](#find_retakes), [remove_retakes](#remove_retakes), [cleanup_speech](#cleanup_speech), [cut_ranges](#cut_ranges), [assemble_from_source](#assemble_from_source), [set_captions](#set_captions), [export_captions](#export_captions)
 - **Voice**: [list_voices](#list_voices), [preview_voice](#preview_voice), [set_voice](#set_voice), [generate_voiceover](#generate_voiceover), [revoice](#revoice)
 - **Color & looks**: [color_adjust](#color_adjust), [get_color](#get_color), [analyze_color](#analyze_color), [sample_color](#sample_color), [render_scopes](#render_scopes), [set_color_space](#set_color_space), [apply_look](#apply_look), [match_color](#match_color), [grade_scene](#grade_scene), [grade_region](#grade_region), [render_mask](#render_mask), [export_lut](#export_lut)
 - **Objects & tracking**: [select_object](#select_object), [track_object](#track_object), [track_points](#track_points), [pin_layer](#pin_layer), [pin_mask](#pin_mask), [replace_screen](#replace_screen), [replace_sky](#replace_sky), [remove_object](#remove_object)
 - **Depth**: [estimate_depth](#estimate_depth), [set_focus](#set_focus)
 - **Atmosphere & light**: [add_particles](#add_particles), [update_particles](#update_particles), [add_light](#add_light)
-- **Preview & render**: [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
+- **Preview & render**: [look_at_media](#look_at_media), [render_frame](#render_frame), [render_contact_sheet](#render_contact_sheet), [render_preview](#render_preview), [render_video](#render_video)
 
 ## Inspect & project
 
@@ -323,6 +323,17 @@ _No parameters._
 | `type` | "j" \| "l" | yes |  |  |
 | `seconds` | number | yes |  | How far the sound leads (j) or trails (l) the picture cut; 0.5-2 is typical (≥ 0, ≤ 10) |
 
+### update_clips
+
+**edits**. Change many primary-track clips in one undo step: one patch for several clips (clipIds, or all of them), or a patch per clip (updates). Patches take what update_clip takes. effects in a patch replace the clip's effects; to add an effect to many clips and keep what they have, use add_effect with targets or 'all-clips'.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `updates` | { clipId, patch }[] |  |  |  |
+| `clipIds` | string[] |  |  | Clips that get `patch` |
+| `all` | boolean |  |  | Every primary clip gets `patch` |
+| `patch` | object |  |  |  |
+
 ### freeze_frame
 
 **edits**. Hold one frame of the video still for a few seconds (a freeze-frame, e.g. for a 'that's me' title or a dramatic beat). The frame at the given timeline time is held there and the rest of the clip continues after it, so the video gets longer by seconds. The still keeps the clip's fit, crop and effects. Add a title or effect on top afterwards.
@@ -375,14 +386,16 @@ _No parameters._
 | `origin.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
 | `origin.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
 | `sound` | boolean \| string |  | `false` | true = the transition's matching sound, or a sound effect id |
+| `keepTiming` | boolean |  | `false` | Keep every cut where it is (on the beat): the clips on both sides grow by half the transition into their footage, so the transition centers on the cut and the video keeps its length. Use it on edits cut to music. |
 
 ### add_effect
 
-**edits**. Add an effect to a clip, a media layer, or the whole video (target 'global'). See list_effects. For an effect saved with create_effect, use type 'custom' with params { name }; or give type 'custom' with params { filter } for a one-off.
+**edits**. Add an effect to a clip, a media layer, the whole video (target 'global'), every primary clip (target 'all-clips'), or a list of clips and layers (targets). It joins the effects already there. See list_effects for each effect's params and their ranges. For an effect saved with create_effect, use type 'custom' with params { name }; or give type 'custom' with params { filter } for a one-off.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes |  | Clip id, media layer id, or 'global' |
+| `target` | string |  |  | Clip id, media layer id, 'global' or 'all-clips' |
+| `targets` | string[] |  |  | Several clip and layer ids, one undo step |
 | `type` | string | yes |  |  |
 | `params` | object |  |  |  |
 
@@ -441,12 +454,13 @@ _No parameters._
 
 ### reframe
 
-**edits**. Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip. By default the crop is fixed: it keeps the main face's whole path in frame, or its usual spot when it moves more than the crop can show. With follow, the crop pans with the person like a camera operator (focus keyframes, smoothed).
+**edits**. Point each clip's crop at the person in it, for fit cover when the source shape differs from the video (16:9 footage in a 9:16 video). It finds the faces in each clip, and where there is no face (people seen from behind, silhouettes, small figures, game avatars) the people's whole bodies with the person cutout model. By default the crop is fixed: it keeps the main face's whole path in frame, or its usual spot when it moves more than the crop can show. With follow, the crop pans with the person like a camera operator (focus keyframes, smoothed).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `clipIds` | string[] |  |  | Clips to reframe (default: every cover-fit clip whose source shape differs) |
 | `follow` | boolean |  | `false` | Pan the crop with the person over time instead of a fixed crop |
+| `certainty` | number |  | `0.95` | Where there is no face: how sure the person model must be. Keep 0.95 for real people. Only for game, cartoon or 3D characters, which it is less sure of, lower it (0.65 to 0.8) and check the frames, since lower also lets in things that are not people. (≥ 0.5, ≤ 0.99) |
 
 ### follow_face
 
@@ -463,7 +477,7 @@ _No parameters._
 
 ### add_text
 
-**edits**. Add a text layer (titles, labels, callouts). Position is the text center in 0-1 frame coordinates. Font size is in output pixels.
+**edits**. Add a text layer (titles, labels, callouts). Position is the text center in 0-1 frame coordinates. Font size is in output pixels. preset gives a finished title look (font, colors, outline, glow, size for the frame, animations), which style and animations override: "neon" (Tall condensed capitals in white with a hot pink outline and a soft pink glow, spaced wide. Night scenes, dance and music videos, club and city footage.); "impact" (Heavy black-letter capitals in white with a thick black outline, slammed in from above. Hype moments, drops, sports, reaction videos; reads on any picture.); "glitch" (Condensed capitals in white with a cyan outline and a magenta shadow offset like a split signal, stretched in. Tech, gaming, electronic music, fast edits.); "clean" (Plain bold sans in white with a light shadow, sliding up gently. Lifestyle, travel, tutorials and calm openers; quiet next to busy footage.); "label" (Bold dark text on a white box, popping in. Callouts, names, prices and lists: always readable, looks like a sticker.); "cinematic" (Serif capitals in warm white, widely spaced, fading in slowly. Trailers, travel films, weddings and moody openers.).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -473,20 +487,21 @@ _No parameters._
 | `position` | { x, y } |  |  |  |
 | `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
 | `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `preset` | "neon" \| "impact" \| "glitch" \| "clean" \| "label" \| "cinematic" |  |  |  |
 | `style` | { fontFamily, fontSize, color, bold, italic, uppercase, outlineColor, outlineWidth, shadow, shadowColor, background, align, letterSpacing } |  |  |  |
-| `style.fontFamily` | string |  | `"Arimo"` |  |
-| `style.fontSize` | number |  | `64` | Font size in output pixels (> 0) |
-| `style.color` | string |  | `"#FFFFFF"` |  |
-| `style.bold` | boolean |  | `true` |  |
-| `style.italic` | boolean |  | `false` |  |
-| `style.uppercase` | boolean |  | `false` |  |
-| `style.outlineColor` | string |  | `"#000000"` |  |
-| `style.outlineWidth` | number |  | `3` | (≥ 0) |
-| `style.shadow` | number |  | `0` | (≥ 0) |
-| `style.shadowColor` | string |  | `"#00000080"` |  |
+| `style.fontFamily` | string |  |  |  |
+| `style.fontSize` | number |  |  | (> 0) |
+| `style.color` | string |  |  |  |
+| `style.bold` | boolean |  |  |  |
+| `style.italic` | boolean |  |  |  |
+| `style.uppercase` | boolean |  |  |  |
+| `style.outlineColor` | string |  |  |  |
+| `style.outlineWidth` | number |  |  | (≥ 0) |
+| `style.shadow` | number |  |  | (≥ 0) |
+| `style.shadowColor` | string |  |  |  |
 | `style.background` | string |  |  | Opaque box behind the text |
-| `style.align` | "left" \| "center" \| "right" |  | `"center"` |  |
-| `style.letterSpacing` | number |  | `0` |  |
+| `style.align` | "left" \| "center" \| "right" |  |  |  |
+| `style.letterSpacing` | number |  |  |  |
 | `animationIn` | { type, duration, easing } |  |  |  |
 | `animationIn.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
 | `animationIn.duration` | number |  | `0.4` | (> 0, ≤ 10) |
@@ -495,6 +510,36 @@ _No parameters._
 | `animationOut.type` | string | yes |  | Animation id from the animations catalog, e.g. 'fade', 'pop', 'slide-up' |
 | `animationOut.duration` | number |  | `0.4` | (> 0, ≤ 10) |
 | `animationOut.easing` | "linear" \| "ease-in" \| "ease-out" \| "ease-in-out" |  | `"ease-out"` |  |
+
+### add_beat_text
+
+**edits**. Put words on screen one at a time on the beats of the music, each popping in on its beat and staying until the next (a hype intro, a countdown, a chant). Separate the words with spaces, or with | to keep several words together on one beat ('NO LIMITS|NO BRAKES'). The first word lands on the first beat at or after start. One undo step.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `text` | string | yes |  |  |
+| `music` | string | yes |  | Music audio clip id (its beats on the timeline) |
+| `start` | number | yes |  | Timeline seconds; the first word lands on the next beat (≥ 0) |
+| `every` | integer |  | `1` | Beats per word (≥ 1, ≤ 16) |
+| `hold` | integer |  | `2` | Beats the last word stays (≥ 1, ≤ 16) |
+| `preset` | "neon" \| "impact" \| "glitch" \| "clean" \| "label" \| "cinematic" |  | `"impact"` |  |
+| `position` | { x, y } |  | `{"x":0.5,"y":0.5}` |  |
+| `position.x` | number | yes |  | Horizontal center, 0 = left edge, 1 = right edge |
+| `position.y` | number | yes |  | Vertical center, 0 = top edge, 1 = bottom edge |
+| `style` | { fontFamily, fontSize, color, bold, italic, uppercase, outlineColor, outlineWidth, shadow, shadowColor, background, align, letterSpacing } |  |  |  |
+| `style.fontFamily` | string |  |  |  |
+| `style.fontSize` | number |  |  | (> 0) |
+| `style.color` | string |  |  |  |
+| `style.bold` | boolean |  |  |  |
+| `style.italic` | boolean |  |  |  |
+| `style.uppercase` | boolean |  |  |  |
+| `style.outlineColor` | string |  |  |  |
+| `style.outlineWidth` | number |  |  | (≥ 0) |
+| `style.shadow` | number |  |  | (≥ 0) |
+| `style.shadowColor` | string |  |  |  |
+| `style.background` | string |  |  | Opaque box behind the text |
+| `style.align` | "left" \| "center" \| "right" |  |  |  |
+| `style.letterSpacing` | number |  |  |  |
 
 ### add_media_overlay
 
@@ -848,6 +893,15 @@ _No parameters._
 | `threshold` | number |  | `0.3` | 0.3 finds clear cuts; 0.15-0.2 also finds gentle ones (≥ 0.05, ≤ 0.9) |
 | `split` | boolean |  | `false` |  |
 
+### analyze_music
+
+**read-only**. Find the shape of a song: tempo and bar length, sections on its bar grid (intro, build, drop, chorus, verse, breakdown, outro, with how loud each is), where the drop lands, and with window the best stretch of that many seconds to cut a video to (whole bars, starting on a phrase, loud, with the drop inside after a short build). Times are source seconds of the music file: use the window's start as add_audio `in` and its length as `duration`. Use it before cutting a music video or montage; detect_beats gives every beat.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `source` | string | yes |  | Music asset id, or an audio clip id (its file is analyzed) |
+| `window` | number |  |  | Seconds the video should last, e.g. 50 (> 0) |
+
 ### detect_beats
 
 **read-only**. Find the tempo and beat times of music: an audio clip (times on the timeline) or an asset (source times). Use them to cut, punch, shake or flash on the beat (beat_sync does this for you).
@@ -871,6 +925,19 @@ _No parameters._
 | `params` | object |  |  | Effect params, e.g. {amount: 0.12} |
 | `sound` | string |  |  | Sound effect to add on the same beats, e.g. 'hit' |
 | `minClip` | number |  | `0.4` | cuts: shortest clip allowed (≥ 0.1) |
+
+### assemble_to_music
+
+**edits**. Cut a montage or music video to a song in one step: give the music (and where in it to start) and a shot list measured in bars or beats, and every shot is placed so each cut lands on the song's beat grid, the song goes on the music track for exactly as long as the shots, and the shots' own sound is muted. Shots are added after any clips already on the track, in one undo step. Find the start with analyze_music (window) and pick each shot's source moment with look_at_media. Vary sources and framings; 1 bar for calm parts, 2 beats or 1 beat after a drop.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `music` | string | yes |  | Music asset id |
+| `in` | number |  | `0` | Source second of the music the video starts at (put it on a downbeat) (≥ 0) |
+| `shots` | { assetId, in, bars, beats, focus, effects, transition }[] | yes |  |  |
+| `muteClips` | boolean |  | `true` | Mute the shots' own sound (random sound under a song) |
+| `fadeOut` | number |  | `1` | Seconds the song fades out at the end (≥ 0) |
+| `volume` | number |  |  | (≥ 0, ≤ 4) |
 
 ### add_moment_effect
 
@@ -1694,6 +1761,18 @@ _No parameters._
 | `matchBrightness` | boolean |  | `true` | flare: size and strength follow the picture's brightness at the source |
 
 ## Preview & render
+
+### look_at_media
+
+**read-only**. Look at an imported video before cutting it: a grid of frames sampled across the file (or a part of it), each stamped with its source time, and how much the picture moves each second. Use it to choose shots by what is on screen (where the action, dancing or a person is, where the camera holds still), then use those source times as add_clip `in` points. render_contact_sheet shows the edit; this shows the raw footage.
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `assetId` | string | yes |  |  |
+| `start` | number |  |  | Source seconds to start at (default 0) (≥ 0) |
+| `end` | number |  |  | Source seconds to stop at (default the end) (> 0) |
+| `frames` | integer |  | `20` | Frames in the grid (≥ 1, ≤ 48) |
+| `columns` | integer |  | `5` | (≥ 1, ≤ 8) |
 
 ### render_frame
 

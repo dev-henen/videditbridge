@@ -202,6 +202,37 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     const info = await probe(r.output);
     expect(info.hasAudio).toBe(true);
     expect(info.duration!).toBeCloseTo(computeTimeline(session.project).duration, 0);
+
+    // A shot list in bars and beats, cut to the click track in one call: every cut on a beat, the song
+    // as long as the shots, the shots muted.
+    const montage = new EditorSession(undefined, { outputDir: out("montage") });
+    const mcall = async (name: string, input: unknown) => {
+      const r = await executeTool(montage, name, input);
+      expect(r.isError, r.text).toBeFalsy();
+      return r;
+    };
+    await mcall("new_project", { aspectRatio: "9:16" });
+    await mcall("import_media", { src: raw, id: "raw" });
+    await mcall("import_media", { src: click, id: "click" });
+    const structure = await mcall("analyze_music", { source: "click", window: 4 });
+    expect(structure.text).toMatch(/120(\.\d)? BPM, a bar every 2s/);
+    await mcall("assemble_to_music", { music: "click", in: 0, shots: [{ assetId: "raw", in: 0, bars: 1 }, { assetId: "raw", in: 3, beats: 2 }, { assetId: "raw", in: 1, beats: 1 }, { assetId: "raw", in: 5, beats: 1 }] });
+    const t = computeTimeline(montage.project);
+    expect(t.clips.map((c) => c.clip.muted)).toEqual([true, true, true, true]);
+    for (const c of t.clips.slice(1)) expect(Math.abs(((c.start + 0.25) % 0.5) - 0.25)).toBeLessThan(0.03);
+    expect(t.primaryDuration).toBeCloseTo(4, 1);
+    expect(t.audio[0]!.duration).toBeCloseTo(t.primaryDuration, 2);
+    // Words on the beat: each starts on a beat, the last holds two beats.
+    await mcall("add_beat_text", { text: "3 2 1|GO", music: t.audio[0]!.clip.id, start: 0.1, preset: "impact" });
+    const words = montage.project.layers.filter((l) => l.type === "text") as { text: string; start: number; duration: number }[];
+    expect(words.map((w) => w.text)).toEqual(["3 2 1", "GO"]);
+    expect(words[0]!.start).toBeCloseTo(0.5, 1);
+    expect(words[1]!.start - words[0]!.start).toBeCloseTo(0.5, 1);
+    expect(words[1]!.duration).toBeCloseTo(1, 1);
+    // A shot past the end of its footage changes nothing.
+    const before = montage.project;
+    expect((await executeTool(montage, "assemble_to_music", { music: "click", in: 0, shots: [{ assetId: "raw", in: 1000, bars: 1 }] })).isError).toBe(true);
+    expect(montage.project).toBe(before);
   });
 
   it("renders review-style graphics: circle reveal, shapes, rounded overlays, keying and components", async () => {
@@ -649,7 +680,7 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     };
     const [whole, part] = [await grab(out("range-full.mp4"), 2.3, "range-full.png"), await grab(out("range-part.mp4"), 0.3, "range-part.png")];
     const r = await runFfmpeg(["-hide_banner", "-i", whole, "-i", part, "-filter_complex", "[0:v]format=yuv444p[x];[1:v]format=yuv444p[y];[x][y]psnr", "-f", "null", "-"]);
-    expect(Number(/average:([\d.inf]+)/.exec(r.stderr)![1].replace("inf", "99"))).toBeGreaterThan(40);
+    expect(Number(/average:([\d.inf]+)/.exec(r.stderr)![1]!.replace("inf", "99"))).toBeGreaterThan(40);
   }, 120_000);
 
 });

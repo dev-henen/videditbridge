@@ -94,6 +94,9 @@ const CRASHES: Record<number, string> = {
   139: "a segmentation fault",
 };
 
+/** Whether an exit code is a crash (not an ordinary failure ffmpeg reported). */
+export const isCrash = (code: number) => code in CRASHES;
+
 /** What a failed ffmpeg run means, from its exit code and the end of its output. */
 export function ffmpegFailure(code: number, stderr: string): string {
   const tail = stderr.split("\n").slice(-25).join("\n").trim();

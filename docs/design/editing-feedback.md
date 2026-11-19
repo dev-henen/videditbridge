@@ -4,19 +4,19 @@ Improvements found while making a 50 second Instagram dance video in the app (11
 
 ## 1. Checklist
 
-- [x] 1. **Renders fail loudly** (2.1): the glow crash fixed (`glowKeep` thresholds with `lutrgb`; test in `film.integration.test.ts`), and a crashed ffmpeg is named as a crash (`ffmpegFailure`). Left: name the clip and effect in the error.
-- [x] 2. **Render health check** (2.2): `checkRender` (`engine/tools/render/health.ts`) reads every `render_video` and `render_preview` back and reports frozen stretches, black stretches and a wrong length; a preview with problems is not kept as up to date. Left: `review_edit` runs it on the last render.
+- [x] 1. **Renders fail loudly** (2.1): the glow crash fixed (`glowKeep` thresholds with `lutrgb`, the same picture within a level on real footage; test in `film.integration.test.ts`); a crashed ffmpeg is named as a crash (`ffmpegFailure`), and `render` then renders the clips and layers with effects alone to name the one it crashes in (`blameCrash`).
+- [x] 2. **Render health check** (2.2): `checkRender` (`engine/tools/render/health.ts`) reads every `render_video` and `render_preview` back and reports frozen stretches, black stretches and a wrong length; a preview with problems is not kept as up to date; `review_edit` also reads the last exported video of the edit as it is.
 - [x] 3. **Range previews build only the range** (2.3): `forRange` (`engine/tools/render/range.ts`) stands in black for clips before the range and leaves out what is after it, with every time where it was.
 - [x] 4. **Invalid edits are rejected** (2.4): `commit` refuses an edit that adds project errors and leaves the project unchanged.
 - [x] 5. **One convention for effect params** (2.5): easing was already one vocabulary; `list_effects` and `list_audio_effects` now show each param's range or choices and its default (`paramText`). Rescaling `glow`'s 0..100 threshold is left out: it would change saved projects.
-- [ ] 6. **`look_at_media`** (3.1): a timestamped grid of a source file, and a motion energy curve.
-- [ ] 7. **Body-aware framing** (3.2): `reframe` finds people (pose or person detection), not only faces.
-- [ ] 8. **`analyze_music`** (3.3): sections, energy curve, the drop, and a suggested window of a given length on phrase boundaries.
-- [ ] 9. **`assemble_to_music`** (3.4): build a montage from a shot list measured in bars.
-- [ ] 10. **Edits on many clips** (3.5): `update_clips`, and effects added to every clip in one call.
-- [ ] 11. **Beat-safe transitions** (3.6): transitions that keep cuts on the beat.
-- [ ] 12. **Title presets and beat text** (3.7).
-- [ ] 13. **Claude Code over MCP** (3.8): document and test driving the app from Claude Code through `ave-mcp` instead of `ave remote`.
+- [x] 6. **`look_at_media`** (3.1): a grid of a source file (or a part) with source times on each frame, and motion per second (`engine/tools/render/look.ts`).
+- [x] 7. **Body-aware framing** (3.2): where `reframe` finds no face, it frames on the person cutout model's main subject (`engine/tools/vision/people.ts`): the largest whole region toward the middle, only when the model is sure (median 0.95; real people measured 0.95 to 0.99, cars, buildings and stones 0.67 to 0.93). Faces still come first, so footage of real people frames as before. `certainty` lowers the bar for game and cartoon characters (the dance video's avatars measured 0.69 to 0.81). Left: on a game shot where the model joined a car and a dancer lying next to it into one region, the crop goes to the car.
+- [x] 8. **`analyze_music`** (3.3): level per bar, sections in 4-bar phrases, the drop (the first jump into the loudest phrases), and the best window of a given length (`engine/tools/audio/structure.ts`). On the dance video's song it picks the window chosen by hand (33.52 s to 83.17 s, the drop 11.03 s in).
+- [x] 9. **`assemble_to_music`** (3.4): a shot list in bars or beats laid on the song's beat grid in one undo step (`placeOnBeats`), the song as long as the shots, the shots muted; footage that runs out is refused.
+- [x] 10. **Edits on many clips** (3.5): `update_clips` (a patch per clip, or one for several or all) and `add_effect` with `targets` or `'all-clips'`, keeping the effects there.
+- [x] 11. **Beat-safe transitions** (3.6): `set_transition` `keepTiming` and transitions on `assemble_to_music` shots grow both clips by half the transition into their footage, so the transition centers on the cut and every cut stays (`keepCutTiming`).
+- [x] 12. **Title presets and beat text** (3.7): six title styles (`engine/library/title-styles`, `docs/reference/title-styles.md`) for `add_text` `preset`, and `add_beat_text` for words on the beats.
+- [x] 13. **Claude Code over MCP** (3.8): `docs/guides/mcp.md`, Editing from Claude Code: the command and the order of tools for a music video. The agent's prompt (`engine/host/agent.ts`) points at the new tools.
 
 ## 2. Correctness
 
