@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
+import { constants as osConstants } from "node:os";
 
 export interface FfmpegOptions {
   /** Explicit path to the ffmpeg binary. Falls back to $FFMPEG_PATH, the `ffmpeg-static` package, then `ffmpeg` on PATH. */
@@ -75,17 +76,37 @@ export function runFfmpeg(args: string[], opts: RunOptions = {}): Promise<RunRes
           : err,
       ),
     );
-    proc.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr, ...(opts.binaryStdout ? { stdoutBuffer: Buffer.concat(chunks) } : {}) }));
+    proc.on("close", (code, signal) => {
+      // A process killed by a signal (a crash on macOS and Linux) has no exit code; report it as 128 + the signal, as shells do.
+      const signalled = signal ? 128 + (osConstants.signals[signal] ?? 0) : -1;
+      resolve({ code: code ?? signalled, stdout, stderr, ...(opts.binaryStdout ? { stdoutBuffer: Buffer.concat(chunks) } : {}) });
+    });
   });
+}
+
+/** Exit codes of a crashed ffmpeg: Windows exception codes, and 128 + the signal elsewhere. */
+const CRASHES: Record<number, string> = {
+  3221225477: "an access violation",
+  3221225725: "a stack overflow",
+  3221226505: "a fatal internal error",
+  134: "an abort",
+  135: "a bus error",
+  139: "a segmentation fault",
+};
+
+/** What a failed ffmpeg run means, from its exit code and the end of its output. */
+export function ffmpegFailure(code: number, stderr: string): string {
+  const tail = stderr.split("\n").slice(-25).join("\n").trim();
+  const crash = CRASHES[code];
+  if (crash)
+    return `ffmpeg crashed (${crash}, exit code ${code})${tail ? `:\n${tail}` : ". It printed nothing first, so the crash is inside a filter: one of the effects in this part of the edit; render the clips one at a time to find it."}`;
+  return `ffmpeg exited with code ${code}:\n${tail}`;
 }
 
 /** Run ffmpeg and throw a FfmpegError with the tail of stderr on failure. */
 export async function runFfmpegOrThrow(args: string[], opts: RunOptions = {}): Promise<RunResult> {
   const res = await runFfmpeg(args, opts);
-  if (res.code !== 0) {
-    const tail = res.stderr.split("\n").slice(-25).join("\n");
-    throw new FfmpegError(`ffmpeg exited with code ${res.code}:\n${tail}`, res.code, res.stderr, args);
-  }
+  if (res.code !== 0) throw new FfmpegError(ffmpegFailure(res.code, res.stderr), res.code, res.stderr, args);
   return res;
 }
 

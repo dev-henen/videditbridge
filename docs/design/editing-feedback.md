@@ -4,11 +4,11 @@ Improvements found while making a 50 second Instagram dance video in the app (11
 
 ## 1. Checklist
 
-- [ ] 1. **Renders fail loudly** (2.1): a failed FFmpeg piece fails the render with the clip and effect named; no held last frame.
-- [ ] 2. **Render health check** (2.2): every render reports frozen stretches, black frames and a wrong length; `review_edit` checks the same.
-- [ ] 3. **Range previews build only the range** (2.3).
-- [ ] 4. **Invalid edits are rejected** (2.4): `update_clip` and the other edit tools refuse effects whose params do not validate, and list what is allowed.
-- [ ] 5. **One convention for effect params** (2.5): easing names, 0..1 versus 0..100 scales, ranges shown in `list_effects`.
+- [x] 1. **Renders fail loudly** (2.1): the glow crash fixed (`glowKeep` thresholds with `lutrgb`; test in `film.integration.test.ts`), and a crashed ffmpeg is named as a crash (`ffmpegFailure`). Left: name the clip and effect in the error.
+- [x] 2. **Render health check** (2.2): `checkRender` (`engine/tools/render/health.ts`) reads every `render_video` and `render_preview` back and reports frozen stretches, black stretches and a wrong length; a preview with problems is not kept as up to date. Left: `review_edit` runs it on the last render.
+- [x] 3. **Range previews build only the range** (2.3): `forRange` (`engine/tools/render/range.ts`) stands in black for clips before the range and leaves out what is after it, with every time where it was.
+- [x] 4. **Invalid edits are rejected** (2.4): `commit` refuses an edit that adds project errors and leaves the project unchanged.
+- [x] 5. **One convention for effect params** (2.5): easing was already one vocabulary; `list_effects` and `list_audio_effects` now show each param's range or choices and its default (`paramText`). Rescaling `glow`'s 0..100 threshold is left out: it would change saved projects.
 - [ ] 6. **`look_at_media`** (3.1): a timestamped grid of a source file, and a motion energy curve.
 - [ ] 7. **Body-aware framing** (3.2): `reframe` finds people (pose or person detection), not only faces.
 - [ ] 8. **`analyze_music`** (3.3): sections, energy curve, the drop, and a suggested window of a given length on phrase boundaries.

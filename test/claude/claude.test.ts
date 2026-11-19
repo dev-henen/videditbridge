@@ -208,6 +208,26 @@ describe("session + tools", () => {
     expect(stt.text).toMatch(/transcribe failed/);
   });
 
+  it("refuses an edit that makes the project invalid and leaves it as it was", async () => {
+    const s = session();
+    await executeTool(s, "add_clip", { assetId: "talk", duration: 2 });
+    const id = s.project.clips[0]!.id;
+    const before = s.project;
+    const r = await executeTool(s, "update_clip", { clipId: id, patch: { effects: [{ type: "smoothZoom", params: { easing: "inOut" } }] } });
+    expect(r.isError).toBe(true);
+    expect(r.text).toMatch(/^Not changed: update_clip would make the project invalid/);
+    expect(r.text).toMatch(/easing/);
+    expect(s.project).toBe(before);
+    // A valid one still lands.
+    expect((await executeTool(s, "update_clip", { clipId: id, patch: { effects: [{ type: "smoothZoom", params: { easing: "ease-in-out" } }] } })).isError).toBeFalsy();
+  });
+
+  it("counts errors the project already had as old, even after an insert moves them", async () => {
+    const { newErrors } = await import("../../engine/claude/tools.js");
+    expect(newErrors(["clips.3.effects.0.params: bad"], ["clips.4.effects.0.params: bad"])).toEqual([]);
+    expect(newErrors(["clips.3.effects.0.params: bad"], ["clips.4.effects.0.params: bad", "clips.0.effects.1.params: bad"])).toEqual(["clips.0.effects.1.params: bad"]);
+  });
+
   it("lists local voices and sets the project voice", async () => {
     const s = session();
     const list = await executeTool(s, "list_voices", {});

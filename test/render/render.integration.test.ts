@@ -626,4 +626,30 @@ describe.skipIf(!hasFfmpeg)("rendering with ffmpeg", () => {
     expect((await probe(r.output)).duration).toBeCloseTo(1.5, 0);
   });
 
+  it("renders a range of a cut edit with the same picture as the whole edit there", async () => {
+    // Four shots, a crossfade into the third: the range starts inside the third, so the first is
+    // a black stand-in (range.ts) and the second stays real for the crossfade.
+    const p = parseProject({
+      settings: { width: 320, height: 180, fps: 30 },
+      assets: [{ type: "video", id: "talk", src: fx.talk }],
+      clips: [
+        { id: "a", assetId: "talk", in: 0, duration: 1, effects: [{ type: "glitch", params: { amount: 20 } }] },
+        { id: "b", assetId: "talk", in: 2, duration: 1 },
+        { id: "c", assetId: "talk", in: 1, duration: 1.5, transition: { type: "fade", duration: 0.5 } },
+        { id: "d", assetId: "talk", in: 3, duration: 1 },
+      ],
+    });
+    const opts = { preset: "ultrafast", extraOutputArgs: ["-crf", "0"], backend: "ffmpeg" as const, hardware: false };
+    await render(p, { output: out("range-full.mp4"), ...opts });
+    await render(p, { output: out("range-part.mp4"), range: { start: 2, end: 2.8 }, ...opts });
+    const grab = async (file: string, at: number, name: string) => {
+      const png = out(name);
+      await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-ss", String(at), "-i", file, "-frames:v", "1", png]);
+      return png;
+    };
+    const [whole, part] = [await grab(out("range-full.mp4"), 2.3, "range-full.png"), await grab(out("range-part.mp4"), 0.3, "range-part.png")];
+    const r = await runFfmpeg(["-hide_banner", "-i", whole, "-i", part, "-filter_complex", "[0:v]format=yuv444p[x];[1:v]format=yuv444p[y];[x][y]psnr", "-f", "null", "-"]);
+    expect(Number(/average:([\d.inf]+)/.exec(r.stderr)![1].replace("inf", "99"))).toBeGreaterThan(40);
+  }, 120_000);
+
 });

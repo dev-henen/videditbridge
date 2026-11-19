@@ -11,6 +11,7 @@ import { contactSheetFrames, engineBridged, engineUnsupported, planProject, type
 import { planSegments, pruneCache, segmentProject, touchSegments, type SegmentPlan } from "./cache.js";
 import { detectHardwareEncoder, wantsHardware } from "./hardware.js";
 import { computeTimeline } from "../../core/timeline.js";
+import { forRange } from "./range.js";
 import { colorMatrixOf, colorSpaceFromTags } from "../../library/color/index.js";
 import { ensureColorTables } from "./color-space.js";
 import { effectObjects, effectRemovals, removalKey, usesDepthMask, usesFaceMask, usesPersonMask, usesSkyMask, type RemovalSpec } from "../../library/effects/index.js";
@@ -787,7 +788,9 @@ const frameBlockers = (p: Project) => [...(enginePath() ? [] : ["the engine is n
 
 /** Render a project to a video file. */
 export async function render(project: Project, opts: RenderOptions): Promise<RenderResult> {
-  const p = await readyToRender(project, opts);
+  const ready = await readyToRender(project, opts);
+  // A range builds only what it shows, with every time where it was (range.ts).
+  const p = opts.range ? forRange(ready, opts.range) : ready;
   const done = await viaEngine(opts.backend ?? defaultBackend, engineBlockers(p, opts), () => renderOnEngine(p, opts), opts.signal);
   if (done) return done;
   const { project: q, segments, share, masks, rubberband, fonts } = await prepare(p, opts, true, opts.range?.end);

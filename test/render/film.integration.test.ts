@@ -88,6 +88,20 @@ describe.skipIf(!hasFfmpeg)("film look effects", () => {
     expect(mid).toBeGreaterThan(dark * 1.5);
   }, 60_000);
 
+  // Landscape footage cropped into a portrait video: colorlevels on the cropped frame, then the glow's
+  // blur and blend, crashed FFmpeg 6.1 (access violation) and froze the rest of an edit.
+  it.each(["halation", "bloom", "anamorphicFlare", "lightRays"])("%s renders on a cover-cropped clip", async (type) => {
+    const wide = path.join(dir, "wide.mkv");
+    await runFfmpegOrThrow(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", `testsrc2=s=468x216:r=${FPS}:d=1,format=yuv420p`, "-c:v", "ffv1", wide]);
+    let p = createProject({ settings: { width: 216, height: 270, fps: FPS } });
+    p = addAsset(p, { id: "v", type: "video", src: wide, width: 468, height: 216, duration: 1, hasAudio: false });
+    p = addClip(p, { id: "a", assetId: "v", duration: 1, fit: "cover", effects: [{ type }] as never });
+    const out = path.join(dir, `wide-${type}.mp4`);
+    await render(p, { output: out, backend: "ffmpeg", hardware: false });
+    const { stdoutBuffer } = await runFfmpegOrThrow(["-hide_banner", "-loglevel", "error", "-i", out, "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1"], { binaryStdout: true });
+    expect(stdoutBuffer!.length / (216 * 270)).toBe(FPS);
+  }, 60_000);
+
   it.each(["halation", "bloom", "anamorphicFlare", "filmGrain", "gateWeave", "printFilm", "lensDistortion"])(
     "%s renders and stays legal at default strength",
     async (type) => {

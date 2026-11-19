@@ -48,6 +48,7 @@ import { LOCAL_VOICES, LocalTTS, RECOMMENDED_VOICES, VOICES } from "../tools/voi
 import { exportCaptions } from "../tools/captions/build.js";
 import { probe, runFfmpeg, runFfmpegOrThrow } from "../tools/render/ffmpeg.js";
 import { depthInClips, interpolateInClips, removalInClips, render, renderContactSheet, renderForAnalysis, renderFrame, skyInClips, trackObjectInClips } from "../tools/render/render.js";
+import { checkRender } from "../tools/render/health.js";
 import { exportLut } from "../tools/render/export-lut.js";
 import { clipFrameTimes, framePlan } from "../tools/video/interpolate.js";
 import { depthInBox, readDepthFrames } from "../tools/vision/depth.js";
@@ -127,11 +128,31 @@ async function applySmooth(s: EditorSession, project: Project, clipId: string, s
 }
 
 /** Commit a change and describe it briefly. */
+/** The project's errors, ignoring an empty project (a normal starting point, e.g. while importing media). */
+const projectErrors = (project: Project) =>
+  validateProject(project)
+    .issues.filter((i) => i.level === "error" && !/is empty/.test(i.message))
+    .map((i) => `${i.path}: ${i.message}`);
+
+/** Errors in `after` that `before` did not have, counted by message with list positions left out (an insert shifts them). */
+export function newErrors(before: string[], after: string[]): string[] {
+  const key = (e: string) => e.replace(/\.\d+(?=[.:])/g, ".#");
+  const seen = new Map<string, number>();
+  for (const e of before) seen.set(key(e), (seen.get(key(e)) ?? 0) + 1);
+  return after.filter((e) => {
+    const n = seen.get(key(e)) ?? 0;
+    seen.set(key(e), n - 1);
+    return n <= 0;
+  });
+}
+
 function commit(session: EditorSession, project: Project, action: string, input: unknown, message: string): ToolResult {
+  const problems = projectErrors(project);
+  // An edit that breaks the project is refused, so it never lands half-valid and the next render
+  // does not fail on it; problems the project already had do not block unrelated edits.
+  const added = newErrors(projectErrors(session.project), problems);
+  if (added.length) return { text: `Not changed: ${action} would make the project invalid:\n- ${added.join("\n- ")}\nFix these values and try again.`, isError: true };
   session.commit(project, action, input);
-  const v = validateProject(project);
-  // An empty project is a normal starting point (e.g. while importing media), not a problem to report.
-  const problems = v.issues.filter((i) => i.level === "error" && !/is empty/.test(i.message)).map((i) => `${i.path}: ${i.message}`);
   const duration = (() => {
     try {
       return computeTimeline(project).duration;
@@ -142,6 +163,26 @@ function commit(session: EditorSession, project: Project, action: string, input:
   return ok(
     `${message}${duration !== undefined ? ` (video now ${duration}s)` : ""}${problems.length ? `\nProblems to fix:\n- ${problems.join("\n- ")}` : ""}`,
   );
+}
+
+/**
+ * A catalog param as the lists show it: its description, then the values it takes (a range, the
+ * choices) and its default, so a call can be right the first time.
+ */
+export function paramText(name: string, schema: z.ZodType): string {
+  let js: Record<string, unknown> = {};
+  try {
+    js = z.toJSONSchema(schema, { io: "input", unrepresentable: "any" }) as Record<string, unknown>;
+  } catch {
+    // A param the converter cannot express is listed by its description only.
+  }
+  const values: string[] = [];
+  const list = (js.enum ?? (js.anyOf as { const?: unknown }[] | undefined)?.map((o) => o.const)) as unknown[] | undefined;
+  if (list?.length && list.every((v) => v !== undefined)) values.push(`one of ${list.map((v) => JSON.stringify(v)).join(", ")}`);
+  else if (typeof js.minimum === "number" || typeof js.maximum === "number") values.push(`${js.minimum ?? "..."} to ${js.maximum ?? "..."}`);
+  if (js.default !== undefined) values.push(`default ${JSON.stringify(js.default)}`);
+  const about = schema.description ?? (js.description as string | undefined);
+  return `${name}${about ? `: ${about}` : ""}${values.length ? ` (${values.join(", ")})` : ""}`;
 }
 
 function assetIdFromSrc(project: Project, src: string): string {
@@ -827,7 +868,7 @@ export const TOOLS: ToolDefinition[] = [
         listEffects(i.category)
           .map((e) => {
             const shape = (e.params as unknown as { shape?: Record<string, z.ZodType> }).shape ?? {};
-            const params = Object.entries(shape).map(([k, v]) => `${k}${v.description ? `: ${v.description}` : ""}`);
+            const params = Object.entries(shape).map(([k, v]) => paramText(k, v));
             return `${e.id} (${e.category}): ${e.description}${params.length ? ` Params: ${params.join("; ")}` : ""}`;
           })
           .join("\n"),
@@ -843,7 +884,7 @@ export const TOOLS: ToolDefinition[] = [
         listAudioEffects(i.category)
           .map((e) => {
             const shape = (e.params as unknown as { shape?: Record<string, z.ZodType> }).shape ?? {};
-            const params = Object.entries(shape).map(([k, v]) => `${k}${v.description ? `: ${v.description}` : ""}`);
+            const params = Object.entries(shape).map(([k, v]) => paramText(k, v));
             return `${e.id} (${e.category}): ${e.description}${params.length ? ` Params: ${params.join("; ")}` : ""}`;
           })
           .join("\n"),
@@ -4362,6 +4403,12 @@ export const TOOLS: ToolDefinition[] = [
       // Written under another name first, so a cancelled render never looks finished.
       const part = await s.outputPath("preview.part.mp4");
       const r = await render(s.project, { output: part, scale: i.scale, range, preset: "ultrafast", extraOutputArgs: ["-crf", "30"], proxies: true, ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
+      // Read back before it gets its final name, so a broken preview is never reused as up to date.
+      const health = await checkRender(part, s.project, { ffmpegPath: s.options.ffmpegPath, range });
+      if (health.warnings.length) {
+        s.recordRender({ kind: "preview", path: part });
+        return { text: `Preview rendered (${r.duration}s) with problems: ${part}\n${health.warnings.map((w) => `- ${w}`).join("\n")}`, isError: true, data: { path: part, health } };
+      }
       await rename(part, out);
       s.recordRender({ kind: "preview", path: out });
       return ok(`Preview rendered (${r.duration}s): ${out}`, { path: out });
@@ -4385,6 +4432,8 @@ export const TOOLS: ToolDefinition[] = [
       const project = { ...s.project, export: exp };
       const r = await render(project, { output: out, ...s.renderOptions, onProgress: (p) => activity?.progress(p) });
       s.recordRender({ kind: "video", path: out });
+      const health = await checkRender(out, project, { ffmpegPath: s.options.ffmpegPath });
+      if (health.warnings.length) return { text: `Rendered ${r.duration}s video to ${out}, but it has problems:\n${health.warnings.map((w) => `- ${w}`).join("\n")}`, isError: true, data: { health } };
       return ok(`Rendered ${r.duration}s video to ${out}`);
     },
   }),

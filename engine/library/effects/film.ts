@@ -29,7 +29,10 @@ export interface Glow {
 /** The highlights a glow keeps: their excess over the threshold, eased in with a soft knee (per-pixel filters). */
 export function glowKeep(threshold: number): string[] {
   const t = round3(clamp(threshold, 0, 0.98));
-  return [`colorlevels=rimin=${t}:gimin=${t}:bimin=${t}`, "curves=all='0/0 0.3/0.12 1/1'"];
+  // The input black point raised to the threshold, as a table: colorlevels here, followed by the
+  // glow's gblur and blend, crashes FFmpeg 6.1 with threaded filters (an access violation).
+  const keep = `clip((val-${t}*maxval)/${round3(1 - t)},0,maxval)`;
+  return [`lutrgb=r='${keep}':g='${keep}':b='${keep}'`, "curves=all='0/0 0.3/0.12 1/1'"];
 }
 
 /** A glow's blur radii as gblur takes them (sigma, sigmaV). */
