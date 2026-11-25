@@ -47,7 +47,8 @@ export function timelineWords(project: Project, timeline: Timeline = computeTime
   }
   for (const ta of timeline.audio) {
     const transcript = project.transcripts[ta.clip.assetId];
-    if (!transcript || ta.clip.role !== "voiceover") continue;
+    // Voice-overs, and songs someone transcribed for their lyrics; never sound effects.
+    if (!transcript || ta.clip.role === "sfx") continue;
     const speed = ta.clip.speed;
     for (const w of transcript.words) {
       if (w.end <= ta.clip.in || w.start >= ta.clip.in + ta.duration * speed) continue;

@@ -30,6 +30,8 @@ export const CaptionStyleSchema = z.object({
   animation: z.enum(["none", "pop", "fade", "slide-up", "zoom"]).default("none"),
   /** Vertical center of the caption block (0 = top, 1 = bottom). */
   position: z.number().min(0).max(1).default(0.78),
+  /** Vertical centers the phrases take in turn (e.g. [0.2, 0.8] moves between top and bottom); replaces position. */
+  positions: z.array(z.number().min(0).max(1)).min(1).optional(),
   maxWordsPerLine: z.number().int().positive().default(4),
   maxCharsPerLine: z.number().int().positive().default(24),
   maxLines: z.number().int().positive().default(2),

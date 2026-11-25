@@ -1073,7 +1073,7 @@ _No parameters._
 
 ### set_captions
 
-**edits**. Turn captions on/off and pick a style (see list_caption_styles). Captions come from transcripts and stay synced through edits. Override style fields like position (0-1), fontSize, highlightColor, uppercase, maxWordsPerLine.
+**edits**. Turn captions on/off and pick a style (see list_caption_styles). Captions come from transcripts (speech, voice-overs, and a song's lyrics once it is transcribed) and stay synced through edits. Override style fields like position (0-1), positions (phrases take them in turn, e.g. [0.2, 0.8] moves between top and bottom), fontSize, highlightColor, uppercase, maxWordsPerLine, animation (in reveal mode each new word also pushes in).
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|

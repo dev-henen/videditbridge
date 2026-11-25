@@ -63,6 +63,23 @@ describe("captions", () => {
     expect(buildCaptions(p)!.chunks[0]!.words.map((w) => w.text)).toEqual(["Manual", "caption"]);
   });
 
+  it("captions a transcribed song's lyrics but never sound effects", () => {
+    const lyrics = { m: { words: [{ text: "La", start: 5, end: 5.4 }] } };
+    const muted = [{ id: "c", assetId: "v", muted: true }];
+    const song = parseProject({ ...project(), clips: muted, transcripts: lyrics, audio: [{ id: "a", assetId: "m", in: 4, start: 2 }] });
+    expect(timelineWords(song)).toEqual([{ text: "La", start: 3, end: 3.4 }]);
+    const sfx = parseProject({ ...project(), clips: muted, transcripts: lyrics, audio: [{ id: "a", assetId: "m", role: "sfx" }] });
+    expect(timelineWords(sfx)).toEqual([]);
+  });
+
+  it("moves phrases between the given positions in turn", () => {
+    const ass = exportCaptions(project({ captions: { style: "reveal", overrides: { positions: [0.2, 0.8], maxWordsPerLine: 2, maxLines: 1, animation: "pop" } } }), "ass");
+    const ys = [...ass.matchAll(/\\(?:pos|move)\(540,(\d+)/g)].map((m) => Number(m[1]));
+    expect(new Set(ys)).toEqual(new Set([384, 1536]));
+    // A phrase's words stay at its place, and each new word pushes in.
+    expect(ass).toMatch(/Dialogue: [^\n]*\\pos\(540,384\)[^\n]*\{\\alpha&HFF&\\fscy40\\t\(0,140,/);
+  });
+
   it("renders karaoke as \\kf sweeps", () => {
     const ass = exportCaptions(project({ captions: { style: "karaoke" } }), "ass");
     expect(ass).toMatch(/\{\\kf\d+\}Hello/);

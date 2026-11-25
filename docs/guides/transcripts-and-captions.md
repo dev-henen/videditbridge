@@ -89,7 +89,7 @@ Turn captions on with a style:
 p = setCaptions(p, { style: "bold-pop", overrides: { highlightColor: "#00FF88", position: 0.65 } });
 ```
 
-At render time, `timelineWords(project)` maps every clip's transcript words through its in-point, speed and position. Words cut out of the edit disappear, words in muted clips are skipped, and voice-over transcripts are included. `chunkWords` then groups words into on-screen phrases. A phrase breaks at sentence ends, at pauses over 0.6s, and when `maxWordsPerLine` / `maxCharsPerLine` / `maxLines` / `maxDuration` would be exceeded.
+At render time, `timelineWords(project)` maps every clip's transcript words through its in-point, speed and position. Words cut out of the edit disappear, words in muted clips are skipped, and voice-over transcripts are included, as are the lyrics of a music track once it is transcribed (sound effects never are). A style's `positions` list (for example `[0.2, 0.8]`) gives the phrases those vertical places in turn instead of the one `position`. `chunkWords` then groups words into on-screen phrases. A phrase breaks at sentence ends, at pauses over 0.6s, and when `maxWordsPerLine` / `maxCharsPerLine` / `maxLines` / `maxDuration` would be exceeded.
 
 The [caption style reference](../reference/caption-styles.md) lists the presets and every field you can override. The five modes:
 

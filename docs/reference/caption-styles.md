@@ -51,6 +51,7 @@ Any of these can go in `captions.overrides`:
 | `highlightScale` | number |  | `1` | (≥ 1, ≤ 2) |
 | `animation` | "none" \| "pop" \| "fade" \| "slide-up" \| "zoom" |  | `"none"` |  |
 | `position` | number |  | `0.78` | (≥ 0, ≤ 1) |
+| `positions` | number[] |  |  |  |
 | `maxWordsPerLine` | integer |  | `4` | (> 0) |
 | `maxCharsPerLine` | integer |  | `24` | (> 0) |
 | `maxLines` | integer |  | `2` | (> 0) |

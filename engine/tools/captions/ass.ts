@@ -208,11 +208,12 @@ export function addCaptionEvents(doc: AssDocument, chunks: CaptionChunk[], style
   const styleName = doc.addStyle(captionAssStyle(style, opts.width, opts.height), "Caption");
   const layer = opts.layer ?? 100;
   const x = Math.round(opts.width / 2);
-  const y = Math.round(opts.height * style.position);
+  const places = style.positions?.length ? style.positions : [style.position];
   const hl = toAssColor(style.highlightColor);
   const scale = Math.round(style.highlightScale * 100);
 
-  for (const chunk of chunks) {
+  for (const [n, chunk] of chunks.entries()) {
+    const y = Math.round(opts.height * places[n % places.length]!);
     const flat = chunk.lines.flat();
     switch (style.mode) {
       case "static": {
@@ -259,7 +260,14 @@ export function addCaptionEvents(doc: AssDocument, chunks: CaptionChunk[], style
                     .map((w) => {
                       const j = idx++;
                       const t = displayText(w, style);
-                      if (style.mode === "reveal") return j <= i ? t : `{\\alpha&HFF&}${t}{\\alpha&H00&}`;
+                      if (style.mode === "reveal") {
+                        if (j > i) return `{\\alpha&HFF&}${t}{\\alpha&H00&}`;
+                        // The newest word pushes in: it fades and grows upward into its place. Only its
+                        // height changes, so the words around it keep their places in the row.
+                        if (j === i && i > 0 && style.animation !== "none")
+                          return `{\\alpha&HFF&\\fscy40\\t(0,140,\\alpha&H00&\\fscy100)}${t}{\\alpha&H00&\\fscy100}`;
+                        return t;
+                      }
                       if (j !== i) return t;
                       const grow = scale !== 100 ? `\\fscx${scale}\\fscy${scale}` : "";
                       return `{\\1c${hl}${grow}}${t}{\\1c${toAssColor(style.color)}\\fscx100\\fscy100}`;
